@@ -117,6 +117,24 @@ test("all characters and enemies have required fields", () => {
   }
 });
 
+test("every hero flourishes with its own distinct clip", () => {
+  // title.js picks the flourish via `pose`, falling back to `combo[0]`. A hero
+  // with neither, or two heroes sharing a clip, is the identical-selection bug
+  // this guards against.
+  const flourish = (c) => c.pose || (Array.isArray(c.combo) ? c.combo[0] : null);
+  const seen = new Map();
+  for (const [id, c] of Object.entries(CHARACTERS)) {
+    const clip = flourish(c);
+    assert.ok(clip, `${id} resolves to no flourish clip`);
+    assert.ok(
+      clip !== "Cheer",
+      `${id} falls back to the shared Cheer clip instead of a character move`
+    );
+    assert.ok(!seen.has(clip), `${id} and ${seen.get(clip)} share the flourish clip "${clip}"`);
+    seen.set(clip, id);
+  }
+});
+
 test("math helpers", () => {
   assert.equal(clamp(5, 0, 3), 3);
   assert.equal(clamp(-1, 0, 3), 0);

@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Pixel chrome — parts bin</title>
+    <style>
+      @font-face {
+        font-family: "PixelChrome";
+        src: url("./gen/PixelChrome-Regular.ttf") format("truetype");
+        font-display: block;
+      }
+      :root {
+        --ink: #0b0806;
+        --bone: #e9dfc8;
+        --bone-dim: #a89a7e;
+        --gold: #e8c169;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        background: #0b0806;
+        color: var(--bone);
+        font-family: "IBM Plex Mono", monospace;
+        padding: 28px 32px 80px;
+        -webkit-font-smoothing: antialiased;
+      }
+      h1 { font-size: 15px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
+      .sub { font-size: 11px; color: var(--bone-dim); margin-bottom: 26px; }
+      h2 {
+        font-size: 10px; letter-spacing: 0.26em; text-transform: uppercase; color: var(--bone-dim);
+        margin: 30px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #241d15;
+      }
+      .row { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-end; }
+      .cell { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+      .cap { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: #6f6552; }
+      img { image-rendering: pixelated; display: block; }
+      .on-stone { background: #514b43; padding: 4px; }
+      .on-dark { background: #14100b; padding: 4px; }
+
+      /* ---- live chrome demos: these are the real border-image rules ---- */
+      .slab {
+        border-style: solid;
+        border-width: 10px;
+        border-image: url("./gen/frame-slab.png") 10 fill / 10px stretch;
+        image-rendering: pixelated;
+        padding: 8px 16px;
+        font-size: 12px;
+      }
+      .slab-dark {
+        border-image: url("./gen/frame-slab-dark.png") 10 fill / 10px stretch;
+      }
+      .slab-deep {
+        border-image: url("./gen/frame-slab-deep.png") 10 fill / 10px stretch;
+      }
+      .slab-iron {
+        border-image: url("./gen/frame-slab-iron.png") 10 fill / 10px stretch;
+      }
+      .ornate {
+        border-style: solid;
+        border-width: 14px;
+        border-image: url("./gen/frame-ornate-common.png") 14 fill / 14px stretch;
+        image-rendering: pixelated;
+        padding: 10px 18px;
+        width: 320px;
+      }
+      .ornate.rare { border-image-source: url("./gen/frame-ornate-rare.png"); }
+      .ornate.epic { border-image-source: url("./gen/frame-ornate-epic.png"); }
+      .btn {
+        border-style: solid;
+        border-width: 9px;
+        border-image: url("./gen/frame-button-common.png") 9 fill / 9px stretch;
+        image-rendering: pixelated;
+        padding: 4px 26px;
+        font-family: "PixelChrome", monospace;
+        font-size: 16px;
+        letter-spacing: 0.14em;
+        color: #2a1f0b;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      .btn.rare { border-image-source: url("./gen/frame-button-rare.png"); color: #06202b; }
+      .btn.epic { border-image-source: url("./gen/frame-button-epic.png"); color: #2a0c08; }
+      .trough {
+        border-style: solid;
+        border-width: 7px;
+        border-image: url("./gen/frame-trough.png") 7 fill / 7px stretch;
+        image-rendering: pixelated;
+        width: 300px;
+        height: 24px;
+        position: relative;
+      }
+      .trough.gold { border-image-source: url("./gen/frame-trough-gold.png"); }
+      .trough .fill {
+        position: absolute; inset: 0; transform-origin: left;
+        background: linear-gradient(180deg, #93b36a, #7d9c58 52%, #4c6134);
+      }
+      .keycap {
+        display: inline-block;
+        border-style: solid;
+        border-width: 6px;
+        border-image: url("./gen/frame-keycap.png") 6 fill / 6px stretch;
+        image-rendering: pixelated;
+        padding: 0 6px;
+        font-family: "PixelChrome", monospace;
+        font-size: 11px;
+        color: var(--bone);
+      }
+      .keycap.hot {
+        border-image-source: url("./gen/frame-keycap-hot.png");
+        color: #1c1409;
+      }
+      .divider-wrap { display: flex; align-items: center; }
+      .divider {
+        border-style: solid;
+        border-width: 0 32px;
+        border-image: url("./gen/frame-divider.png") 0 32 fill / 0 32px stretch;
+        image-rendering: pixelated;
+        height: 12px;
+        width: 360px;
+      }
+      .divider.rare { border-image-source: url("./gen/frame-divider-rare.png"); }
+      .divider.epic { border-image-source: url("./gen/frame-divider-epic.png"); }
+      .roster {
+        border-style: solid;
+        border-width: 0 0 0 8px;
+        border-image: url("./gen/frame-roster.png") 0 0 0 8 / 0 0 0 8px stretch;
+        image-rendering: pixelated;
+        width: 220px;
+        padding: 9px 12px;
+        font-family: "PixelChrome", monospace;
+        font-size: 14px;
+        letter-spacing: 0.06em;
+      }
+      .roster.selected {
+        border-image-source: url("./gen/frame-roster-selected.png");
+        color: #e8c169;
+      }
+      .well {
+        border-style: solid;
+        border-width: 8px;
+        border-image: url("./gen/frame-well-common.png") 8 fill / 8px stretch;
+        image-rendering: pixelated;
+        width: 48px;
+        height: 48px;
+        display: grid;
+        place-items: center;
+      }
+      .font-demo { font-family: "PixelChrome", monospace; line-height: 1.35; }
+      .f16 { font-size: 16px; }
+      .f24 { font-size: 24px; }
+      .f32 { font-size: 32px; letter-spacing: 0.04em; }
+      .gold { color: var(--gold); }
+      .dim { color: var(--bone-dim); }
+      .swatches { display: flex; gap: 0; margin-top: 8px; }
+      .swatches div { width: 44px; height: 30px; display: grid; place-items: center; font-size: 7px; }
+    </style>
+  </head>
+  <body>
+    <h1>Pixel chrome — parts bin</h1>
+    <p class="sub">Every element the UI is built from. If it is not here, it does not ship.</p>
+
+    <h2>PixelChrome face</h2>
+    <div class="font-demo f32 gold">ENTER THE DUNGEON</div>
+    <div class="font-demo f24">KNIGHT · BARBARIAN · ROGUE · MAGE</div>
+    <div class="font-demo f16">WAVE 7 — 14 REMAINING · COMBO ×3 · 12340 SCORE</div>
+    <div class="font-demo f16 dim">WASD MOVE · MOUSE LOOK · LMB ATTACK · SPACE DODGE · SHIFT SPRINT</div>
+    <div class="font-demo f16">+40% DMG, -12% SPD &lt;-&gt; [SPACE] 110/110 HP</div>
+
+    <h2>Frames — slabs</h2>
+    <div class="row">
+      <div class="cell">
+        <div class="slab" style="width: 190px">Wave 7<br /><span class="dim">slab, stretched</span></div>
+        <span class="cap">frame-slab</span>
+      </div>
+      <div class="cell">
+        <div class="slab slab-dark" style="width: 190px">dark slab</div>
+        <span class="cap">frame-slab-dark</span>
+      </div>
+      <div class="cell">
+        <div class="slab slab-deep" style="width: 190px; height: 84px">deep slab</div>
+        <span class="cap">frame-slab-deep</span>
+      </div>
+      <div class="cell">
+        <div class="slab slab-iron" style="width: 190px">iron slab</div>
+        <span class="cap">frame-slab-iron</span>
+      </div>
+      <div class="cell">
+        <div class="ornate">Ornate panel<br /><span class="dim" style="font-size: 11px">common tier</span></div>
+        <span class="cap">frame-ornate-common</span>
+      </div>
+      <div class="cell">
+        <div class="ornate rare">Ornate panel<br /><span style="font-size: 11px; color: #7fd7ff">rare tier</span></div>
+        <span class="cap">frame-ornate-rare</span>
+      </div>
+      <div class="cell">
+        <div class="ornate epic">Ornate panel<br /><span style="font-size: 11px; color: #d4574a">epic tier</span></div>
+        <span class="cap">frame-ornate-epic</span>
+      </div>
+    </div>
+
+    <h2>Frames — buttons, troughs, keycaps, dividers</h2>
+    <div class="row">
+      <div class="cell">
+        <button class="btn">Enter the dungeon</button>
+        <span class="cap">frame-button-common</span>
+      </div>
+      <div class="cell">
+        <button class="btn rare">Take it</button>
+        <span class="cap">rare</span>
+      </div>
+      <div class="cell">
+        <button class="btn epic">Take it</button>
+        <span class="cap">epic</span>
+      </div>
+      <div class="cell">
+        <div class="trough"><div class="fill" style="transform: scaleX(0.62)"></div></div>
+        <div class="trough gold" style="margin-top: 6px"><div class="fill" style="transform: scaleX(0.28)"></div></div>
+        <span class="cap">frame-trough / gold</span>
+      </div>
+      <div class="cell">
+        <div style="display: flex; gap: 6px">
+          <span class="keycap">SPACE</span>
+          <span class="keycap">SHIFT</span>
+          <span class="keycap hot">SPACE</span>
+        </div>
+        <span class="cap">frame-keycap / hot</span>
+      </div>
+      <div class="cell">
+        <div class="divider-wrap">
+          <div class="divider"></div>
+          <img src="./gen/divider-boss.png" alt="" style="margin-left: -6px" />
+        </div>
+        <div class="divider-wrap" style="margin-top: 6px">
+          <div class="divider rare"></div>
+          <img src="./gen/divider-boss-rare.png" alt="" style="margin-left: -6px" />
+        </div>
+        <span class="cap">frame-divider + boss</span>
+      </div>
+    </div>
+
+    <h2>Roster bar</h2>
+    <div class="row">
+      <div class="cell">
+        <div class="roster">KNIGHT</div>
+        <div class="roster">BARBARIAN</div>
+        <div class="roster">ROGUE</div>
+        <span class="cap">idle</span>
+      </div>
+      <div class="cell">
+        <div class="roster selected">KNIGHT · SELECTED</div>
+        <div class="roster">BARBARIAN</div>
+        <span class="cap">selected (gold edge)</span>
+      </div>
+    </div>
+
+    <h2>Icon sockets</h2>
+    <div class="row">
+      <div class="cell">
+        <div class="well"><img src="./gen/icon-knight@2x.png" alt="knight" /></div>
+        <span class="cap">well + sigil 2x</span>
+      </div>
+      <div class="cell">
+        <div class="well"><img src="./gen/icon-mage@2x.png" alt="mage" /></div>
+        <span class="cap">well + mage</span>
+      </div>
+    </div>
+
+    <h2>Icons — class sigils</h2>
+    <div class="row">
+      <div class="cell"><img src="./gen/icon-knight@3x.png" alt="knight" /><span class="cap">knight 3x</span></div>
+      <div class="cell"><img src="./gen/icon-barbarian@3x.png" alt="barbarian" /><span class="cap">barbarian 3x</span></div>
+      <div class="cell"><img src="./gen/icon-rogue@3x.png" alt="rogue" /><span class="cap">rogue 3x</span></div>
+      <div class="cell"><img src="./gen/icon-mage@3x.png" alt="mage" /><span class="cap">mage 3x</span></div>
+      <div class="cell on-dark"><img src="./gen/icon-knight.png" alt="knight 1x" /><span class="cap">1x on dark</span></div>
+      <div class="cell on-stone"><img src="./gen/icon-knight.png" alt="knight on stone" /><span class="cap">1x on stone</span></div>
+    </div>
+
+    <h2>Icons — stats</h2>
+    <div class="row">
+      <div class="cell"><img src="./gen/icon-hp.png" alt="hp" style="width: 32px" /><span class="cap">hp</span></div>
+      <div class="cell"><img src="./gen/icon-dmg.png" alt="dmg" style="width: 32px" /><span class="cap">dmg</span></div>
+      <div class="cell"><img src="./gen/icon-spd.png" alt="spd" style="width: 32px" /><span class="cap">spd</span></div>
+      <div class="cell"><img src="./gen/icon-coin.png" alt="coin" style="width: 32px" /><span class="cap">coin</span></div>
+      <div class="cell"><img src="./gen/icon-skull.png" alt="skull" style="width: 32px" /><span class="cap">skull</span></div>
+      <div class="cell"><img src="./gen/icon-rune.png" alt="rune" style="width: 32px" /><span class="cap">rune</span></div>
+      <div class="cell"><img src="./gen/icon-flask.png" alt="flask" style="width: 32px" /><span class="cap">flask</span></div>
+      <div class="cell"><img src="./gen/icon-shield.png" alt="shield" style="width: 32px" /><span class="cap">shield</span></div>
+      <div class="cell"><img src="./gen/icon-clock.png" alt="clock" style="width: 32px" /><span class="cap">clock</span></div>
+      <div class="cell"><img src="./gen/icon-star.png" alt="star" style="width: 32px" /><span class="cap">star</span></div>
+    </div>
+
+    <h2>Font specimen (glyph grid, 4x)</h2>
+    <img src="./gen/font-specimen.png" alt="specimen" />
+  </body>
+</html>

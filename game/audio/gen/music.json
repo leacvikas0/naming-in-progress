@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-09-13T10:24:50.729Z",
+  "loudness": {
+    "I": -16,
+    "TP": -1.5,
+    "LRA": 11
+  },
+  "tracks": {
+    "title": {
+      "file": "title.ogg",
+      "duration": 166,
+      "loopStart": 16,
+      "loopEnd": 166,
+      "fade": 6,
+      "bytes": 3051000,
+      "hash": "9add9f7c"
+    },
+    "combat": {
+      "file": "combat.ogg",
+      "duration": 172,
+      "loopStart": 10,
+      "loopEnd": 172,
+      "fade": 8,
+      "bytes": 3017595,
+      "hash": "54bfd4c1"
+    }
+  }
+}

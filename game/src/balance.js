@@ -76,6 +76,7 @@ export const CHARACTERS = {
     swing: [0.32, 0.3, 0.36],
     color: 0x9fb4c8,
     keep: ["1H_Sword", "Knight_Helmet", "Knight_Cape"],
+    pose: "1H_Melee_Attack_Stab",
   },
   barbarian: {
     id: "barbarian",
@@ -93,6 +94,7 @@ export const CHARACTERS = {
     swing: [0.5, 0.46, 0.55],
     color: 0xc98a5a,
     keep: ["2H_Axe", "Barbarian_Hat"],
+    pose: "2H_Melee_Attack_Spin",
   },
   rogue: {
     id: "rogue",
@@ -114,6 +116,7 @@ export const CHARACTERS = {
     swing: [0.22, 0.2, 0.24],
     color: 0x6fbf8f,
     keep: ["Knife", "Knife_Offhand"],
+    pose: "Dualwield_Melee_Attack_Slice",
   },
   mage: {
     id: "mage",
@@ -131,6 +134,7 @@ export const CHARACTERS = {
     swing: [0.42, 0.4],
     color: 0x8f7fe8,
     keep: ["2H_Staff", "Mage_Hat"],
+    pose: "Spellcast_Raise",
   },
 };
 

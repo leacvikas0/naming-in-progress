@@ -1,4 +1,4 @@
-# Dungeon of the Lost Bones — design
+# Naming In Progress — design
 
 A 3D wave-brawler using only the local kilo-3d-kit library (KayKit rigged characters + KayKit Dungeon Remastered props). Runs as a static page served by the existing `npm run view` server at `/game/`.
 

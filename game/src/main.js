@@ -21,6 +21,7 @@ import { createFX } from "./fx.js";
 import { createHUD } from "./hud.js";
 import { createTitle } from "./title.js";
 import { createAudio } from "./audio.js";
+import { applyPxIcons } from "./assets.js";
 
 const canvas = document.getElementById("game-canvas");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
@@ -118,11 +119,109 @@ document.addEventListener("pointerlockchange", () => {
   }
 });
 
+/* ---------------- fullscreen ---------------- */
+
+// Browsers refuse requestFullscreen() without a user gesture — same rule as
+// audio autoplay — so fullscreen cannot open on page load. It is requested on
+// the first click or keypress instead, which for most players is the click on
+// a hero bar, so the game fills the screen at the moment they choose a hero.
+let fullscreenWanted = true;
+
+function isFullscreen() {
+  return Boolean(document.fullscreenElement);
+}
+
+function requestFullscreen() {
+  if (isFullscreen()) return;
+  const el = document.documentElement;
+  try {
+    const p = el.requestFullscreen ? el.requestFullscreen() : el.webkitRequestFullscreen?.();
+    // A rejected request (user denied, or the gesture was not trusted) must not
+    // leave the game believing fullscreen is still coming.
+    if (p && typeof p.catch === "function") p.catch(() => {});
+  } catch {
+    /* fullscreen unavailable (headless, iframe without allowfullscreen) */
+  }
+}
+
+function toggleFullscreen() {
+  fullscreenAsked = true;
+  if (isFullscreen()) {
+    fullscreenWanted = false;
+    try {
+      const p = document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen?.();
+      if (p && typeof p.catch === "function") p.catch(() => {});
+    } catch {
+      /* already out */
+    }
+    return;
+  }
+  fullscreenWanted = true;
+  requestFullscreen();
+}
+
+// Esc leaves fullscreen by itself (browser-level), so track intent from the
+// real state rather than assuming our own toggle is the only way out.
+document.addEventListener("fullscreenchange", () => {
+  if (!isFullscreen()) fullscreenWanted = false;
+});
+
+// Pointer lock removes the OS cursor. If the tab is closed or hidden while a
+// run is active, Chromium can leave the cursor hidden browser-wide until it is
+// restarted, so the lock must be released explicitly before the page goes away.
+// The beforeunload listener is also what makes pagehide/visibilitychange fire
+// reliably when a tab is closed.
+function releaseLock() {
+  try {
+    if (document.pointerLockElement) document.exitPointerLock();
+  } catch {
+    /* pointer lock unavailable */
+  }
+}
+
+addEventListener("pagehide", releaseLock);
+addEventListener("beforeunload", releaseLock);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) releaseLock();
+});
+
 function hexOf(n) {
   return `#${(n >>> 0).toString(16).padStart(6, "0")}`;
 }
 
 /* ---------------- input ---------------- */
+
+let gestureSeen = false;
+let titleMusicStarted = false;
+let fullscreenAsked = false;
+
+// Autoplay policy: the AudioContext can only be created/resumed from a user
+// gesture, so the title theme starts on the first click or keypress and the
+// combat track is decoded in the background while the roster is on screen.
+// Fullscreen rides the same gesture, for the same browser reason.
+function onFirstGesture() {
+  gestureSeen = true;
+  audio.unlock();
+  startTitleMusic();
+  if (fullscreenWanted && !fullscreenAsked) {
+    fullscreenAsked = true;
+    requestFullscreen();
+  }
+}
+
+function startTitleMusic() {
+  if (titleMusicStarted || state.phase !== "title") return;
+  titleMusicStarted = true;
+  audio.music.play("title", { fade: 1.2 });
+  audio.music.prefetch("combat");
+}
+
+// The title screen is an overlay that covers the canvas, so a click on a hero
+// bar or the Descend button never reaches a canvas listener. The gesture
+// listener therefore lives on document: any click anywhere counts.
+addEventListener("mousedown", (e) => {
+  if (e.button === 0) onFirstGesture();
+});
 
 addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
@@ -130,7 +229,12 @@ addEventListener("keydown", (e) => {
   if (k === " ") e.preventDefault();
   if (k === "r" && state.phase === "dead") startRun(state.heroId || "knight");
   if (k === "escape" && input.locked) document.exitPointerLock();
-  audio.unlock();
+  if (k === "m") {
+    audio.setMuted(!audio.muted);
+    hud.showToast(audio.muted ? "Sound muted" : "Sound on");
+  }
+  if (k === "f") toggleFullscreen();
+  onFirstGesture();
 });
 
 addEventListener("keyup", (e) => {
@@ -158,7 +262,7 @@ canvas.addEventListener("mousemove", (e) => {
 
 canvas.addEventListener("mousedown", (e) => {
   if (e.button === 0) {
-    audio.unlock();
+    onFirstGesture();
     if (!input.locked) {
       requestLock();
     } else {
@@ -240,6 +344,8 @@ function updateCamera(dt) {
 /* ---------------- run flow ---------------- */
 
 async function boot() {
+  // Resolve hashed chrome URLs for the static <img> tags before anything shows.
+  applyPxIcons();
   hud.showLoading("Carving the dungeon...");
   world = createWorld({ scene, config: CONFIG, rng, loader });
   await world.ready;
@@ -251,6 +357,7 @@ async function boot() {
   title.show();
   hud.hideLoading();
   state.phase = "title";
+  if (gestureSeen) startTitleMusic();
 }
 
 function startRun(heroId) {
@@ -294,6 +401,9 @@ function startRun(heroId) {
   events.emit("run-started", { hero: hero.id });
   events.emit("sfx", { name: "start" });
 
+  titleMusicStarted = true;
+  audio.music.play("combat", { fade: 1.5, restart: true });
+
   requestLock();
   setTimeout(() => startWave(1), 900);
 }
@@ -307,6 +417,7 @@ function startWave(n) {
   hud.showWaveBanner(n, sub);
   events.emit("wave-start", { wave: n, count: waveDef.count + elites });
   events.emit("sfx", { name: "wave" });
+  audio.music.setFilter({ lowpass: 20000, gain: 1, fade: 0.6 });
   enemies.spawnWave(waveDef, player);
 }
 
@@ -320,9 +431,11 @@ function endWave() {
     state.phase = "upgrade";
     hud.showUpgrades(cards);
     events.emit("sfx", { name: "upgrade" });
+    audio.music.setFilter({ lowpass: 800, gain: 0.35, fade: 0.4 });
     document.exitPointerLock();
   } else {
     state.intermissionT = CONFIG.combat.intermission;
+    audio.music.setFilter({ gain: 0.8, fade: 6 });
   }
 }
 
@@ -336,6 +449,7 @@ function pickUpgrade(id) {
   state.phase = "playing";
   state.intermissionT = CONFIG.combat.intermission;
   hud.showToast(`${card.name} acquired`);
+  audio.music.setFilter({ lowpass: 20000, gain: 1, fade: 0.6 });
   requestLock();
 }
 
@@ -402,6 +516,10 @@ events.on("player-hurt", () => {
 });
 
 events.on("player-died", () => {
+  // Start the music falling the instant the killing blow lands, not when the
+  // death screen appears 1.5s later. The tape-stop is the drama; making the
+  // player wait through it before the drop begins kills the effect.
+  audio.music.setFilter({ rate: 0.55, lowpass: 400, gain: 0.25, fade: 2.4 });
   setTimeout(() => endRun(), 1500);
 });
 
@@ -512,6 +630,9 @@ window.__game = {
   },
   get input() {
     return input;
+  },
+  get audio() {
+    return audio;
   },
 };
 

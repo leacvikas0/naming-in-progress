@@ -11,3 +11,10 @@ Human-made, no generative AI. Castle, furniture, nature, pirate, space, survival
 Human-made. Packs state no generative AI. Adventurers, skeletons, dungeon remastered, city builder bits, prototype bits, medieval hexagon.
 
 Sources: official Kenney zip links and GitHub mirrors under `KayKit-Game-Assets`.
+
+## Music
+
+Two tracks — "Dungeon Adventure Title Theme" and "dungeon op 1" — are
+AI-generated audio supplied by the project owner, and are integrated as the
+title and combat themes. Loudness-normalized and loop-baked by
+`game/audio/build-music.mjs`.

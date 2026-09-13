@@ -4,6 +4,11 @@ const REF_DISTANCE = 12;
 const PAN_DISTANCE = 9;
 const EMPTY_OPTS = {};
 
+const MUSIC_MANIFEST = "/game/audio/gen/music.json";
+const MUSIC_BASE = "/game/audio/gen/";
+const MUSIC_OPEN = 20000;
+const MUSIC_MIN_HZ = 40;
+
 function clamp(value, lo, hi) {
   return value < lo ? lo : value > hi ? hi : value;
 }
@@ -17,6 +22,16 @@ export function createAudio({ events } = {}) {
 
   const listener = { x: 0, y: 0, z: 0 };
   const voices = [];
+
+  const musicBuffers = new Map();
+  const musicEntries = new Map();
+  const musicLoading = new Map();
+  const musicFailed = new Set();
+  const musicWanted = new Set();
+  let musicManifest = null;
+  let musicBus = null;
+  let currentTrack = null;
+  let musicPending = null;
 
   function unlock() {
     if (!ctx) {
@@ -41,6 +56,11 @@ export function createAudio({ events } = {}) {
         if (pending && typeof pending.catch === 'function') pending.catch(() => {});
       }
     } catch (err) {}
+    for (const name of [...musicWanted]) {
+      musicWanted.delete(name);
+      loadMusic(name);
+    }
+    flushMusicPending();
   }
 
   function update(dt, listenerPos) {
@@ -150,6 +170,213 @@ export function createAudio({ events } = {}) {
     voices.push(record);
     return record;
   }
+
+  /* ---------------- music ---------------- */
+
+  function rampParam(param, value, now, fade) {
+    try {
+      param.cancelScheduledValues(now);
+      param.setValueAtTime(param.value, now);
+      param.linearRampToValueAtTime(value, now + Math.max(0.01, fade));
+    } catch (err) {
+      try {
+        param.value = value;
+      } catch (err2) {}
+    }
+  }
+
+  function ensureMusicBus() {
+    if (!ctx || !master) return null;
+    if (!musicBus) {
+      musicBus = ctx.createGain();
+      musicBus.gain.value = 1;
+      musicBus.connect(master);
+    }
+    return musicBus;
+  }
+
+  // Loop end comes from the manifest, not buffer.duration: Chrome decodes
+  // Vorbis through ffmpeg, which can pad the tail (ffmpeg ticket 6367), and
+  // looping over that padding would click at every wrap.
+  function trackEnd(entry, buffer) {
+    const want = Number.isFinite(entry.duration) ? entry.duration : buffer.duration;
+    return Math.max(0.1, Math.min(want, buffer.duration));
+  }
+
+  function musicState() {
+    return {
+      loaded: musicBuffers.size,
+      pending: musicPending ? musicPending.name : null,
+      current: currentTrack ? currentTrack.name : null,
+      gain: currentTrack ? currentTrack.gain.gain.value : 0,
+      lowpass: currentTrack ? currentTrack.lowpass.frequency.value : 0,
+      rate: currentTrack ? currentTrack.source.playbackRate.value : 1,
+    };
+  }
+
+  function loadMusic(name) {
+    if (!ctx) {
+      musicWanted.add(name);
+      return Promise.resolve(false);
+    }
+    if (musicBuffers.has(name)) return Promise.resolve(true);
+    // A failed track stays failed: retrying on every gesture is how the
+    // pending-flush path turned into an infinite loop.
+    if (musicFailed.has(name)) return Promise.resolve(false);
+    // Return the IN-FLIGHT promise, not a fresh resolved one. Returning a
+    // resolved promise here made `playMusic().then(flush)` re-enter itself on
+    // every gesture while a load was still running.
+    const inFlight = musicLoading.get(name);
+    if (inFlight) return inFlight;
+
+    const load = (async () => {
+      try {
+        if (!musicManifest) {
+          const res = await fetch(MUSIC_MANIFEST, { cache: "no-store" });
+          if (!res.ok) throw new Error(`manifest ${res.status}`);
+          musicManifest = await res.json();
+        }
+        const entry = musicManifest && musicManifest.tracks && musicManifest.tracks[name];
+        if (!entry) throw new Error(`no track "${name}"`);
+        const url = `${MUSIC_BASE}${entry.file}?v=${entry.hash}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`${entry.file} ${res.status}`);
+        const bytes = await res.arrayBuffer();
+        const buffer = await ctx.decodeAudioData(bytes);
+        musicBuffers.set(name, buffer);
+        musicEntries.set(name, entry);
+        return true;
+      } catch (err) {
+        musicFailed.add(name); // music is optional: never surface a load failure
+        return false;
+      } finally {
+        musicLoading.delete(name);
+      }
+    })();
+
+    musicLoading.set(name, load);
+    return load;
+  }
+
+  function flushMusicPending() {
+    if (!musicPending || !ctx) return;
+    const p = musicPending;
+    musicPending = null;
+    playMusic(p.name, p.opts);
+  }
+
+  function releaseMusic(m, now, fade) {
+    const out = Math.max(0.05, fade * 0.6);
+    rampParam(m.gain.gain, 0, now, out);
+    setTimeout(() => {
+      try {
+        m.source.stop();
+      } catch (err) {}
+      try {
+        m.source.disconnect();
+        m.lowpass.disconnect();
+        m.gain.disconnect();
+      } catch (err) {}
+    }, (out + 0.2) * 1000);
+  }
+
+  function playMusic(name, opts) {
+    const o = opts || EMPTY_OPTS;
+    const fade = Math.max(0.01, o.fade == null ? 1.5 : o.fade);
+    if (!ctx || !master) {
+      musicPending = { name, opts: o };
+      loadMusic(name);
+      return;
+    }
+    if (!musicBuffers.has(name)) {
+      musicPending = { name, opts: o };
+      // Only flush on success. Flushing after a failed load would re-enter
+      // playMusic, which fails again and schedules another flush: an infinite
+      // microtask chain that starves the event loop and freezes the tab.
+      loadMusic(name).then((ok) => {
+        if (ok) flushMusicPending();
+      });
+      return;
+    }
+    const bus = ensureMusicBus();
+    if (!bus) return;
+
+    const entry = musicEntries.get(name);
+    const buffer = musicBuffers.get(name);
+    const same = currentTrack && currentTrack.name === name && !o.restart;
+
+    if (same) {
+      setMusicFilter({ lowpass: MUSIC_OPEN, gain: 1, rate: 1, fade });
+      return;
+    }
+
+    const now = ctx.currentTime;
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    source.loopStart = Math.max(0, Math.min(entry.loopStart, buffer.duration - 0.05));
+    source.loopEnd = trackEnd(entry, buffer);
+
+    const lowpass = ctx.createBiquadFilter();
+    lowpass.type = "lowpass";
+    lowpass.frequency.value = MUSIC_OPEN;
+    lowpass.Q.value = 0.7;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(1, now + fade);
+
+    source.connect(lowpass);
+    lowpass.connect(gain);
+    gain.connect(bus);
+
+    const from = Math.max(0, Math.min(o.from || 0, source.loopStart));
+    try {
+      source.start(now, from);
+    } catch (err) {
+      return;
+    }
+
+    const prev = currentTrack;
+    currentTrack = { name, source, lowpass, gain, entry, buffer };
+    if (prev) releaseMusic(prev, now, fade);
+  }
+
+  function stopMusic(opts) {
+    if (!currentTrack || !ctx) return;
+    const fade = Math.max(0.01, (opts && opts.fade) || 1.5);
+    const m = currentTrack;
+    currentTrack = null;
+    releaseMusic(m, ctx.currentTime, fade);
+  }
+
+  function setMusicFilter(opts) {
+    if (!currentTrack || !ctx) return;
+    const o = opts || EMPTY_OPTS;
+    const now = ctx.currentTime;
+    const fade = Math.max(0.01, o.fade == null ? 0.4 : o.fade);
+    if (Number.isFinite(o.gain)) rampParam(currentTrack.gain.gain, clamp(o.gain, 0, 1), now, fade);
+    if (Number.isFinite(o.lowpass)) {
+      rampParam(currentTrack.lowpass.frequency, clamp(o.lowpass, MUSIC_MIN_HZ, MUSIC_OPEN), now, fade);
+    }
+    if (Number.isFinite(o.rate)) {
+      rampParam(currentTrack.source.playbackRate, clamp(o.rate, 0.25, 4), now, fade);
+    }
+  }
+
+  const music = {
+    load: loadMusic,
+    prefetch(names) {
+      const list = Array.isArray(names) ? names : [names];
+      for (const n of list) if (n) loadMusic(n);
+    },
+    play: playMusic,
+    stop: stopMusic,
+    setFilter: setMusicFilter,
+    get state() {
+      return musicState();
+    },
+  };
 
   const SOUNDS = {
     swing: {
@@ -554,6 +781,7 @@ export function createAudio({ events } = {}) {
     unlock,
     update,
     play,
+    music,
     setMuted,
     get muted() {
       return muted;

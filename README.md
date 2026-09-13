@@ -6,7 +6,7 @@ Style bible: Kenney castle/furniture (static props) + KayKit Adventurers (alread
 
 ## The game
 
-**Dungeon of the Lost Bones** — an endless wave brawler built entirely from this library
+**Naming In Progress** — an endless wave brawler built entirely from this library
 (KayKit Dungeon Remastered + KayKit Adventurers/Skeletons, all rigged clips played as-is).
 
 ```powershell

@@ -816,6 +816,9 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
 
   return {
     group,
+    get list() {
+      return enemies;
+    },
     get aliveCount() {
       return aliveN;
     },

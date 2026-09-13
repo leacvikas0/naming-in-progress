@@ -157,9 +157,31 @@ range; on pickup emit `coin-collected` with value.
 HUD emits: `hero-selected {id}`, `retry {}`, `upgrade-chosen {id}`.
 HUD listens: `player-hurt` (flash), `player-died`, `wave-start`, `wave-clear`,
 `coin-collected`, `upgrade-offer` is pushed via `showUpgrades` by main.
-All DOM ids already exist in `game/index.html`. Style with classes from `game/style.css`
-(`upgrade-card`, `death-stat`, `hidden`, `show`, `hit`, `low`, `danger`, `ready`).
+All DOM ids already exist in `game/index.html`. Style with classes from
+`game/chrome.css` (pixel frames: `px-slab`, `px-ornate`, `px-btn`, `px-trough`,
+`px-keycap`, `px-roster`, `px-well`, `px-divider`, `px-rule`, `px-icon`) and
+`game/style.css` (layout + type).
 Do not add new CSS files. Do not restyle `index.html`.
+
+### Pixel chrome pipeline
+
+The UI chrome is hand-authored pixel art compiled to PNG, applied through CSS
+`border-image` 9-slices. Source of truth is `game/ui/`:
+
+- `game/ui/lib/` — ASCII-grid art (frames, font, stat icons) + palette
+- `game/ui/art/` — reviewed AI-assisted imports (class sigils), see its SOURCES.md
+- `game/ui/gen/` — build output; **the only directory the game reads**
+- `node game/ui/build-ui.mjs` — regenerate `gen/` (also `npm run ui`)
+
+Two invariants that break the chrome silently if violated:
+
+1. `border-image-slice` in `chrome.css` must equal the source PNG's border
+   width, and `border-width` must equal the slice. `game/tests/ui.test.mjs`
+   asserts the source dimensions.
+2. Every element showing chrome needs `image-rendering: pixelated`.
+
+When adding a frame, add it to `build-ui.mjs`, add it to the REQUIRED list in
+`game/tests/ui.test.mjs`, then run `npm run ui && npm run test:ui`.
 
 ### title.js — `createTitle({ scene, camera, events, loader, characters })`
 
@@ -169,15 +191,26 @@ Do not add new CSS files. Do not restyle `index.html`.
   build(),                     // async: loads + normalizes all hero GLBs, fills roster
   show(), hide(),
   update(dt),                  // sway, rise, idle flourishes, embers, camera drift
-  selectHero(id, notify),      // shows that hero on the dais; emits hero-selected
+  selectHero(id, notify, emote), // shows that hero on the dais; emits hero-selected
   selectedId, visible,
 }
 ```
 
 Hero-select stage. The dungeon world is hidden during the title phase; `main.js`
 reveals `world.group` on `start-run`. The selected hero rises onto a lit dais, idles
-with the shared KayKit `Idle` clip, and plays `Cheer`-style flourishes on selection.
-Roster bars live in `#hero-list`; the detail plaque in `#hero-detail`.
+with the shared KayKit `Idle` clip, and flourishes with the clip named by its
+`pose` in balance.js (falling back to `combo[0]`, then `Cheer`).
+
+`emote` controls the flourish, and the two callers differ deliberately: switching
+heroes (click a roster bar, arrow keys) passes `true` so the hero shows off, while
+the initial auto-select at boot passes `false` so the game opens on a hero simply
+standing there rather than mid-swing. The flourish also replays on its own after
+`IDLE_FLOURISH` (8s) with no interaction.
+
+Roster bars live in `#hero-list`; the detail plaque in `#hero-detail`. Each row and
+the plaque show the hero's class sigil from `game/ui/gen/sigil-<id>.png`, and the
+plaque's stat row uses `icon-hp/dmg/spd.png`. A hero's `id` must therefore match
+its sigil filename.
 `title.js` emits: `hero-selected {id}`, `start-run {}`, `sfx {name:"ui-click"}`.
 `title.js` owns the `#start-btn` click; hud.js must not also emit `start-run`.
 
@@ -196,6 +229,46 @@ Subscribes to the `sfx` event. All sound is synthesized (oscillators + noise buf
 audio files. Sound names: `swing`, `swing-heavy`, `hit`, `crit`, `kill`, `hurt`, `dodge`,
 `jump`, `land`, `coin`, `wave`, `upgrade`, `death`, `enemy-windup`, `cast`, `explode`,
 `ui-click`, `start`.
+
+### Music (inside audio.js)
+
+`audio.music` is a state-driven music director layered on the same AudioContext as
+the SFX. It is not a second module: `main.js` calls it, and it never imports
+another game module.
+
+```js
+audio.music.load(name)                  // fetch + decode, deferred until unlock()
+audio.music.prefetch(names)             // background decode
+audio.music.play(name, { fade, restart, from })
+audio.music.stop({ fade })
+audio.music.setFilter({ gain, lowpass, rate, fade })
+audio.music.state                       // { loaded, pending, current, gain, lowpass, rate }
+```
+
+Tracks are `"title"` and `"combat"`. Signal path per track:
+`source -> lowpass -> trackGain -> musicBus -> master`, so `setMuted` silences
+music and SFX together.
+
+Two invariants:
+
+1. **Loop points come from the manifest, never `buffer.duration`.** Chrome decodes
+   Vorbis through ffmpeg, which can pad the decoded tail (ffmpeg ticket 6367);
+   looping to `buffer.duration` would play that padding at every wrap.
+2. **Music failure is silent.** Any fetch, decode or WebAudio error leaves the
+   game running with SFX only. Never surface a music error to the player.
+
+### Music pipeline
+
+Sources are one-shots, so `game/audio/build-music.mjs` bakes a crossfade loop
+into each track (`body + crossfade(tail -> pre)`) and normalizes to
+−16 LUFS / −1.5 dBTP, then encodes Vorbis.
+
+- `game/audio/src/` — committed sources
+- `game/audio/gen/` — build output; **the only directory the game reads**
+- `node game/audio/build-music.mjs` — regenerate `gen/` (also `npm run music`)
+
+Loop points are the `TRACKS` constants at the top of the build script. Re-run
+`npm run music && npm run test:music` after retuning any of them.
 
 ## Event list (frozen)
 

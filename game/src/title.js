@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { CHARACTERS } from "./balance.js";
+import { pxUrl } from "./assets.js";
 
 const TARGET_HEIGHT = 1.9;
 const IDLE_CLIPS = ["Idle", "Unarmed_Idle", "T-Pose"];
@@ -14,6 +15,10 @@ const RISE_FROM = -1.15;
 const RISE_TIME = 0.5;
 const DUST_COUNT = 54;
 const SPOTLIGHT = 0xffc27a;
+// Seconds of no interaction before the hero on the dais shows off. Flat and
+// deterministic: a random window with a random chance read as "sometimes it
+// never happens" rather than as personality.
+const IDLE_FLOURISH = 8;
 
 function boundsOf(meshes) {
   const box = new THREE.Box3();
@@ -279,13 +284,28 @@ export function createTitle(options = {}) {
     action.play();
     if (prev && prev !== action) prev.fadeOut(0.18);
     h.current = action;
-    h.idleT = 6 + Math.random() * 4;
+    h.idleT = IDLE_FLOURISH;
+  }
+
+  // Each hero flourishes with a move that matches its weapon and temperament.
+  // The per-hero clip is `pose` in balance.js. If a hero has no `pose`, fall
+  // back to its own first combo move (weapon-appropriate by construction)
+  // before ever reaching for the shared Cheer — an identical flourish for
+  // every hero is the thing this exists to avoid.
+  function flourishClip(h) {
+    const def = h.def || {};
+    const tries = [def.pose, ...(Array.isArray(def.combo) ? def.combo : []), "Cheer"];
+    for (const name of tries) {
+      if (!name) continue;
+      const action = h.actions.get(name);
+      if (action) return action;
+    }
+    return null;
   }
 
   function flourish(h) {
     if (!h.mixer || !h.actions) return;
-    const pose = h.def && h.def.pose ? h.def.pose : null;
-    let action = (pose && h.actions.get(pose)) || h.actions.get("Cheer");
+    const action = flourishClip(h);
     if (!action) {
       playIdle(h);
       return;
@@ -294,7 +314,12 @@ export function createTitle(options = {}) {
     const prev = h.current;
     action.enabled = true;
     action.setLoop(THREE.LoopOnce, 1);
-    action.clampWhenFinished = false;
+    // Hold the final pose at full weight until the finished handler has faded
+    // the idle clip in. With clampWhenFinished = false three.js disables the
+    // action the instant it ends (weight -> 0) and only then fires "finished",
+    // so nothing drives the skeleton for a frame or two and the remainder
+    // blends toward the bind pose: the hero's arms snap to its sides.
+    action.clampWhenFinished = true;
     action.setEffectiveTimeScale(1);
     action.setEffectiveWeight(1);
     action.reset();
@@ -322,22 +347,40 @@ export function createTitle(options = {}) {
     detailHost.style.setProperty("--hero-accent", heroHex(def));
 
     const head = el("div", "detail-head");
-    head.appendChild(el("div", "detail-name", def.name || h.id));
-    head.appendChild(el("div", "detail-role", def.role || ""));
+    const sigil = document.createElement("img");
+    sigil.className = "detail-sigil";
+    sigil.src = pxUrl(`sigil-${h.id}`);
+    sigil.alt = "";
+    sigil.width = 32;
+    sigil.height = 32;
+    head.appendChild(sigil);
+
+    const headText = el("div", "detail-head-text");
+    headText.appendChild(el("div", "detail-name", def.name || h.id));
+    headText.appendChild(el("div", "detail-role", def.role || ""));
+    head.appendChild(headText);
     detailHost.appendChild(head);
 
     detailHost.appendChild(el("p", "detail-blurb", def.blurb || ""));
 
     const stats = el("div", "detail-stats");
     const rows = [
-      [def.hp, "HP"],
-      [def.damage, "DMG"],
-      [def.moveSpeed, "SPD"],
+      [def.hp, "HP", "hp"],
+      [def.damage, "DMG", "dmg"],
+      [def.moveSpeed, "SPD", "spd"],
     ];
-    for (const [value, label] of rows) {
+    for (const [value, label, icon] of rows) {
       const stat = el("div", "detail-stat");
-      stat.appendChild(el("b", null, value === undefined || value === null ? "-" : String(value)));
-      stat.appendChild(el("span", null, label));
+      const img = document.createElement("img");
+      img.src = pxUrl(`icon-${icon}`);
+      img.alt = "";
+      img.width = 16;
+      img.height = 16;
+      stat.appendChild(img);
+      const text = el("div", "detail-stat-text");
+      text.appendChild(el("b", null, value === undefined || value === null ? "-" : String(value)));
+      text.appendChild(el("span", null, label));
+      stat.appendChild(text);
       stats.appendChild(stat);
     }
     detailHost.appendChild(stats);
@@ -349,9 +392,12 @@ export function createTitle(options = {}) {
     startBtn.textContent = enabled ? "Enter the dungeon" : "Choose your hero";
   }
 
-  function selectHero(id, notify) {
+  // `emote` distinguishes the two callers: switching to a hero (click, arrow
+  // keys) makes it show off, while the initial auto-select at boot just stands
+  // the hero up. Without that flag the first thing on screen is the knight
+  // mid-swing before the player has touched anything.
+  function selectHero(id, notify, emote) {
     if (!id || !byId.has(id)) return;
-    const same = id === selectedId;
     selectedId = id;
     const h = byId.get(id);
     if (h !== active) {
@@ -364,20 +410,31 @@ export function createTitle(options = {}) {
     setBarState();
     renderDetail();
     setStartEnabled(true);
-    if (!same || notify) flourish(h);
+    if (emote) flourish(h);
+    else if (h.current && IDLE_CLIPS.includes(h.current.getClip().name)) h.idleT = IDLE_FLOURISH;
     if (notify) emit("hero-selected", { id });
   }
 
   function barFor(h) {
     const def = h.def || {};
-    const bar = el("button", "hero-bar");
+    const bar = el("button", "hero-bar px-roster");
     bar.type = "button";
     bar.style.setProperty("--hero-accent", heroHex(def));
-    const name = el("span", "bar-name", def.name || h.id);
-    const role = el("span", "bar-role", def.role || "");
-    bar.appendChild(name);
-    bar.appendChild(role);
-    bar.addEventListener("click", () => selectHero(h.id, true));
+
+    const sigil = document.createElement("img");
+    sigil.className = "bar-sigil";
+    sigil.src = pxUrl(`sigil-${h.id}`);
+    sigil.alt = "";
+    sigil.width = 32;
+    sigil.height = 32;
+    bar.appendChild(sigil);
+
+    const text = el("span", "bar-text");
+    text.appendChild(el("span", "bar-name", def.name || h.id));
+    text.appendChild(el("span", "bar-role", def.role || ""));
+    bar.appendChild(text);
+
+    bar.addEventListener("click", () => selectHero(h.id, true, true));
     return bar;
   }
 
@@ -442,7 +499,7 @@ export function createTitle(options = {}) {
       }
     }
 
-    if (heroes.length) selectHero(heroes[0].id, false);
+    if (heroes.length) selectHero(heroes[0].id, false, false);
     setBarState();
     renderDetail();
     setStartEnabled(!!selectedId);
@@ -461,9 +518,9 @@ export function createTitle(options = {}) {
         if (!visible || !heroes.length) return;
         const idx = heroes.findIndex((h) => h.id === selectedId);
         if (e.key === "ArrowRight" || e.key === "d") {
-          selectHero(heroes[(idx + 1 + heroes.length) % heroes.length].id, true);
+          selectHero(heroes[(idx + 1 + heroes.length) % heroes.length].id, true, true);
         } else if (e.key === "ArrowLeft" || e.key === "a") {
-          selectHero(heroes[(idx - 1 + heroes.length) % heroes.length].id, true);
+          selectHero(heroes[(idx - 1 + heroes.length) % heroes.length].id, true, true);
         } else if (e.key === "Enter" && selectedId) {
           emit("start-run", {});
         }
@@ -506,8 +563,8 @@ export function createTitle(options = {}) {
       if (active.current && IDLE_CLIPS.includes(active.current.getClip().name)) {
         active.idleT -= step;
         if (active.idleT <= 0) {
-          active.idleT = 7 + Math.random() * 4;
-          if (Math.random() < 0.35) flourish(active);
+          active.idleT = IDLE_FLOURISH;
+          flourish(active);
         }
       }
     }

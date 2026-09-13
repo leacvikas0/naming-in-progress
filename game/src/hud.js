@@ -1,12 +1,39 @@
+import { pxUrl } from "./assets.js";
+
 const TIER_COLORS = {
-  common: "#e8b64c",
+  common: "#e8c169",
   rare: "#7fd7ff",
-  epic: "#e0574a",
+  epic: "#f0a03c",
 };
 
 const DEFAULT_TIER_COLOR = TIER_COLORS.common;
 const BEST_WAVE_KEY = "dlb-best-wave";
 const BEST_SCORE_KEY = "dlb-best-score";
+
+// Upgrade id → the pixel glyph that represents it. Falls back to the flask so
+// a new upgrade always has art.
+const UPGRADE_ICONS = {
+  whetstone: "dmg",
+  boots: "spd",
+  ironheart: "hp",
+  keen: "dmg",
+  reach: "dmg",
+  wide: "dmg",
+  greed: "coin",
+  frenzy: "dmg",
+  vampire: "hp",
+  shadowstep: "clock",
+  thorns: "shield",
+  titan: "dmg",
+  glass: "dmg",
+  reaper: "clock",
+};
+
+const DEATH_ICONS = ["skull", "dmg", "coin", "star"];
+
+function iconUrl(name) {
+  return pxUrl(`icon-${name}`);
+}
 
 function makeDummy() {
   const dummy = {
@@ -19,6 +46,10 @@ function makeDummy() {
     disabled: false,
     offsetWidth: 0,
     type: "",
+    src: "",
+    alt: "",
+    width: 0,
+    height: 0,
     parentNode: null,
     firstChild: null,
     appendChild() { return dummy; },
@@ -215,13 +246,24 @@ export function createHUD({ events, characters } = {}) {
       const tier = card && card.tier ? String(card.tier) : "common";
       const btn = create("button");
       btn.type = "button";
-      btn.className = "upgrade-card stone";
+      btn.className = "upgrade-card px-ornate";
+      if (tier === "rare" || tier === "epic") btn.classList.add(tier);
       btn.style.setProperty("--tier-color", TIER_COLORS[tier] || DEFAULT_TIER_COLOR);
 
+      const head = create("div");
+      head.className = "card-head";
+      const img = create("img");
+      img.className = "card-icon";
+      img.src = iconUrl(UPGRADE_ICONS[card && card.id] || "flask");
+      img.alt = "";
+      img.width = 32;
+      img.height = 32;
+      head.appendChild(img);
       const tag = create("div");
       tag.className = "tier-tag";
       tag.textContent = tier;
-      btn.appendChild(tag);
+      head.appendChild(tag);
+      btn.appendChild(head);
 
       const name = create("h3");
       name.textContent = (card && card.name) || "";
@@ -277,9 +319,20 @@ export function createHUD({ events, characters } = {}) {
       [coins, "Coins"],
       [score, "Score"],
     ];
-    for (const [value, label] of rows) {
+    rows.forEach(([value, label], i) => {
       const stat = create("div");
       stat.className = "death-stat";
+
+      const img = create("img");
+      img.src = iconUrl(DEATH_ICONS[i] || "skull");
+      img.alt = "";
+      // 32 = exactly 2x the 16px source. Non-integer scales (e.g. 24px = 1.5x)
+      // give some source pixels 2 screen pixels and others 1, which reads as
+      // blur/unevenness even with image-rendering: pixelated.
+      img.width = 32;
+      img.height = 32;
+      stat.appendChild(img);
+
       const b = create("b");
       b.textContent = String(value);
       const span = create("span");
@@ -287,7 +340,7 @@ export function createHUD({ events, characters } = {}) {
       stat.appendChild(b);
       stat.appendChild(span);
       box.appendChild(stat);
-    }
+    });
 
     if (wave > bestWave) writeStoredInt(BEST_WAVE_KEY, wave);
     if (score > bestScore) writeStoredInt(BEST_SCORE_KEY, score);

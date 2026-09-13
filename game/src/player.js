@@ -444,7 +444,11 @@ export function createPlayer(options = {}) {
     lungeT = 0;
     emit("player-dodged", {});
     emit("sfx", { name: "dodge", position: position.clone() });
-    playAnim(dodgeCandidates(dodgeDir), { loop: false, fade: 0.1, fit: cfg.dodgeTime });
+    // clamp: hold the final frame at full weight until updateAnim fades the
+    // next clip in. Without it three.js disables the action the moment it ends
+    // (weight -> 0) before anything replaces it, and the skeleton blends
+    // toward its bind pose for a frame: arms snap to the sides mid-dodge.
+    playAnim(dodgeCandidates(dodgeDir), { loop: false, clamp: true, fade: 0.1, fit: cfg.dodgeTime });
   }
 
   function updateDodge(step) {
