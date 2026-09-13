@@ -1,0 +1,19 @@
+{
+  "name": "kilo-3d-kit",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local CC0 3D library for Kilo Code: Kenney props + KayKit rigged characters.",
+  "type": "module",
+  "scripts": {
+    "fetch": "node scripts/fetch-library.mjs",
+    "index": "node scripts/index-library.mjs",
+    "inspect": "node scripts/inspect-rig.mjs",
+    "setup": "node scripts/fetch-library.mjs && node scripts/index-library.mjs && node scripts/inspect-rig.mjs",
+    "view": "npx --yes serve . -p 4173 --no-clipboard",
+    "test": "node game/tests/balance.test.mjs && node game/tests/controls.test.mjs",
+    "test:controls": "node game/tests/controls.test.mjs"
+  },
+  "dependencies": {
+    "three": "^0.170.0"
+  }
+}

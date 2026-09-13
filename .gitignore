@@ -1,0 +1,8 @@
+node_modules/
+library/
+.worktrees/
+.qa/
+.playwright-mcp/
+_tmp/
+.DS_Store
+Thumbs.db

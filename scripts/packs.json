@@ -1,0 +1,234 @@
+[
+  {
+    "id": "kenney-castle",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "medieval",
+    "kind": "prop",
+    "kenneySlug": "castle-kit"
+  },
+  {
+    "id": "kenney-furniture",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "interior",
+    "kind": "prop",
+    "kenneySlug": "furniture-kit"
+  },
+  {
+    "id": "kenney-nature",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "nature",
+    "kind": "prop",
+    "kenneySlug": "nature-kit"
+  },
+  {
+    "id": "kenney-pirate",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "pirate",
+    "kind": "prop",
+    "kenneySlug": "pirate-kit"
+  },
+  {
+    "id": "kenney-space",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "sci-fi",
+    "kind": "prop",
+    "kenneySlug": "space-kit"
+  },
+  {
+    "id": "kenney-survival",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "survival",
+    "kind": "prop",
+    "kenneySlug": "survival-kit"
+  },
+  {
+    "id": "kenney-car",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "vehicles",
+    "kind": "prop",
+    "kenneySlug": "car-kit"
+  },
+  {
+    "id": "kenney-food",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "food",
+    "kind": "prop",
+    "kenneySlug": "food-kit"
+  },
+  {
+    "id": "kenney-graveyard",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "horror",
+    "kind": "prop",
+    "kenneySlug": "graveyard-kit"
+  },
+  {
+    "id": "kenney-mini-dungeon",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "dungeon",
+    "kind": "mixed",
+    "kenneySlug": "mini-dungeon"
+  },
+  {
+    "id": "kenney-mini-characters",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "characters",
+    "kind": "character",
+    "kenneySlug": "mini-characters"
+  },
+  {
+    "id": "kenney-city-industrial",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "city",
+    "kind": "prop",
+    "kenneySlug": "city-kit-industrial"
+  },
+  {
+    "id": "kenney-city-roads",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "city",
+    "kind": "prop",
+    "kenneySlug": "city-kit-roads"
+  },
+  {
+    "id": "kenney-city-suburban",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "city",
+    "kind": "prop",
+    "kenneySlug": "city-kit-suburban"
+  },
+  {
+    "id": "kenney-city-commercial",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "city",
+    "kind": "prop",
+    "kenneySlug": "city-kit-commercial"
+  },
+  {
+    "id": "kenney-factory",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "industrial",
+    "kind": "prop",
+    "kenneySlug": "factory-kit"
+  },
+  {
+    "id": "kenney-cave",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "cave",
+    "kind": "prop",
+    "kenneySlug": "modular-cave-kit"
+  },
+  {
+    "id": "kenney-watercraft",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "vehicles",
+    "kind": "prop",
+    "kenneySlug": "watercraft-kit"
+  },
+  {
+    "id": "kenney-tower-defense",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "medieval",
+    "kind": "prop",
+    "kenneySlug": "tower-defense-kit"
+  },
+  {
+    "id": "kenney-modular-dungeon",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "dungeon",
+    "kind": "prop",
+    "kenneySlug": "modular-dungeon-kit"
+  },
+  {
+    "id": "kenney-modular-space",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "sci-fi",
+    "kind": "prop",
+    "kenneySlug": "modular-space-kit"
+  },
+  {
+    "id": "kenney-fantasy-town",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "medieval",
+    "kind": "prop",
+    "kenneySlug": "fantasy-town-kit"
+  },
+  {
+    "id": "kenney-mini-forest",
+    "author": "Kenney",
+    "license": "CC0-1.0",
+    "style": "nature",
+    "kind": "prop",
+    "kenneySlug": "mini-forest"
+  },
+  {
+    "id": "kaykit-adventurers",
+    "author": "Kay Lousberg",
+    "license": "CC0-1.0",
+    "style": "fantasy-characters",
+    "kind": "character",
+    "github": "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0"
+  },
+  {
+    "id": "kaykit-skeletons",
+    "author": "Kay Lousberg",
+    "license": "CC0-1.0",
+    "style": "fantasy-characters",
+    "kind": "character",
+    "github": "KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0"
+  },
+  {
+    "id": "kaykit-dungeon",
+    "author": "Kay Lousberg",
+    "license": "CC0-1.0",
+    "style": "dungeon",
+    "kind": "prop",
+    "github": "KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0"
+  },
+  {
+    "id": "kaykit-city",
+    "author": "Kay Lousberg",
+    "license": "CC0-1.0",
+    "style": "city",
+    "kind": "prop",
+    "github": "KayKit-Game-Assets/KayKit-City-Builder-Bits-1.0"
+  },
+  {
+    "id": "kaykit-prototype",
+    "author": "Kay Lousberg",
+    "license": "CC0-1.0",
+    "style": "prototype",
+    "kind": "prop",
+    "github": "KayKit-Game-Assets/KayKit-Prototype-Bits-1.0"
+  },
+  {
+    "id": "kaykit-medieval-hex",
+    "author": "Kay Lousberg",
+    "license": "CC0-1.0",
+    "style": "medieval",
+    "kind": "prop",
+    "github": "KayKit-Game-Assets/KayKit-Medieval-Hexagon-Pack-1.0"
+  }
+]

@@ -1,0 +1,5830 @@
+{
+  "generatedAt": "2026-09-12T12:32:55.185Z",
+  "inspected": 45,
+  "playableCharacters": 23,
+  "note": "KayKit characters already ship a humanoid skeleton + clips. Kenney props are static on purpose. This script does not auto-rig.",
+  "reports": [
+    {
+      "id": "kaykit-adventurers/KayKit-Character-Pack-Adventures-1.0-main/addons/kaykit_character_pack_adventures/Characters/gltf/Barbarian.glb",
+      "pack": "kaykit-adventurers",
+      "kind": "character",
+      "nodes": 55,
+      "meshes": 13,
+      "skins": 1,
+      "skinnedPrimitives": 6,
+      "joints": 41,
+      "jointNames": [
+        "root",
+        "hips",
+        "spine",
+        "chest",
+        "upperarm.l",
+        "lowerarm.l",
+        "wrist.l",
+        "hand.l",
+        "handslot.l",
+        "upperarm.r",
+        "lowerarm.r",
+        "wrist.r",
+        "hand.r",
+        "handslot.r",
+        "head",
+        "upperleg.l",
+        "lowerleg.l",
+        "foot.l",
+        "toes.l",
+        "upperleg.r",
+        "lowerleg.r",
+        "foot.r",
+        "toes.r",
+        "kneeIK.l"
+      ],
+      "clips": [
+        {
+          "name": "1H_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Diagonal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Horizontal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Stab",
+          "channels": 123
+        },
+        {
+          "name": "1H_Ranged_Aiming",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Reload",
+          "channels": 122
+        },
+        {
+          "name": "1H_Ranged_Shoot",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Shooting",
+          "channels": 101
+        },
+        {
+          "name": "2H_Melee_Attack_Chop",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Slice",
+          "channels": 94
+        },
+        {
+          "name": "2H_Melee_Attack_Spin",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Spinning",
+          "channels": 87
+        },
+        {
+          "name": "2H_Melee_Attack_Stab",
+          "channels": 97
+        },
+        {
+          "name": "2H_Melee_Idle",
+          "channels": 94
+        },
+        {
+          "name": "2H_Ranged_Aiming",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Reload",
+          "channels": 109
+        },
+        {
+          "name": "2H_Ranged_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Shooting",
+          "channels": 108
+        },
+        {
+          "name": "Block",
+          "channels": 123
+        },
+        {
+          "name": "Block_Attack",
+          "channels": 123
+        },
+        {
+          "name": "Block_Hit",
+          "channels": 123
+        },
+        {
+          "name": "Blocking",
+          "channels": 123
+        },
+        {
+          "name": "Cheer",
+          "channels": 123
+        },
+        {
+          "name": "Death_A",
+          "channels": 123
+        },
+        {
+          "name": "Death_A_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_B",
+          "channels": 123
+        },
+        {
+          "name": "Death_B_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Dodge_Backward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Forward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Left",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Right",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Slice",
+          "channels": 96
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Stab",
+          "channels": 94
+        },
+        {
+          "name": "Hit_A",
+          "channels": 123
+        },
+        {
+          "name": "Hit_B",
+          "channels": 123
+        },
+        {
+          "name": "Idle",
+          "channels": 123
+        },
+        {
+          "name": "Interact",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Long",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Short",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Land",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Start",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Down",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Idle",
+          "channels": 102
+        },
+        {
+          "name": "Lie_Pose",
+          "channels": 102
+        },
+        {
+          "name": "Lie_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "PickUp",
+          "channels": 123
+        },
+        {
+          "name": "Running_A",
+          "channels": 122
+        },
+        {
+          "name": "Running_B",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Left",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Right",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Chair_Pose",
+          "channels": 85
+        },
+        {
+          "name": "Sit_Chair_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Floor_Pose",
+          "channels": 84
+        },
+        {
+          "name": "Sit_Floor_StandUp",
+          "channels": 94
+        },
+        {
+          "name": "Spellcast_Long",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Raise",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "Spellcasting",
+          "channels": 95
+        },
+        {
+          "name": "T-Pose",
+          "channels": 123
+        },
+        {
+          "name": "Throw",
+          "channels": 100
+        },
+        {
+          "name": "Unarmed_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Kick",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_A",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_B",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Pose",
+          "channels": 123
+        },
+        {
+          "name": "Use_Item",
+          "channels": 123
+        },
+        {
+          "name": "Walking_A",
+          "channels": 123
+        },
+        {
+          "name": "Walking_B",
+          "channels": 123
+        },
+        {
+          "name": "Walking_Backwards",
+          "channels": 123
+        },
+        {
+          "name": "Walking_C",
+          "channels": 119
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kaykit-adventurers/KayKit-Character-Pack-Adventures-1.0-main/addons/kaykit_character_pack_adventures/Characters/gltf/Knight.glb",
+      "pack": "kaykit-adventurers",
+      "kind": "character",
+      "nodes": 57,
+      "meshes": 15,
+      "skins": 1,
+      "skinnedPrimitives": 6,
+      "joints": 41,
+      "jointNames": [
+        "root",
+        "hips",
+        "spine",
+        "chest",
+        "upperarm.l",
+        "lowerarm.l",
+        "wrist.l",
+        "hand.l",
+        "handslot.l",
+        "upperarm.r",
+        "lowerarm.r",
+        "wrist.r",
+        "hand.r",
+        "handslot.r",
+        "head",
+        "upperleg.l",
+        "lowerleg.l",
+        "foot.l",
+        "toes.l",
+        "upperleg.r",
+        "lowerleg.r",
+        "foot.r",
+        "toes.r",
+        "kneeIK.l"
+      ],
+      "clips": [
+        {
+          "name": "1H_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Diagonal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Horizontal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Stab",
+          "channels": 123
+        },
+        {
+          "name": "1H_Ranged_Aiming",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Reload",
+          "channels": 122
+        },
+        {
+          "name": "1H_Ranged_Shoot",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Shooting",
+          "channels": 101
+        },
+        {
+          "name": "2H_Melee_Attack_Chop",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Slice",
+          "channels": 94
+        },
+        {
+          "name": "2H_Melee_Attack_Spin",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Spinning",
+          "channels": 87
+        },
+        {
+          "name": "2H_Melee_Attack_Stab",
+          "channels": 97
+        },
+        {
+          "name": "2H_Melee_Idle",
+          "channels": 94
+        },
+        {
+          "name": "2H_Ranged_Aiming",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Reload",
+          "channels": 109
+        },
+        {
+          "name": "2H_Ranged_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Shooting",
+          "channels": 108
+        },
+        {
+          "name": "Block",
+          "channels": 123
+        },
+        {
+          "name": "Block_Attack",
+          "channels": 123
+        },
+        {
+          "name": "Block_Hit",
+          "channels": 123
+        },
+        {
+          "name": "Blocking",
+          "channels": 123
+        },
+        {
+          "name": "Cheer",
+          "channels": 123
+        },
+        {
+          "name": "Death_A",
+          "channels": 123
+        },
+        {
+          "name": "Death_A_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_B",
+          "channels": 123
+        },
+        {
+          "name": "Death_B_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Dodge_Backward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Forward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Left",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Right",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Slice",
+          "channels": 96
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Stab",
+          "channels": 94
+        },
+        {
+          "name": "Hit_A",
+          "channels": 123
+        },
+        {
+          "name": "Hit_B",
+          "channels": 123
+        },
+        {
+          "name": "Idle",
+          "channels": 123
+        },
+        {
+          "name": "Interact",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Long",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Short",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Land",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Start",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Down",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Idle",
+          "channels": 102
+        },
+        {
+          "name": "Lie_Pose",
+          "channels": 102
+        },
+        {
+          "name": "Lie_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "PickUp",
+          "channels": 123
+        },
+        {
+          "name": "Running_A",
+          "channels": 122
+        },
+        {
+          "name": "Running_B",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Left",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Right",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Chair_Pose",
+          "channels": 85
+        },
+        {
+          "name": "Sit_Chair_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Floor_Pose",
+          "channels": 84
+        },
+        {
+          "name": "Sit_Floor_StandUp",
+          "channels": 94
+        },
+        {
+          "name": "Spellcast_Long",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Raise",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "Spellcasting",
+          "channels": 95
+        },
+        {
+          "name": "T-Pose",
+          "channels": 123
+        },
+        {
+          "name": "Throw",
+          "channels": 100
+        },
+        {
+          "name": "Unarmed_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Kick",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_A",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_B",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Pose",
+          "channels": 123
+        },
+        {
+          "name": "Use_Item",
+          "channels": 123
+        },
+        {
+          "name": "Walking_A",
+          "channels": 123
+        },
+        {
+          "name": "Walking_B",
+          "channels": 123
+        },
+        {
+          "name": "Walking_Backwards",
+          "channels": 123
+        },
+        {
+          "name": "Walking_C",
+          "channels": 119
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kaykit-adventurers/KayKit-Character-Pack-Adventures-1.0-main/addons/kaykit_character_pack_adventures/Characters/gltf/Mage.glb",
+      "pack": "kaykit-adventurers",
+      "kind": "character",
+      "nodes": 54,
+      "meshes": 12,
+      "skins": 1,
+      "skinnedPrimitives": 6,
+      "joints": 41,
+      "jointNames": [
+        "root",
+        "hips",
+        "spine",
+        "chest",
+        "upperarm.l",
+        "lowerarm.l",
+        "wrist.l",
+        "hand.l",
+        "handslot.l",
+        "upperarm.r",
+        "lowerarm.r",
+        "wrist.r",
+        "hand.r",
+        "handslot.r",
+        "head",
+        "upperleg.l",
+        "lowerleg.l",
+        "foot.l",
+        "toes.l",
+        "upperleg.r",
+        "lowerleg.r",
+        "foot.r",
+        "toes.r",
+        "kneeIK.l"
+      ],
+      "clips": [
+        {
+          "name": "1H_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Diagonal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Horizontal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Stab",
+          "channels": 123
+        },
+        {
+          "name": "1H_Ranged_Aiming",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Reload",
+          "channels": 122
+        },
+        {
+          "name": "1H_Ranged_Shoot",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Shooting",
+          "channels": 101
+        },
+        {
+          "name": "2H_Melee_Attack_Chop",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Slice",
+          "channels": 94
+        },
+        {
+          "name": "2H_Melee_Attack_Spin",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Spinning",
+          "channels": 87
+        },
+        {
+          "name": "2H_Melee_Attack_Stab",
+          "channels": 97
+        },
+        {
+          "name": "2H_Melee_Idle",
+          "channels": 94
+        },
+        {
+          "name": "2H_Ranged_Aiming",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Reload",
+          "channels": 109
+        },
+        {
+          "name": "2H_Ranged_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Shooting",
+          "channels": 108
+        },
+        {
+          "name": "Block",
+          "channels": 123
+        },
+        {
+          "name": "Block_Attack",
+          "channels": 123
+        },
+        {
+          "name": "Block_Hit",
+          "channels": 123
+        },
+        {
+          "name": "Blocking",
+          "channels": 123
+        },
+        {
+          "name": "Cheer",
+          "channels": 123
+        },
+        {
+          "name": "Death_A",
+          "channels": 123
+        },
+        {
+          "name": "Death_A_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_B",
+          "channels": 123
+        },
+        {
+          "name": "Death_B_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Dodge_Backward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Forward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Left",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Right",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Slice",
+          "channels": 96
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Stab",
+          "channels": 94
+        },
+        {
+          "name": "Hit_A",
+          "channels": 123
+        },
+        {
+          "name": "Hit_B",
+          "channels": 123
+        },
+        {
+          "name": "Idle",
+          "channels": 123
+        },
+        {
+          "name": "Interact",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Long",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Short",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Land",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Start",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Down",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Idle",
+          "channels": 102
+        },
+        {
+          "name": "Lie_Pose",
+          "channels": 102
+        },
+        {
+          "name": "Lie_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "PickUp",
+          "channels": 123
+        },
+        {
+          "name": "Running_A",
+          "channels": 122
+        },
+        {
+          "name": "Running_B",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Left",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Right",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Chair_Pose",
+          "channels": 85
+        },
+        {
+          "name": "Sit_Chair_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Floor_Pose",
+          "channels": 84
+        },
+        {
+          "name": "Sit_Floor_StandUp",
+          "channels": 94
+        },
+        {
+          "name": "Spellcast_Long",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Raise",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "Spellcasting",
+          "channels": 95
+        },
+        {
+          "name": "T-Pose",
+          "channels": 123
+        },
+        {
+          "name": "Throw",
+          "channels": 100
+        },
+        {
+          "name": "Unarmed_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Kick",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_A",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_B",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Pose",
+          "channels": 123
+        },
+        {
+          "name": "Use_Item",
+          "channels": 123
+        },
+        {
+          "name": "Walking_A",
+          "channels": 123
+        },
+        {
+          "name": "Walking_B",
+          "channels": 123
+        },
+        {
+          "name": "Walking_Backwards",
+          "channels": 123
+        },
+        {
+          "name": "Walking_C",
+          "channels": 119
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kaykit-adventurers/KayKit-Character-Pack-Adventures-1.0-main/addons/kaykit_character_pack_adventures/Characters/gltf/Rogue_Hooded.glb",
+      "pack": "kaykit-adventurers",
+      "kind": "character",
+      "nodes": 54,
+      "meshes": 12,
+      "skins": 1,
+      "skinnedPrimitives": 6,
+      "joints": 41,
+      "jointNames": [
+        "root",
+        "hips",
+        "spine",
+        "chest",
+        "upperarm.l",
+        "lowerarm.l",
+        "wrist.l",
+        "hand.l",
+        "handslot.l",
+        "upperarm.r",
+        "lowerarm.r",
+        "wrist.r",
+        "hand.r",
+        "handslot.r",
+        "head",
+        "upperleg.l",
+        "lowerleg.l",
+        "foot.l",
+        "toes.l",
+        "upperleg.r",
+        "lowerleg.r",
+        "foot.r",
+        "toes.r",
+        "kneeIK.l"
+      ],
+      "clips": [
+        {
+          "name": "1H_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Diagonal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Horizontal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Stab",
+          "channels": 123
+        },
+        {
+          "name": "1H_Ranged_Aiming",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Reload",
+          "channels": 122
+        },
+        {
+          "name": "1H_Ranged_Shoot",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Shooting",
+          "channels": 101
+        },
+        {
+          "name": "2H_Melee_Attack_Chop",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Slice",
+          "channels": 94
+        },
+        {
+          "name": "2H_Melee_Attack_Spin",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Spinning",
+          "channels": 87
+        },
+        {
+          "name": "2H_Melee_Attack_Stab",
+          "channels": 97
+        },
+        {
+          "name": "2H_Melee_Idle",
+          "channels": 94
+        },
+        {
+          "name": "2H_Ranged_Aiming",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Reload",
+          "channels": 109
+        },
+        {
+          "name": "2H_Ranged_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Shooting",
+          "channels": 108
+        },
+        {
+          "name": "Block",
+          "channels": 123
+        },
+        {
+          "name": "Block_Attack",
+          "channels": 123
+        },
+        {
+          "name": "Block_Hit",
+          "channels": 123
+        },
+        {
+          "name": "Blocking",
+          "channels": 123
+        },
+        {
+          "name": "Cheer",
+          "channels": 123
+        },
+        {
+          "name": "Death_A",
+          "channels": 123
+        },
+        {
+          "name": "Death_A_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_B",
+          "channels": 123
+        },
+        {
+          "name": "Death_B_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Dodge_Backward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Forward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Left",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Right",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Slice",
+          "channels": 96
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Stab",
+          "channels": 94
+        },
+        {
+          "name": "Hit_A",
+          "channels": 123
+        },
+        {
+          "name": "Hit_B",
+          "channels": 123
+        },
+        {
+          "name": "Idle",
+          "channels": 123
+        },
+        {
+          "name": "Interact",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Long",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Short",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Land",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Start",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Down",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Idle",
+          "channels": 102
+        },
+        {
+          "name": "Lie_Pose",
+          "channels": 102
+        },
+        {
+          "name": "Lie_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "PickUp",
+          "channels": 123
+        },
+        {
+          "name": "Running_A",
+          "channels": 122
+        },
+        {
+          "name": "Running_B",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Left",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Right",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Chair_Pose",
+          "channels": 85
+        },
+        {
+          "name": "Sit_Chair_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Floor_Pose",
+          "channels": 84
+        },
+        {
+          "name": "Sit_Floor_StandUp",
+          "channels": 94
+        },
+        {
+          "name": "Spellcast_Long",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Raise",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "Spellcasting",
+          "channels": 95
+        },
+        {
+          "name": "T-Pose",
+          "channels": 123
+        },
+        {
+          "name": "Throw",
+          "channels": 100
+        },
+        {
+          "name": "Unarmed_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Kick",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_A",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_B",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Pose",
+          "channels": 123
+        },
+        {
+          "name": "Use_Item",
+          "channels": 123
+        },
+        {
+          "name": "Walking_A",
+          "channels": 123
+        },
+        {
+          "name": "Walking_B",
+          "channels": 123
+        },
+        {
+          "name": "Walking_Backwards",
+          "channels": 123
+        },
+        {
+          "name": "Walking_C",
+          "channels": 119
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kaykit-adventurers/KayKit-Character-Pack-Adventures-1.0-main/addons/kaykit_character_pack_adventures/Characters/gltf/Rogue.glb",
+      "pack": "kaykit-adventurers",
+      "kind": "character",
+      "nodes": 54,
+      "meshes": 12,
+      "skins": 1,
+      "skinnedPrimitives": 6,
+      "joints": 41,
+      "jointNames": [
+        "root",
+        "hips",
+        "spine",
+        "chest",
+        "upperarm.l",
+        "lowerarm.l",
+        "wrist.l",
+        "hand.l",
+        "handslot.l",
+        "upperarm.r",
+        "lowerarm.r",
+        "wrist.r",
+        "hand.r",
+        "handslot.r",
+        "head",
+        "upperleg.l",
+        "lowerleg.l",
+        "foot.l",
+        "toes.l",
+        "upperleg.r",
+        "lowerleg.r",
+        "foot.r",
+        "toes.r",
+        "kneeIK.l"
+      ],
+      "clips": [
+        {
+          "name": "1H_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Diagonal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Horizontal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Stab",
+          "channels": 123
+        },
+        {
+          "name": "1H_Ranged_Aiming",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Reload",
+          "channels": 122
+        },
+        {
+          "name": "1H_Ranged_Shoot",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Shooting",
+          "channels": 101
+        },
+        {
+          "name": "2H_Melee_Attack_Chop",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Slice",
+          "channels": 94
+        },
+        {
+          "name": "2H_Melee_Attack_Spin",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Spinning",
+          "channels": 87
+        },
+        {
+          "name": "2H_Melee_Attack_Stab",
+          "channels": 97
+        },
+        {
+          "name": "2H_Melee_Idle",
+          "channels": 94
+        },
+        {
+          "name": "2H_Ranged_Aiming",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Reload",
+          "channels": 109
+        },
+        {
+          "name": "2H_Ranged_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Shooting",
+          "channels": 108
+        },
+        {
+          "name": "Block",
+          "channels": 123
+        },
+        {
+          "name": "Block_Attack",
+          "channels": 123
+        },
+        {
+          "name": "Block_Hit",
+          "channels": 123
+        },
+        {
+          "name": "Blocking",
+          "channels": 123
+        },
+        {
+          "name": "Cheer",
+          "channels": 123
+        },
+        {
+          "name": "Death_A",
+          "channels": 123
+        },
+        {
+          "name": "Death_A_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_B",
+          "channels": 123
+        },
+        {
+          "name": "Death_B_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Dodge_Backward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Forward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Left",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Right",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Slice",
+          "channels": 96
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Stab",
+          "channels": 94
+        },
+        {
+          "name": "Hit_A",
+          "channels": 123
+        },
+        {
+          "name": "Hit_B",
+          "channels": 123
+        },
+        {
+          "name": "Idle",
+          "channels": 123
+        },
+        {
+          "name": "Interact",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Long",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Short",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Land",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Start",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Down",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Idle",
+          "channels": 102
+        },
+        {
+          "name": "Lie_Pose",
+          "channels": 102
+        },
+        {
+          "name": "Lie_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "PickUp",
+          "channels": 123
+        },
+        {
+          "name": "Running_A",
+          "channels": 122
+        },
+        {
+          "name": "Running_B",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Left",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Right",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Chair_Pose",
+          "channels": 85
+        },
+        {
+          "name": "Sit_Chair_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Floor_Pose",
+          "channels": 84
+        },
+        {
+          "name": "Sit_Floor_StandUp",
+          "channels": 94
+        },
+        {
+          "name": "Spellcast_Long",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Raise",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "Spellcasting",
+          "channels": 95
+        },
+        {
+          "name": "T-Pose",
+          "channels": 123
+        },
+        {
+          "name": "Throw",
+          "channels": 100
+        },
+        {
+          "name": "Unarmed_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Kick",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_A",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_B",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Pose",
+          "channels": 123
+        },
+        {
+          "name": "Use_Item",
+          "channels": 123
+        },
+        {
+          "name": "Walking_A",
+          "channels": 123
+        },
+        {
+          "name": "Walking_B",
+          "channels": 123
+        },
+        {
+          "name": "Walking_Backwards",
+          "channels": 123
+        },
+        {
+          "name": "Walking_C",
+          "channels": 119
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kaykit-skeletons/KayKit-Character-Pack-Skeletons-1.0-main/addons/kaykit_character_pack_skeletons/Characters/gltf/Skeleton_Mage.glb",
+      "pack": "kaykit-skeletons",
+      "kind": "character",
+      "nodes": 51,
+      "meshes": 9,
+      "skins": 1,
+      "skinnedPrimitives": 8,
+      "joints": 41,
+      "jointNames": [
+        "root",
+        "hips",
+        "spine",
+        "chest",
+        "upperarm.l",
+        "lowerarm.l",
+        "wrist.l",
+        "hand.l",
+        "handslot.l",
+        "upperarm.r",
+        "lowerarm.r",
+        "wrist.r",
+        "hand.r",
+        "handslot.r",
+        "head",
+        "upperleg.l",
+        "lowerleg.l",
+        "foot.l",
+        "toes.l",
+        "upperleg.r",
+        "lowerleg.r",
+        "foot.r",
+        "toes.r",
+        "kneeIK.l"
+      ],
+      "clips": [
+        {
+          "name": "1H_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Jump_Chop",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Diagonal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Horizontal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Stab",
+          "channels": 123
+        },
+        {
+          "name": "1H_Ranged_Aiming",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Reload",
+          "channels": 122
+        },
+        {
+          "name": "1H_Ranged_Shoot",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Shooting",
+          "channels": 101
+        },
+        {
+          "name": "2H_Melee_Attack_Chop",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Slice",
+          "channels": 94
+        },
+        {
+          "name": "2H_Melee_Attack_Spin",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Spinning",
+          "channels": 87
+        },
+        {
+          "name": "2H_Melee_Attack_Stab",
+          "channels": 97
+        },
+        {
+          "name": "2H_Melee_Idle",
+          "channels": 94
+        },
+        {
+          "name": "2H_Ranged_Aiming",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Reload",
+          "channels": 109
+        },
+        {
+          "name": "2H_Ranged_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Shooting",
+          "channels": 108
+        },
+        {
+          "name": "Block",
+          "channels": 123
+        },
+        {
+          "name": "Block_Attack",
+          "channels": 123
+        },
+        {
+          "name": "Block_Hit",
+          "channels": 123
+        },
+        {
+          "name": "Blocking",
+          "channels": 123
+        },
+        {
+          "name": "Cheer",
+          "channels": 123
+        },
+        {
+          "name": "Death_A",
+          "channels": 123
+        },
+        {
+          "name": "Death_A_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_B",
+          "channels": 123
+        },
+        {
+          "name": "Death_B_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_C_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_C_Skeletons",
+          "channels": 102
+        },
+        {
+          "name": "Death_C_Skeletons_Resurrect",
+          "channels": 101
+        },
+        {
+          "name": "Dodge_Backward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Forward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Left",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Right",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Slice",
+          "channels": 96
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Stab",
+          "channels": 94
+        },
+        {
+          "name": "Hit_A",
+          "channels": 123
+        },
+        {
+          "name": "Hit_B",
+          "channels": 123
+        },
+        {
+          "name": "Idle",
+          "channels": 123
+        },
+        {
+          "name": "Idle_B",
+          "channels": 123
+        },
+        {
+          "name": "Idle_Combat",
+          "channels": 97
+        },
+        {
+          "name": "Interact",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Long",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Short",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Land",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Start",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Down",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Idle",
+          "channels": 102
+        },
+        {
+          "name": "Lie_Pose",
+          "channels": 102
+        },
+        {
+          "name": "Lie_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "PickUp",
+          "channels": 123
+        },
+        {
+          "name": "Running_A",
+          "channels": 122
+        },
+        {
+          "name": "Running_B",
+          "channels": 123
+        },
+        {
+          "name": "Running_C",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Left",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Right",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Chair_Pose",
+          "channels": 85
+        },
+        {
+          "name": "Sit_Chair_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Floor_Pose",
+          "channels": 84
+        },
+        {
+          "name": "Sit_Floor_StandUp",
+          "channels": 94
+        },
+        {
+          "name": "Skeleton_Inactive_Standing_Pose",
+          "channels": 98
+        },
+        {
+          "name": "Skeletons_Awaken_Floor",
+          "channels": 105
+        },
+        {
+          "name": "Skeletons_Awaken_Floor_Long",
+          "channels": 106
+        },
+        {
+          "name": "Skeletons_Awaken_Standing",
+          "channels": 103
+        },
+        {
+          "name": "Skeletons_Inactive_Floor_Pose",
+          "channels": 94
+        },
+        {
+          "name": "Spawn_Air",
+          "channels": 123
+        },
+        {
+          "name": "Spawn_Ground",
+          "channels": 123
+        },
+        {
+          "name": "Spawn_Ground_Skeletons",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Long",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Raise",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Summon",
+          "channels": 99
+        },
+        {
+          "name": "Spellcasting",
+          "channels": 95
+        },
+        {
+          "name": "T-Pose",
+          "channels": 123
+        },
+        {
+          "name": "Taunt",
+          "channels": 123
+        },
+        {
+          "name": "Taunt_Longer",
+          "channels": 123
+        },
+        {
+          "name": "Throw",
+          "channels": 100
+        },
+        {
+          "name": "Unarmed_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Kick",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_A",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_B",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Pose",
+          "channels": 123
+        },
+        {
+          "name": "Use_Item",
+          "channels": 123
+        },
+        {
+          "name": "Walking_A",
+          "channels": 123
+        },
+        {
+          "name": "Walking_B",
+          "channels": 123
+        },
+        {
+          "name": "Walking_Backwards",
+          "channels": 123
+        },
+        {
+          "name": "Walking_C",
+          "channels": 119
+        },
+        {
+          "name": "Walking_D_Skeletons",
+          "channels": 123
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kaykit-skeletons/KayKit-Character-Pack-Skeletons-1.0-main/addons/kaykit_character_pack_skeletons/Characters/gltf/Skeleton_Minion.glb",
+      "pack": "kaykit-skeletons",
+      "kind": "character",
+      "nodes": 51,
+      "meshes": 9,
+      "skins": 1,
+      "skinnedPrimitives": 9,
+      "joints": 41,
+      "jointNames": [
+        "root",
+        "hips",
+        "spine",
+        "chest",
+        "upperarm.l",
+        "lowerarm.l",
+        "wrist.l",
+        "hand.l",
+        "handslot.l",
+        "upperarm.r",
+        "lowerarm.r",
+        "wrist.r",
+        "hand.r",
+        "handslot.r",
+        "head",
+        "upperleg.l",
+        "lowerleg.l",
+        "foot.l",
+        "toes.l",
+        "upperleg.r",
+        "lowerleg.r",
+        "foot.r",
+        "toes.r",
+        "kneeIK.l"
+      ],
+      "clips": [
+        {
+          "name": "1H_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Jump_Chop",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Diagonal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Horizontal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Stab",
+          "channels": 123
+        },
+        {
+          "name": "1H_Ranged_Aiming",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Reload",
+          "channels": 122
+        },
+        {
+          "name": "1H_Ranged_Shoot",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Shooting",
+          "channels": 101
+        },
+        {
+          "name": "2H_Melee_Attack_Chop",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Slice",
+          "channels": 94
+        },
+        {
+          "name": "2H_Melee_Attack_Spin",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Spinning",
+          "channels": 87
+        },
+        {
+          "name": "2H_Melee_Attack_Stab",
+          "channels": 97
+        },
+        {
+          "name": "2H_Melee_Idle",
+          "channels": 94
+        },
+        {
+          "name": "2H_Ranged_Aiming",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Reload",
+          "channels": 109
+        },
+        {
+          "name": "2H_Ranged_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Shooting",
+          "channels": 108
+        },
+        {
+          "name": "Block",
+          "channels": 123
+        },
+        {
+          "name": "Block_Attack",
+          "channels": 123
+        },
+        {
+          "name": "Block_Hit",
+          "channels": 123
+        },
+        {
+          "name": "Blocking",
+          "channels": 123
+        },
+        {
+          "name": "Cheer",
+          "channels": 123
+        },
+        {
+          "name": "Death_A",
+          "channels": 123
+        },
+        {
+          "name": "Death_A_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_B",
+          "channels": 123
+        },
+        {
+          "name": "Death_B_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_C_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_C_Skeletons",
+          "channels": 102
+        },
+        {
+          "name": "Death_C_Skeletons_Resurrect",
+          "channels": 101
+        },
+        {
+          "name": "Dodge_Backward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Forward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Left",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Right",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Slice",
+          "channels": 96
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Stab",
+          "channels": 94
+        },
+        {
+          "name": "Hit_A",
+          "channels": 123
+        },
+        {
+          "name": "Hit_B",
+          "channels": 123
+        },
+        {
+          "name": "Idle",
+          "channels": 123
+        },
+        {
+          "name": "Idle_B",
+          "channels": 123
+        },
+        {
+          "name": "Idle_Combat",
+          "channels": 97
+        },
+        {
+          "name": "Interact",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Long",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Short",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Land",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Start",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Down",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Idle",
+          "channels": 102
+        },
+        {
+          "name": "Lie_Pose",
+          "channels": 102
+        },
+        {
+          "name": "Lie_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "PickUp",
+          "channels": 123
+        },
+        {
+          "name": "Running_A",
+          "channels": 122
+        },
+        {
+          "name": "Running_B",
+          "channels": 123
+        },
+        {
+          "name": "Running_C",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Left",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Right",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Chair_Pose",
+          "channels": 85
+        },
+        {
+          "name": "Sit_Chair_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Floor_Pose",
+          "channels": 84
+        },
+        {
+          "name": "Sit_Floor_StandUp",
+          "channels": 94
+        },
+        {
+          "name": "Skeleton_Inactive_Standing_Pose",
+          "channels": 98
+        },
+        {
+          "name": "Skeletons_Awaken_Floor",
+          "channels": 105
+        },
+        {
+          "name": "Skeletons_Awaken_Floor_Long",
+          "channels": 106
+        },
+        {
+          "name": "Skeletons_Awaken_Standing",
+          "channels": 103
+        },
+        {
+          "name": "Skeletons_Inactive_Floor_Pose",
+          "channels": 94
+        },
+        {
+          "name": "Spawn_Air",
+          "channels": 123
+        },
+        {
+          "name": "Spawn_Ground",
+          "channels": 123
+        },
+        {
+          "name": "Spawn_Ground_Skeletons",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Long",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Raise",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Summon",
+          "channels": 99
+        },
+        {
+          "name": "Spellcasting",
+          "channels": 95
+        },
+        {
+          "name": "T-Pose",
+          "channels": 123
+        },
+        {
+          "name": "Taunt",
+          "channels": 123
+        },
+        {
+          "name": "Taunt_Longer",
+          "channels": 123
+        },
+        {
+          "name": "Throw",
+          "channels": 100
+        },
+        {
+          "name": "Unarmed_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Kick",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_A",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_B",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Pose",
+          "channels": 123
+        },
+        {
+          "name": "Use_Item",
+          "channels": 123
+        },
+        {
+          "name": "Walking_A",
+          "channels": 123
+        },
+        {
+          "name": "Walking_B",
+          "channels": 123
+        },
+        {
+          "name": "Walking_Backwards",
+          "channels": 123
+        },
+        {
+          "name": "Walking_C",
+          "channels": 119
+        },
+        {
+          "name": "Walking_D_Skeletons",
+          "channels": 123
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kaykit-skeletons/KayKit-Character-Pack-Skeletons-1.0-main/addons/kaykit_character_pack_skeletons/Characters/gltf/Skeleton_Rogue.glb",
+      "pack": "kaykit-skeletons",
+      "kind": "character",
+      "nodes": 52,
+      "meshes": 10,
+      "skins": 1,
+      "skinnedPrimitives": 8,
+      "joints": 41,
+      "jointNames": [
+        "root",
+        "hips",
+        "spine",
+        "chest",
+        "upperarm.l",
+        "lowerarm.l",
+        "wrist.l",
+        "hand.l",
+        "handslot.l",
+        "upperarm.r",
+        "lowerarm.r",
+        "wrist.r",
+        "hand.r",
+        "handslot.r",
+        "head",
+        "upperleg.l",
+        "lowerleg.l",
+        "foot.l",
+        "toes.l",
+        "upperleg.r",
+        "lowerleg.r",
+        "foot.r",
+        "toes.r",
+        "kneeIK.l"
+      ],
+      "clips": [
+        {
+          "name": "1H_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Jump_Chop",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Diagonal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Horizontal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Stab",
+          "channels": 123
+        },
+        {
+          "name": "1H_Ranged_Aiming",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Reload",
+          "channels": 122
+        },
+        {
+          "name": "1H_Ranged_Shoot",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Shooting",
+          "channels": 101
+        },
+        {
+          "name": "2H_Melee_Attack_Chop",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Slice",
+          "channels": 94
+        },
+        {
+          "name": "2H_Melee_Attack_Spin",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Spinning",
+          "channels": 87
+        },
+        {
+          "name": "2H_Melee_Attack_Stab",
+          "channels": 97
+        },
+        {
+          "name": "2H_Melee_Idle",
+          "channels": 94
+        },
+        {
+          "name": "2H_Ranged_Aiming",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Reload",
+          "channels": 109
+        },
+        {
+          "name": "2H_Ranged_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Shooting",
+          "channels": 108
+        },
+        {
+          "name": "Block",
+          "channels": 123
+        },
+        {
+          "name": "Block_Attack",
+          "channels": 123
+        },
+        {
+          "name": "Block_Hit",
+          "channels": 123
+        },
+        {
+          "name": "Blocking",
+          "channels": 123
+        },
+        {
+          "name": "Cheer",
+          "channels": 123
+        },
+        {
+          "name": "Death_A",
+          "channels": 123
+        },
+        {
+          "name": "Death_A_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_B",
+          "channels": 123
+        },
+        {
+          "name": "Death_B_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_C_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_C_Skeletons",
+          "channels": 102
+        },
+        {
+          "name": "Death_C_Skeletons_Resurrect",
+          "channels": 101
+        },
+        {
+          "name": "Dodge_Backward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Forward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Left",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Right",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Slice",
+          "channels": 96
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Stab",
+          "channels": 94
+        },
+        {
+          "name": "Hit_A",
+          "channels": 123
+        },
+        {
+          "name": "Hit_B",
+          "channels": 123
+        },
+        {
+          "name": "Idle",
+          "channels": 123
+        },
+        {
+          "name": "Idle_B",
+          "channels": 123
+        },
+        {
+          "name": "Idle_Combat",
+          "channels": 97
+        },
+        {
+          "name": "Interact",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Long",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Short",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Land",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Start",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Down",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Idle",
+          "channels": 102
+        },
+        {
+          "name": "Lie_Pose",
+          "channels": 102
+        },
+        {
+          "name": "Lie_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "PickUp",
+          "channels": 123
+        },
+        {
+          "name": "Running_A",
+          "channels": 122
+        },
+        {
+          "name": "Running_B",
+          "channels": 123
+        },
+        {
+          "name": "Running_C",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Left",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Right",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Chair_Pose",
+          "channels": 85
+        },
+        {
+          "name": "Sit_Chair_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Floor_Pose",
+          "channels": 84
+        },
+        {
+          "name": "Sit_Floor_StandUp",
+          "channels": 94
+        },
+        {
+          "name": "Skeleton_Inactive_Standing_Pose",
+          "channels": 98
+        },
+        {
+          "name": "Skeletons_Awaken_Floor",
+          "channels": 105
+        },
+        {
+          "name": "Skeletons_Awaken_Floor_Long",
+          "channels": 106
+        },
+        {
+          "name": "Skeletons_Awaken_Standing",
+          "channels": 103
+        },
+        {
+          "name": "Skeletons_Inactive_Floor_Pose",
+          "channels": 94
+        },
+        {
+          "name": "Spawn_Air",
+          "channels": 123
+        },
+        {
+          "name": "Spawn_Ground",
+          "channels": 123
+        },
+        {
+          "name": "Spawn_Ground_Skeletons",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Long",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Raise",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Summon",
+          "channels": 99
+        },
+        {
+          "name": "Spellcasting",
+          "channels": 95
+        },
+        {
+          "name": "T-Pose",
+          "channels": 123
+        },
+        {
+          "name": "Taunt",
+          "channels": 123
+        },
+        {
+          "name": "Taunt_Longer",
+          "channels": 123
+        },
+        {
+          "name": "Throw",
+          "channels": 100
+        },
+        {
+          "name": "Unarmed_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Kick",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_A",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_B",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Pose",
+          "channels": 123
+        },
+        {
+          "name": "Use_Item",
+          "channels": 123
+        },
+        {
+          "name": "Walking_A",
+          "channels": 123
+        },
+        {
+          "name": "Walking_B",
+          "channels": 123
+        },
+        {
+          "name": "Walking_Backwards",
+          "channels": 123
+        },
+        {
+          "name": "Walking_C",
+          "channels": 119
+        },
+        {
+          "name": "Walking_D_Skeletons",
+          "channels": 123
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kaykit-skeletons/KayKit-Character-Pack-Skeletons-1.0-main/addons/kaykit_character_pack_skeletons/Characters/gltf/Skeleton_Warrior.glb",
+      "pack": "kaykit-skeletons",
+      "kind": "character",
+      "nodes": 52,
+      "meshes": 10,
+      "skins": 1,
+      "skinnedPrimitives": 9,
+      "joints": 41,
+      "jointNames": [
+        "root",
+        "hips",
+        "spine",
+        "chest",
+        "upperarm.l",
+        "lowerarm.l",
+        "wrist.l",
+        "hand.l",
+        "handslot.l",
+        "upperarm.r",
+        "lowerarm.r",
+        "wrist.r",
+        "hand.r",
+        "handslot.r",
+        "head",
+        "upperleg.l",
+        "lowerleg.l",
+        "foot.l",
+        "toes.l",
+        "upperleg.r",
+        "lowerleg.r",
+        "foot.r",
+        "toes.r",
+        "kneeIK.l"
+      ],
+      "clips": [
+        {
+          "name": "1H_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Jump_Chop",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Diagonal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Slice_Horizontal",
+          "channels": 123
+        },
+        {
+          "name": "1H_Melee_Attack_Stab",
+          "channels": 123
+        },
+        {
+          "name": "1H_Ranged_Aiming",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Reload",
+          "channels": 122
+        },
+        {
+          "name": "1H_Ranged_Shoot",
+          "channels": 120
+        },
+        {
+          "name": "1H_Ranged_Shooting",
+          "channels": 101
+        },
+        {
+          "name": "2H_Melee_Attack_Chop",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Slice",
+          "channels": 94
+        },
+        {
+          "name": "2H_Melee_Attack_Spin",
+          "channels": 98
+        },
+        {
+          "name": "2H_Melee_Attack_Spinning",
+          "channels": 87
+        },
+        {
+          "name": "2H_Melee_Attack_Stab",
+          "channels": 97
+        },
+        {
+          "name": "2H_Melee_Idle",
+          "channels": 94
+        },
+        {
+          "name": "2H_Ranged_Aiming",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Reload",
+          "channels": 109
+        },
+        {
+          "name": "2H_Ranged_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "2H_Ranged_Shooting",
+          "channels": 108
+        },
+        {
+          "name": "Block",
+          "channels": 123
+        },
+        {
+          "name": "Block_Attack",
+          "channels": 123
+        },
+        {
+          "name": "Block_Hit",
+          "channels": 123
+        },
+        {
+          "name": "Blocking",
+          "channels": 123
+        },
+        {
+          "name": "Cheer",
+          "channels": 123
+        },
+        {
+          "name": "Death_A",
+          "channels": 123
+        },
+        {
+          "name": "Death_A_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_B",
+          "channels": 123
+        },
+        {
+          "name": "Death_B_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_C_Pose",
+          "channels": 83
+        },
+        {
+          "name": "Death_C_Skeletons",
+          "channels": 102
+        },
+        {
+          "name": "Death_C_Skeletons_Resurrect",
+          "channels": 101
+        },
+        {
+          "name": "Dodge_Backward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Forward",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Left",
+          "channels": 123
+        },
+        {
+          "name": "Dodge_Right",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Chop",
+          "channels": 123
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Slice",
+          "channels": 96
+        },
+        {
+          "name": "Dualwield_Melee_Attack_Stab",
+          "channels": 94
+        },
+        {
+          "name": "Hit_A",
+          "channels": 123
+        },
+        {
+          "name": "Hit_B",
+          "channels": 123
+        },
+        {
+          "name": "Idle",
+          "channels": 123
+        },
+        {
+          "name": "Idle_B",
+          "channels": 123
+        },
+        {
+          "name": "Idle_Combat",
+          "channels": 97
+        },
+        {
+          "name": "Interact",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Long",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Full_Short",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Land",
+          "channels": 123
+        },
+        {
+          "name": "Jump_Start",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Down",
+          "channels": 123
+        },
+        {
+          "name": "Lie_Idle",
+          "channels": 102
+        },
+        {
+          "name": "Lie_Pose",
+          "channels": 102
+        },
+        {
+          "name": "Lie_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "PickUp",
+          "channels": 123
+        },
+        {
+          "name": "Running_A",
+          "channels": 122
+        },
+        {
+          "name": "Running_B",
+          "channels": 123
+        },
+        {
+          "name": "Running_C",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Left",
+          "channels": 123
+        },
+        {
+          "name": "Running_Strafe_Right",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Chair_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Chair_Pose",
+          "channels": 85
+        },
+        {
+          "name": "Sit_Chair_StandUp",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Down",
+          "channels": 123
+        },
+        {
+          "name": "Sit_Floor_Idle",
+          "channels": 89
+        },
+        {
+          "name": "Sit_Floor_Pose",
+          "channels": 84
+        },
+        {
+          "name": "Sit_Floor_StandUp",
+          "channels": 94
+        },
+        {
+          "name": "Skeleton_Inactive_Standing_Pose",
+          "channels": 98
+        },
+        {
+          "name": "Skeletons_Awaken_Floor",
+          "channels": 105
+        },
+        {
+          "name": "Skeletons_Awaken_Floor_Long",
+          "channels": 106
+        },
+        {
+          "name": "Skeletons_Awaken_Standing",
+          "channels": 103
+        },
+        {
+          "name": "Skeletons_Inactive_Floor_Pose",
+          "channels": 94
+        },
+        {
+          "name": "Spawn_Air",
+          "channels": 123
+        },
+        {
+          "name": "Spawn_Ground",
+          "channels": 123
+        },
+        {
+          "name": "Spawn_Ground_Skeletons",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Long",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Raise",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Shoot",
+          "channels": 123
+        },
+        {
+          "name": "Spellcast_Summon",
+          "channels": 99
+        },
+        {
+          "name": "Spellcasting",
+          "channels": 95
+        },
+        {
+          "name": "T-Pose",
+          "channels": 123
+        },
+        {
+          "name": "Taunt",
+          "channels": 123
+        },
+        {
+          "name": "Taunt_Longer",
+          "channels": 123
+        },
+        {
+          "name": "Throw",
+          "channels": 100
+        },
+        {
+          "name": "Unarmed_Idle",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Kick",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_A",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Melee_Attack_Punch_B",
+          "channels": 123
+        },
+        {
+          "name": "Unarmed_Pose",
+          "channels": 123
+        },
+        {
+          "name": "Use_Item",
+          "channels": 123
+        },
+        {
+          "name": "Walking_A",
+          "channels": 123
+        },
+        {
+          "name": "Walking_B",
+          "channels": 123
+        },
+        {
+          "name": "Walking_Backwards",
+          "channels": 123
+        },
+        {
+          "name": "Walking_C",
+          "channels": 119
+        },
+        {
+          "name": "Walking_D_Skeletons",
+          "channels": 123
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/aid_hearing.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/aid-cane-blind.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/aid-cane-low-vision.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/aid-cane.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/aid-crutch.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 2,
+      "meshes": 2,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/aid-defibrillator-green.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 2,
+      "meshes": 2,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/aid-defibrillator-red.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 2,
+      "meshes": 2,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/aid-glasses.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/aid-mask.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/aid-sunglasses.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/character-female-a.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 10,
+      "meshes": 2,
+      "skins": 2,
+      "skinnedPrimitives": 2,
+      "joints": 7,
+      "jointNames": [
+        "root",
+        "leg-left",
+        "leg-right",
+        "torso",
+        "arm-left",
+        "arm-right",
+        "head"
+      ],
+      "clips": [
+        {
+          "name": "static",
+          "channels": 21
+        },
+        {
+          "name": "idle",
+          "channels": 4
+        },
+        {
+          "name": "walk",
+          "channels": 7
+        },
+        {
+          "name": "sprint",
+          "channels": 7
+        },
+        {
+          "name": "jump",
+          "channels": 7
+        },
+        {
+          "name": "fall",
+          "channels": 5
+        },
+        {
+          "name": "crouch",
+          "channels": 8
+        },
+        {
+          "name": "sit",
+          "channels": 5
+        },
+        {
+          "name": "drive",
+          "channels": 5
+        },
+        {
+          "name": "die",
+          "channels": 8
+        },
+        {
+          "name": "pick-up",
+          "channels": 4
+        },
+        {
+          "name": "emote-yes",
+          "channels": 4
+        },
+        {
+          "name": "emote-no",
+          "channels": 4
+        },
+        {
+          "name": "holding-right",
+          "channels": 2
+        },
+        {
+          "name": "holding-left",
+          "channels": 2
+        },
+        {
+          "name": "holding-both",
+          "channels": 2
+        },
+        {
+          "name": "holding-right-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-left-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-both-shoot",
+          "channels": 4
+        },
+        {
+          "name": "attack-melee-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-melee-left",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-left",
+          "channels": 7
+        },
+        {
+          "name": "interact-right",
+          "channels": 4
+        },
+        {
+          "name": "interact-left",
+          "channels": 4
+        },
+        {
+          "name": "wheelchair-sit",
+          "channels": 7
+        },
+        {
+          "name": "wheelchair-look-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-look-right",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-forward",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-back",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-right",
+          "channels": 9
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/character-female-b.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 10,
+      "meshes": 2,
+      "skins": 2,
+      "skinnedPrimitives": 2,
+      "joints": 7,
+      "jointNames": [
+        "root",
+        "leg-left",
+        "leg-right",
+        "torso",
+        "arm-left",
+        "arm-right",
+        "head"
+      ],
+      "clips": [
+        {
+          "name": "static",
+          "channels": 21
+        },
+        {
+          "name": "idle",
+          "channels": 4
+        },
+        {
+          "name": "walk",
+          "channels": 7
+        },
+        {
+          "name": "sprint",
+          "channels": 7
+        },
+        {
+          "name": "jump",
+          "channels": 7
+        },
+        {
+          "name": "fall",
+          "channels": 5
+        },
+        {
+          "name": "crouch",
+          "channels": 8
+        },
+        {
+          "name": "sit",
+          "channels": 5
+        },
+        {
+          "name": "drive",
+          "channels": 5
+        },
+        {
+          "name": "die",
+          "channels": 8
+        },
+        {
+          "name": "pick-up",
+          "channels": 4
+        },
+        {
+          "name": "emote-yes",
+          "channels": 4
+        },
+        {
+          "name": "emote-no",
+          "channels": 4
+        },
+        {
+          "name": "holding-right",
+          "channels": 2
+        },
+        {
+          "name": "holding-left",
+          "channels": 2
+        },
+        {
+          "name": "holding-both",
+          "channels": 2
+        },
+        {
+          "name": "holding-right-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-left-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-both-shoot",
+          "channels": 4
+        },
+        {
+          "name": "attack-melee-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-melee-left",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-left",
+          "channels": 7
+        },
+        {
+          "name": "interact-right",
+          "channels": 4
+        },
+        {
+          "name": "interact-left",
+          "channels": 4
+        },
+        {
+          "name": "wheelchair-sit",
+          "channels": 7
+        },
+        {
+          "name": "wheelchair-look-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-look-right",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-forward",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-back",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-right",
+          "channels": 9
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/character-female-c.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 10,
+      "meshes": 2,
+      "skins": 2,
+      "skinnedPrimitives": 2,
+      "joints": 7,
+      "jointNames": [
+        "root",
+        "leg-left",
+        "leg-right",
+        "torso",
+        "arm-left",
+        "arm-right",
+        "head"
+      ],
+      "clips": [
+        {
+          "name": "static",
+          "channels": 21
+        },
+        {
+          "name": "idle",
+          "channels": 4
+        },
+        {
+          "name": "walk",
+          "channels": 7
+        },
+        {
+          "name": "sprint",
+          "channels": 7
+        },
+        {
+          "name": "jump",
+          "channels": 7
+        },
+        {
+          "name": "fall",
+          "channels": 5
+        },
+        {
+          "name": "crouch",
+          "channels": 8
+        },
+        {
+          "name": "sit",
+          "channels": 5
+        },
+        {
+          "name": "drive",
+          "channels": 5
+        },
+        {
+          "name": "die",
+          "channels": 8
+        },
+        {
+          "name": "pick-up",
+          "channels": 4
+        },
+        {
+          "name": "emote-yes",
+          "channels": 4
+        },
+        {
+          "name": "emote-no",
+          "channels": 4
+        },
+        {
+          "name": "holding-right",
+          "channels": 2
+        },
+        {
+          "name": "holding-left",
+          "channels": 2
+        },
+        {
+          "name": "holding-both",
+          "channels": 2
+        },
+        {
+          "name": "holding-right-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-left-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-both-shoot",
+          "channels": 4
+        },
+        {
+          "name": "attack-melee-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-melee-left",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-left",
+          "channels": 7
+        },
+        {
+          "name": "interact-right",
+          "channels": 4
+        },
+        {
+          "name": "interact-left",
+          "channels": 4
+        },
+        {
+          "name": "wheelchair-sit",
+          "channels": 7
+        },
+        {
+          "name": "wheelchair-look-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-look-right",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-forward",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-back",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-right",
+          "channels": 9
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/character-female-d.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 10,
+      "meshes": 2,
+      "skins": 2,
+      "skinnedPrimitives": 2,
+      "joints": 7,
+      "jointNames": [
+        "root",
+        "leg-left",
+        "leg-right",
+        "torso",
+        "arm-left",
+        "arm-right",
+        "head"
+      ],
+      "clips": [
+        {
+          "name": "static",
+          "channels": 21
+        },
+        {
+          "name": "idle",
+          "channels": 4
+        },
+        {
+          "name": "walk",
+          "channels": 7
+        },
+        {
+          "name": "sprint",
+          "channels": 7
+        },
+        {
+          "name": "jump",
+          "channels": 7
+        },
+        {
+          "name": "fall",
+          "channels": 5
+        },
+        {
+          "name": "crouch",
+          "channels": 8
+        },
+        {
+          "name": "sit",
+          "channels": 5
+        },
+        {
+          "name": "drive",
+          "channels": 5
+        },
+        {
+          "name": "die",
+          "channels": 8
+        },
+        {
+          "name": "pick-up",
+          "channels": 4
+        },
+        {
+          "name": "emote-yes",
+          "channels": 4
+        },
+        {
+          "name": "emote-no",
+          "channels": 4
+        },
+        {
+          "name": "holding-right",
+          "channels": 2
+        },
+        {
+          "name": "holding-left",
+          "channels": 2
+        },
+        {
+          "name": "holding-both",
+          "channels": 2
+        },
+        {
+          "name": "holding-right-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-left-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-both-shoot",
+          "channels": 4
+        },
+        {
+          "name": "attack-melee-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-melee-left",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-left",
+          "channels": 7
+        },
+        {
+          "name": "interact-right",
+          "channels": 4
+        },
+        {
+          "name": "interact-left",
+          "channels": 4
+        },
+        {
+          "name": "wheelchair-sit",
+          "channels": 7
+        },
+        {
+          "name": "wheelchair-look-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-look-right",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-forward",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-back",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-right",
+          "channels": 9
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/character-female-e.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 10,
+      "meshes": 2,
+      "skins": 2,
+      "skinnedPrimitives": 2,
+      "joints": 7,
+      "jointNames": [
+        "root",
+        "leg-left",
+        "leg-right",
+        "torso",
+        "arm-left",
+        "arm-right",
+        "head"
+      ],
+      "clips": [
+        {
+          "name": "static",
+          "channels": 21
+        },
+        {
+          "name": "idle",
+          "channels": 4
+        },
+        {
+          "name": "walk",
+          "channels": 7
+        },
+        {
+          "name": "sprint",
+          "channels": 7
+        },
+        {
+          "name": "jump",
+          "channels": 7
+        },
+        {
+          "name": "fall",
+          "channels": 5
+        },
+        {
+          "name": "crouch",
+          "channels": 8
+        },
+        {
+          "name": "sit",
+          "channels": 5
+        },
+        {
+          "name": "drive",
+          "channels": 5
+        },
+        {
+          "name": "die",
+          "channels": 8
+        },
+        {
+          "name": "pick-up",
+          "channels": 4
+        },
+        {
+          "name": "emote-yes",
+          "channels": 4
+        },
+        {
+          "name": "emote-no",
+          "channels": 4
+        },
+        {
+          "name": "holding-right",
+          "channels": 2
+        },
+        {
+          "name": "holding-left",
+          "channels": 2
+        },
+        {
+          "name": "holding-both",
+          "channels": 2
+        },
+        {
+          "name": "holding-right-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-left-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-both-shoot",
+          "channels": 4
+        },
+        {
+          "name": "attack-melee-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-melee-left",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-left",
+          "channels": 7
+        },
+        {
+          "name": "interact-right",
+          "channels": 4
+        },
+        {
+          "name": "interact-left",
+          "channels": 4
+        },
+        {
+          "name": "wheelchair-sit",
+          "channels": 7
+        },
+        {
+          "name": "wheelchair-look-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-look-right",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-forward",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-back",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-right",
+          "channels": 9
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/character-female-f.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 10,
+      "meshes": 2,
+      "skins": 2,
+      "skinnedPrimitives": 2,
+      "joints": 7,
+      "jointNames": [
+        "root",
+        "leg-left",
+        "leg-right",
+        "torso",
+        "arm-left",
+        "arm-right",
+        "head"
+      ],
+      "clips": [
+        {
+          "name": "static",
+          "channels": 21
+        },
+        {
+          "name": "idle",
+          "channels": 4
+        },
+        {
+          "name": "walk",
+          "channels": 7
+        },
+        {
+          "name": "sprint",
+          "channels": 7
+        },
+        {
+          "name": "jump",
+          "channels": 7
+        },
+        {
+          "name": "fall",
+          "channels": 5
+        },
+        {
+          "name": "crouch",
+          "channels": 8
+        },
+        {
+          "name": "sit",
+          "channels": 5
+        },
+        {
+          "name": "drive",
+          "channels": 5
+        },
+        {
+          "name": "die",
+          "channels": 8
+        },
+        {
+          "name": "pick-up",
+          "channels": 4
+        },
+        {
+          "name": "emote-yes",
+          "channels": 4
+        },
+        {
+          "name": "emote-no",
+          "channels": 4
+        },
+        {
+          "name": "holding-right",
+          "channels": 2
+        },
+        {
+          "name": "holding-left",
+          "channels": 2
+        },
+        {
+          "name": "holding-both",
+          "channels": 2
+        },
+        {
+          "name": "holding-right-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-left-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-both-shoot",
+          "channels": 4
+        },
+        {
+          "name": "attack-melee-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-melee-left",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-left",
+          "channels": 7
+        },
+        {
+          "name": "interact-right",
+          "channels": 4
+        },
+        {
+          "name": "interact-left",
+          "channels": 4
+        },
+        {
+          "name": "wheelchair-sit",
+          "channels": 7
+        },
+        {
+          "name": "wheelchair-look-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-look-right",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-forward",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-back",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-right",
+          "channels": 9
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/character-male-a.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 10,
+      "meshes": 2,
+      "skins": 2,
+      "skinnedPrimitives": 2,
+      "joints": 7,
+      "jointNames": [
+        "root",
+        "leg-left",
+        "leg-right",
+        "torso",
+        "arm-left",
+        "arm-right",
+        "head"
+      ],
+      "clips": [
+        {
+          "name": "static",
+          "channels": 21
+        },
+        {
+          "name": "idle",
+          "channels": 4
+        },
+        {
+          "name": "walk",
+          "channels": 7
+        },
+        {
+          "name": "sprint",
+          "channels": 7
+        },
+        {
+          "name": "jump",
+          "channels": 7
+        },
+        {
+          "name": "fall",
+          "channels": 5
+        },
+        {
+          "name": "crouch",
+          "channels": 8
+        },
+        {
+          "name": "sit",
+          "channels": 5
+        },
+        {
+          "name": "drive",
+          "channels": 5
+        },
+        {
+          "name": "die",
+          "channels": 8
+        },
+        {
+          "name": "pick-up",
+          "channels": 4
+        },
+        {
+          "name": "emote-yes",
+          "channels": 4
+        },
+        {
+          "name": "emote-no",
+          "channels": 4
+        },
+        {
+          "name": "holding-right",
+          "channels": 2
+        },
+        {
+          "name": "holding-left",
+          "channels": 2
+        },
+        {
+          "name": "holding-both",
+          "channels": 2
+        },
+        {
+          "name": "holding-right-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-left-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-both-shoot",
+          "channels": 4
+        },
+        {
+          "name": "attack-melee-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-melee-left",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-left",
+          "channels": 7
+        },
+        {
+          "name": "interact-right",
+          "channels": 4
+        },
+        {
+          "name": "interact-left",
+          "channels": 4
+        },
+        {
+          "name": "wheelchair-sit",
+          "channels": 7
+        },
+        {
+          "name": "wheelchair-look-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-look-right",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-forward",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-back",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-right",
+          "channels": 9
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/character-male-b.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 10,
+      "meshes": 2,
+      "skins": 2,
+      "skinnedPrimitives": 2,
+      "joints": 7,
+      "jointNames": [
+        "root",
+        "leg-left",
+        "leg-right",
+        "torso",
+        "arm-left",
+        "arm-right",
+        "head"
+      ],
+      "clips": [
+        {
+          "name": "static",
+          "channels": 21
+        },
+        {
+          "name": "idle",
+          "channels": 4
+        },
+        {
+          "name": "walk",
+          "channels": 7
+        },
+        {
+          "name": "sprint",
+          "channels": 7
+        },
+        {
+          "name": "jump",
+          "channels": 7
+        },
+        {
+          "name": "fall",
+          "channels": 5
+        },
+        {
+          "name": "crouch",
+          "channels": 8
+        },
+        {
+          "name": "sit",
+          "channels": 5
+        },
+        {
+          "name": "drive",
+          "channels": 5
+        },
+        {
+          "name": "die",
+          "channels": 8
+        },
+        {
+          "name": "pick-up",
+          "channels": 4
+        },
+        {
+          "name": "emote-yes",
+          "channels": 4
+        },
+        {
+          "name": "emote-no",
+          "channels": 4
+        },
+        {
+          "name": "holding-right",
+          "channels": 2
+        },
+        {
+          "name": "holding-left",
+          "channels": 2
+        },
+        {
+          "name": "holding-both",
+          "channels": 2
+        },
+        {
+          "name": "holding-right-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-left-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-both-shoot",
+          "channels": 4
+        },
+        {
+          "name": "attack-melee-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-melee-left",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-left",
+          "channels": 7
+        },
+        {
+          "name": "interact-right",
+          "channels": 4
+        },
+        {
+          "name": "interact-left",
+          "channels": 4
+        },
+        {
+          "name": "wheelchair-sit",
+          "channels": 7
+        },
+        {
+          "name": "wheelchair-look-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-look-right",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-forward",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-back",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-right",
+          "channels": 9
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/character-male-c.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 10,
+      "meshes": 2,
+      "skins": 2,
+      "skinnedPrimitives": 2,
+      "joints": 7,
+      "jointNames": [
+        "root",
+        "leg-left",
+        "leg-right",
+        "torso",
+        "arm-left",
+        "arm-right",
+        "head"
+      ],
+      "clips": [
+        {
+          "name": "static",
+          "channels": 21
+        },
+        {
+          "name": "idle",
+          "channels": 4
+        },
+        {
+          "name": "walk",
+          "channels": 7
+        },
+        {
+          "name": "sprint",
+          "channels": 7
+        },
+        {
+          "name": "jump",
+          "channels": 7
+        },
+        {
+          "name": "fall",
+          "channels": 5
+        },
+        {
+          "name": "crouch",
+          "channels": 8
+        },
+        {
+          "name": "sit",
+          "channels": 5
+        },
+        {
+          "name": "drive",
+          "channels": 5
+        },
+        {
+          "name": "die",
+          "channels": 8
+        },
+        {
+          "name": "pick-up",
+          "channels": 4
+        },
+        {
+          "name": "emote-yes",
+          "channels": 4
+        },
+        {
+          "name": "emote-no",
+          "channels": 4
+        },
+        {
+          "name": "holding-right",
+          "channels": 2
+        },
+        {
+          "name": "holding-left",
+          "channels": 2
+        },
+        {
+          "name": "holding-both",
+          "channels": 2
+        },
+        {
+          "name": "holding-right-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-left-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-both-shoot",
+          "channels": 4
+        },
+        {
+          "name": "attack-melee-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-melee-left",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-left",
+          "channels": 7
+        },
+        {
+          "name": "interact-right",
+          "channels": 4
+        },
+        {
+          "name": "interact-left",
+          "channels": 4
+        },
+        {
+          "name": "wheelchair-sit",
+          "channels": 7
+        },
+        {
+          "name": "wheelchair-look-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-look-right",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-forward",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-back",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-right",
+          "channels": 9
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/character-male-d.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 10,
+      "meshes": 2,
+      "skins": 2,
+      "skinnedPrimitives": 2,
+      "joints": 7,
+      "jointNames": [
+        "root",
+        "leg-left",
+        "leg-right",
+        "torso",
+        "arm-left",
+        "arm-right",
+        "head"
+      ],
+      "clips": [
+        {
+          "name": "static",
+          "channels": 21
+        },
+        {
+          "name": "idle",
+          "channels": 4
+        },
+        {
+          "name": "walk",
+          "channels": 7
+        },
+        {
+          "name": "sprint",
+          "channels": 7
+        },
+        {
+          "name": "jump",
+          "channels": 7
+        },
+        {
+          "name": "fall",
+          "channels": 5
+        },
+        {
+          "name": "crouch",
+          "channels": 8
+        },
+        {
+          "name": "sit",
+          "channels": 5
+        },
+        {
+          "name": "drive",
+          "channels": 5
+        },
+        {
+          "name": "die",
+          "channels": 8
+        },
+        {
+          "name": "pick-up",
+          "channels": 4
+        },
+        {
+          "name": "emote-yes",
+          "channels": 4
+        },
+        {
+          "name": "emote-no",
+          "channels": 4
+        },
+        {
+          "name": "holding-right",
+          "channels": 2
+        },
+        {
+          "name": "holding-left",
+          "channels": 2
+        },
+        {
+          "name": "holding-both",
+          "channels": 2
+        },
+        {
+          "name": "holding-right-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-left-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-both-shoot",
+          "channels": 4
+        },
+        {
+          "name": "attack-melee-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-melee-left",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-left",
+          "channels": 7
+        },
+        {
+          "name": "interact-right",
+          "channels": 4
+        },
+        {
+          "name": "interact-left",
+          "channels": 4
+        },
+        {
+          "name": "wheelchair-sit",
+          "channels": 7
+        },
+        {
+          "name": "wheelchair-look-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-look-right",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-forward",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-back",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-right",
+          "channels": 9
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/character-male-e.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 10,
+      "meshes": 2,
+      "skins": 2,
+      "skinnedPrimitives": 2,
+      "joints": 7,
+      "jointNames": [
+        "root",
+        "leg-left",
+        "leg-right",
+        "torso",
+        "arm-left",
+        "arm-right",
+        "head"
+      ],
+      "clips": [
+        {
+          "name": "static",
+          "channels": 21
+        },
+        {
+          "name": "idle",
+          "channels": 4
+        },
+        {
+          "name": "walk",
+          "channels": 7
+        },
+        {
+          "name": "sprint",
+          "channels": 7
+        },
+        {
+          "name": "jump",
+          "channels": 7
+        },
+        {
+          "name": "fall",
+          "channels": 5
+        },
+        {
+          "name": "crouch",
+          "channels": 8
+        },
+        {
+          "name": "sit",
+          "channels": 5
+        },
+        {
+          "name": "drive",
+          "channels": 5
+        },
+        {
+          "name": "die",
+          "channels": 8
+        },
+        {
+          "name": "pick-up",
+          "channels": 4
+        },
+        {
+          "name": "emote-yes",
+          "channels": 4
+        },
+        {
+          "name": "emote-no",
+          "channels": 4
+        },
+        {
+          "name": "holding-right",
+          "channels": 2
+        },
+        {
+          "name": "holding-left",
+          "channels": 2
+        },
+        {
+          "name": "holding-both",
+          "channels": 2
+        },
+        {
+          "name": "holding-right-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-left-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-both-shoot",
+          "channels": 4
+        },
+        {
+          "name": "attack-melee-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-melee-left",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-left",
+          "channels": 7
+        },
+        {
+          "name": "interact-right",
+          "channels": 4
+        },
+        {
+          "name": "interact-left",
+          "channels": 4
+        },
+        {
+          "name": "wheelchair-sit",
+          "channels": 7
+        },
+        {
+          "name": "wheelchair-look-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-look-right",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-forward",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-back",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-right",
+          "channels": 9
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/character-male-f.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 10,
+      "meshes": 2,
+      "skins": 2,
+      "skinnedPrimitives": 2,
+      "joints": 7,
+      "jointNames": [
+        "root",
+        "leg-left",
+        "leg-right",
+        "torso",
+        "arm-left",
+        "arm-right",
+        "head"
+      ],
+      "clips": [
+        {
+          "name": "static",
+          "channels": 21
+        },
+        {
+          "name": "idle",
+          "channels": 4
+        },
+        {
+          "name": "walk",
+          "channels": 7
+        },
+        {
+          "name": "sprint",
+          "channels": 7
+        },
+        {
+          "name": "jump",
+          "channels": 7
+        },
+        {
+          "name": "fall",
+          "channels": 5
+        },
+        {
+          "name": "crouch",
+          "channels": 8
+        },
+        {
+          "name": "sit",
+          "channels": 5
+        },
+        {
+          "name": "drive",
+          "channels": 5
+        },
+        {
+          "name": "die",
+          "channels": 8
+        },
+        {
+          "name": "pick-up",
+          "channels": 4
+        },
+        {
+          "name": "emote-yes",
+          "channels": 4
+        },
+        {
+          "name": "emote-no",
+          "channels": 4
+        },
+        {
+          "name": "holding-right",
+          "channels": 2
+        },
+        {
+          "name": "holding-left",
+          "channels": 2
+        },
+        {
+          "name": "holding-both",
+          "channels": 2
+        },
+        {
+          "name": "holding-right-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-left-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-both-shoot",
+          "channels": 4
+        },
+        {
+          "name": "attack-melee-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-melee-left",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-left",
+          "channels": 7
+        },
+        {
+          "name": "interact-right",
+          "channels": 4
+        },
+        {
+          "name": "interact-left",
+          "channels": 4
+        },
+        {
+          "name": "wheelchair-sit",
+          "channels": 7
+        },
+        {
+          "name": "wheelchair-look-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-look-right",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-forward",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-back",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-right",
+          "channels": 9
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/wheelchair-deluxe.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/wheelchair-power-deluxe.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/wheelchair-power.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kenney-mini-characters/Models/GLB format/wheelchair.glb",
+      "pack": "kenney-mini-characters",
+      "kind": "character",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kenney-mini-dungeon/Models/GLB format/character-human.glb",
+      "pack": "kenney-mini-dungeon",
+      "kind": "character",
+      "nodes": 10,
+      "meshes": 2,
+      "skins": 2,
+      "skinnedPrimitives": 2,
+      "joints": 7,
+      "jointNames": [
+        "root",
+        "leg-left",
+        "leg-right",
+        "torso",
+        "arm-left",
+        "arm-right",
+        "head"
+      ],
+      "clips": [
+        {
+          "name": "static",
+          "channels": 21
+        },
+        {
+          "name": "idle",
+          "channels": 4
+        },
+        {
+          "name": "walk",
+          "channels": 7
+        },
+        {
+          "name": "sprint",
+          "channels": 7
+        },
+        {
+          "name": "jump",
+          "channels": 7
+        },
+        {
+          "name": "fall",
+          "channels": 5
+        },
+        {
+          "name": "crouch",
+          "channels": 11
+        },
+        {
+          "name": "sit",
+          "channels": 5
+        },
+        {
+          "name": "drive",
+          "channels": 5
+        },
+        {
+          "name": "die",
+          "channels": 8
+        },
+        {
+          "name": "pick-up",
+          "channels": 4
+        },
+        {
+          "name": "emote-yes",
+          "channels": 4
+        },
+        {
+          "name": "emote-no",
+          "channels": 4
+        },
+        {
+          "name": "holding-right",
+          "channels": 2
+        },
+        {
+          "name": "holding-left",
+          "channels": 2
+        },
+        {
+          "name": "holding-both",
+          "channels": 2
+        },
+        {
+          "name": "holding-right-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-left-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-both-shoot",
+          "channels": 4
+        },
+        {
+          "name": "attack-melee-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-melee-left",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-left",
+          "channels": 7
+        },
+        {
+          "name": "interact-right",
+          "channels": 4
+        },
+        {
+          "name": "interact-left",
+          "channels": 4
+        },
+        {
+          "name": "wheelchair-sit",
+          "channels": 7
+        },
+        {
+          "name": "wheelchair-look-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-look-right",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-forward",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-back",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-right",
+          "channels": 9
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kenney-mini-dungeon/Models/GLB format/character-orc.glb",
+      "pack": "kenney-mini-dungeon",
+      "kind": "character",
+      "nodes": 10,
+      "meshes": 2,
+      "skins": 2,
+      "skinnedPrimitives": 2,
+      "joints": 7,
+      "jointNames": [
+        "root",
+        "leg-left",
+        "leg-right",
+        "torso",
+        "arm-left",
+        "arm-right",
+        "head"
+      ],
+      "clips": [
+        {
+          "name": "static",
+          "channels": 21
+        },
+        {
+          "name": "idle",
+          "channels": 4
+        },
+        {
+          "name": "walk",
+          "channels": 7
+        },
+        {
+          "name": "sprint",
+          "channels": 7
+        },
+        {
+          "name": "jump",
+          "channels": 7
+        },
+        {
+          "name": "fall",
+          "channels": 5
+        },
+        {
+          "name": "crouch",
+          "channels": 11
+        },
+        {
+          "name": "sit",
+          "channels": 5
+        },
+        {
+          "name": "drive",
+          "channels": 5
+        },
+        {
+          "name": "die",
+          "channels": 8
+        },
+        {
+          "name": "pick-up",
+          "channels": 4
+        },
+        {
+          "name": "emote-yes",
+          "channels": 4
+        },
+        {
+          "name": "emote-no",
+          "channels": 4
+        },
+        {
+          "name": "holding-right",
+          "channels": 2
+        },
+        {
+          "name": "holding-left",
+          "channels": 2
+        },
+        {
+          "name": "holding-both",
+          "channels": 2
+        },
+        {
+          "name": "holding-right-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-left-shoot",
+          "channels": 4
+        },
+        {
+          "name": "holding-both-shoot",
+          "channels": 4
+        },
+        {
+          "name": "attack-melee-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-melee-left",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-right",
+          "channels": 7
+        },
+        {
+          "name": "attack-kick-left",
+          "channels": 7
+        },
+        {
+          "name": "interact-right",
+          "channels": 4
+        },
+        {
+          "name": "interact-left",
+          "channels": 4
+        },
+        {
+          "name": "wheelchair-sit",
+          "channels": 7
+        },
+        {
+          "name": "wheelchair-look-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-look-right",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-forward",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-back",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-left",
+          "channels": 9
+        },
+        {
+          "name": "wheelchair-move-right",
+          "channels": 9
+        }
+      ],
+      "rigged": true,
+      "playable": true
+    },
+    {
+      "id": "kaykit-adventurers/KayKit-Character-Pack-Adventures-1.0-main/addons/kaykit_character_pack_adventures/Assets/gltf/arrow_bundle.gltf",
+      "pack": "kaykit-adventurers",
+      "kind": "prop",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kaykit-adventurers/KayKit-Character-Pack-Adventures-1.0-main/addons/kaykit_character_pack_adventures/Assets/gltf/arrow.gltf",
+      "pack": "kaykit-adventurers",
+      "kind": "prop",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kaykit-adventurers/KayKit-Character-Pack-Adventures-1.0-main/addons/kaykit_character_pack_adventures/Assets/gltf/axe_1handed.gltf",
+      "pack": "kaykit-adventurers",
+      "kind": "prop",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kaykit-adventurers/KayKit-Character-Pack-Adventures-1.0-main/addons/kaykit_character_pack_adventures/Assets/gltf/axe_2handed.gltf",
+      "pack": "kaykit-adventurers",
+      "kind": "prop",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kaykit-adventurers/KayKit-Character-Pack-Adventures-1.0-main/addons/kaykit_character_pack_adventures/Assets/gltf/crossbow_1handed.gltf",
+      "pack": "kaykit-adventurers",
+      "kind": "prop",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kaykit-adventurers/KayKit-Character-Pack-Adventures-1.0-main/addons/kaykit_character_pack_adventures/Assets/gltf/crossbow_2handed.gltf",
+      "pack": "kaykit-adventurers",
+      "kind": "prop",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kaykit-adventurers/KayKit-Character-Pack-Adventures-1.0-main/addons/kaykit_character_pack_adventures/Assets/gltf/dagger.gltf",
+      "pack": "kaykit-adventurers",
+      "kind": "prop",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    },
+    {
+      "id": "kaykit-adventurers/KayKit-Character-Pack-Adventures-1.0-main/addons/kaykit_character_pack_adventures/Assets/gltf/mug_empty.gltf",
+      "pack": "kaykit-adventurers",
+      "kind": "prop",
+      "nodes": 1,
+      "meshes": 1,
+      "skins": 0,
+      "skinnedPrimitives": 0,
+      "joints": 0,
+      "jointNames": [],
+      "clips": [],
+      "rigged": false,
+      "playable": false
+    }
+  ]
+}

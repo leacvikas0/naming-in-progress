@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dungeon of the Lost Bones</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0806'/%3E%3Cpath d='M16 5c-4 0-6 2.6-6 6v3c0 1.4-.6 2.4-1.6 3.2C7 18.4 6.4 20 6.4 22c0 2.8 4.3 5 9.6 5s9.6-2.2 9.6-5c0-2-.6-3.6-2-4.8-1-.8-1.6-1.8-1.6-3.2v-3c0-3.4-2-6-6-6z' fill='%23e8b64c'/%3E%3Ccircle cx='12.6' cy='15' r='2' fill='%230b0806'/%3E%3Ccircle cx='19.4' cy='15' r='2' fill='%230b0806'/%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=IBM+Plex+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/game/style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game-canvas"></canvas>
+
+      <div id="vignette" aria-hidden="true"></div>
+      <div id="damage-flash" aria-hidden="true"></div>
+
+      <div id="hud" class="hidden">
+        <div id="hud-top">
+          <div id="wave-block" class="stone">
+            <span class="hud-label">Wave</span>
+            <span id="wave-num">1</span>
+          </div>
+          <div id="enemy-block" class="stone">
+            <span class="hud-label">Remaining</span>
+            <span id="enemy-num">0</span>
+          </div>
+          <div id="coin-block" class="stone">
+            <span class="coin-icon" aria-hidden="true"></span>
+            <span id="coin-num">0</span>
+          </div>
+          <div id="score-block" class="stone">
+            <span class="hud-label">Score</span>
+            <span id="score-num">0</span>
+          </div>
+        </div>
+
+        <div id="wave-banner" class="hidden">
+          <span id="wave-banner-kicker">Wave</span>
+          <span id="wave-banner-num">1</span>
+          <span id="wave-banner-sub"></span>
+        </div>
+        <div id="hud-bottom">
+          <div id="hp-wrap">
+            <div id="hp-bar" class="stone">
+              <span id="hp-heart" aria-hidden="true">
+                <svg viewBox="0 0 24 22">
+                  <path
+                    d="M12 20.2 3.4 11.6a5.6 5.6 0 0 1 0-7.9 5.6 5.6 0 0 1 7.9 0l.7.7.7-.7a5.6 5.6 0 0 1 7.9 0 5.6 5.6 0 0 1 0 7.9Z"
+                    fill="#a13328"
+                    stroke="#1c0d0a"
+                    stroke-width="1.6"
+                  />
+                  <path
+                    d="M12 20.2 3.4 11.6a5.6 5.6 0 0 1 0-7.9 5.6 5.6 0 0 1 7.9 0l.7.7.7-.7a5.6 5.6 0 0 1 7.9 0 5.6 5.6 0 0 1 0 7.9Z"
+                    fill="none"
+                    stroke="rgba(255, 236, 200, 0.22)"
+                    stroke-width="0.9"
+                    transform="translate(0, -1)"
+                  />
+                </svg>
+              </span>
+              <div id="hp-trough">
+                <div id="hp-fill"></div>
+                <div id="hp-chip"></div>
+              </div>
+              <div id="hp-text"><span id="hp-num">110</span><span id="hp-max">/110</span></div>
+            </div>
+          </div>
+          <div id="ability-row">
+            <div class="ability stone" id="ability-dodge">
+              <div class="ability-key">SPACE</div>
+              <div class="ability-name">Dodge</div>
+              <div class="ability-cd" id="dodge-cd"></div>
+            </div>
+            <div class="ability stone" id="ability-sprint">
+              <div class="ability-key">SHIFT</div>
+              <div class="ability-name">Sprint</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="combo-tag" class="hidden"></div>
+        <div id="upgrade-strip"></div>
+      </div>
+
+      <div id="title-screen" class="overlay">
+        <div class="overlay-inner">
+          <p class="kicker">A kilo-3d-kit game</p>
+          <h1>Dungeon of the<br /><em>Lost Bones</em></h1>
+          <p class="tagline">Endless waves. Four heroes. One way out — through them.</p>
+          <div id="hero-grid"></div>
+          <p class="controls-line">
+            <span><b>WASD</b> move</span>
+            <span><b>Mouse</b> look</span>
+            <span><b>LMB</b> attack</span>
+            <span><b>Space</b> dodge</span>
+            <span><b>Shift</b> sprint</span>
+            <span><b>Esc</b> free cursor</span>
+          </p>
+          <button id="start-btn" class="big-btn" disabled>Choose your hero</button>
+        </div>
+      </div>
+
+      <div id="upgrade-screen" class="overlay hidden">
+        <div class="overlay-inner narrow">
+          <p class="kicker">Wave cleared</p>
+          <h2>Take your pick</h2>
+          <div id="card-row"></div>
+        </div>
+      </div>
+
+      <div id="death-screen" class="overlay hidden">
+        <div class="overlay-inner narrow">
+          <p class="kicker">You fell</p>
+          <h2 id="death-title">The dungeon keeps you</h2>
+          <div id="death-stats"></div>
+          <p id="death-best"></p>
+          <button id="retry-btn" class="big-btn">Rise again</button>
+          <p class="controls-line small"><span><b>R</b> quick retry</span></p>
+        </div>
+      </div>
+
+      <div id="loading-screen" class="overlay">
+        <div class="overlay-inner narrow">
+          <div class="loader-rune" aria-hidden="true"></div>
+          <p id="loading-text">Stirring the bones...</p>
+        </div>
+      </div>
+
+      <div id="toast" class="stone"></div>
+    </div>
+
+    <script type="module" src="/game/src/main.js"></script>
+  </body>
+</html>

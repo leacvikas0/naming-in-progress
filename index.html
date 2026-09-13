@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>kilo-3d-kit</title>
+    <link rel="stylesheet" href="/viewer/style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <aside>
+      <header>
+        <p class="kicker">kilo-3d-kit</p>
+        <h1>Local CC0 library</h1>
+        <p class="lede">Filter by style or pack. KayKit / mini characters can play clips. Kenney props are static.</p>
+      </header>
+      <label>
+        Style
+        <select id="style">
+          <option value="">all styles</option>
+        </select>
+      </label>
+      <label>
+        Pack
+        <select id="pack">
+          <option value="">all packs</option>
+        </select>
+      </label>
+      <label>
+        Filter
+        <input id="q" type="search" placeholder="wall, chair, Knight..." />
+      </label>
+      <div id="counts"></div>
+      <nav id="list"></nav>
+    </aside>
+    <main>
+      <div id="stage"></div>
+      <footer>
+        <div>
+          <strong id="name">No mesh</strong>
+          <span id="meta"></span>
+        </div>
+        <label>
+          Clip
+          <select id="clip" disabled>
+            <option>none</option>
+          </select>
+        </label>
+      </footer>
+    </main>
+    <script type="module" src="/viewer/viewer.js"></script>
+  </body>
+</html>
