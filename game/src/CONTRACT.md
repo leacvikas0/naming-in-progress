@@ -154,12 +154,32 @@ range; on pickup emit `coin-collected` with value.
 }
 ```
 
-HUD emits: `hero-selected {id}`, `start-run {}`, `retry {}`, `upgrade-chosen {id}`.
+HUD emits: `hero-selected {id}`, `retry {}`, `upgrade-chosen {id}`.
 HUD listens: `player-hurt` (flash), `player-died`, `wave-start`, `wave-clear`,
 `coin-collected`, `upgrade-offer` is pushed via `showUpgrades` by main.
 All DOM ids already exist in `game/index.html`. Style with classes from `game/style.css`
-(`hero-card`, `upgrade-card`, `death-stat`, `hidden`, `show`, `hit`, `low`, `danger`,
-`ready`). Do not add new CSS files. Do not restyle `index.html`.
+(`upgrade-card`, `death-stat`, `hidden`, `show`, `hit`, `low`, `danger`, `ready`).
+Do not add new CSS files. Do not restyle `index.html`.
+
+### title.js — `createTitle({ scene, camera, events, loader, characters })`
+
+```js
+{
+  group,                       // THREE.Group holding the stage (hidden until show())
+  build(),                     // async: loads + normalizes all hero GLBs, fills roster
+  show(), hide(),
+  update(dt),                  // sway, rise, idle flourishes, embers, camera drift
+  selectHero(id, notify),      // shows that hero on the dais; emits hero-selected
+  selectedId, visible,
+}
+```
+
+Hero-select stage. The dungeon world is hidden during the title phase; `main.js`
+reveals `world.group` on `start-run`. The selected hero rises onto a lit dais, idles
+with the shared KayKit `Idle` clip, and plays `Cheer`-style flourishes on selection.
+Roster bars live in `#hero-list`; the detail plaque in `#hero-detail`.
+`title.js` emits: `hero-selected {id}`, `start-run {}`, `sfx {name:"ui-click"}`.
+`title.js` owns the `#start-btn` click; hud.js must not also emit `start-run`.
 
 ### audio.js — `createAudio({ events })`
 

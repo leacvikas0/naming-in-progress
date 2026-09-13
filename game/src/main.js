@@ -19,6 +19,7 @@ import { createPlayer } from "./player.js";
 import { createEnemies } from "./enemies.js";
 import { createFX } from "./fx.js";
 import { createHUD } from "./hud.js";
+import { createTitle } from "./title.js";
 import { createAudio } from "./audio.js";
 
 const canvas = document.getElementById("game-canvas");
@@ -46,6 +47,7 @@ scene.add(playerLight);
 const audio = createAudio({ events });
 const fx = createFX({ scene, camera, events, rng, world: null });
 const hud = createHUD({ events, characters: CHARACTERS });
+const title = createTitle({ scene, camera, canvas, events, loader, characters: CHARACTERS });
 
 let world = null;
 let player = null;
@@ -214,7 +216,10 @@ const camDesired = new THREE.Vector3();
 const camLookAt = new THREE.Vector3();
 
 function updateCamera(dt) {
-  if (!player) return;
+  if (!player) {
+    if (state.phase === "title") title.update(dt);
+    return;
+  }
   const p = player.position;
   const dist = CONFIG.camera.dist;
   const height = CONFIG.camera.height + Math.sin(camState.pitch) * dist;
@@ -239,8 +244,11 @@ async function boot() {
   world = createWorld({ scene, config: CONFIG, rng, loader });
   await world.ready;
   fx.world = world;
+  world.group.visible = false;
   hud.showLoading("Awakening the dead...");
+  await title.build();
   hud.showTitle();
+  title.show();
   hud.hideLoading();
   state.phase = "title";
 }
@@ -251,6 +259,7 @@ function startRun(heroId) {
 
   enemies?.clearAll();
   fx.reset();
+  if (world && world.group) world.group.visible = true;
 
   if (player) {
     scene.remove(player.group);
@@ -277,6 +286,7 @@ function startRun(heroId) {
 
   hud.reset();
   hud.hideTitle();
+  title.hide();
   hud.hideDeath();
   hud.hideUpgrades();
   hud.showToast(`${hero.name} descends`);
@@ -496,6 +506,9 @@ window.__game = {
   pickUpgrade,
   get hud() {
     return hud;
+  },
+  get title() {
+    return title;
   },
   get input() {
     return input;

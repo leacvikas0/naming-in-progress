@@ -607,99 +607,227 @@ h2 {
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
 }
 
-/* hero grid: stone plaques */
+/* ---------- title stage ---------- */
 
-#hero-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin: 34px 0 26px;
+#title-screen {
+  align-items: stretch;
+  justify-content: flex-start;
+  flex-direction: column;
+  padding: 0;
+  background:
+    radial-gradient(ellipse 68% 52% at 66% 58%, rgba(46, 32, 20, 0.5) 0%, rgba(16, 11, 7, 0.72) 55%, rgba(6, 5, 3, 0.9) 100%),
+    linear-gradient(180deg, rgba(8, 6, 4, 0.9) 0%, rgba(8, 6, 4, 0.2) 30%, rgba(6, 5, 3, 0.34) 100%);
 }
 
-.hero-card {
+.title-bar {
   position: relative;
-  padding: 18px 14px 16px;
+  z-index: 3;
+  padding: 38px 46px 0;
+  text-align: left;
+}
+
+.title-left h1 {
+  font-size: clamp(34px, 4.4vw, 56px);
+  margin-top: 2px;
+}
+
+.title-left .tagline {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.title-body {
+  position: relative;
+  z-index: 3;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 36px;
+  padding: 0 46px;
+  pointer-events: none;
+}
+
+/* roster: Elden Ring-style stacked bars on the left */
+
+#hero-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 246px;
+  pointer-events: auto;
+}
+
+.hero-bar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 11px 16px 12px 18px;
   cursor: pointer;
   text-align: left;
-  color: var(--bone);
   font-family: var(--font-mono);
-  transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
-  overflow: hidden;
+  color: var(--bone-dim);
+  background: linear-gradient(90deg, rgba(22, 17, 12, 0.88), rgba(14, 11, 8, 0.5) 82%, rgba(14, 11, 8, 0));
+  border: none;
+  border-left: 2px solid rgba(0, 0, 0, 0.6);
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease, padding-left 200ms ease;
 }
 
-.hero-card::before {
-  inset: 5px;
-  border: 1px solid rgba(0, 0, 0, 0.4);
-  box-shadow:
-    0 1px 0 rgba(226, 200, 152, 0.1),
-    inset 0 1px 0 rgba(0, 0, 0, 0.3);
-  background: radial-gradient(circle at 50% 0%, var(--hero-tint, transparent) 0%, transparent 68%);
-  opacity: 0.16;
+.hero-bar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(233, 223, 200, 0.14), rgba(233, 223, 200, 0));
 }
 
-.hero-card:hover {
-  transform: translateY(-3px);
-  filter: brightness(1.1);
-}
-
-.hero-card.selected {
-  box-shadow:
-    var(--shadow),
-    inset 0 2px 0 rgba(226, 200, 152, 0.18),
-    inset 0 -3px 0 rgba(0, 0, 0, 0.5),
-    0 0 0 1px var(--hero-accent, var(--gold)),
-    0 0 26px rgba(232, 182, 76, 0.28);
-}
-
-.hero-card h3 {
+.hero-bar .bar-name {
   font-family: var(--font-display);
   font-size: 21px;
   font-weight: 700;
-  margin-bottom: 6px;
-  color: var(--hero-accent, var(--bone));
-  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.85), 0 1px 0 rgba(233, 223, 200, 0.1);
+  letter-spacing: 0.03em;
+  color: var(--bone);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+  transition: color 160ms ease;
 }
 
-.hero-card .hero-blurb {
-  font-size: 11.5px;
-  line-height: 1.5;
+.hero-bar .bar-role {
+  font-size: 9px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
   color: var(--bone-dim);
-  min-height: 52px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.hero-bar:hover {
+  color: var(--bone);
+  border-left-color: rgba(233, 223, 200, 0.35);
+  padding-left: 22px;
+}
+
+.hero-bar.selected {
+  border-left-color: var(--hero-accent, var(--gold));
+  background: linear-gradient(90deg, rgba(58, 44, 26, 0.9), rgba(24, 18, 12, 0.5) 82%, rgba(14, 11, 8, 0));
+  padding-left: 22px;
+}
+
+.hero-bar.selected .bar-name {
+  color: var(--hero-accent, var(--gold-hot));
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9), 0 0 22px rgba(232, 182, 76, 0.25);
+}
+
+/* detail plaque, right of the roster */
+
+#hero-detail {
+  position: relative;
+  width: 296px;
+  padding: 16px 18px 18px;
+  text-align: left;
+  color: var(--bone);
+  font-family: var(--font-mono);
+  background:
+    linear-gradient(158deg, rgba(255, 240, 210, 0.09), transparent 46%),
+    linear-gradient(180deg, rgba(32, 27, 20, 0.9), rgba(17, 13, 9, 0.94));
+  border: 1px solid var(--iron-0);
+  border-left: 3px solid var(--hero-accent, var(--iron-2));
+  border-radius: 2px;
+  box-shadow: var(--shadow);
+  transition: border-color 200ms ease;
+  pointer-events: auto;
+}
+
+.detail-empty {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bone-dim);
+}
+
+.detail-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.detail-name {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--hero-accent, var(--bone));
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.85), 0 1px 0 rgba(233, 223, 200, 0.12);
+}
+
+.detail-role {
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--bone-dim);
+}
+
+.detail-blurb {
+  margin-top: 8px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--bone-dim);
+  min-height: 36px;
   text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.6);
 }
 
-.hero-card .hero-stats {
+.detail-stats {
   display: flex;
-  gap: 10px;
+  gap: 18px;
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid rgba(0, 0, 0, 0.5);
   box-shadow: 0 -1px 0 rgba(226, 200, 152, 0.09);
 }
 
-.hero-card .hero-stat {
-  font-size: 10px;
-  color: var(--bone-dim);
-  letter-spacing: 0.06em;
-}
-
-.hero-card .hero-stat b {
+.detail-stat b {
   display: block;
-  font-size: 14px;
-  color: var(--bone);
   font-family: var(--font-display);
+  font-size: 19px;
+  color: var(--bone);
 }
 
-.hero-card .hero-portrait {
-  position: absolute;
-  right: 10px;
-  top: 10px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 2px solid var(--iron-0);
-  background: radial-gradient(circle at 35% 30%, rgba(233, 223, 200, 0.16), rgba(11, 8, 6, 0.95));
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6), inset 0 2px 4px rgba(0, 0, 0, 0.7);
+.detail-stat span {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--bone-dim);
+}
+
+/* footer: hint + descend button + controls */
+
+.title-foot {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 0 46px 16px;
+}
+
+.title-hint {
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bone-dim);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.95);
+}
+
+.title-hint b {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.title-controls {
+  margin-top: 2px;
+  white-space: nowrap;
 }
 
 /* buttons: struck gold on a stone base */
@@ -953,11 +1081,15 @@ h2 {
 /* responsive */
 
 @media (max-width: 860px) {
-  #hero-grid { grid-template-columns: repeat(2, 1fr); }
   #card-row { grid-template-columns: 1fr; }
   #hp-bar { width: 220px; padding-left: 38px; }
   #hp-heart { width: 20px; height: 18px; left: 7px; }
   #hp-text { min-width: 0; font-size: 11px; margin-left: 8px; }
   #hud-top { gap: 6px; }
   #wave-block, #enemy-block, #coin-block, #score-block { min-width: 62px; padding: 6px 10px; }
+  .title-bar { padding: 22px 24px 0; }
+  .title-body { padding: 0 24px; gap: 18px; }
+  #hero-list { width: 190px; }
+  #hero-detail { width: 240px; }
+  .title-controls { display: none; }
 }

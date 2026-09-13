@@ -118,10 +118,8 @@ export function createHUD({ events, characters } = {}) {
     if (bus && typeof bus.on === "function") bus.on(name, fn);
   }
 
-  const heroGrid = el("hero-grid");
   const startBtn = el("start-btn");
   const retryBtn = el("retry-btn");
-  const heroCards = new Map();
 
   let selectedId = null;
   let lastCombo = 0;
@@ -132,67 +130,8 @@ export function createHUD({ events, characters } = {}) {
   function selectHero(id, notify) {
     if (id === undefined || id === null) return;
     selectedId = id;
-    for (const [cardId, card] of heroCards) {
-      if (cardId === id) card.classList.add("selected");
-      else card.classList.remove("selected");
-    }
-    startBtn.disabled = false;
-    startBtn.textContent = "Enter the dungeon";
     if (notify) emit("hero-selected", { id });
   }
-
-  charList.forEach((hero, index) => {
-    const id = (hero && (hero.id || hero.name)) || String(index);
-    const card = create("button");
-    card.type = "button";
-    card.className = "hero-card stone";
-
-    const color = hero && Number.isFinite(hero.color) ? hero.color >>> 0 : 0xffffff;
-    const hex = "#" + color.toString(16).padStart(6, "0");
-    card.style.setProperty("--hero-accent", hex);
-    card.style.setProperty("--hero-tint", hex);
-
-    const portrait = create("div");
-    portrait.className = "hero-portrait";
-    card.appendChild(portrait);
-
-    const title = create("h3");
-    title.textContent = (hero && hero.name) || id;
-    card.appendChild(title);
-
-    const blurb = create("p");
-    blurb.className = "hero-blurb";
-    blurb.textContent = (hero && hero.blurb) || "";
-    card.appendChild(blurb);
-
-    const stats = create("div");
-    stats.className = "hero-stats";
-    const rows = [
-      ["HP", hero && hero.hp],
-      ["DMG", hero && hero.damage],
-      ["SPD", hero && hero.moveSpeed],
-    ];
-    for (const [label, value] of rows) {
-      const stat = create("div");
-      stat.className = "hero-stat";
-      stat.textContent = label;
-      const b = create("b");
-      b.textContent = value === undefined || value === null ? "-" : String(value);
-      stat.appendChild(b);
-      stats.appendChild(stat);
-    }
-    card.appendChild(stats);
-
-    card.addEventListener("click", () => selectHero(id, true));
-    heroGrid.appendChild(card);
-    heroCards.set(id, card);
-  });
-
-  startBtn.addEventListener("click", () => {
-    if (startBtn.disabled || !selectedId) return;
-    emit("start-run", {});
-    emit("sfx", { name: "ui-click" });
-  });
 
   retryBtn.addEventListener("click", () => {
     emit("retry", {});
@@ -414,10 +353,7 @@ export function createHUD({ events, characters } = {}) {
     setText(el("coin-num"), 0);
     setText(el("score-num"), 0);
 
-    for (const card of heroCards.values()) card.classList.remove("selected");
     selectedId = null;
-    startBtn.disabled = true;
-    startBtn.textContent = "Choose your hero";
   }
 
   function setSelectedHero(id) {
