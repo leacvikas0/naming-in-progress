@@ -177,14 +177,15 @@ Player stat bag gains: `reactionMult: 1`, `auraMult: 1`, `momentumMult: 1`,
 | Event | Payload | Emitter |
 |---|---|---|
 | `player-attack` (extended) | `{ origin, dir, range, arc, damage, heavy, crit, element, kind, stun }` | player |
-| `aura-applied` | `{ position, element }` | enemies |
-| `reaction` | `{ type, position, radius, damage }` | enemies |
+| `aura-applied` | `{ position, element, color }` | enemies |
+| `reaction` | `{ type, name, position, radius, damage, color }` | enemies |
 | `perfect-dodge` | `{ position }` | enemies |
-| `swap` | `{ from, to, element }` | player |
+| `swap` | `{ from, to, element, color }` | player |
 | `swap-ready` | `{ frac }` | player |
 | `momentum` | `{ value, max, ready }` | player |
 | `super-used` | `{ hero, position }` | player |
 | `hazard-hit` | `{ target, position }` | player / enemies |
+| `wave-start` (extended) | `{ wave, count, modifier }` | main |
 
 ### player.js
 
