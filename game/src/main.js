@@ -57,6 +57,7 @@ let enemies = null;
 const state = {
   phase: "loading",
   heroId: null,
+  party: [],
   wave: 0,
   coins: 0,
   score: 0,
@@ -72,6 +73,9 @@ const state = {
 const input = {
   keys: new Set(),
   attack: false,
+  heavy: false,
+  swapQueued: false,
+  superQueued: false,
   aim: new THREE.Vector3(0, 0, 1),
   mouse: new THREE.Vector2(0, 0),
   hasPointer: false,
@@ -227,8 +231,14 @@ addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
   input.keys.add(k);
   if (k === " ") e.preventDefault();
-  if (k === "r" && state.phase === "dead") startRun(state.heroId || "knight");
+  if (k === "r" && state.phase === "dead") startRun(state.party);
   if (k === "escape" && input.locked) document.exitPointerLock();
+  if (k === "q" && !e.repeat) input.swapQueued = true;
+  if (k === "e" && !e.repeat) input.superQueued = true;
+  if ((k === "1" || k === "2") && !e.repeat) {
+    const idx = k === "1" ? 0 : 1;
+    if (player && idx !== player.activeIndex) player.swapTo(idx);
+  }
   if (k === "m") {
     audio.setMuted(!audio.muted);
     hud.showToast(audio.muted ? "Sound muted" : "Sound on");
@@ -244,6 +254,7 @@ addEventListener("keyup", (e) => {
 addEventListener("blur", () => {
   input.keys.clear();
   input.attack = false;
+  input.heavy = false;
 });
 
 canvas.addEventListener("mousemove", (e) => {
@@ -268,11 +279,15 @@ canvas.addEventListener("mousedown", (e) => {
     } else {
       input.attack = true;
     }
+  } else if (e.button === 2) {
+    onFirstGesture();
+    if (input.locked) input.heavy = true;
   }
 });
 
 addEventListener("mouseup", (e) => {
   if (e.button === 0) input.attack = false;
+  if (e.button === 2) input.heavy = false;
 });
 
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -341,6 +356,31 @@ function updateCamera(dt) {
   camera.lookAt(camLookAt);
 }
 
+/* ---------------- hazards ---------------- */
+
+// Spikes hurt the player too. The per-entity cooldown lives here because main.js
+// is the only module that sees both the world and the player; enemies tick their
+// own hazard damage inside enemies.js.
+let playerHazardCd = 0;
+
+function tickPlayerHazards(dt) {
+  if (playerHazardCd > 0) playerHazardCd -= dt;
+  if (!player || !player.alive || playerHazardCd > 0) return;
+  const hazards = world && world.hazards;
+  if (!Array.isArray(hazards) || hazards.length === 0) return;
+  for (const h of hazards) {
+    if (!h) continue;
+    const r = Number.isFinite(h.radius) ? h.radius : 1;
+    const dx = player.position.x - h.x;
+    const dz = player.position.z - h.z;
+    if (dx * dx + dz * dz > r * r) continue;
+    playerHazardCd = CONFIG.combat.spikeTick;
+    events.emit("hazard-hit", { target: "player", position: player.position.clone() });
+    player.damage(CONFIG.combat.spikeDamage, { from: { x: h.x, z: h.z } });
+    break;
+  }
+}
+
 /* ---------------- run flow ---------------- */
 
 async function boot() {
@@ -360,15 +400,19 @@ async function boot() {
   if (gestureSeen) startTitleMusic();
 }
 
-function startRun(heroId) {
-  const hero = CHARACTERS[heroId] || CHARACTERS.knight;
+function startRun(partyIds) {
+  const ids = Array.isArray(partyIds) && partyIds.length ? partyIds : [state.heroId || "knight"];
+  const hero = CHARACTERS[ids[0]] || CHARACTERS.knight;
+  const partner = CHARACTERS[ids[1]] || null;
   state.heroId = hero.id;
+  state.party = partner ? [hero.id, partner.id] : [hero.id];
 
   enemies?.clearAll();
   fx.reset();
   if (world && world.group) world.group.visible = true;
 
   if (player) {
+    if (typeof player.dispose === "function") player.dispose();
     scene.remove(player.group);
     player = null;
   }
@@ -377,7 +421,7 @@ function startRun(heroId) {
     enemies = createEnemies({ scene, world, events, config: CONFIG, rng, loader });
   }
 
-  player = createPlayer({ scene, world, events, config: CONFIG.player, hero, loader });
+  player = createPlayer({ scene, world, events, config: CONFIG.player, hero, partner, loader });
   player.group.position.set(0, 0, 6);
 
   state.wave = 0;
@@ -396,9 +440,9 @@ function startRun(heroId) {
   title.hide();
   hud.hideDeath();
   hud.hideUpgrades();
-  hud.showToast(`${hero.name} descends`);
+  hud.showToast(partner ? `${hero.name} & ${partner.name} descend` : `${hero.name} descends`);
 
-  events.emit("run-started", { hero: hero.id });
+  events.emit("run-started", { hero: hero.id, party: state.party.slice() });
   events.emit("sfx", { name: "start" });
 
   titleMusicStarted = true;
@@ -413,9 +457,13 @@ function startWave(n) {
   state.waveActive = true;
   const waveDef = computeWave(n);
   const elites = waveDef.eliteCount;
-  const sub = elites > 0 ? `${elites} elite${elites > 1 ? "s" : ""} among them` : "";
-  hud.showWaveBanner(n, sub);
-  events.emit("wave-start", { wave: n, count: waveDef.count + elites });
+  const parts = [];
+  if (waveDef.modifier) parts.push(waveDef.modifier.name);
+  if (elites > 0) parts.push(`${elites} elite${elites > 1 ? "s" : ""} among them`);
+  const sub = parts.join(" · ");
+  // The banner is rendered by hud.js off this event; main.js must not also call
+  // showWaveBanner directly or the banner retriggers on every wave start.
+  events.emit("wave-start", { wave: n, count: waveDef.count + elites, modifier: waveDef.modifier, sub });
   events.emit("sfx", { name: "wave" });
   audio.music.setFilter({ lowpass: 20000, gain: 1, fade: 0.6 });
   enemies.spawnWave(waveDef, player);
@@ -424,6 +472,13 @@ function startWave(n) {
 function endWave() {
   state.waveActive = false;
   events.emit("wave-clear", { wave: state.wave });
+
+  // Between-wave recovery: without it damage is a one-way ratchet and every
+  // run dies to attrition around wave 6-7 no matter how well it is played.
+  if (player && typeof player.healParty === "function") {
+    const healed = player.healParty(CONFIG.combat.waveClearHeal, CONFIG.combat.waveClearHealFrac);
+    if (healed > 0) hud.showToast(`Wave cleared · +${Math.round(healed)} HP`);
+  }
 
   if (state.wave % CONFIG.combat.upgradeEvery === 0) {
     const cards = rollUpgrades(rng, 3);
@@ -486,12 +541,17 @@ events.on("hero-selected", ({ id }) => {
   state.heroId = id;
 });
 
+events.on("party-selected", ({ heroes }) => {
+  state.party = Array.isArray(heroes) ? heroes.slice() : [];
+  if (state.party.length) state.heroId = state.party[0];
+});
+
 events.on("start-run", () => {
-  startRun(state.heroId || "knight");
+  startRun(state.party.length ? state.party : [state.heroId || "knight"]);
 });
 
 events.on("retry", () => {
-  startRun(state.heroId || "knight");
+  startRun(state.party.length ? state.party : [state.heroId || "knight"]);
 });
 
 events.on("upgrade-chosen", ({ id }) => {
@@ -513,6 +573,14 @@ events.on("coin-collected", ({ value }) => {
 
 events.on("player-hurt", () => {
   state.combo = 0;
+});
+
+events.on("reaction-heal", ({ amount }) => {
+  if (player && amount > 0) player.heal(amount);
+});
+
+events.on("party-slot", ({ index }) => {
+  if (player && index !== player.activeIndex) player.swapTo(index);
 });
 
 events.on("player-died", () => {
@@ -554,10 +622,15 @@ function frame() {
         move,
         aim: input.aim,
         attack: input.attack && state.phase === "playing",
+        heavy: input.heavy && state.phase === "playing",
         dodge: input.keys.has(" "),
         sprint: input.keys.has("shift"),
         jump: input.keys.has("jump"),
+        swap: input.swapQueued,
+        super: input.superQueued,
       });
+      input.swapQueued = false;
+      input.superQueued = false;
     } else if (player) {
       player.update(dt, {});
     }
@@ -566,10 +639,11 @@ function frame() {
       enemies.update(dt, player);
     }
 
+    if (state.phase === "playing") tickPlayerHazards(dt);
+
     if (state.phase === "playing" && state.waveActive && enemies.aliveCount === 0 && enemies.totalCount > 0) {
       endWave();
     }
-
     if (state.phase === "playing" && !state.waveActive && state.intermissionT > 0) {
       state.intermissionT -= dt;
       if (state.intermissionT <= 0) startWave(state.wave + 1);
@@ -600,6 +674,12 @@ function frame() {
     score: state.score,
     dodgeFrac: player ? player.dodgeCooldownFrac : 0,
     combo: state.combo,
+    momentum: player ? player.momentum : 0,
+    momentumMax: CONFIG.player.momentumMax,
+    superReady: player ? player.superReady : false,
+    swapFrac: player ? player.swapCooldownFrac : 0,
+    activeHero: player ? player.activeHero : null,
+    party: player ? player.party : [],
   });
 
   renderer.render(scene, camera);

@@ -76,17 +76,28 @@ chests), 2–3 spike hazard tiles, a raised platform. Fog + dim ambient. Target 
 lights. All meshes from `ASSETS.dungeon`. Colliders for solid props only, radius ≈ half of
 the prop's widest dimension.
 
-### player.js — `createPlayer({ scene, world, events, config, hero })`
+### player.js — `createPlayer({ scene, world, events, config, hero, partner })`
 
 ```js
 {
   group, position,             // Vector3 (feet)
-  hp, maxHp, alive,
+  hp, maxHp, alive,            // the ACTIVE hero's values
   stats: { damageMult, moveSpeedMult, critChance, range, arc, coinMult,
-           attackSpeedMult, lifesteal, dodgeCooldownMult, thorns },
-  hero,                        // the CHARACTERS entry
+           attackSpeedMult, lifesteal, dodgeCooldownMult, thorns,
+           reactionMult, auraMult, momentumMult, swapCooldownMult,
+           executeMult, reactionHeal },
+  hero,                        // the starting CHARACTERS entry
+  activeHero,                  // the currently-controlled CHARACTERS entry
+  party,                       // [{ def, hp, maxHp }, ...] length 2
+  partyAlive,                  // heroes with hp > 0
+  momentum, superReady, swapCooldownFrac,
   update(dt, input),           // input = { move: {x,z}, aim: Vector3, attack: bool,
-                               //           dodge: bool, sprint: bool, jump: bool }
+                               //           heavy: bool, dodge: bool, sprint: bool,
+                               //           jump: bool, swap: bool, super: bool }
+  swap(),                      // bool — swap to the partner if the cooldown is ready
+  swapTo(idx, forced),         // bool — swap to party slot idx; forced skips guards (auto-swap)
+  healParty(flat, frac),       // heal every LIVING hero by flat + maxHp*frac; returns total
+  dispose(),                   // remove this player's listeners from the shared bus
   damage(amount, opts),        // emits player-hurt / player-died
   heal(n), addMaxHp(n), respawn(),
   dodgeCooldownFrac,           // 0..1 for HUD
@@ -96,9 +107,24 @@ the prop's widest dimension.
 
 Movement: accelerate toward camera-relative input, face aim, 3-hit combo with lunge and
 combo window, dodge roll with i-frames + cooldown, sprint, jump with gravity, hurt invuln
-with blink. On attack, emit `player-attack` with `{ origin, dir, range, arc, damage, heavy }`
+with blink. On attack, emit `player-attack` with
+`{ origin, dir, range, arc, damage, heavy, crit, element, kind, stun, knockback,
+reactionMult, auraMult, executeMult, reactionHeal }`
 — the enemy module resolves hits. Effective stats = hero base × `stats` multipliers ×
 upgrade `apply()` mutations.
+
+**Combat 2.0 verbs.** Light attacks build momentum; the 3rd combo hit is a shove.
+`heavy` is a committed attack from `hero.heavy` (dodge-cancellable only after impact).
+`super` spends a full momentum bar on `hero.super`, one of four shapes keyed by
+`super.id`: `nova` (instant 360), `whirlwind` (repeated 360 ticks), `flurry` (blink
+strikes), `meteor` (delayed blast at the aim point). A hit negated during dodge i-frames
+is a **perfect dodge**: it emits `perfect-dodge`, awards momentum, and opens a short
+damage window. The inactive hero is off-field; when the active hero falls and the partner
+lives, the party auto-swaps instead of dying — `player-died` only fires when both are down.
+
+**Lifecycle.** The event bus is a module singleton, so a player's listeners outlive it.
+`main.js` MUST call `player.dispose()` before replacing the player at the start of a run,
+or the previous player keeps collecting kill/reaction momentum on every retry.
 
 ### enemies.js — `createEnemies({ scene, world, events, config, rng })`
 
@@ -106,6 +132,8 @@ upgrade `apply()` mutations.
 {
   group,
   aliveCount, totalCount,      // totalCount = spawned this wave
+  killCount, reactionCount,    // reactions triggered this wave
+  list,                        // live enemy objects (debug/tests)
   spawnWave(waveDef, player),  // telegraph then spawn from world.spawnPoint
   update(dt, player),          // AI, attacks, projectiles, hit resolution
   clearAll(),                  // remove all enemies + projectiles
@@ -117,6 +145,22 @@ AI: minion chases; warrior chases with heavy telegraph; rogue dashes when in ran
 keeps distance and fires a bolt. Windup flash before every attack. Enemy attacks resolve
 against the player: `player.damage(dmg)` unless `player.isDodging`. Enemy melee resolves in
 `update` when the windup completes and the player is still in range.
+
+**Combat 2.0 choreography.** At most `combat.maxAttackers` enemies may hold a windup at
+once (attack tokens, released on resolve/death/stun). Enemies inside `combat.standoff` that
+hold no token orbit the player tangentially instead of pressing in, so a large wave reads
+as a ring rather than a pile. Spikes in `world.hazards` damage enemies on a per-enemy
+`combat.spikeTick` cooldown (main.js ticks the player's own hazard damage). Elites enrage
+below half hp (+speed, faster windup).
+
+**Elements and reactions.** A hit carrying `element` applies an aura
+(`{ element, t }`, `combat.auraTime`). A different element landing on an aura triggers the
+matching `REACTIONS` entry, consumes the aura, and applies the incoming element as the new
+one. Reaction payloads: `melt` (armor break), `overload` (AoE + knockback), `shatter`
+(freeze, then a shatter multiplier on the next hit), `detonate` (fire nova + spreading
+burn), `frozen` (hard freeze in a radius), `void` (pull + damage mark). Frozen enemies take
+no actions. Damage-taken modifiers (armor break, mark, shatter, execute) are applied before
+the hit lands.
 
 ### fx.js — `createFX({ scene, camera, events, rng })`
 
@@ -275,27 +319,38 @@ Loop points are the `TRACKS` constants at the top of the build script. Re-run
 | Event | Payload | Emitter |
 |---|---|---|
 | `sfx` | `{ name, position?, pitch?, volume? }` | any |
-| `player-attack` | `{ origin, dir, range, arc, damage, heavy }` | player |
+| `player-attack` | `{ origin, dir, range, arc, damage, heavy, crit, element, kind, stun, knockback, reactionMult, auraMult, executeMult, reactionHeal }` | player |
 | `player-hurt` | `{ amount, hp }` | player |
+| `player-healed` | `{ amount, hp }` | player |
 | `player-died` | `{ }` | player |
 | `player-dodged` | `{ }` | player |
 | `player-jumped` | `{ }` | player |
 | `player-landed` | `{ }` | player |
+| `swap` | `{ from, to, element, color }` | player |
+| `super-used` | `{ hero, position, color }` | player |
+| `momentum` | `{ value, max, ready }` | player |
+| `perfect-dodge` | `{ position }` | player |
+| `aura-applied` | `{ position, element, color }` | enemies |
+| `reaction` | `{ type, name, position, radius, damage, color }` | enemies |
+| `reaction-heal` | `{ amount }` | enemies |
+| `hazard-hit` | `{ target, position }` | enemies / main |
 | `enemy-spawned` | `{ position, type }` | enemies |
 | `enemy-hit` | `{ position, amount, crit, color }` | enemies |
 | `enemy-died` | `{ position, value, color }` | enemies |
 | `enemy-attack` | `{ position }` | enemies |
 | `enemy-count` | `{ alive }` | enemies |
-| `wave-start` | `{ wave, count }` | main |
+| `wave-start` | `{ wave, count, modifier, sub }` | main |
 | `wave-clear` | `{ wave }` | main |
 | `upgrade-offer` | `{ cards }` | main |
 | `upgrade-chosen` | `{ id }` | hud |
-| `run-started` | `{ hero }` | main |
+| `run-started` | `{ hero, party }` | main |
 | `run-ended` | `{ wave, kills, coins, score }` | main |
 | `coin-collected` | `{ value }` | fx |
 | `score-changed` | `{ score }` | main |
 | `hero-selected` | `{ id }` | hud |
-| `start-run` | `{ }` | hud |
+| `party-selected` | `{ heroes }` | title |
+| `party-slot` | `{ index }` | hud |
+| `start-run` | `{ }` | title |
 | `retry` | `{ }` | hud |
 | `hitstop` | `{ duration }` | any |
 | `shake` | `{ amount }` | any |

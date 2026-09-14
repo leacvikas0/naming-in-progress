@@ -1,7 +1,17 @@
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { CONFIG, ENEMY_TYPES, clamp, angleDelta, makeRng, pickWeighted } from "./balance.js";
+import {
+  CONFIG,
+  ELEMENTS,
+  ENEMY_TYPES,
+  REACTIONS,
+  angleDelta,
+  auraOutcome,
+  clamp,
+  makeRng,
+  pickWeighted,
+} from "./balance.js";
 
 const gltfCache = new Map();
 const readyCache = new Map();
@@ -16,6 +26,32 @@ const KNOCKBACK_DECAY = 8;
 const MAX_DT = 0.1;
 const BASE_RADIUS = 0.35;
 const TARGET_HEIGHT = 1.9;
+const EXECUTE_THRESHOLD = 0.3;
+const RAGE_THRESHOLD = 0.5;
+const RAGE_SPEED_MULT = 1.3;
+const RAGE_WINDUP_MULT = 0.75;
+const AURA_RING_INNER = 0.62;
+const AURA_RING_OUTER = 0.86;
+const AURA_RING_SEGMENTS = 24;
+const AURA_RING_Y = 0.07;
+const AURA_FADE = 0.7;
+const AURA_TINT_MIX = 0.6;
+const AURA_TINT_MIN_INTENSITY = 0.35;
+const MARK_DAMAGE_MULT = 1.2;
+const ARMOR_BREAK_MULT = 1.3;
+const STANDOFF_DEFAULT = 3.6;
+// The orbit ring sits just outside a type's own reach, so an enemy without a
+// token hovers where it visibly threatens but cannot connect. If the ring were
+// wider than attackRange the fight would go passive: nobody could ever close
+// enough to start a windup and claim a token.
+const ORBIT_MARGIN = 0.8;
+const ORBIT_BAND = 1.5;
+const TOKEN_REACH = 0.6;
+const REACTION_PITCH = { melt: 0.82, overload: 0.72, shatter: 1.18, detonate: 0.9, frozen: 1.3, void: 0.62 };
+
+// Module scratch: emissive tint lerp target. Never held across frames.
+const auraTintColor = new THREE.Color();
+let auraRingGeo = null;
 
 const ANIM = {
   idle: ["Idle", "Idle_B", "Unarmed_Idle", "Skeleton_Inactive_Standing_Pose", "T-Pose"],
@@ -130,9 +166,25 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
   let lastEmittedAlive = 0;
   let nextId = 1;
   let killCount = 0;
+  let reactionCount = 0;
+  let tokenHolders = 0;
 
   function emit(name, payload) {
     if (events && typeof events.emit === "function") events.emit(name, payload);
+  }
+
+  function acquireToken(e) {
+    if (e.hasToken) return true;
+    if (tokenHolders >= combat.maxAttackers) return false;
+    tokenHolders += 1;
+    e.hasToken = true;
+    return true;
+  }
+
+  function releaseToken(e) {
+    if (!e.hasToken) return;
+    tokenHolders = Math.max(0, tokenHolders - 1);
+    e.hasToken = false;
   }
 
   function emitCount() {
@@ -201,6 +253,7 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
     spawnQueue.push(...buildQueue(def));
     spawnTimer = 0;
     waveSpawned = 0;
+    reactionCount = 0;
     lastEmittedAlive = aliveN;
     const preload = new Set();
     for (const entry of spawnQueue) {
@@ -358,6 +411,17 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
       dead: false,
       solid: true,
       fadeT: 0,
+      aura: null,
+      auraRing: null,
+      frozenT: 0,
+      armorBreakT: 0,
+      burnT: 0,
+      burnDps: 0,
+      markedT: 0,
+      hazardCd: 0,
+      hasToken: false,
+      enraged: false,
+      strafeSide: rand() < 0.5 ? -1 : 1,
     };
     e.group.name = `enemy-${type.id}${elite ? "-elite" : ""}`;
     e.group.position.set(pos.x, 0, pos.z);
@@ -396,9 +460,10 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
 
   function updateEmissive(e) {
     const mode = e.flashT > 0 ? "hit" : e.state === "windup" ? "windup" : "base";
-    if (mode === "base" && e.emissiveMode === "base") return;
+    if (mode === "base" && e.emissiveMode === "base" && !e.aura) return;
     e.emissiveMode = mode;
     const pulse = mode === "windup" ? 0.5 + 0.5 * Math.sin(e.stateT * 30) : 0;
+    const auraEl = e.aura ? ELEMENTS[e.aura.element] : null;
     for (const entry of e.mats) {
       if (!entry.base) continue;
       if (mode === "hit") {
@@ -407,6 +472,10 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
       } else if (mode === "windup") {
         entry.mat.emissive.setRGB(1, 0.16, 0.06);
         entry.mat.emissiveIntensity = 0.4 + pulse;
+      } else if (auraEl) {
+        auraTintColor.setHex(auraEl.color);
+        entry.mat.emissive.copy(entry.base).lerp(auraTintColor, AURA_TINT_MIX);
+        entry.mat.emissiveIntensity = Math.max(entry.baseIntensity, AURA_TINT_MIN_INTENSITY);
       } else {
         entry.mat.emissive.copy(entry.base);
         entry.mat.emissiveIntensity = entry.baseIntensity;
@@ -414,12 +483,180 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
     }
   }
 
+  function auraRingFor(element) {
+    if (!auraRingGeo) {
+      auraRingGeo = new THREE.RingGeometry(AURA_RING_INNER, AURA_RING_OUTER, AURA_RING_SEGMENTS);
+      auraRingGeo.rotateX(-Math.PI / 2);
+    }
+    const el = ELEMENTS[element];
+    const mat = new THREE.MeshBasicMaterial({
+      color: el ? el.color : 0xffffff,
+      transparent: true,
+      opacity: 0.7,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    return new THREE.Mesh(auraRingGeo, mat);
+  }
+
+  function setAura(e, element, duration) {
+    const el = ELEMENTS[element];
+    if (!el) return;
+    e.aura = { element, t: duration, max: duration };
+    if (!e.auraRing && e.group) {
+      e.auraRing = auraRingFor(element);
+      e.auraRing.position.y = AURA_RING_Y;
+      e.group.add(e.auraRing);
+    } else if (e.auraRing && e.auraRing.material) {
+      e.auraRing.material.color.setHex(el.color);
+    }
+    emit("aura-applied", {
+      position: e.group.position.clone(),
+      element,
+      color: el.color,
+    });
+  }
+
+  function clearAura(e) {
+    e.aura = null;
+    if (e.auraRing) {
+      if (e.auraRing.parent) e.auraRing.parent.remove(e.auraRing);
+      if (e.auraRing.material) e.auraRing.material.dispose();
+      e.auraRing = null;
+    }
+  }
+
+  function applyAreaDamage(source, radius, damage, knockback, exclude) {
+    for (const other of [...enemies]) {
+      if (other === exclude || other.dead || other.dying || !other.solid) continue;
+      const dx = other.group.position.x - source.x;
+      const dz = other.group.position.z - source.z;
+      const d = Math.hypot(dx, dz);
+      if (d > radius + other.radius) continue;
+      applyDamageTo(other, damage, {});
+      if (knockback && d > 1e-4) {
+        other.kx += (dx / d) * knockback;
+        other.kz += (dz / d) * knockback;
+      }
+    }
+  }
+
+  // Core damage application: flash, hp, feedback events, death check. Used by
+  // both the player-attack path (via damageEnemy, which applies modifiers and
+  // elemental reactions first) and by raw sources like spikes and reaction
+  // splash (via applyAreaDamage).
+  function applyDamageTo(e, amount, opts) {
+    if (!e || e.dead || e.dying || !e.solid) return false;
+    const dmg = Number.isFinite(amount) ? amount : 0;
+    e.hp -= dmg;
+    e.flashT = HIT_FLASH;
+    const pos = e.group.position.clone();
+    pos.y = 1;
+    emit("enemy-hit", { position: pos, amount: dmg, crit: !!opts.crit, color: e.type.color });
+    emit("sfx", { name: opts.crit ? "crit" : "hit", position: e.group.position.clone() });
+    emit("hitstop", { duration: opts.crit ? combat.hitstopCrit : combat.hitstopHit });
+    emit("shake", { amount: opts.crit ? combat.shakeCrit : combat.shakeHit });
+    if (e.hp <= 0) killEnemy(e);
+    return true;
+  }
+
+  function resolveReaction(e, id, element, payload, triggeringDamage) {
+    const reaction = REACTIONS[id];
+    if (!reaction) return 0;
+    const el = ELEMENTS[element];
+    const color = reaction.color != null ? reaction.color : el ? el.color : 0xffffff;
+    const pos = e.group.position.clone();
+    const radius = Number.isFinite(reaction.radius) ? reaction.radius : 2.4;
+    const mult = Number.isFinite(reaction.damageMult) ? reaction.damageMult : 1;
+    const reactionMult = Number.isFinite(payload.reactionMult) ? payload.reactionMult : 1;
+    // Every reaction scales the triggering hit to `damageMult`; AoE reactions
+    // additionally splash the full scaled damage onto neighbours. The bonus
+    // here is the delta on top of the hit that already landed.
+    const scaled = triggeringDamage * mult * reactionMult;
+    const bonus = scaled - triggeringDamage;
+
+    if (id === "melt") {
+      if (reaction.armorBreak) e.armorBreakT = reaction.armorBreak.time;
+    } else if (id === "overload") {
+      applyAreaDamage(pos, radius, scaled, reaction.knockback || 0, e);
+    } else if (id === "shatter") {
+      e.frozenT = reaction.freeze || 1.5;
+      e.shatterReady = true;
+    } else if (id === "detonate") {
+      applyAreaDamage(pos, radius, scaled, 0, e);
+      if (reaction.burn) {
+        for (const other of [...enemies]) {
+          if (other.dead || other.dying || !other.solid) continue;
+          const d = Math.hypot(
+            other.group.position.x - pos.x,
+            other.group.position.z - pos.z
+          );
+          if (d <= radius + other.radius) {
+            other.burnT = reaction.burn.time;
+            other.burnDps = reaction.burn.dps;
+          }
+        }
+      }
+    } else if (id === "frozen") {
+      for (const other of [...enemies]) {
+        if (other.dead || other.dying || !other.solid) continue;
+        const d = Math.hypot(
+          other.group.position.x - pos.x,
+          other.group.position.z - pos.z
+        );
+        if (d <= radius + other.radius) other.frozenT = reaction.freeze || 2;
+      }
+    } else if (id === "void") {
+      for (const other of [...enemies]) {
+        if (other.dead || other.dying || !other.solid) continue;
+        const dx = other.group.position.x - pos.x;
+        const dz = other.group.position.z - pos.z;
+        const d = Math.hypot(dx, dz);
+        if (d > radius + other.radius || d < 1e-4) continue;
+        const pull = reaction.pull || 0;
+        other.kx -= (dx / d) * pull;
+        other.kz -= (dz / d) * pull;
+        if (reaction.mark) other.markedT = reaction.mark.time;
+      }
+    }
+
+    reactionCount += 1;
+    emit("reaction", {
+      type: id,
+      name: reaction.name,
+      position: pos,
+      radius,
+      damage: scaled,
+      color,
+    });
+    emit("sfx", { name: "reaction", position: pos, pitch: REACTION_PITCH[id] || 1 });
+    const heal = Number.isFinite(payload.reactionHeal) ? payload.reactionHeal : 0;
+    if (heal > 0) emit("reaction-heal", { amount: heal });
+    return bonus;
+  }
+
+  function applyElement(e, element, triggeringDamage, payload) {
+    if (!ELEMENTS[element]) return triggeringDamage;
+    const outcome = auraOutcome(e.aura, element);
+    let damage = triggeringDamage;
+    if (outcome.reaction) {
+      damage += resolveReaction(e, outcome.reaction, element, payload, triggeringDamage);
+    }
+    if (outcome.apply) {
+      const auraMult = Number.isFinite(payload.auraMult) ? payload.auraMult : 1;
+      setAura(e, outcome.apply, combat.auraTime * auraMult);
+    }
+    return damage;
+  }
+
   function startWindup(e) {
+    if (!acquireToken(e)) return false;
     e.state = "windup";
     e.stateT = 0;
     playAnim(e, windupCandidates(e.type), { loop: false, clamp: true, fade: 0.06, force: true });
     emit("enemy-attack", { position: e.group.position.clone() });
     emit("sfx", { name: "enemy-windup", position: e.group.position.clone(), pitch: 0.9 + rand() * 0.25 });
+    return true;
   }
 
   function fireBolt(e, player) {
@@ -439,6 +676,7 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
   }
 
   function resolveAttack(e, player) {
+    releaseToken(e);
     e.state = "chase";
     e.stateT = 0;
     e.attackCd = e.type.attackCooldown;
@@ -450,8 +688,16 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
     const reach = e.type.attackRange + (player.radius ?? playerCfg.radius ?? 0.55);
     const d = Math.hypot(player.position.x - pos.x, player.position.z - pos.z);
     if (d <= reach) {
+      // The player resolves its own perfect dodge inside damage() and emits the
+      // event itself; a whiff during i-frames is just a whiff here.
+      const dodging = player.isDodging === true;
       if (typeof player.damage === "function") player.damage(e.damage, { from: pos.clone() });
-      emit("sfx", { name: "hit", position: pos.clone(), pitch: 0.85, volume: 0.85 });
+      emit("sfx", {
+        name: dodging ? "swing" : "hit",
+        position: pos.clone(),
+        pitch: dodging ? 0.8 : 0.85,
+        volume: dodging ? 0.35 : 0.85,
+      });
     } else {
       emit("sfx", { name: "swing", position: pos.clone(), volume: 0.4 });
     }
@@ -464,13 +710,34 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
     const nz = dz / len;
     let mx = 0;
     let mz = 0;
+
+    // Standoff orbit: an enemy that is close but holds no attack token circles
+    // instead of piling in. This is what makes a 15-enemy wave read as a fight
+    // rather than a blender: the ring visibly breathes as tokens free up.
+    // The ring is derived from the enemy's own reach so melee types orbit
+    // within threatening distance instead of parking out of range. Ranged types
+    // keep their own spacing instead of orbiting.
+    const standoff = Math.max(
+      type.attackRange + ORBIT_MARGIN,
+      Math.min(Number.isFinite(combat.standoff) ? combat.standoff : STANDOFF_DEFAULT, type.attackRange + ORBIT_BAND)
+    );
+    if (!e.hasToken && !e.dashing && !type.keepDistance && dist < standoff) {
+      const push = type.keepDistance ? 0 : 1 - dist / standoff;
+      mx = (-nz * e.strafeSide) * 0.9 - nx * push * 0.6;
+      mz = (nx * e.strafeSide) * 0.9 - nz * push * 0.6;
+      const speed = e.speed * (type.orbitMult || 0.85);
+      e.group.position.x += mx * speed * dt;
+      e.group.position.z += mz * speed * dt;
+      return true;
+    }
+
     if (type.dash) {
       if (e.dashing) {
         e.dashT -= dt;
         mx = e.dashDir.x;
         mz = e.dashDir.z;
         if (dist <= type.attackRange * 0.75 || e.dashT <= 0) e.dashing = false;
-      } else if (e.dashCd <= 0 && dist <= type.dashRange && dist > type.attackRange * 0.85) {
+      } else if (e.dashCd <= 0 && e.hasToken && dist <= type.dashRange && dist > type.attackRange * 0.85) {
         e.dashing = true;
         e.dashT = 0.65;
         e.dashCd = 2.2;
@@ -503,6 +770,69 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
     return false;
   }
 
+  function tickStatus(e, dt) {
+    if (e.frozenT > 0) {
+      e.frozenT -= dt;
+      if (e.frozenT <= 0) {
+        e.frozenT = 0;
+        e.shatterReady = false;
+      }
+    }
+    if (e.armorBreakT > 0) e.armorBreakT = Math.max(0, e.armorBreakT - dt);
+    if (e.markedT > 0) e.markedT = Math.max(0, e.markedT - dt);
+    if (e.burnT > 0) {
+      e.burnT -= dt;
+      const dps = e.burnDps > 0 ? e.burnDps : 0;
+      if (dps > 0) {
+        e.hp -= dps * dt;
+        if (e.hp <= 0) {
+          killEnemy(e);
+          return;
+        }
+      }
+      if (e.burnT <= 0) {
+        e.burnT = 0;
+        e.burnDps = 0;
+      }
+    }
+    if (e.aura) {
+      e.aura.t -= dt;
+      if (e.aura.t <= 0) clearAura(e);
+      else if (e.auraRing && e.auraRing.material) {
+        e.auraRing.material.opacity = 0.35 + 0.35 * (e.aura.t / (e.aura.max || 1));
+      }
+    }
+    if (e.auraRing) e.auraRing.visible = !e.dying;
+  }
+
+  function tickHazard(e, dt) {
+    if (e.hazardCd > 0) e.hazardCd -= dt;
+    if (e.hazardCd > 0) return;
+    const hazards = world && world.hazards;
+    if (!Array.isArray(hazards) || hazards.length === 0) return;
+    for (const h of hazards) {
+      if (!h) continue;
+      const r = Number.isFinite(h.radius) ? h.radius : 1;
+      const dx = e.group.position.x - h.x;
+      const dz = e.group.position.z - h.z;
+      if (dx * dx + dz * dz > r * r) continue;
+      e.hazardCd = Number.isFinite(combat.spikeTick) ? combat.spikeTick : 0.9;
+      const dmg = Number.isFinite(combat.spikeDamage) ? combat.spikeDamage : 10;
+      emit("hazard-hit", { target: "enemy", position: e.group.position.clone() });
+      emit("sfx", { name: "hit", position: e.group.position.clone(), pitch: 1.25, volume: 0.6 });
+      applyDamageTo(e, dmg, {});
+      break;
+    }
+  }
+
+  function applyRage(e) {
+    if (e.enraged || !e.elite) return;
+    if (e.maxHp <= 0 || e.hp / e.maxHp >= RAGE_THRESHOLD) return;
+    e.enraged = true;
+    e.speed *= RAGE_SPEED_MULT;
+    e.type = { ...e.type, windup: e.type.windup * RAGE_WINDUP_MULT };
+  }
+
   function updateEnemy(e, dt, player) {
     if (e.mixer) e.mixer.update(dt);
     if (e.flashT > 0) e.flashT -= dt;
@@ -533,25 +863,58 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
       }
     }
 
+    tickStatus(e, dt);
+    if (e.dead || e.dying) return;
+    tickHazard(e, dt);
+    if (e.dead || e.dying) return;
+    applyRage(e);
+
     if (!player || !player.position) return;
-    const dx = player.position.x - e.group.position.x;
-    const dz = player.position.z - e.group.position.z;
-    const dist = Math.hypot(dx, dz);
+    const pdx = player.position.x - e.group.position.x;
+    const pdz = player.position.z - e.group.position.z;
+    const dist = Math.hypot(pdx, pdz);
+
+    // Frozen: no acting at all, and the windup token is dropped so the next
+    // enemy in line steps in.
+    if (e.frozenT > 0) {
+      if (e.state === "windup") {
+        releaseToken(e);
+        e.state = "chase";
+        e.stateT = 0;
+      }
+      playAnim(e, ANIM.idle, { fade: 0.2 });
+      return;
+    }
+
     if (e.stun > 0) return;
 
     if (e.state === "windup") {
       e.stateT += dt;
-      faceToward(e, dx, dz, dt, 14);
+      faceToward(e, pdx, pdz, dt, 14);
       if (e.stateT >= e.type.windup) resolveAttack(e, player);
       return;
     }
 
     e.attackCd -= dt;
     e.dashCd -= dt;
-    const moving = moveAI(e, dt, dx, dz, dist);
-    if (moving) faceToward(e, dx, dz, dt, 9);
 
-    if (!e.dashing && e.attackCd <= 0 && dist <= e.type.attackRange) {
+    // Token queue: an enemy waiting on the ring joins the attack rotation when
+    // its cooldown is up and it is near enough to threaten. Holding a token is
+    // what lets it stop orbiting and close the distance (see moveAI).
+    const etype = e.type;
+    const ring = Math.max(
+      etype.attackRange + ORBIT_MARGIN,
+      Math.min(Number.isFinite(combat.standoff) ? combat.standoff : STANDOFF_DEFAULT, etype.attackRange + ORBIT_BAND)
+    );
+    if (!e.hasToken && e.attackCd <= 0 && dist <= ring + TOKEN_REACH) acquireToken(e);
+    // A token holder that gets kited far away gives its slot back so the next
+    // enemy in line can step in rather than the wave stalling on a straggler.
+    if (e.hasToken && dist > ring * 2.2) releaseToken(e);
+
+    const moving = moveAI(e, dt, pdx, pdz, dist);
+    if (moving) faceToward(e, pdx, pdz, dt, 9);
+
+    if (!e.dashing && e.hasToken && e.attackCd <= 0 && dist <= etype.attackRange) {
       startWindup(e);
       return;
     }
@@ -664,6 +1027,8 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
     e.fadeT = DEATH_FADE;
     e.kx = 0;
     e.kz = 0;
+    releaseToken(e);
+    clearAura(e);
     killCount += 1;
     const pos = e.group.position.clone();
     pos.y = 1;
@@ -675,6 +1040,8 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
   function removeEnemy(e) {
     if (e.dead) return;
     e.dead = true;
+    releaseToken(e);
+    clearAura(e);
     group.remove(e.group);
     for (const entry of e.mats) {
       if (entry.mat && typeof entry.mat.dispose === "function") entry.mat.dispose();
@@ -687,28 +1054,50 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
 
   function damageEnemy(enemy, amount, opts = {}) {
     if (!enemy || enemy.dead || enemy.dying || !enemy.solid) return false;
-    const dmg = Number.isFinite(amount) ? amount : 0;
-    enemy.hp -= dmg;
-    enemy.flashT = HIT_FLASH;
-    const pos = enemy.group.position.clone();
-    pos.y = 1;
-    emit("enemy-hit", { position: pos, amount: dmg, crit: !!opts.crit, color: enemy.type.color });
-    emit("sfx", { name: opts.crit ? "crit" : "hit", position: enemy.group.position.clone() });
-    emit("hitstop", { duration: opts.crit ? combat.hitstopCrit : combat.hitstopHit });
-    emit("shake", { amount: opts.crit ? combat.shakeCrit : combat.shakeHit });
+    let dmg = Number.isFinite(amount) ? amount : 0;
+
+    // Damage-taken modifiers, applied before the hit lands.
+    if (enemy.armorBreakT > 0) dmg *= ARMOR_BREAK_MULT;
+    if (enemy.markedT > 0) dmg *= MARK_DAMAGE_MULT;
+    if (enemy.frozenT > 0 && enemy.shatterReady) {
+      dmg *= REACTIONS.shatter.shatterMult || 2.5;
+      enemy.shatterReady = false;
+      enemy.frozenT = 0;
+    }
+    const executeMult = Number.isFinite(opts.executeMult) ? opts.executeMult : 0;
+    if (executeMult > 0 && enemy.maxHp > 0 && enemy.hp / enemy.maxHp < EXECUTE_THRESHOLD) {
+      dmg *= 1 + executeMult;
+    }
+
+    applyDamageTo(enemy, dmg, { crit: !!opts.crit });
+    if (enemy.dead || enemy.dying) return true;
+
     if (opts.dir && Number.isFinite(opts.dir.x) && Number.isFinite(opts.dir.z)) {
       const len = Math.hypot(opts.dir.x, opts.dir.z) || 1;
-      const kb = opts.heavy ? combat.enemyKnockbackHeavy : combat.enemyKnockback;
+      const kb = Number.isFinite(opts.knockback) && opts.knockback > 0
+        ? opts.knockback
+        : opts.heavy
+          ? combat.enemyKnockbackHeavy
+          : combat.enemyKnockback;
       enemy.kx += (opts.dir.x / len) * kb;
       enemy.kz += (opts.dir.z / len) * kb;
-      enemy.stun = Math.max(enemy.stun, opts.heavy ? 0.3 : 0.18);
+      const stun = Number.isFinite(opts.stun) && opts.stun > 0 ? opts.stun : opts.heavy ? 0.3 : 0.18;
+      enemy.stun = Math.max(enemy.stun, stun);
       if (enemy.state === "windup") {
+        releaseToken(enemy);
         enemy.state = "chase";
         enemy.stateT = 0;
         enemy.attackCd = Math.max(enemy.attackCd, 0.25);
       }
     }
-    if (enemy.hp <= 0) killEnemy(enemy);
+
+    if (enemy.hp > 0 && opts.element) {
+      const bonus = applyElement(enemy, opts.element, dmg, opts);
+      if (bonus > 0 && !enemy.dead && !enemy.dying) {
+        applyDamageTo(enemy, bonus, {});
+      }
+    }
+
     return true;
   }
 
@@ -736,7 +1125,19 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
         const cos = clamp((dx * ux + dz * uz) / dist, -1, 1);
         if (Math.acos(cos) > halfArc) continue;
       }
-      damageEnemy(e, damage, { crit, heavy, dir: { x: ux, z: uz } });
+      damageEnemy(e, damage, {
+        crit,
+        heavy,
+        dir: { x: ux, z: uz },
+        element: payload.element,
+        kind: payload.kind,
+        stun: payload.stun,
+        knockback: payload.knockback,
+        reactionMult: payload.reactionMult,
+        auraMult: payload.auraMult,
+        executeMult: payload.executeMult,
+        reactionHeal: payload.reactionHeal,
+      });
     }
   }
 
@@ -786,6 +1187,7 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
       e.dead = true;
       e.dying = false;
       e.solid = false;
+      clearAura(e);
       group.remove(e.group);
       for (const entry of e.mats) {
         if (entry.mat && typeof entry.mat.dispose === "function") entry.mat.dispose();
@@ -809,6 +1211,8 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
     waveSpawned = 0;
     aliveN = 0;
     killCount = 0;
+    reactionCount = 0;
+    tokenHolders = 0;
     emitCount();
   }
 
@@ -827,6 +1231,9 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
     },
     get killCount() {
       return killCount;
+    },
+    get reactionCount() {
+      return reactionCount;
     },
     spawnWave,
     update,

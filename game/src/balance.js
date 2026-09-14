@@ -55,6 +55,90 @@ export const ASSETS = {
   },
 };
 
+export const ELEMENTS = {
+  frost: { id: "frost", name: "Frost", color: 0x7fd7ff },
+  ember: { id: "ember", name: "Ember", color: 0xff7a2a },
+  shadow: { id: "shadow", name: "Shadow", color: 0x9b6fe8 },
+  arcane: { id: "arcane", name: "Arcane", color: 0x7fe8c8 },
+};
+
+export const REACTIONS = {
+  melt: {
+    id: "melt",
+    name: "Melt",
+    elements: ["frost", "ember"],
+    color: 0xffb066,
+    damageMult: 2.2,
+    radius: 2.2,
+    armorBreak: { mult: 1.3, time: 4 },
+  },
+  overload: {
+    id: "overload",
+    name: "Overload",
+    elements: ["ember", "shadow"],
+    color: 0xd85cff,
+    damageMult: 1.5,
+    radius: 3.5,
+    knockback: 14,
+  },
+  shatter: {
+    id: "shatter",
+    name: "Shatter",
+    elements: ["frost", "shadow"],
+    color: 0xa8e8ff,
+    damageMult: 1.2,
+    radius: 2.0,
+    freeze: 1.5,
+    shatterMult: 2.5,
+  },
+  detonate: {
+    id: "detonate",
+    name: "Detonate",
+    elements: ["ember", "arcane"],
+    color: 0xff5a1f,
+    damageMult: 1.4,
+    radius: 3.0,
+    burn: { dps: 6, time: 4, spread: 3.5 },
+  },
+  frozen: {
+    id: "frozen",
+    name: "Frozen",
+    elements: ["frost", "arcane"],
+    color: 0x9fe8ff,
+    damageMult: 1.0,
+    radius: 2.5,
+    freeze: 2.0,
+  },
+  void: {
+    id: "void",
+    name: "Void",
+    elements: ["shadow", "arcane"],
+    color: 0x8a5cff,
+    damageMult: 1.1,
+    radius: 3.0,
+    pull: 9,
+    mark: { time: 6, crit: 0.25 },
+  },
+};
+
+export function reactionFor(elementA, elementB) {
+  if (!ELEMENTS[elementA] || !ELEMENTS[elementB]) return null;
+  if (elementA === elementB) return null;
+  return (
+    Object.values(REACTIONS).find(
+      (r) => r.elements.includes(elementA) && r.elements.includes(elementB)
+    ) || null
+  );
+}
+
+export function auraOutcome(current, element) {
+  if (!ELEMENTS[element]) return { apply: null, reaction: null };
+  if (!current || !ELEMENTS[current.element]) return { apply: element, reaction: null };
+  if (current.element === element) return { apply: element, reaction: null };
+  const reaction = reactionFor(current.element, element);
+  return { apply: element, reaction: reaction ? reaction.id : null };
+}
+
 export const CHARACTERS = {
   knight: {
     id: "knight",
@@ -75,6 +159,9 @@ export const CHARACTERS = {
     ],
     swing: [0.32, 0.3, 0.36],
     color: 0x9fb4c8,
+    element: "frost",
+    heavy: { clip: "Block_Attack", damageMult: 1.6, knockback: 14, stun: 0.6, lunge: 0, radius: 2.7, arc: 2.4 },
+    super: { id: "nova", name: "Bulwark", desc: "A 360 shockwave that hurls the dead back.", clip: "2H_Melee_Attack_Spin", duration: 0.5, damageMult: 3.0, radius: 3.5, knockback: 22, stun: 1.0 },
     keep: ["1H_Sword", "Knight_Helmet", "Knight_Cape"],
     pose: "1H_Melee_Attack_Stab",
   },
@@ -93,6 +180,9 @@ export const CHARACTERS = {
     combo: ["2H_Melee_Attack_Chop", "2H_Melee_Attack_Slice", "2H_Melee_Attack_Spin"],
     swing: [0.5, 0.46, 0.55],
     color: 0xc98a5a,
+    element: "ember",
+    heavy: { clip: "2H_Melee_Attack_Chop", damageMult: 2.4, knockback: 20, stun: 0.6, lunge: 0.6, radius: 3.0, arc: 2.6 },
+    super: { id: "whirlwind", name: "Whirlwind", desc: "Three seconds of spinning steel.", clip: "2H_Melee_Attack_Spinning", duration: 3.0, damageMult: 0.9, radius: 3.0, knockback: 9, stun: 0.3 },
     keep: ["2H_Axe", "Barbarian_Hat"],
     pose: "2H_Melee_Attack_Spin",
   },
@@ -115,6 +205,9 @@ export const CHARACTERS = {
     ],
     swing: [0.22, 0.2, 0.24],
     color: 0x6fbf8f,
+    element: "shadow",
+    heavy: { clip: "Dualwield_Melee_Attack_Stab", damageMult: 1.8, knockback: 10, stun: 0.6, lunge: 2.2, radius: 2.4, arc: 2.2 },
+    super: { id: "flurry", name: "Shadow Flurry", desc: "Blink through five foes, four cuts each.", clip: "Dualwield_Melee_Attack_Slice", duration: 0.12, damageMult: 1.4, radius: 2.4, knockback: 6, stun: 0.2 },
     keep: ["Knife", "Knife_Offhand"],
     pose: "Dualwield_Melee_Attack_Slice",
   },
@@ -133,6 +226,9 @@ export const CHARACTERS = {
     combo: ["Spellcast_Shoot", "Spellcast_Raise"],
     swing: [0.42, 0.4],
     color: 0x8f7fe8,
+    element: "arcane",
+    heavy: { clip: "Spellcast_Long", damageMult: 2.0, knockback: 9, stun: 0.6, lunge: 0, radius: 3.2, arc: 1.4 },
+    super: { id: "meteor", name: "Meteor", desc: "Call a star down on the marked ground.", clip: "Spellcast_Long", duration: 0.8, damageMult: 4.0, radius: 5.0, knockback: 20, stun: 0.8 },
     keep: ["2H_Staff", "Mage_Hat"],
     pose: "Spellcast_Raise",
   },
@@ -207,17 +303,64 @@ export const ENEMY_TYPES = {
   },
 };
 
+const WAVE_MODIFIERS = {
+  swarm: {
+    id: "swarm",
+    name: "Swarm",
+    desc: "One and a half times the dead, but frailer",
+    countMult: 1.5,
+    hpMult: 0.8,
+  },
+  elites: {
+    id: "elites",
+    name: "Elite Vanguard",
+    desc: "Elites lead the wave; bonus coins on clear",
+  },
+  arcane: {
+    id: "arcane",
+    name: "Arcane Tide",
+    desc: "Mage-heavy; the air crackles",
+    weightAdd: { mage: 6 },
+  },
+  horde: {
+    id: "horde",
+    name: "Horde",
+    desc: "A fast tide of bone, mostly minions",
+    weightAdd: { minion: 14 },
+    speedMult: 1.15,
+  },
+};
+
+function waveModifier(n) {
+  if (n % 4 === 0) return WAVE_MODIFIERS.elites;
+  if (n % 5 === 2) return WAVE_MODIFIERS.swarm;
+  if (n % 5 === 3) return WAVE_MODIFIERS.arcane;
+  if (n % 5 === 4) return WAVE_MODIFIERS.horde;
+  return null;
+}
+
 export function computeWave(n) {
-  const count = Math.min(4 + Math.floor(n * 1.6), 22);
-  const hpMult = 1 + (n - 1) * 0.12;
+  const modifier = waveModifier(n);
+  let count = Math.min(4 + Math.floor(n * 1.6), 22);
+  if (modifier && modifier.countMult) {
+    count = Math.min(Math.round(count * modifier.countMult), 22);
+  }
+  let hpMult = 1 + (n - 1) * 0.12;
+  if (modifier && modifier.hpMult) hpMult *= modifier.hpMult;
   const dmgMult = 1 + (n - 1) * 0.06;
-  const speedMult = Math.min(1 + (n - 1) * 0.015, 1.35);
+  let speedMult = Math.min(1 + (n - 1) * 0.015, 1.35);
+  if (modifier && modifier.speedMult) speedMult = Math.min(speedMult * modifier.speedMult, 1.35);
   const eliteCount = n % 4 === 0 ? Math.min(1 + Math.floor(n / 8), 3) : 0;
 
   const weights = { minion: 10 };
   if (n >= 2) weights.warrior = 4 + n * 0.4;
   if (n >= 3) weights.rogue = 3 + n * 0.5;
   if (n >= 4) weights.mage = 2 + n * 0.35;
+  if (modifier && modifier.weightAdd) {
+    for (const [type, w] of Object.entries(modifier.weightAdd)) {
+      weights[type] = (weights[type] || 0) + w;
+    }
+  }
 
   const footCount = Math.max(count - eliteCount, 0);
   const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
@@ -240,7 +383,13 @@ export function computeWave(n) {
     leftover -= 1;
   }
 
-  return { n, count, hpMult, dmgMult, speedMult, mix, eliteCount };
+  return { n, count, hpMult, dmgMult, speedMult, mix, eliteCount, modifier };
+}
+
+export const MOMENTUM_GAIN = { light: 6, heavy: 12, kill: 10, perfect: 25, reaction: 20 };
+
+export function momentumAfter(current, gain, max) {
+  return clamp(current + gain, 0, max);
 }
 
 export const UPGRADES = [
@@ -258,6 +407,12 @@ export const UPGRADES = [
   { id: "titan", name: "Titan's Grip", desc: "+40% damage, -12% move speed", tier: "epic", apply: (p) => { p.stats.damageMult *= 1.4; p.stats.moveSpeedMult *= 0.88; } },
   { id: "glass", name: "Glass Cannon", desc: "+60% damage, -35 max health", tier: "epic", apply: (p) => { p.addMaxHp(-35); p.stats.damageMult *= 1.6; } },
   { id: "reaper", name: "Reaper's Cadence", desc: "+30% attack speed, +8% crit", tier: "epic", apply: (p) => { p.stats.attackSpeedMult *= 1.3; p.stats.critChance += 0.08; } },
+  { id: "focus", name: "Elemental Focus", desc: "Reactions deal +40% damage", tier: "rare", apply: (p) => { p.stats.reactionMult *= 1.4; } },
+  { id: "aura", name: "Lingering Aura", desc: "Aura duration +50%", tier: "common", apply: (p) => { p.stats.auraMult *= 1.5; } },
+  { id: "reactionary", name: "Reactionary", desc: "Reactions heal 6", tier: "rare", apply: (p) => { p.stats.reactionHeal += 6; } },
+  { id: "core", name: "Momentum Core", desc: "+25% momentum gain", tier: "rare", apply: (p) => { p.stats.momentumMult *= 1.25; } },
+  { id: "swiftswap", name: "Swift Swap", desc: "Swap cooldown -40%, +15% move speed for 2s after swap", tier: "common", apply: (p) => { p.stats.swapCooldownMult *= 0.6; p.stats.swapSpeedMult *= 1.15; p.stats.swapSpeedTime += 2; } },
+  { id: "executioner", name: "Executioner", desc: "+30% damage to enemies under 30% hp", tier: "epic", apply: (p) => { p.stats.executeMult += 0.3; } },
 ];
 
 const TIER_WEIGHT = { common: 60, rare: 30, epic: 10 };
@@ -298,6 +453,11 @@ export const CONFIG = {
     comboWindow: 0.9,
     lunge: 5.5,
     knockback: 4.5,
+    momentumMax: 100,
+    perfectWindow: 3,
+    perfectDamageMult: 1.25,
+    swapCooldown: 1.5,
+    swapIFrames: 0.25,
   },
   combat: {
     hitstopHit: 0.045,
@@ -308,8 +468,8 @@ export const CONFIG = {
     shakeCrit: 0.22,
     shakeKill: 0.16,
     shakeHurt: 0.3,
-    enemyKnockback: 3.2,
-    enemyKnockbackHeavy: 6,
+    enemyKnockback: 8,
+    enemyKnockbackHeavy: 15,
     maxAlive: 18,
     spawnBatch: 4,
     spawnInterval: 1.15,
@@ -318,6 +478,17 @@ export const CONFIG = {
     upgradeEvery: 3,
     coinMagnet: 9,
     coinLifetime: 14,
+    maxAttackers: 3,
+    standoff: 3.6,
+    spikeDamage: 12,
+    spikeTick: 0.9,
+    auraTime: 5,
+    // Between-wave recovery. Without it, damage is a one-way ratchet: every
+    // wave ends lower than it began and the run dies to attrition around 6-7
+    // regardless of skill. Healing the party on clear turns each wave into a
+    // discrete test that can be won or lost on its own merits.
+    waveClearHeal: 14,
+    waveClearHealFrac: 0.12,
   },
   run: { seed: 1337 },
 };

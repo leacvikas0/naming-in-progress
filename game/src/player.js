@@ -1,7 +1,16 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
-import { CONFIG, CHARACTERS, PALETTE, clamp, angleDelta } from "./balance.js";
+import {
+  CONFIG,
+  CHARACTERS,
+  ELEMENTS,
+  MOMENTUM_GAIN,
+  PALETTE,
+  clamp,
+  angleDelta,
+  momentumAfter,
+} from "./balance.js";
 
 const TARGET_HEIGHT = 1.9;
 const MAX_DT = 0.1;
@@ -9,6 +18,22 @@ const KNOCKBACK_DECAY = 8;
 const BLINK_HZ = 14;
 const JUMP_START_TIME = 0.3;
 const JUMP_LAND_TIME = 0.28;
+const HEAVY_COOLDOWN = 1.0;
+const HEAVY_DUR = 0.75;
+const HEAVY_LUNGE_TIME = 0.3;
+const SUPER_ENTRY = 1.2;
+const NOVA_RECOVER = 0.5;
+const WHIRLWIND_TIME = 3.0;
+const WHIRLWIND_TICK = 0.35;
+const FLURRY_HITS = 4;
+const FLURRY_BLINKS = 5;
+const FLURRY_GAP = 0.1;
+const FLURRY_STEP = 2.2;
+const METEOR_DELAY = 0.8;
+const METEOR_RANGE = 7.0;
+const METEOR_RECOVER = 0.3;
+const PERFECT_DODGE_CD = 0.25;
+const SUPER_BUFFER = 0.5;
 const IDLE_CLIPS = new Set(["Idle", "Idle_B", "Unarmed_Idle", "T-Pose"]);
 
 const ANIM = {
@@ -117,6 +142,15 @@ function baseStats() {
     lifesteal: 0,
     dodgeCooldownMult: 1,
     thorns: 0,
+    reactionMult: 1,
+    auraMult: 1,
+    momentumMult: 1,
+    swapCooldownMult: 1,
+    executeMult: 0,
+    reactionHeal: 0,
+    perfectT: 0,
+    swapSpeedMult: 1,
+    swapSpeedTime: 0,
   };
 }
 
@@ -128,17 +162,22 @@ function approach(value, target, maxDelta) {
 }
 
 export function createPlayer(options = {}) {
-  const { scene, world, events, config, hero, loader = new GLTFLoader() } = options;
-  const H = hero || CHARACTERS.knight;
+  const { scene, world, events, config, hero, partner, loader = new GLTFLoader() } = options;
   const cfg = { ...CONFIG.player, ...(config && config.player ? config.player : {}) };
-  const comboClips = Array.isArray(H.combo) && H.combo.length ? H.combo : ["Unarmed_Melee_Attack_Punch_A"];
-  const comboSwings = Array.isArray(H.swing) && H.swing.length ? H.swing : [0.3];
-  const comboLen = comboClips.length;
-  const heroHp = Number.isFinite(H.hp) ? H.hp : 100;
-  const heroDamage = Number.isFinite(H.damage) ? H.damage : 1;
-  const heroRange = Number.isFinite(H.range) ? H.range : 2;
-  const heroArc = Number.isFinite(H.arc) ? H.arc : 2;
-  const heroMoveSpeed = Number.isFinite(H.moveSpeed) ? H.moveSpeed : 5;
+  const momentumMax = Number.isFinite(cfg.momentumMax) && cfg.momentumMax > 0 ? cfg.momentumMax : 100;
+
+  const hpOf = (def) => (Number.isFinite(def && def.hp) ? def.hp : 100);
+  const startingDef = hero || CHARACTERS.knight;
+  let partnerDef = partner || null;
+  if (!partnerDef || partnerDef === startingDef || partnerDef.id === startingDef.id) {
+    partnerDef = Object.values(CHARACTERS).find((c) => c.id !== startingDef.id) || startingDef;
+  }
+
+  const party = [
+    { def: startingDef, hp: hpOf(startingDef), maxHp: hpOf(startingDef) },
+    { def: partnerDef, hp: hpOf(partnerDef), maxHp: hpOf(partnerDef) },
+  ];
+  let activeIdx = 0;
 
   const group = new THREE.Group();
   group.name = "player";
@@ -149,14 +188,24 @@ export function createPlayer(options = {}) {
   const facing = new THREE.Vector3(0, 0, 1);
 
   const stats = baseStats();
-  let hp = heroHp;
-  let maxHp = heroHp;
   let alive = true;
 
   let model = null;
   let mixer = null;
   let actions = null;
   let current = null;
+  let attachedUrl = null;
+
+  // Active hero and its derived numbers. `useHero` keeps them in step with the
+  // party slot that is currently on the field.
+  let H = party[0].def;
+  let comboClips = ["Unarmed_Melee_Attack_Punch_A"];
+  let comboSwings = [0.3];
+  let comboLen = 1;
+  let heroDamage = 1;
+  let heroRange = 2;
+  let heroArc = 2;
+  let heroMoveSpeed = 5;
 
   let vx = 0;
   let vz = 0;
@@ -173,6 +222,7 @@ export function createPlayer(options = {}) {
   const dodgeDir = new THREE.Vector3(0, 0, 1);
 
   let attacking = false;
+  let attackKind = "light";
   let attackElapsed = 0;
   let attackDur = 0;
   let impactFired = true;
@@ -181,6 +231,33 @@ export function createPlayer(options = {}) {
   let comboWindowT = 0;
   let queuedAttack = false;
   let lungeT = 0;
+  let lungeSpeed = cfg.lunge;
+
+  let heavyCdT = 0;
+  let heavyCdTotal = Number.isFinite(cfg.heavyCooldown) ? Math.max(0.05, cfg.heavyCooldown) : HEAVY_COOLDOWN;
+
+  let momentum = 0;
+  let swapCdT = 0;
+  let swapCdTotal = Math.max(0.05, cfg.swapCooldown);
+  let swapIFramesT = 0;
+  let swapSpeedT = 0;
+  let perfectDodgeCdT = 0;
+
+  let superActive = false;
+  let superEntryT = 0;
+  let superT = 0;
+  let superDef = null;
+  let superHitT = 0;
+  let superHits = 0;
+  let superBlinks = 0;
+  let superFired = false;
+  const superAim = new THREE.Vector3();
+
+  let prevSwap = false;
+  let prevSuper = false;
+  let prevHeavy = false;
+  let superBufferT = 0;
+  let prevSuperActive = false;
 
   let hurtInvulnT = 0;
   let jumpPhase = "none";
@@ -208,15 +285,20 @@ export function createPlayer(options = {}) {
   }
 
   function resolveBlast(p) {
-    emit("player-attack", {
-      origin: p.pos.clone(),
-      dir: facing,
-      range: p.radius,
-      arc: Math.PI * 2,
-      damage: p.damage,
-      heavy: true,
-      crit: p.crit,
-    });
+    emit(
+      "player-attack",
+      attackPayload({
+        origin: p.pos,
+        kind: "light",
+        heavy: true,
+        stun: 0,
+        knockback: CONFIG.combat.enemyKnockbackHeavy,
+        damage: p.damage,
+        crit: p.crit,
+        range: p.radius,
+        arc: Math.PI * 2,
+      })
+    );
     emit("player-blast", { position: p.pos.clone(), radius: p.radius, color: PALETTE.arcane });
     emit("sfx", { name: "explode", position: p.pos.clone() });
   }
@@ -305,8 +387,19 @@ export function createPlayer(options = {}) {
     return action;
   }
 
+  function detachModel() {
+    if (model && model.parent) model.parent.remove(model);
+    if (mixer) mixer.stopAllAction();
+    model = null;
+    mixer = null;
+    actions = null;
+    current = null;
+    attachedUrl = null;
+  }
+
   function attachModel(clean) {
     if (!clean || !clean.scene) return;
+    detachModel();
     const instance = cloneSkeleton(clean.scene);
     instance.traverse((o) => {
       if (o.isSkinnedMesh) o.frustumCulled = false;
@@ -330,6 +423,94 @@ export function createPlayer(options = {}) {
     }
   }
 
+  function ensureModel(def) {
+    if (!def || !def.glb) return;
+    const url = def.glb;
+    if (attachedUrl === url) return;
+    loadCleanedGltf(loader, url, def.keep)
+      .then((clean) => {
+        if (H !== def || attachedUrl === url) return;
+        attachModel(clean);
+        attachedUrl = url;
+      })
+      .catch((err) => {
+        console.error(`[player] failed to load ${url}:`, err);
+      });
+  }
+
+  function useHero(idx) {
+    const entry = party[idx];
+    if (!entry) return;
+    const changed = entry.def !== H;
+    activeIdx = idx;
+    H = entry.def;
+    comboClips = Array.isArray(H.combo) && H.combo.length ? H.combo : ["Unarmed_Melee_Attack_Punch_A"];
+    comboSwings = Array.isArray(H.swing) && H.swing.length ? H.swing : [0.3];
+    comboLen = comboClips.length;
+    heroDamage = Number.isFinite(H.damage) ? H.damage : 1;
+    heroRange = Number.isFinite(H.range) ? H.range : 2;
+    heroArc = Number.isFinite(H.arc) ? H.arc : 2;
+    heroMoveSpeed = Number.isFinite(H.moveSpeed) ? H.moveSpeed : 5;
+    swingIndex = -1;
+    if (!changed && attachedUrl === H.glb) return;
+    detachModel();
+    ensureModel(H);
+  }
+
+  function perfectMult() {
+    return stats.perfectT > 0 ? cfg.perfectDamageMult : 1;
+  }
+
+  function rollDamage(mult) {
+    const crit = Math.random() < stats.critChance;
+    let damage = heroDamage * stats.damageMult * mult * perfectMult();
+    if (crit) damage *= 2;
+    return { damage, crit };
+  }
+
+  function attackPayload(opts) {
+    return {
+      origin: (opts.origin || position).clone(),
+      dir: facing,
+      range: opts.range,
+      arc: opts.arc,
+      damage: opts.damage,
+      heavy: !!opts.heavy,
+      crit: !!opts.crit,
+      element: H.element,
+      kind: opts.kind,
+      stun: Number.isFinite(opts.stun) ? opts.stun : 0,
+      knockback: Number.isFinite(opts.knockback) ? opts.knockback : 0,
+      reactionMult: stats.reactionMult,
+      auraMult: stats.auraMult,
+      executeMult: stats.executeMult,
+      reactionHeal: stats.reactionHeal,
+    };
+  }
+
+  function superReadyNow() {
+    return momentumMax > 0 && momentum >= momentumMax;
+  }
+
+  function emitMomentum() {
+    emit("momentum", { value: momentum, max: momentumMax, ready: superReadyNow() });
+  }
+
+  function gainMomentum(base) {
+    if (!alive) return;
+    const mult = stats.momentumMult > 0 ? stats.momentumMult : 1;
+    const next = momentumAfter(momentum, base * mult, momentumMax);
+    if (next === momentum) return;
+    momentum = next;
+    emitMomentum();
+  }
+
+  function spendMomentum() {
+    if (momentum === 0) return;
+    momentum = 0;
+    emitMomentum();
+  }
+
   function swingDuration(i) {
     const fallback = Number.isFinite(comboSwings[comboSwings.length - 1]) ? comboSwings[comboSwings.length - 1] : 0.3;
     const base = Number.isFinite(comboSwings[i]) ? comboSwings[i] : fallback;
@@ -338,9 +519,8 @@ export function createPlayer(options = {}) {
   }
 
   function fireImpact() {
-    const crit = Math.random() < stats.critChance;
-    let damage = heroDamage * stats.damageMult;
-    if (crit) damage *= 2;
+    const { damage, crit } = rollDamage(1);
+    gainMomentum(MOMENTUM_GAIN.light);
     if (H.style === "blast") {
       const origin = position.clone();
       origin.y = 1.1;
@@ -359,21 +539,198 @@ export function createPlayer(options = {}) {
       emit("sfx", { name: "cast", position: origin.clone() });
       return;
     }
-    emit("player-attack", {
-      origin: position.clone(),
-      dir: facing,
-      range: heroRange + stats.range,
-      arc: heroArc + stats.arc,
-      damage,
-      heavy: swingIndex === comboLen - 1,
-      crit,
+    emit(
+      "player-attack",
+      attackPayload({
+        kind: "light",
+        heavy: swingIndex === comboLen - 1,
+        stun: 0,
+        knockback: swingIndex === comboLen - 1 ? CONFIG.combat.enemyKnockbackHeavy : 0,
+        damage,
+        crit,
+        range: heroRange + stats.range,
+        arc: heroArc + stats.arc,
+      })
+    );
+  }
+
+  function fireHeavyImpact() {
+    const def = H.heavy || {};
+    const mult = Number.isFinite(def.damageMult) ? def.damageMult : 1;
+    const { damage, crit } = rollDamage(mult);
+    gainMomentum(MOMENTUM_GAIN.heavy);
+    emit(
+      "player-attack",
+      attackPayload({
+        kind: "heavy",
+        heavy: true,
+        stun: Number.isFinite(def.stun) ? def.stun : 0,
+        knockback: Number.isFinite(def.knockback) ? def.knockback : 0,
+        damage,
+        crit,
+        range: Number.isFinite(def.radius) ? def.radius : heroRange + stats.range,
+        arc: Number.isFinite(def.arc) ? def.arc : heroArc + stats.arc,
+      })
+    );
+    emit("sfx", { name: "heavy", position: position.clone() });
+  }
+
+  function fireSuperHit(origin, range, arc, knockback, stun, mult) {
+    const { damage, crit } = rollDamage(mult);
+    emit(
+      "player-attack",
+      attackPayload({
+        origin,
+        kind: "super",
+        heavy: false,
+        stun,
+        knockback,
+        damage,
+        crit,
+        range,
+        arc,
+      })
+    );
+  }
+
+  function fireMeteor(def) {
+    const mult = Number.isFinite(def.damageMult) ? def.damageMult : 1;
+    const radius = Number.isFinite(def.radius) ? def.radius : 5;
+    const el = ELEMENTS[H.element];
+    const { damage, crit } = rollDamage(mult);
+    const point = superAim.clone();
+    emit("player-blast", { position: point.clone(), radius, color: el ? el.color : PALETTE.arcane });
+    emit(
+      "player-attack",
+      attackPayload({
+        origin: point,
+        kind: "super",
+        heavy: false,
+        stun: Number.isFinite(def.stun) ? def.stun : 0,
+        knockback: Number.isFinite(def.knockback) ? def.knockback : 0,
+        damage,
+        crit,
+        range: radius,
+        arc: Math.PI * 2,
+      })
+    );
+    emit("sfx", { name: "explode", position: point.clone() });
+  }
+
+  function blinkStep() {
+    position.x += facing.x * FLURRY_STEP;
+    position.z += facing.z * FLURRY_STEP;
+    constrain();
+  }
+
+  function endSuper() {
+    superActive = false;
+    superEntryT = 0;
+    superT = 0;
+    superDef = null;
+    superFired = false;
+  }
+
+  function startSuper(aim) {
+    if (!alive || superActive || !superReadyNow()) return false;
+    const def = H.super;
+    if (!def) return false;
+    if (aim && Number.isFinite(aim.x) && Number.isFinite(aim.z)) superAim.set(aim.x, 0, aim.z);
+    else superAim.copy(position).addScaledVector(facing, METEOR_RANGE);
+    superAim.y = 0;
+    superActive = true;
+    superEntryT = SUPER_ENTRY;
+    superT = 0;
+    superDef = def;
+    superHitT = 0;
+    superHits = 0;
+    superBlinks = 0;
+    superFired = false;
+    spendMomentum();
+    attacking = false;
+    attackKind = "light";
+    queuedAttack = false;
+    dodging = false;
+    dodgeT = 0;
+    lungeT = 0;
+    const el = ELEMENTS[H.element];
+    emit("super-used", { hero: H.id, position: position.clone(), color: el ? el.color : PALETTE.arcane });
+    playAnim([def.clip, ...comboClips, "Idle"], {
+      loop: def.id === "whirlwind",
+      clamp: true,
+      fade: 0.12,
     });
+    return true;
+  }
+
+  function updateSuper(step) {
+    if (!superActive) return;
+    if (superEntryT > 0) {
+      superEntryT -= step;
+      if (superEntryT > 0) return;
+      superEntryT = 0;
+      superT = 0;
+      superHitT = 0;
+      superHits = 0;
+      superBlinks = 0;
+      superFired = false;
+    }
+    superT += step;
+    const def = superDef;
+    if (!def) {
+      endSuper();
+      return;
+    }
+    const mult = Number.isFinite(def.damageMult) ? def.damageMult : 1;
+    const radius = Number.isFinite(def.radius) ? def.radius : 2.5;
+    const knockback = Number.isFinite(def.knockback) ? def.knockback : 0;
+    const stun = Number.isFinite(def.stun) ? def.stun : 0;
+
+    if (def.id === "whirlwind") {
+      superHitT -= step;
+      if (superHitT <= 0) {
+        superHitT = WHIRLWIND_TICK;
+        fireSuperHit(position, radius, Math.PI * 2, knockback, stun, mult);
+      }
+      if (superT >= WHIRLWIND_TIME) endSuper();
+      return;
+    }
+    if (def.id === "flurry") {
+      superHitT -= step;
+      if (superHitT <= 0) {
+        superHitT = FLURRY_GAP;
+        fireSuperHit(position, radius, Math.PI * 2, knockback, stun, mult);
+        superHits += 1;
+        if (superHits >= FLURRY_HITS) {
+          superHits = 0;
+          superBlinks += 1;
+          if (superBlinks >= FLURRY_BLINKS) endSuper();
+          else blinkStep();
+        }
+      }
+      return;
+    }
+    if (def.id === "meteor") {
+      if (!superFired && superT >= METEOR_DELAY) {
+        superFired = true;
+        fireMeteor(def);
+      }
+      if (superFired && superT >= METEOR_DELAY + METEOR_RECOVER) endSuper();
+      return;
+    }
+    // nova (and any unknown shape): one instant 360 hit, short recovery.
+    if (!superFired) {
+      superFired = true;
+      fireSuperHit(position, radius, Math.PI * 2, knockback, stun, mult);
+    }
+    if (superT >= NOVA_RECOVER) endSuper();
   }
 
   function startSwing(i) {
     const idx = clamp(Math.floor(i), 0, comboLen - 1);
     const dur = swingDuration(idx);
     attacking = true;
+    attackKind = "light";
     attackElapsed = 0;
     attackDur = dur;
     impactFired = false;
@@ -382,6 +739,7 @@ export function createPlayer(options = {}) {
     comboWindowT = 0;
     queuedAttack = false;
     lungeT = Math.min(0.18, dur * 0.5);
+    lungeSpeed = cfg.lunge;
     if (currentAimYaw !== null) {
       group.rotation.y = currentAimYaw;
       facing.set(Math.sin(group.rotation.y), 0, Math.cos(group.rotation.y));
@@ -396,9 +754,40 @@ export function createPlayer(options = {}) {
     playAnim([comboClips[idx], "Idle"], { loop: false, clamp: true, fade: 0.12, fit: dur });
   }
 
+  function startHeavy() {
+    if (!alive || superActive || dodging || attacking || heavyCdT > 0) return false;
+    const def = H.heavy;
+    if (!def || !def.clip) return false;
+    attacking = true;
+    attackKind = "heavy";
+    attackElapsed = 0;
+    attackDur = HEAVY_DUR;
+    impactFired = false;
+    swingIndex = -1;
+    comboIndex = 0;
+    comboWindowT = 0;
+    queuedAttack = false;
+    const lunge = Number.isFinite(def.lunge) ? def.lunge : 0;
+    lungeT = lunge > 0 ? HEAVY_LUNGE_TIME : 0;
+    lungeSpeed = lunge > 0 ? lunge / HEAVY_LUNGE_TIME : cfg.lunge;
+    if (currentAimYaw !== null) {
+      group.rotation.y = currentAimYaw;
+      facing.set(Math.sin(group.rotation.y), 0, Math.cos(group.rotation.y));
+    }
+    emit("sfx", {
+      name: "swing-heavy",
+      position: position.clone(),
+      pitch: 0.9 + Math.random() * 0.1,
+      volume: 0.95,
+    });
+    playAnim([def.clip, ...comboClips, "Idle"], { loop: false, clamp: true, fade: 0.12, fit: attackDur });
+    return true;
+  }
+
   function handleAttackInput() {
+    if (superActive) return;
     if (attacking) {
-      queuedAttack = true;
+      if (attackKind === "light") queuedAttack = true;
       return;
     }
     if (dodging) return;
@@ -410,14 +799,20 @@ export function createPlayer(options = {}) {
     attackElapsed += step;
     if (!impactFired && attackElapsed >= attackDur * 0.45) {
       impactFired = true;
-      fireImpact();
+      if (attackKind === "heavy") fireHeavyImpact();
+      else fireImpact();
     }
     if (attackElapsed >= attackDur) {
       attacking = false;
-      comboWindowT = cfg.comboWindow;
-      if (queuedAttack) {
-        queuedAttack = false;
-        startSwing(comboIndex < comboLen ? comboIndex : 0);
+      if (attackKind === "heavy") {
+        attackKind = "light";
+        heavyCdT = heavyCdTotal;
+      } else {
+        comboWindowT = cfg.comboWindow;
+        if (queuedAttack) {
+          queuedAttack = false;
+          startSwing(comboIndex < comboLen ? comboIndex : 0);
+        }
       }
     }
   }
@@ -439,6 +834,7 @@ export function createPlayer(options = {}) {
     if (wantsMove) dodgeDir.set(ix, 0, iz).normalize();
     else dodgeDir.copy(facing);
     attacking = false;
+    attackKind = "light";
     queuedAttack = false;
     comboWindowT = 0;
     lungeT = 0;
@@ -464,6 +860,7 @@ export function createPlayer(options = {}) {
     vy = cfg.jumpSpeed;
     grounded = false;
     attacking = false;
+    attackKind = "light";
     queuedAttack = false;
     comboWindowT = 0;
     lungeT = 0;
@@ -533,13 +930,14 @@ export function createPlayer(options = {}) {
   }
 
   function updateMovement(step, ix, iz, wantsMove, sprint) {
-    const maxSpeed = heroMoveSpeed * stats.moveSpeedMult * (sprint && wantsMove ? cfg.sprintMult : 1);
+    const swapBoost = swapSpeedT > 0 && stats.swapSpeedMult > 0 ? stats.swapSpeedMult : 1;
+    const maxSpeed = heroMoveSpeed * stats.moveSpeedMult * swapBoost * (sprint && wantsMove ? cfg.sprintMult : 1);
     if (dodging) {
       vx = dodgeDir.x * cfg.dodgeSpeed;
       vz = dodgeDir.z * cfg.dodgeSpeed;
     } else if (lungeT > 0 && grounded) {
-      vx = facing.x * cfg.lunge;
-      vz = facing.z * cfg.lunge;
+      vx = facing.x * lungeSpeed;
+      vz = facing.z * lungeSpeed;
     } else if (attacking) {
       vx = approach(vx, 0, cfg.decel * step);
       vz = approach(vz, 0, cfg.decel * step);
@@ -567,7 +965,7 @@ export function createPlayer(options = {}) {
 
   function updateAnim(sprint) {
     if (!mixer) return;
-    if (attacking || dodging) return;
+    if (attacking || dodging || superActive) return;
     if (jumpPhase === "start" || jumpPhase === "land") return;
     if (!grounded) {
       playAnim(ANIM.jumpIdle, { fade: 0.15 });
@@ -595,6 +993,30 @@ export function createPlayer(options = {}) {
     if (dodgeCdT > 0) {
       dodgeCdT -= step;
       if (dodgeCdT < 0) dodgeCdT = 0;
+    }
+    if (swapIFramesT > 0) {
+      swapIFramesT -= step;
+      if (swapIFramesT < 0) swapIFramesT = 0;
+    }
+    if (swapCdT > 0) {
+      swapCdT -= step;
+      if (swapCdT < 0) swapCdT = 0;
+    }
+    if (heavyCdT > 0) {
+      heavyCdT -= step;
+      if (heavyCdT < 0) heavyCdT = 0;
+    }
+    if (perfectDodgeCdT > 0) {
+      perfectDodgeCdT -= step;
+      if (perfectDodgeCdT < 0) perfectDodgeCdT = 0;
+    }
+    if (swapSpeedT > 0) {
+      swapSpeedT -= step;
+      if (swapSpeedT < 0) swapSpeedT = 0;
+    }
+    if (stats.perfectT > 0) {
+      stats.perfectT -= step;
+      if (stats.perfectT < 0) stats.perfectT = 0;
     }
     if (comboWindowT > 0) {
       comboWindowT -= step;
@@ -647,6 +1069,13 @@ export function createPlayer(options = {}) {
     }
     currentAimYaw = aimYaw;
 
+    const swapPressed = !!inp.swap && !prevSwap;
+    const heavyPressed = !!inp.heavy && !prevHeavy;
+    if (inp.super) superBufferT = SUPER_BUFFER;
+    prevSwap = !!inp.swap;
+    prevSuper = !!inp.super;
+    prevHeavy = !!inp.heavy;
+
     // Face the direction of travel (Genshin-style); attacks turn toward the look direction.
     let targetYaw = null;
     let turnRate = Math.max(0, cfg.turnSpeed);
@@ -662,11 +1091,25 @@ export function createPlayer(options = {}) {
     }
     facing.set(Math.sin(group.rotation.y), 0, Math.cos(group.rotation.y));
 
-    if (inp.dodge && grounded && !dodging && dodgeCdT <= 0) startDodge(ix, iz, wantsMove);
-    if (inp.jump && grounded && !dodging) startJump();
+    if (swapPressed) swap();
+    if (superBufferT > 0) {
+      // A super pressed while the bar is still filling should fire the moment
+      // it arms, the way a held input reads in game.
+      superBufferT -= step;
+      if (superReadyNow() && !superActive && startSuper(aim)) superBufferT = 0;
+      else if (superBufferT < 0) superBufferT = 0;
+    }
+    if (heavyPressed) startHeavy();
+
+    if (inp.dodge && grounded && !dodging && dodgeCdT <= 0 && !superActive) {
+      const heavyWindup = attacking && attackKind === "heavy" && !impactFired;
+      if (!heavyWindup) startDodge(ix, iz, wantsMove);
+    }
+    if (inp.jump && grounded && !dodging && !superActive) startJump();
     if (inp.attack) handleAttackInput();
 
     updateAttack(step);
+    updateSuper(step);
     updateMovement(step, ix, iz, wantsMove, !!inp.sprint);
     updateJump(step);
     updateDodge(step);
@@ -677,14 +1120,29 @@ export function createPlayer(options = {}) {
     if (mixer) mixer.update(step);
   }
 
+  function perfectDodge() {
+    if (perfectDodgeCdT > 0) return;
+    perfectDodgeCdT = PERFECT_DODGE_CD;
+    stats.perfectT = Number.isFinite(cfg.perfectWindow) ? cfg.perfectWindow : 3;
+    emit("perfect-dodge", { position: position.clone() });
+    emit("sfx", { name: "dodge", position: position.clone(), pitch: 1.3 });
+    gainMomentum(MOMENTUM_GAIN.perfect);
+  }
+
   function damage(amount, opts) {
     if (!alive) return false;
-    if (dodging || dodgeIFramesT > 0) return false;
-    if (hurtInvulnT > 0) return false;
+    if (superEntryT > 0) return false;
     const dmg = Number(amount);
     if (!Number.isFinite(dmg) || dmg <= 0) return false;
+    if (dodging || dodgeIFramesT > 0) {
+      perfectDodge();
+      return false;
+    }
+    if (swapIFramesT > 0) return false;
+    if (hurtInvulnT > 0) return false;
 
-    hp = Math.max(0, hp - dmg);
+    const entry = party[activeIdx];
+    entry.hp = Math.max(0, entry.hp - dmg);
     hurtInvulnT = cfg.hurtInvuln;
 
     const from = opts && opts.from;
@@ -700,9 +1158,13 @@ export function createPlayer(options = {}) {
       }
     }
 
-    emit("player-hurt", { amount: dmg, hp });
+    emit("player-hurt", { amount: dmg, hp: entry.hp });
     emit("sfx", { name: "hurt", position: position.clone() });
-    if (hp <= 0) die();
+    if (entry.hp <= 0) {
+      const other = 1 - activeIdx;
+        if (party[other].hp > 0) swapTo(other, true);
+      else die();
+    }
     return true;
   }
 
@@ -711,6 +1173,10 @@ export function createPlayer(options = {}) {
     alive = false;
     dodging = false;
     attacking = false;
+    attackKind = "light";
+    superActive = false;
+    superEntryT = 0;
+    superDef = null;
     queuedAttack = false;
     lungeT = 0;
     vx = 0;
@@ -725,21 +1191,88 @@ export function createPlayer(options = {}) {
     emit("sfx", { name: "death", position: position.clone() });
   }
 
+  // `forced` skips the liveness/cooldown guards: it is used by the auto-swap
+  // that fires when the active hero falls, which must never be blocked by a
+  // swap cooldown the player happened to be on.
+  function swapTo(idx, forced) {
+    const to = party[idx];
+    if (!to || idx === activeIdx || to.hp <= 0) return false;
+    if (!forced) {
+      if (!alive || superActive) return false;
+      if (swapCdT > 0) return false;
+    }
+    const from = party[activeIdx];
+    useHero(idx);
+    superActive = false;
+    superEntryT = 0;
+    superDef = null;
+    attacking = false;
+    attackKind = "light";
+    queuedAttack = false;
+    dodging = false;
+    dodgeT = 0;
+    lungeT = 0;
+    comboIndex = 0;
+    comboWindowT = 0;
+    swapIFramesT = Math.max(swapIFramesT, Number.isFinite(cfg.swapIFrames) ? cfg.swapIFrames : 0.25);
+    const cdMult = stats.swapCooldownMult > 0 ? stats.swapCooldownMult : 1;
+    swapCdTotal = Math.max(0.05, (Number.isFinite(cfg.swapCooldown) ? cfg.swapCooldown : 1.5) * cdMult);
+    swapCdT = swapCdTotal;
+    if (stats.swapSpeedTime > 0) swapSpeedT = stats.swapSpeedTime;
+    const el = ELEMENTS[to.def.element];
+    emit("swap", {
+      from: from.def.id,
+      to: to.def.id,
+      element: to.def.element,
+      color: el ? el.color : PALETTE.arcane,
+    });
+    emit("sfx", { name: "swap", position: position.clone() });
+    return true;
+  }
+
+  function swap() {
+    if (!alive || superActive) return false;
+    if (swapCdT > 0) return false;
+    return swapTo(1 - activeIdx);
+  }
+
   function heal(n) {
     if (!alive) return 0;
     const v = Number(n);
     if (!Number.isFinite(v) || v <= 0) return 0;
-    const before = hp;
-    hp = Math.min(maxHp, hp + v);
-    return hp - before;
+    const entry = party[activeIdx];
+    const before = entry.hp;
+    entry.hp = Math.min(entry.maxHp, entry.hp + v);
+    return entry.hp - before;
+  }
+
+  // Between-wave recovery for the whole party. Only living heroes are healed:
+  // a hero who fell stays down until the run ends, which keeps the auto-swap
+  // and per-hero HP meaningful rather than making death costless.
+  function healParty(flat, frac) {
+    const amount = Number.isFinite(flat) ? flat : 0;
+    const ratio = Number.isFinite(frac) ? frac : 0;
+    let total = 0;
+    for (const entry of party) {
+      if (entry.hp <= 0) continue;
+      const gain = amount + entry.maxHp * ratio;
+      if (gain <= 0) continue;
+      const before = entry.hp;
+      entry.hp = Math.min(entry.maxHp, entry.hp + gain);
+      total += entry.hp - before;
+    }
+    if (total > 0) emit("player-healed", { amount: total, hp: party[activeIdx].hp });
+    return total;
   }
 
   function addMaxHp(n) {
     const v = Number(n);
-    if (!Number.isFinite(v) || v === 0) return maxHp;
-    maxHp = Math.max(1, maxHp + v);
-    if (hp > maxHp) hp = maxHp;
-    return maxHp;
+    if (!Number.isFinite(v) || v === 0) return party[activeIdx].maxHp;
+    for (const entry of party) {
+      entry.maxHp = Math.max(1, entry.maxHp + v);
+      if (entry.hp > entry.maxHp) entry.hp = entry.maxHp;
+    }
+    return party[activeIdx].maxHp;
   }
 
   function resetStats() {
@@ -749,8 +1282,12 @@ export function createPlayer(options = {}) {
   function respawn(pos) {
     alive = true;
     resetStats();
-    maxHp = heroHp;
-    hp = maxHp;
+    for (const entry of party) {
+      entry.maxHp = hpOf(entry.def);
+      entry.hp = entry.maxHp;
+    }
+    momentum = 0;
+    emitMomentum();
     if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.z)) home.set(pos.x, 0, pos.z);
     position.copy(home);
     position.y = 0;
@@ -765,6 +1302,7 @@ export function createPlayer(options = {}) {
     dodgeIFramesT = 0;
     dodgeCdT = 0;
     attacking = false;
+    attackKind = "light";
     queuedAttack = false;
     swingIndex = -1;
     comboIndex = 0;
@@ -773,44 +1311,99 @@ export function createPlayer(options = {}) {
     hurtInvulnT = 0;
     jumpPhase = "none";
     jumpPhaseT = 0;
+    swapCdT = 0;
+    swapIFramesT = 0;
+    swapSpeedT = 0;
+    heavyCdT = 0;
+    perfectDodgeCdT = 0;
+    superActive = false;
+    superEntryT = 0;
+    superDef = null;
     clearProjectiles();
+    useHero(0);
     group.rotation.y = 0;
     facing.set(0, 0, 1);
-    if (model) model.visible = true;
-    if (mixer) {
-      current = null;
-      playAnim(ANIM.idle, { fade: 0, force: true });
-    }
   }
 
-  if (H && H.glb) {
-    loadCleanedGltf(loader, H.glb, H.keep)
-      .then((clean) => attachModel(clean))
-      .catch((err) => {
-        console.error(`[player] failed to load ${H.glb}:`, err);
-      });
+  // The event bus is a module singleton, so every listener registered here
+  // outlives the player unless it is explicitly removed. main.js calls
+  // dispose() before replacing the player at the start of each run; without it
+  // a retry would stack a second set of momentum listeners on the old player.
+  const disposers = [];
+  if (events && typeof events.on === "function") {
+    disposers.push(
+      events.on("enemy-died", () => {
+        gainMomentum(MOMENTUM_GAIN.kill);
+      })
+    );
+    disposers.push(
+      events.on("reaction", () => {
+        gainMomentum(MOMENTUM_GAIN.reaction);
+      })
+    );
+  }
+
+  function dispose() {
+    for (const off of disposers) {
+      if (typeof off === "function") off();
+    }
+    disposers.length = 0;
+    if (mixer) mixer.stopAllAction();
+  }
+
+  useHero(0);
+  if (party[1].def && party[1].def.glb) {
+    // Warm the partner's GLTF so the first swap attaches without a fetch.
+    loadCleanedGltf(loader, party[1].def.glb, party[1].def.keep).catch(() => {});
   }
 
   return {
     group,
     position,
     get hp() {
-      return hp;
+      return party[activeIdx].hp;
     },
     get maxHp() {
-      return maxHp;
+      return party[activeIdx].maxHp;
     },
     get alive() {
       return alive;
     },
     stats,
-    hero: H,
+    get hero() {
+      return H;
+    },
+    get activeHero() {
+      return H;
+    },
+    get party() {
+      return party;
+    },
+    get partyAlive() {
+      return (party[0].hp > 0 ? 1 : 0) + (party[1].hp > 0 ? 1 : 0);
+    },
+    get activeIndex() {
+      return activeIdx;
+    },
+    get momentum() {
+      return momentum;
+    },
+    get superReady() {
+      return superReadyNow();
+    },
+    get swapCooldownFrac() {
+      return swapCdTotal > 0 ? clamp(swapCdT / swapCdTotal, 0, 1) : 0;
+    },
     radius: Number.isFinite(cfg.radius) ? cfg.radius : 0.55,
     update,
     damage,
     heal,
     addMaxHp,
     respawn,
+    swap,
+    swapTo,
+    healParty,
+    dispose,
     get dodgeCooldownFrac() {
       return dodgeCdTotal > 0 ? clamp(dodgeCdT / dodgeCdTotal, 0, 1) : 0;
     },

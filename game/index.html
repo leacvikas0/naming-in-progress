@@ -32,6 +32,7 @@
 
       <div id="vignette" aria-hidden="true"></div>
       <div id="damage-flash" aria-hidden="true"></div>
+      <div id="dodge-flash" aria-hidden="true"></div>
 
       <div id="hud" class="hidden">
         <div id="hud-top">
@@ -53,6 +54,35 @@
           </div>
         </div>
 
+        <div id="party-bar" aria-label="Party">
+          <div class="party-chip px-slab">
+            <span class="party-key px-keycap">1</span>
+            <span class="party-sigil">
+              <img class="px-icon party-sigil-img" alt="" />
+            </span>
+            <div class="party-body">
+              <span class="party-name">—</span>
+              <div class="party-trough px-trough">
+                <div class="party-hp"></div>
+              </div>
+            </div>
+            <span class="party-elem" aria-hidden="true"></span>
+          </div>
+          <div class="party-chip px-slab">
+            <span class="party-key px-keycap">2</span>
+            <span class="party-sigil">
+              <img class="px-icon party-sigil-img" alt="" />
+            </span>
+            <div class="party-body">
+              <span class="party-name">—</span>
+              <div class="party-trough px-trough">
+                <div class="party-hp"></div>
+              </div>
+            </div>
+            <span class="party-elem" aria-hidden="true"></span>
+          </div>
+        </div>
+
         <div id="wave-banner" class="hidden">
           <span id="wave-banner-kicker">Wave</span>
           <span id="wave-banner-num">1</span>
@@ -68,6 +98,9 @@
               </div>
               <div id="hp-text"><span id="hp-num">110</span><span id="hp-max">/110</span></div>
             </div>
+            <div id="momentum-trough" class="px-trough">
+              <div id="momentum-fill"></div>
+            </div>
           </div>
           <div id="ability-row">
             <div class="ability px-slab" id="ability-dodge">
@@ -78,6 +111,15 @@
             <div class="ability px-slab" id="ability-sprint">
               <span class="ability-key px-keycap">SHIFT</span>
               <span class="ability-name">Sprint</span>
+            </div>
+            <div class="ability px-slab" id="ability-swap">
+              <span class="ability-key px-keycap">Q</span>
+              <span class="ability-name">Swap</span>
+              <div class="ability-cd" id="swap-cd"></div>
+            </div>
+            <div class="ability px-slab" id="ability-super">
+              <span class="ability-key px-keycap">E</span>
+              <span class="ability-name">Super</span>
             </div>
           </div>
         </div>
@@ -104,14 +146,17 @@
           </div>
         </div>
         <div class="title-foot">
-          <p class="title-hint"><b>←</b> <b>→</b> choose · <b>Click</b> a hero · <b>Enter</b> to descend</p>
+          <p class="title-hint"><b>←</b> <b>→</b> browse · <b>Click</b> to pick two heroes · <b>Enter</b> to descend</p>
           <button id="start-btn" class="px-btn" disabled>Choose your hero</button>
           <p class="controls-line title-controls">
             <span><b class="px-keycap">WASD</b> move</span>
             <span><b class="px-keycap">Mouse</b> look</span>
             <span><b class="px-keycap">LMB</b> attack</span>
+            <span><b class="px-keycap">RMB</b> heavy</span>
             <span><b class="px-keycap">Space</b> dodge</span>
             <span><b class="px-keycap">Shift</b> sprint</span>
+            <span><b class="px-keycap">Q</b> swap</span>
+            <span><b class="px-keycap">E</b> super</span>
             <span><b class="px-keycap">Esc</b> free cursor</span>
             <span><b class="px-keycap">F</b> fullscreen</span>
             <span><b class="px-keycap">M</b> mute</span>
@@ -151,6 +196,7 @@
       </div>
 
       <div id="toast" class="px-slab"></div>
+      <div id="reaction-toast"></div>
     </div>
 
     <script type="module" src="/game/src/main.js"></script>
