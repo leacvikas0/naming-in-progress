@@ -467,29 +467,44 @@ body {
   color: #1c1409;
 }
 
-/* party bar: two chips above the wave banner, left of centre */
+/* party bar: a vertical stack pinned top-right, Genshin-style — the active
+   hero's chip is fully lit and the standby sits dimmed below it. */
 
 #party-bar {
   position: absolute;
-  top: 74px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 76px;
+  right: 22px;
   display: flex;
+  flex-direction: column;
   gap: 8px;
+  align-items: stretch;
 }
 
 .party-chip {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-width: 148px;
+  gap: 8px;
+  min-width: 158px;
   padding: 5px 12px 6px 8px;
-  opacity: 0.62;
+  opacity: 0.55;
   transition: opacity 180ms ease, filter 180ms ease;
+  cursor: pointer;
 }
 
 .party-chip.active {
+  opacity: 1;
+}
+
+.party-key {
+  flex: none;
+  min-width: 17px;
+  text-align: center;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.party-chip.active .party-key {
   opacity: 1;
 }
 

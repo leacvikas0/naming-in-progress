@@ -40,6 +40,13 @@ const AURA_TINT_MIN_INTENSITY = 0.35;
 const MARK_DAMAGE_MULT = 1.2;
 const ARMOR_BREAK_MULT = 1.3;
 const STANDOFF_DEFAULT = 3.6;
+// The orbit ring sits just outside a type's own reach, so an enemy without a
+// token hovers where it visibly threatens but cannot connect. If the ring were
+// wider than attackRange the fight would go passive: nobody could ever close
+// enough to start a windup and claim a token.
+const ORBIT_MARGIN = 0.8;
+const ORBIT_BAND = 1.5;
+const TOKEN_REACH = 0.6;
 const REACTION_PITCH = { melt: 0.82, overload: 0.72, shatter: 1.18, detonate: 0.9, frozen: 1.3, void: 0.62 };
 
 // Module scratch: emissive tint lerp target. Never held across frames.
@@ -707,8 +714,14 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
     // Standoff orbit: an enemy that is close but holds no attack token circles
     // instead of piling in. This is what makes a 15-enemy wave read as a fight
     // rather than a blender: the ring visibly breathes as tokens free up.
-    const standoff = Number.isFinite(combat.standoff) ? combat.standoff : STANDOFF_DEFAULT;
-    if (!e.hasToken && !e.dashing && dist < standoff) {
+    // The ring is derived from the enemy's own reach so melee types orbit
+    // within threatening distance instead of parking out of range. Ranged types
+    // keep their own spacing instead of orbiting.
+    const standoff = Math.max(
+      type.attackRange + ORBIT_MARGIN,
+      Math.min(Number.isFinite(combat.standoff) ? combat.standoff : STANDOFF_DEFAULT, type.attackRange + ORBIT_BAND)
+    );
+    if (!e.hasToken && !e.dashing && !type.keepDistance && dist < standoff) {
       const push = type.keepDistance ? 0 : 1 - dist / standoff;
       mx = (-nz * e.strafeSide) * 0.9 - nx * push * 0.6;
       mz = (nx * e.strafeSide) * 0.9 - nz * push * 0.6;
@@ -884,10 +897,24 @@ export function createEnemies({ scene, world, events, config = CONFIG, rng, load
 
     e.attackCd -= dt;
     e.dashCd -= dt;
+
+    // Token queue: an enemy waiting on the ring joins the attack rotation when
+    // its cooldown is up and it is near enough to threaten. Holding a token is
+    // what lets it stop orbiting and close the distance (see moveAI).
+    const etype = e.type;
+    const ring = Math.max(
+      etype.attackRange + ORBIT_MARGIN,
+      Math.min(Number.isFinite(combat.standoff) ? combat.standoff : STANDOFF_DEFAULT, etype.attackRange + ORBIT_BAND)
+    );
+    if (!e.hasToken && e.attackCd <= 0 && dist <= ring + TOKEN_REACH) acquireToken(e);
+    // A token holder that gets kited far away gives its slot back so the next
+    // enemy in line can step in rather than the wave stalling on a straggler.
+    if (e.hasToken && dist > ring * 2.2) releaseToken(e);
+
     const moving = moveAI(e, dt, pdx, pdz, dist);
     if (moving) faceToward(e, pdx, pdz, dt, 9);
 
-    if (!e.dashing && e.attackCd <= 0 && dist <= e.type.attackRange) {
+    if (!e.dashing && e.hasToken && e.attackCd <= 0 && dist <= etype.attackRange) {
       startWindup(e);
       return;
     }

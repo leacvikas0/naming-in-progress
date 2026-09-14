@@ -1162,7 +1162,7 @@ export function createPlayer(options = {}) {
     emit("sfx", { name: "hurt", position: position.clone() });
     if (entry.hp <= 0) {
       const other = 1 - activeIdx;
-      if (party[other].hp > 0) swapTo(other);
+        if (party[other].hp > 0) swapTo(other, true);
       else die();
     }
     return true;
@@ -1191,9 +1191,16 @@ export function createPlayer(options = {}) {
     emit("sfx", { name: "death", position: position.clone() });
   }
 
-  function swapTo(idx) {
+  // `forced` skips the liveness/cooldown guards: it is used by the auto-swap
+  // that fires when the active hero falls, which must never be blocked by a
+  // swap cooldown the player happened to be on.
+  function swapTo(idx, forced) {
     const to = party[idx];
     if (!to || idx === activeIdx || to.hp <= 0) return false;
+    if (!forced) {
+      if (!alive || superActive) return false;
+      if (swapCdT > 0) return false;
+    }
     const from = party[activeIdx];
     useHero(idx);
     superActive = false;
@@ -1339,6 +1346,9 @@ export function createPlayer(options = {}) {
     get partyAlive() {
       return (party[0].hp > 0 ? 1 : 0) + (party[1].hp > 0 ? 1 : 0);
     },
+    get activeIndex() {
+      return activeIdx;
+    },
     get momentum() {
       return momentum;
     },
@@ -1355,6 +1365,7 @@ export function createPlayer(options = {}) {
     addMaxHp,
     respawn,
     swap,
+    swapTo,
     get dodgeCooldownFrac() {
       return dodgeCdTotal > 0 ? clamp(dodgeCdT / dodgeCdTotal, 0, 1) : 0;
     },

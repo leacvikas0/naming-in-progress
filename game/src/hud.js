@@ -199,6 +199,10 @@ export function createHUD({ events, characters } = {}) {
         chip.appendChild(elem);
         host.appendChild(chip);
       }
+      if (chip && typeof chip.addEventListener === "function") {
+        const slot = i;
+        chip.addEventListener("click", () => emit("party-slot", { index: slot }));
+      }
       const q = (sel) => (chip && typeof chip.querySelector === "function" ? chip.querySelector(sel) : null);
       partyChips.push({
         chip,
