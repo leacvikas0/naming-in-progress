@@ -1246,6 +1246,25 @@ export function createPlayer(options = {}) {
     return entry.hp - before;
   }
 
+  // Between-wave recovery for the whole party. Only living heroes are healed:
+  // a hero who fell stays down until the run ends, which keeps the auto-swap
+  // and per-hero HP meaningful rather than making death costless.
+  function healParty(flat, frac) {
+    const amount = Number.isFinite(flat) ? flat : 0;
+    const ratio = Number.isFinite(frac) ? frac : 0;
+    let total = 0;
+    for (const entry of party) {
+      if (entry.hp <= 0) continue;
+      const gain = amount + entry.maxHp * ratio;
+      if (gain <= 0) continue;
+      const before = entry.hp;
+      entry.hp = Math.min(entry.maxHp, entry.hp + gain);
+      total += entry.hp - before;
+    }
+    if (total > 0) emit("player-healed", { amount: total, hp: party[activeIdx].hp });
+    return total;
+  }
+
   function addMaxHp(n) {
     const v = Number(n);
     if (!Number.isFinite(v) || v === 0) return party[activeIdx].maxHp;
@@ -1383,6 +1402,7 @@ export function createPlayer(options = {}) {
     respawn,
     swap,
     swapTo,
+    healParty,
     dispose,
     get dodgeCooldownFrac() {
       return dodgeCdTotal > 0 ? clamp(dodgeCdT / dodgeCdTotal, 0, 1) : 0;

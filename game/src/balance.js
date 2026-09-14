@@ -483,6 +483,12 @@ export const CONFIG = {
     spikeDamage: 12,
     spikeTick: 0.9,
     auraTime: 5,
+    // Between-wave recovery. Without it, damage is a one-way ratchet: every
+    // wave ends lower than it began and the run dies to attrition around 6-7
+    // regardless of skill. Healing the party on clear turns each wave into a
+    // discrete test that can be won or lost on its own merits.
+    waveClearHeal: 14,
+    waveClearHealFrac: 0.12,
   },
   run: { seed: 1337 },
 };

@@ -414,4 +414,28 @@ test("two players on one bus: only the live one counts kills", () => {
   assert.equal(second.momentum, MOMENTUM_GAIN.kill, "the live player gains exactly once");
 });
 
+test("healParty tops up the whole living party, never past max", () => {
+  const { player } = makePlayer();
+  player.damage(40);
+  const before = player.party.map((e) => e.hp);
+  player.healParty(14, 0.12);
+  assert.ok(player.party[0].hp > before[0], "the active hero should recover");
+  assert.ok(player.party[1].hp >= before[1], "the standby should not be harmed");
+  for (const entry of player.party) {
+    assert.ok(entry.hp <= entry.maxHp, "healing must not exceed max hp");
+  }
+});
+
+test("healParty does not revive a fallen hero", () => {
+  const { player } = makePlayer();
+  player.party[1].hp = 0;
+  player.healParty(50, 0.5);
+  assert.equal(player.party[1].hp, 0, "a downed hero stays down");
+});
+
+test("healParty is a no-op at full health", () => {
+  const { player } = makePlayer();
+  assert.equal(player.healParty(14, 0.12), 0, "nothing to heal at full hp");
+});
+
 console.log(`\n${passed} passed`);

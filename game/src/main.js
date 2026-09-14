@@ -473,6 +473,13 @@ function endWave() {
   state.waveActive = false;
   events.emit("wave-clear", { wave: state.wave });
 
+  // Between-wave recovery: without it damage is a one-way ratchet and every
+  // run dies to attrition around wave 6-7 no matter how well it is played.
+  if (player && typeof player.healParty === "function") {
+    const healed = player.healParty(CONFIG.combat.waveClearHeal, CONFIG.combat.waveClearHealFrac);
+    if (healed > 0) hud.showToast(`Wave cleared · +${Math.round(healed)} HP`);
+  }
+
   if (state.wave % CONFIG.combat.upgradeEvery === 0) {
     const cards = rollUpgrades(rng, 3);
     state.pendingUpgrades = cards;
