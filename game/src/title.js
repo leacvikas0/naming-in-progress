@@ -241,6 +241,8 @@ export function createTitle(options = {}) {
   const heroes = [];
   const byId = new Map();
   const bars = new Map();
+  const badges = new Map();
+  const party = [];
   let active = null;
   let selectedId = null;
   let time = 0;
@@ -332,6 +334,14 @@ export function createTitle(options = {}) {
   function setBarState() {
     for (const [id, bar] of bars) {
       bar.classList.toggle("selected", id === selectedId);
+      const slot = party.indexOf(id);
+      const picked = slot >= 0;
+      bar.setAttribute("aria-pressed", picked ? "true" : "false");
+      const badge = badges.get(id);
+      if (!badge) continue;
+      badge.textContent = picked ? String(slot + 1) : "";
+      badge.style.display = picked ? "" : "none";
+      badge.classList.toggle("hot", picked);
     }
   }
 
@@ -386,10 +396,38 @@ export function createTitle(options = {}) {
     detailHost.appendChild(stats);
   }
 
+  function partyComplete() {
+    return party.length === 2;
+  }
+
   function setStartEnabled(enabled) {
     if (!startBtn) return;
     startBtn.disabled = !enabled;
-    startBtn.textContent = enabled ? "Enter the dungeon" : "Choose your hero";
+    if (!enabled) startBtn.textContent = "Choose " + (2 - party.length) + " more";
+    else startBtn.textContent = "Descend";
+  }
+
+  function emitParty() {
+    emit("party-selected", { heroes: party.slice() });
+  }
+
+  // Two-slot pick: an unpicked hero fills the next empty slot, a picked hero
+  // drops out. The dais always follows the focused hero; the party is
+  // independent of focus so browsing the roster never changes the picks.
+  function togglePick(id) {
+    const slot = party.indexOf(id);
+    if (slot >= 0) {
+      party.splice(slot, 1);
+      setBarState();
+      setStartEnabled(partyComplete());
+      emitParty();
+      return;
+    }
+    if (party.length >= 2) return;
+    party.push(id);
+    setBarState();
+    setStartEnabled(partyComplete());
+    emitParty();
   }
 
   // `emote` distinguishes the two callers: switching to a hero (click, arrow
@@ -409,7 +447,7 @@ export function createTitle(options = {}) {
     }
     setBarState();
     renderDetail();
-    setStartEnabled(true);
+    setStartEnabled(partyComplete());
     if (emote) flourish(h);
     else if (h.current && IDLE_CLIPS.includes(h.current.getClip().name)) h.idleT = IDLE_FLOURISH;
     if (notify) emit("hero-selected", { id });
@@ -434,7 +472,27 @@ export function createTitle(options = {}) {
     text.appendChild(el("span", "bar-role", def.role || ""));
     bar.appendChild(text);
 
-    bar.addEventListener("click", () => selectHero(h.id, true, true));
+    const badge = el("span", "bar-badge px-keycap");
+    badge.setAttribute("aria-hidden", "true");
+    // style.css is not ours to touch in this task, so the badge's corner
+    // placement lives here next to the element it belongs to.
+    badge.style.position = "absolute";
+    badge.style.top = "-7px";
+    badge.style.right = "-6px";
+    badge.style.minWidth = "20px";
+    badge.style.padding = "2px 4px 3px";
+    badge.style.fontSize = "10px";
+    badge.style.textAlign = "center";
+    badge.style.pointerEvents = "none";
+    badge.style.display = "none";
+    bar.appendChild(badge);
+    badges.set(h.id, badge);
+
+    bar.addEventListener("click", () => {
+      selectHero(h.id, true, true);
+      togglePick(h.id);
+      emit("sfx", { name: "ui-click" });
+    });
     return bar;
   }
 
@@ -502,7 +560,7 @@ export function createTitle(options = {}) {
     if (heroes.length) selectHero(heroes[0].id, false, false);
     setBarState();
     renderDetail();
-    setStartEnabled(!!selectedId);
+    setStartEnabled(partyComplete());
   }
 
   function show() {
@@ -522,7 +580,13 @@ export function createTitle(options = {}) {
         } else if (e.key === "ArrowLeft" || e.key === "a") {
           selectHero(heroes[(idx - 1 + heroes.length) % heroes.length].id, true, true);
         } else if (e.key === "Enter" && selectedId) {
-          emit("start-run", {});
+          // Enter descends when the party is full, otherwise it picks or
+          // unpicks the focused hero. preventDefault stops a focused roster
+          // bar / the start button from also firing its native activation,
+          // which would toggle the same hero a second time.
+          e.preventDefault();
+          if (partyComplete()) emit("start-run", {});
+          else togglePick(selectedId);
         }
       };
       window.addEventListener("keydown", keyHandler);
@@ -587,7 +651,7 @@ export function createTitle(options = {}) {
 
   if (startBtn && typeof startBtn.addEventListener === "function") {
     startBtn.addEventListener("click", () => {
-      if (startBtn.disabled || !selectedId) return;
+      if (startBtn.disabled || !partyComplete()) return;
       emit("start-run", {});
       emit("sfx", { name: "ui-click" });
     });
@@ -602,6 +666,9 @@ export function createTitle(options = {}) {
     selectHero,
     get selectedId() {
       return selectedId;
+    },
+    get party() {
+      return party.slice();
     },
     get visible() {
       return visible;

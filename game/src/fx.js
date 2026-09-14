@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { PALETTE, CONFIG, clamp, damp } from "./balance.js";
+import { PALETTE, CONFIG, CHARACTERS, ELEMENTS, clamp, damp } from "./balance.js";
 
 // fx.js — pooled combat feel: damage numbers, hit sparks, slash arcs, ground rings,
 // physical coins, hitstop / slow-motion and camera shake.
@@ -22,6 +22,16 @@ const COIN_LIFE = CONFIG.combat.coinLifetime;
 const COIN_MAGNET_SQ = CONFIG.combat.coinMagnet * CONFIG.combat.coinMagnet;
 const COIN_PICKUP_SQ = 0.8 * 0.8;
 const TWO_PI = Math.PI * 2;
+
+// Reaction sting pitch: the higher the pitch, the lighter the reaction.
+const REACTION_PITCH = {
+  melt: 0.82,
+  overload: 0.72,
+  shatter: 1.18,
+  detonate: 0.9,
+  frozen: 1.3,
+  void: 0.62,
+};
 
 const BURST_VERT = `
 attribute float aSize;
@@ -99,6 +109,8 @@ export function createFX({ scene, camera, events, rng, world } = {}) {
   const tmpVec = new THREE.Vector3();
   const lastPlayer = new THREE.Vector3();
   let hasPlayer = false;
+  let lastMoveX = 0;
+  let lastMoveZ = 1;
 
   // ---- time scaling -------------------------------------------------------
   let timeScale = 1;
@@ -158,6 +170,23 @@ export function createFX({ scene, camera, events, rng, world } = {}) {
     });
   }
 
+  function acquireNumberSlot() {
+    let slot = null;
+    for (let i = 0; i < MAX_NUMBERS; i++) {
+      if (!numbers[i].active) {
+        slot = numbers[i];
+        break;
+      }
+    }
+    if (!slot) {
+      slot = numbers[0];
+      for (let i = 1; i < MAX_NUMBERS; i++) {
+        if (numbers[i].age > slot.age) slot = numbers[i];
+      }
+    }
+    return slot;
+  }
+
   function drawNumber(slot, text, color, crit) {
     const ctx = slot.ctx;
     const w = 192;
@@ -175,6 +204,30 @@ export function createFX({ scene, camera, events, rng, world } = {}) {
     slot.texture.needsUpdate = true;
   }
 
+  function drawLabel(slot, text, color) {
+    const ctx = slot.ctx;
+    const w = 192;
+    const h = 96;
+    ctx.clearRect(0, 0, w, h);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    let size = 42;
+    ctx.font = `900 ${size}px "Arial Black", Arial, sans-serif`;
+    const measured = typeof ctx.measureText === "function" ? ctx.measureText(text).width : 0;
+    const maxW = w - 20;
+    if (measured > maxW) {
+      size = Math.max(18, Math.floor((size * maxW) / measured));
+      ctx.font = `900 ${size}px "Arial Black", Arial, sans-serif`;
+    }
+    ctx.lineWidth = 9;
+    ctx.strokeStyle = "rgba(8, 6, 8, 0.9)";
+    ctx.strokeText(text, w / 2, h / 2 + 2);
+    ctx.fillStyle = cssColor(color);
+    ctx.fillText(text, w / 2, h / 2 + 2);
+    slot.texture.needsUpdate = true;
+  }
+
   function damageNumber(pos, amount, opts) {
     if (!pos) return;
     const o = opts || {};
@@ -185,19 +238,7 @@ export function createFX({ scene, camera, events, rng, world } = {}) {
     const color = o.color != null ? o.color : heal ? 0x7fe0a0 : crit ? PALETTE.gold : 0xf4efe6;
     const text = (heal ? "+" : "") + n + (crit ? "!" : "");
 
-    let slot = null;
-    for (let i = 0; i < MAX_NUMBERS; i++) {
-      if (!numbers[i].active) {
-        slot = numbers[i];
-        break;
-      }
-    }
-    if (!slot) {
-      slot = numbers[0];
-      for (let i = 1; i < MAX_NUMBERS; i++) {
-        if (numbers[i].age > slot.age) slot = numbers[i];
-      }
-    }
+    const slot = acquireNumberSlot();
 
     drawNumber(slot, text, color, crit);
     slot.active = true;
@@ -208,6 +249,29 @@ export function createFX({ scene, camera, events, rng, world } = {}) {
     slot.driftZ = (rand() - 0.5) * 0.8;
     slot.baseScale = (crit ? 1.6 : 1) * (heal ? 1.05 : 1) * (Number.isFinite(o.scale) ? o.scale : 1);
     const yOff = Number.isFinite(o.y) ? o.y : 0.6;
+    const s = slot.sprite;
+    s.position.set(pos.x, (pos.y || 0) + yOff, pos.z);
+    s.scale.set(1.2 * slot.baseScale * 1.3, 0.6 * slot.baseScale * 1.3, 1);
+    s.material.opacity = 1;
+    s.visible = true;
+  }
+
+  // Reaction names ride the same canvas-sprite pool as damage numbers: one
+  // shared slot shape, one updater, one reset path.
+  function label(pos, text, color, opts) {
+    if (!pos || typeof text !== "string" || text.length === 0) return;
+    const o = opts || {};
+    const slot = acquireNumberSlot();
+
+    drawLabel(slot, text, color != null ? color : 0xf4efe6);
+    slot.active = true;
+    slot.age = 0;
+    slot.life = Number.isFinite(o.life) ? Math.max(0.1, o.life) : 1.0;
+    slot.rise = Number.isFinite(o.rise) ? o.rise : 0.9;
+    slot.driftX = 0;
+    slot.driftZ = 0;
+    slot.baseScale = Number.isFinite(o.scale) ? Math.max(0.1, o.scale) : 1;
+    const yOff = Number.isFinite(o.y) ? o.y : 1.4;
     const s = slot.sprite;
     s.position.set(pos.x, (pos.y || 0) + yOff, pos.z);
     s.scale.set(1.2 * slot.baseScale * 1.3, 0.6 * slot.baseScale * 1.3, 1);
@@ -432,6 +496,119 @@ export function createFX({ scene, camera, events, rng, world } = {}) {
     slot.mesh.visible = true;
     slot.mesh.position.set(pos.x, (pos.y || 0) + 0.04, pos.z);
     slot.mesh.scale.setScalar(0.5);
+  }
+
+  // ---- reaction payloads ---------------------------------------------------
+  // Six shapes, all cut from the existing burst / ring / shake / hitstop
+  // primitives: no new pools, so reset() needs no new state either.
+  function dimColor(c, f) {
+    if (typeof c !== "number") return c;
+    const r = Math.round(((c >> 16) & 255) * f);
+    const g = Math.round(((c >> 8) & 255) * f);
+    const b = Math.round((c & 255) * f);
+    return (r << 16) | (g << 8) | b;
+  }
+
+  function reactionFx(type, position, radius, color) {
+    if (!position) return;
+    const r = Math.max(0.5, Number.isFinite(radius) ? radius : 2.4);
+    const c = color != null ? color : PALETTE.arcane;
+    switch (type) {
+      case "melt": {
+        // Rising ember column: stacked bursts, positive gravity so embers climb.
+        for (let i = 0; i < 3; i++) {
+          tmpVec.set(position.x, (position.y || 0) + 0.15 + i * 0.45, position.z);
+          burst(tmpVec, {
+            count: 10,
+            color: dimColor(c, 1 - i * 0.15),
+            speed: 1.5 + i * 0.4,
+            size: 0.15 - i * 0.025,
+            life: 0.65 + i * 0.15,
+            gravity: 2.4 + i * 0.9,
+            up: 2.8 + i * 0.8,
+          });
+        }
+        ring(position, { radius: r * 0.75, color: c, life: 0.5 });
+        break;
+      }
+      case "overload": {
+        // Hard shockwave: tight double ring, radial burst, camera kick.
+        ring(position, { radius: r * 1.25, color: c, life: 0.3 });
+        ring(position, { radius: r * 0.65, color: 0xffffff, life: 0.18 });
+        burst(position, { count: 26, color: c, speed: 11, size: 0.16, life: 0.5, gravity: -5, up: 1.6 });
+        shake(0.34);
+        hitstop(0.05);
+        break;
+      }
+      case "shatter": {
+        // Icy shards: fast, small, heavy gravity + a cold ring.
+        ring(position, { radius: r, color: c, life: 0.4 });
+        burst(position, { count: 22, color: c, speed: 9.5, size: 0.1, life: 0.55, gravity: -16, up: 2.4 });
+        burst(position, { count: 8, color: 0xffffff, speed: 4, size: 0.07, life: 0.35, gravity: -12, up: 1.2 });
+        break;
+      }
+      case "detonate": {
+        // Fire nova: a wide slow ring with a hot core, embers on the rise.
+        ring(position, { radius: r * 1.15, color: c, life: 0.6 });
+        ring(position, { radius: r * 0.6, color: 0xffd9a0, life: 0.34 });
+        burst(position, { count: 24, color: c, speed: 7.5, size: 0.17, life: 0.7, gravity: -7, up: 2.4 });
+        shake(0.22);
+        break;
+      }
+      case "frozen": {
+        // Pale freeze: slow, dim, hanging crystal dust + a wide cold ring.
+        const pale = dimColor(c, 0.6);
+        ring(position, { radius: r, color: pale, life: 0.7 });
+        ring(position, { radius: r * 0.5, color: 0xffffff, life: 0.4 });
+        burst(position, { count: 14, color: pale, speed: 2.2, size: 0.12, life: 0.85, gravity: -2.5, up: 0.6 });
+        break;
+      }
+      case "void": {
+        // Inward pull: one burst dives into the point, one is yanked up and
+        // slammed back down — a gravity well, not an explosion.
+        ring(position, { radius: r, color: c, life: 0.6 });
+        ring(position, { radius: 0.7, color: dimColor(c, 0.7), life: 0.75 });
+        burst(position, { count: 18, color: c, speed: 1.8, size: 0.13, life: 0.7, gravity: -18, up: -3.4 });
+        burst(position, { count: 10, color: dimColor(c, 0.8), speed: 3.2, size: 0.11, life: 0.9, gravity: -22, up: 4.2 });
+        break;
+      }
+      default: {
+        ring(position, { radius: r, color: c, life: 0.5 });
+        burst(position, { count: 16, color: c, speed: 7, size: 0.14, life: 0.5, gravity: -8, up: 1.6 });
+        break;
+      }
+    }
+  }
+
+  function swapFx(position, color) {
+    if (!position) return;
+    const c = color != null ? color : PALETTE.arcane;
+    ring(position, { radius: 1.9, color: c, life: 0.45 });
+    burst(position, { count: 16, color: c, speed: 4.5, size: 0.13, life: 0.45, gravity: -4, up: 1.4 });
+
+    // Trail: two fading afterimages behind the swap point, laid back along the
+    // player's last motion so the swap reads as a dash-in rather than a pop.
+    let dx = 0;
+    let dz = 1;
+    if (hasPlayer) {
+      dx = position.x - lastPlayer.x;
+      dz = position.z - lastPlayer.z;
+      const len = Math.hypot(dx, dz);
+      if (len > 0.001) {
+        dx /= len;
+        dz /= len;
+      } else {
+        dx = 0;
+        dz = 1;
+      }
+    }
+    for (let i = 1; i <= 2; i++) {
+      const back = i * 0.55;
+      const f = 1 - i * 0.28;
+      tmpVec.set(position.x - dx * back, position.y || 0, position.z - dz * back);
+      ring(tmpVec, { radius: 1.4 - i * 0.3, color: dimColor(c, f), life: 0.28 + i * 0.07 });
+      burst(tmpVec, { count: 4, color: dimColor(c, f), speed: 1.6, size: 0.09, life: 0.3, gravity: -3, up: 0.8 });
+    }
   }
 
   // ---- coins --------------------------------------------------------------
@@ -789,6 +966,15 @@ export function createFX({ scene, camera, events, rng, world } = {}) {
     if (player) {
       const pp = player.position || player;
       if (pp && typeof pp.x === "number") {
+        if (hasPlayer) {
+          const mx = pp.x - lastPlayer.x;
+          const mz = pp.z - lastPlayer.z;
+          const len = Math.hypot(mx, mz);
+          if (len > 0.001) {
+            lastMoveX = mx / len;
+            lastMoveZ = mz / len;
+          }
+        }
         lastPlayer.set(pp.x, pp.y || 0, pp.z || 0);
         hasPlayer = true;
       }
@@ -924,6 +1110,57 @@ export function createFX({ scene, camera, events, rng, world } = {}) {
     damageNumber(lastPlayer, v, { color: PALETTE.gold, y: 1.5, scale: 0.8 });
   }
 
+  function onReaction(p) {
+    if (!p || !p.position) return;
+    const color = p.color != null ? p.color : PALETTE.arcane;
+    reactionFx(p.type, p.position, p.radius, color);
+    const name = typeof p.name === "string" && p.name.length > 0 ? p.name.toUpperCase() : "REACTION";
+    label(p.position, name, color, { y: 1.9, scale: 1.15, life: 1.1, rise: 0.7 });
+    if (events) {
+      events.emit("sfx", {
+        name: "reaction",
+        position: p.position,
+        pitch: REACTION_PITCH[p.type] != null ? REACTION_PITCH[p.type] : 1,
+      });
+    }
+  }
+
+  function onSwap(p) {
+    // The swap payload carries no position: the player is swapping in place,
+    // so the last tracked player position is the swap point.
+    const pos = p && p.position ? p.position : hasPlayer ? lastPlayer : null;
+    if (!pos) return;
+    const color = p && p.color != null ? p.color : PALETTE.arcane;
+    swapFx(pos, color);
+    if (events) events.emit("sfx", { name: "swap", position: pos });
+  }
+
+  function onPerfectDodge(p) {
+    const pos = p && p.position ? p.position : hasPlayer ? lastPlayer : null;
+    if (!pos) return;
+    ring(pos, { radius: 1.6, color: 0xffffff, life: 0.32 });
+    slowmo(0.35, 0.35);
+  }
+
+  function heroColor(heroId) {
+    const hero = CHARACTERS[heroId];
+    const element = hero && ELEMENTS[hero.element];
+    return element ? element.color : PALETTE.torch;
+  }
+
+  function onSuperUsed(p) {
+    if (!p || !p.position) return;
+    const color = p.color != null ? p.color : heroColor(p.hero);
+    ring(p.position, { radius: 3.4, color, life: 0.7 });
+    ring(p.position, { radius: 1.8, color: 0xffffff, life: 0.35 });
+    burst(p.position, { count: 28, color, speed: 9, size: 0.18, life: 0.8, gravity: -6, up: 2.6 });
+    shake(0.55);
+    // Super entry: a hard freeze into a 0.25× crawl through the 1.2s cast.
+    hitstop(0.35);
+    slowmo(0.25, 1.2);
+    if (events) events.emit("sfx", { name: "super", position: p.position });
+  }
+
   if (events && typeof events.on === "function") {
     events.on("hitstop", (p) => hitstop(p && p.duration));
     events.on("shake", (p) => shake(p && p.amount));
@@ -932,6 +1169,10 @@ export function createFX({ scene, camera, events, rng, world } = {}) {
     events.on("coin-collected", onCoinCollected);
     events.on("player-cast", onPlayerCast);
     events.on("player-blast", onPlayerBlast);
+    events.on("reaction", onReaction);
+    events.on("swap", onSwap);
+    events.on("perfect-dodge", onPerfectDodge);
+    events.on("super-used", onSuperUsed);
   }
 
   return {
@@ -943,9 +1184,12 @@ export function createFX({ scene, camera, events, rng, world } = {}) {
     hitstop,
     shake,
     damageNumber,
+    label,
     burst,
     slashArc,
     ring,
+    reactionFx,
+    swapFx,
     spawnCoins,
     slowmo,
     reset,

@@ -410,6 +410,23 @@ export function createAudio({ events } = {}) {
       },
     },
 
+    heavy: {
+      duration: 0.34,
+      volume: 1,
+      fn(t0, out, pitch, reg) {
+        makeNoise(reg, t0, 0.34, 0.65, out, {
+          filter: 'bandpass',
+          f0: 800 * pitch,
+          f1: 120 * pitch,
+          q: 2.6,
+          attack: 0.03,
+          rate: pitch,
+        });
+        makeOsc(reg, 'square', 78 * pitch, t0 + 0.16, 0.16, 0.22, out, { endFreq: 42 * pitch, attack: 0.008 });
+        makeOsc(reg, 'sine', 150 * pitch, t0 + 0.14, 0.2, 0.2, out, { endFreq: 60 * pitch, attack: 0.006 });
+      },
+    },
+
     hit: {
       duration: 0.12,
       volume: 1,
@@ -575,6 +592,85 @@ export function createAudio({ events } = {}) {
           detune: -8,
         });
         makeOsc(reg, 'sine', 55 * pitch, t0 + 0.2, 1.2, 0.22, out, { endFreq: 30 * pitch, attack: 0.05 });
+      },
+    },
+
+    // Bright metallic sting; callers shift `pitch` per reaction type.
+    reaction: {
+      duration: 0.5,
+      volume: 1,
+      fn(t0, out, pitch, reg) {
+        makeOsc(reg, 'triangle', 880 * pitch, t0, 0.3, 0.3, out, { endFreq: 1320 * pitch, attack: 0.004 });
+        makeOsc(reg, 'sine', 1320 * pitch, t0 + 0.03, 0.32, 0.22, out, { endFreq: 1980 * pitch, attack: 0.004 });
+        makeOsc(reg, 'sine', 2640 * pitch, t0 + 0.06, 0.3, 0.1, out, { endFreq: 3300 * pitch, attack: 0.006 });
+        makeNoise(reg, t0, 0.16, 0.22, out, {
+          filter: 'highpass',
+          f0: 2400 * pitch,
+          f1: 4200 * pitch,
+          q: 1.4,
+          attack: 0.003,
+          rate: pitch,
+        });
+      },
+    },
+
+    swap: {
+      duration: 0.42,
+      volume: 0.9,
+      fn(t0, out, pitch, reg) {
+        makeNoise(reg, t0, 0.26, 0.45, out, {
+          filter: 'bandpass',
+          f0: 420 * pitch,
+          f1: 2600 * pitch,
+          q: 1.1,
+          attack: 0.05,
+          rate: pitch,
+        });
+        makeOsc(reg, 'sine', 660 * pitch, t0 + 0.1, 0.3, 0.28, out, { endFreq: 990 * pitch, attack: 0.006 });
+        makeOsc(reg, 'sine', 990 * pitch, t0 + 0.18, 0.24, 0.18, out, { endFreq: 1480 * pitch, attack: 0.006 });
+      },
+    },
+
+    super: {
+      duration: 1.1,
+      volume: 1,
+      fn(t0, out, pitch, reg) {
+        makeOsc(reg, 'sine', 65 * pitch, t0, 0.9, 0.8, out, { endFreq: 30 * pitch, attack: 0.004 });
+        makeOsc(reg, 'sawtooth', 98 * pitch, t0 + 0.02, 0.8, 0.3, out, { endFreq: 46 * pitch, attack: 0.01 });
+        makeNoise(reg, t0, 0.7, 0.6, out, {
+          filter: 'lowpass',
+          f0: 3600 * pitch,
+          f1: 110 * pitch,
+          q: 0.9,
+          attack: 0.004,
+          rate: pitch,
+        });
+        makeNoise(reg, t0 + 0.05, 0.16, 0.26, out, {
+          filter: 'highpass',
+          f0: 1700 * pitch,
+          f1: 600 * pitch,
+          q: 0.6,
+          attack: 0.002,
+          rate: pitch,
+        });
+        makeOsc(reg, 'triangle', 520 * pitch, t0 + 0.08, 0.5, 0.14, out, { endFreq: 780 * pitch, attack: 0.02 });
+      },
+    },
+
+    freeze: {
+      duration: 0.24,
+      volume: 0.85,
+      fn(t0, out, pitch, reg) {
+        makeOsc(reg, 'sine', 1980 * pitch, t0, 0.1, 0.26, out, { endFreq: 2640 * pitch, attack: 0.002 });
+        makeOsc(reg, 'triangle', 1320 * pitch, t0 + 0.05, 0.14, 0.16, out, { endFreq: 1760 * pitch, attack: 0.003 });
+        makeNoise(reg, t0, 0.06, 0.2, out, {
+          filter: 'highpass',
+          f0: 3200 * pitch,
+          f1: 5200 * pitch,
+          q: 1.2,
+          attack: 0.002,
+          rate: pitch,
+        });
       },
     },
 
