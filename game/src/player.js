@@ -1306,13 +1306,30 @@ export function createPlayer(options = {}) {
     facing.set(0, 0, 1);
   }
 
+  // The event bus is a module singleton, so every listener registered here
+  // outlives the player unless it is explicitly removed. main.js calls
+  // dispose() before replacing the player at the start of each run; without it
+  // a retry would stack a second set of momentum listeners on the old player.
+  const disposers = [];
   if (events && typeof events.on === "function") {
-    events.on("enemy-died", () => {
-      gainMomentum(MOMENTUM_GAIN.kill);
-    });
-    events.on("reaction", () => {
-      gainMomentum(MOMENTUM_GAIN.reaction);
-    });
+    disposers.push(
+      events.on("enemy-died", () => {
+        gainMomentum(MOMENTUM_GAIN.kill);
+      })
+    );
+    disposers.push(
+      events.on("reaction", () => {
+        gainMomentum(MOMENTUM_GAIN.reaction);
+      })
+    );
+  }
+
+  function dispose() {
+    for (const off of disposers) {
+      if (typeof off === "function") off();
+    }
+    disposers.length = 0;
+    if (mixer) mixer.stopAllAction();
   }
 
   useHero(0);
@@ -1366,6 +1383,7 @@ export function createPlayer(options = {}) {
     respawn,
     swap,
     swapTo,
+    dispose,
     get dodgeCooldownFrac() {
       return dodgeCdTotal > 0 ? clamp(dodgeCdT / dodgeCdTotal, 0, 1) : 0;
     },

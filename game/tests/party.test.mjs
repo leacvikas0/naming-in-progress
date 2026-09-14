@@ -384,4 +384,34 @@ test("respawn restores both heroes and clears momentum", () => {
   assert.equal(player.position.z, -3);
 });
 
+test("dispose removes the player's listeners from the shared bus", () => {
+  // The bus is a module singleton in the real game, so a run that replaces the
+  // player without disposing would leave the old player's momentum listeners
+  // attached — every retry would then award momentum twice, then three times.
+  const { player, bus } = makePlayer();
+  player.dispose();
+  kill(bus, 3);
+  assert.equal(player.momentum, 0, "a disposed player must stop gaining momentum");
+});
+
+test("two players on one bus: only the live one counts kills", () => {
+  const bus = makeBus();
+  const make = () =>
+    createPlayer({
+      scene: fakeScene,
+      world: fakeWorld,
+      events: bus,
+      config: CONFIG,
+      hero: heroDef("knight"),
+      partner: heroDef("rogue"),
+      loader: null,
+    });
+  const first = make();
+  first.dispose();
+  const second = make();
+  bus.emit("enemy-died", { position: { x: 0, y: 0, z: 0 }, value: 1 });
+  assert.equal(first.momentum, 0, "the replaced player must not react");
+  assert.equal(second.momentum, MOMENTUM_GAIN.kill, "the live player gains exactly once");
+});
+
 console.log(`\n${passed} passed`);

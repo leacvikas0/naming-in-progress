@@ -621,9 +621,15 @@ export function createHUD({ events, characters } = {}) {
   listen("perfect-dodge", () => flashDodge());
   listen("wave-start", (payload) => {
     const p = payload && typeof payload === "object" ? payload : {};
+    // `sub` is pre-formatted by main.js (modifier name and/or elite count);
+    // fall back to the modifier name alone for older emitters.
     const modifier = p.modifier;
-    const sub = modifier && typeof modifier === "object" ? modifier.name : null;
-    if (sub) showWaveBanner(p.wave ?? 1, sub);
+    const sub = typeof p.sub === "string" && p.sub.length
+      ? p.sub
+      : modifier && typeof modifier === "object"
+        ? modifier.name
+        : "";
+    showWaveBanner(p.wave ?? 1, sub);
   });
 
   return {

@@ -95,6 +95,8 @@ the prop's widest dimension.
                                //           heavy: bool, dodge: bool, sprint: bool,
                                //           jump: bool, swap: bool, super: bool }
   swap(),                      // bool — swap to the partner if the cooldown is ready
+  swapTo(idx, forced),         // bool — swap to party slot idx; forced skips guards (auto-swap)
+  dispose(),                   // remove this player's listeners from the shared bus
   damage(amount, opts),        // emits player-hurt / player-died
   heal(n), addMaxHp(n), respawn(),
   dodgeCooldownFrac,           // 0..1 for HUD
@@ -118,6 +120,10 @@ strikes), `meteor` (delayed blast at the aim point). A hit negated during dodge 
 is a **perfect dodge**: it emits `perfect-dodge`, awards momentum, and opens a short
 damage window. The inactive hero is off-field; when the active hero falls and the partner
 lives, the party auto-swaps instead of dying — `player-died` only fires when both are down.
+
+**Lifecycle.** The event bus is a module singleton, so a player's listeners outlive it.
+`main.js` MUST call `player.dispose()` before replacing the player at the start of a run,
+or the previous player keeps collecting kill/reaction momentum on every retry.
 
 ### enemies.js — `createEnemies({ scene, world, events, config, rng })`
 
@@ -331,7 +337,7 @@ Loop points are the `TRACKS` constants at the top of the build script. Re-run
 | `enemy-died` | `{ position, value, color }` | enemies |
 | `enemy-attack` | `{ position }` | enemies |
 | `enemy-count` | `{ alive }` | enemies |
-| `wave-start` | `{ wave, count, modifier }` | main |
+| `wave-start` | `{ wave, count, modifier, sub }` | main |
 | `wave-clear` | `{ wave }` | main |
 | `upgrade-offer` | `{ cards }` | main |
 | `upgrade-chosen` | `{ id }` | hud |
@@ -341,6 +347,7 @@ Loop points are the `TRACKS` constants at the top of the build script. Re-run
 | `score-changed` | `{ score }` | main |
 | `hero-selected` | `{ id }` | hud |
 | `party-selected` | `{ heroes }` | title |
+| `party-slot` | `{ index }` | hud |
 | `start-run` | `{ }` | title |
 | `retry` | `{ }` | hud |
 | `hitstop` | `{ duration }` | any |

@@ -412,6 +412,7 @@ function startRun(partyIds) {
   if (world && world.group) world.group.visible = true;
 
   if (player) {
+    if (typeof player.dispose === "function") player.dispose();
     scene.remove(player.group);
     player = null;
   }
@@ -460,8 +461,9 @@ function startWave(n) {
   if (waveDef.modifier) parts.push(waveDef.modifier.name);
   if (elites > 0) parts.push(`${elites} elite${elites > 1 ? "s" : ""} among them`);
   const sub = parts.join(" · ");
-  hud.showWaveBanner(n, sub);
-  events.emit("wave-start", { wave: n, count: waveDef.count + elites, modifier: waveDef.modifier });
+  // The banner is rendered by hud.js off this event; main.js must not also call
+  // showWaveBanner directly or the banner retriggers on every wave start.
+  events.emit("wave-start", { wave: n, count: waveDef.count + elites, modifier: waveDef.modifier, sub });
   events.emit("sfx", { name: "wave" });
   audio.music.setFilter({ lowpass: 20000, gain: 1, fade: 0.6 });
   enemies.spawnWave(waveDef, player);
@@ -568,10 +570,6 @@ events.on("player-hurt", () => {
 
 events.on("reaction-heal", ({ amount }) => {
   if (player && amount > 0) player.heal(amount);
-});
-
-events.on("reaction", ({ name }) => {
-  hud.showToast(name);
 });
 
 events.on("party-slot", ({ index }) => {
