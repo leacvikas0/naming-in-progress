@@ -96,6 +96,7 @@ the prop's widest dimension.
                                //           jump: bool, swap: bool, super: bool }
   swap(),                      // bool — swap to the partner if the cooldown is ready
   swapTo(idx, forced),         // bool — swap to party slot idx; forced skips guards (auto-swap)
+  healParty(flat, frac),       // heal every LIVING hero by flat + maxHp*frac; returns total
   dispose(),                   // remove this player's listeners from the shared bus
   damage(amount, opts),        // emits player-hurt / player-died
   heal(n), addMaxHp(n), respawn(),
@@ -320,6 +321,7 @@ Loop points are the `TRACKS` constants at the top of the build script. Re-run
 | `sfx` | `{ name, position?, pitch?, volume? }` | any |
 | `player-attack` | `{ origin, dir, range, arc, damage, heavy, crit, element, kind, stun, knockback, reactionMult, auraMult, executeMult, reactionHeal }` | player |
 | `player-hurt` | `{ amount, hp }` | player |
+| `player-healed` | `{ amount, hp }` | player |
 | `player-died` | `{ }` | player |
 | `player-dodged` | `{ }` | player |
 | `player-jumped` | `{ }` | player |
