@@ -1,7 +1,17 @@
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { CONFIG, ENEMY_TYPES, clamp, angleDelta, makeRng, pickWeighted } from "./balance.js";
+import {
+  CONFIG,
+  ELEMENTS,
+  ENEMY_TYPES,
+  REACTIONS,
+  angleDelta,
+  auraOutcome,
+  clamp,
+  makeRng,
+  pickWeighted,
+} from "./balance.js";
 
 const gltfCache = new Map();
 const readyCache = new Map();
@@ -16,6 +26,14 @@ const KNOCKBACK_DECAY = 8;
 const MAX_DT = 0.1;
 const BASE_RADIUS = 0.35;
 const TARGET_HEIGHT = 1.9;
+const EXECUTE_THRESHOLD = 0.3;
+const RAGE_THRESHOLD = 0.5;
+const RAGE_SPEED_MULT = 1.3;
+const RAGE_WINDUP_MULT = 0.75;
+const AURA_RING_INNER = 0.62;
+const AURA_RING_OUTER = 0.86;
+const AURA_RING_SEGMENTS = 24;
+const AURA_RING_Y = 0.05;
 
 const ANIM = {
   idle: ["Idle", "Idle_B", "Unarmed_Idle", "Skeleton_Inactive_Standing_Pose", "T-Pose"],
