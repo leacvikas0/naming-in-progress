@@ -4,6 +4,7 @@ import {
   momentumAfter,
   CONFIG,
   UPGRADES,
+  CHARACTERS,
   computeWave,
 } from "../src/balance.js";
 
@@ -161,6 +162,44 @@ test("swarm waves keep mix counts === count - eliteCount", () => {
   assert.equal(w.modifier.id, "swarm");
   const sum = w.mix.reduce((a, m) => a + m.count, 0);
   assert.equal(sum, w.count - w.eliteCount);
+});
+
+// The original game shipped knockback of 3.2 with a decay of exp(-8*dt), i.e.
+// v0/8 = 0.4 units of total displacement — technically present, visually
+// invisible. These tests pin the impulse to a distance a player can actually
+// see and use to break out of a surround.
+const KNOCKBACK_DECAY = 8;
+const displacementOf = (impulse) => impulse / KNOCKBACK_DECAY;
+
+test("light hits visibly displace enemies", () => {
+  const d = displacementOf(CONFIG.combat.enemyKnockback);
+  assert.ok(d >= 0.9, `light knockback should move ~1 unit, got ${d.toFixed(2)}`);
+});
+
+test("heavy hits and finishers shove a crowd", () => {
+  const d = displacementOf(CONFIG.combat.enemyKnockbackHeavy);
+  assert.ok(d >= 1.5, `heavy knockback should move ~1.9 units, got ${d.toFixed(2)}`);
+});
+
+test("every hero's heavy clears space", () => {
+  for (const hero of Object.values(CHARACTERS)) {
+    const heavy = displacementOf(hero.heavy.knockback);
+    assert.ok(heavy >= 1, `${hero.id} heavy should displace >= 1 unit, got ${heavy.toFixed(2)}`);
+  }
+});
+
+test("single-impact supers shove, multi-hit supers stagger", () => {
+  // nova / meteor / whirlwind land as one big or sustained 360 shove and must
+  // visibly clear the ring. flurry is a rapid multi-hit assassin super, so its
+  // per-hit impulse is smaller on purpose — it staggers rather than launches.
+  for (const hero of Object.values(CHARACTERS)) {
+    const sup = displacementOf(hero.super.knockback);
+    if (hero.super.id === "flurry") {
+      assert.ok(sup >= 0.5, `${hero.id} flurry should at least stagger, got ${sup.toFixed(2)}`);
+    } else {
+      assert.ok(sup >= 1, `${hero.id} super should displace >= 1 unit, got ${sup.toFixed(2)}`);
+    }
+  }
 });
 
 console.log(`\n${passed} passed`);
