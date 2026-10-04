@@ -19,27 +19,42 @@
       <header>
         <p class="kicker">kilo-3d-kit</p>
         <h1>Local CC0 library</h1>
-        <p class="lede">Filter by style or pack. KayKit / mini characters can play clips. Kenney props are static.</p>
+        <p class="lede">
+          Kenney props are static on purpose. KayKit characters ship a rigged skeleton and their
+          own clips — pick one and the clip deck opens.
+        </p>
       </header>
+
+      <label>
+        Search
+        <input id="q" type="search" placeholder="knight, wall, barrel..." />
+      </label>
+
+      <div class="seg" id="kind" role="group" aria-label="Kind">
+        <button type="button" data-kind="" class="on">All</button>
+        <button type="button" data-kind="character">Rigs</button>
+        <button type="button" data-kind="prop">Props</button>
+        <button type="button" data-kind="kaykit">KayKit</button>
+      </div>
+
       <label>
         Style
         <select id="style">
           <option value="">all styles</option>
         </select>
       </label>
+
       <label>
         Pack
         <select id="pack">
           <option value="">all packs</option>
         </select>
       </label>
-      <label>
-        Filter
-        <input id="q" type="search" placeholder="wall, chair, Knight..." />
-      </label>
+
       <div id="counts"></div>
       <nav id="list"></nav>
     </aside>
+
     <main>
       <div id="stage"></div>
       <footer>
@@ -47,14 +62,48 @@
           <strong id="name">No mesh</strong>
           <span id="meta"></span>
         </div>
-        <label>
-          Clip
-          <select id="clip" disabled>
-            <option>none</option>
-          </select>
-        </label>
+        <span id="now"></span>
       </footer>
     </main>
+
+    <section id="deck" aria-label="Animation clips">
+      <header class="deck-head">
+        <p class="kicker">Clip deck</p>
+        <h2 id="deck-title">No rig</h2>
+        <p class="deck-sub" id="deck-sub">Static prop — nothing to play.</p>
+      </header>
+
+      <label class="deck-search">
+        <input id="clip-q" type="search" placeholder="Filter clips..." disabled />
+      </label>
+
+      <div class="clip-groups" id="clip-groups"></div>
+
+      <div class="transport">
+        <div class="row">
+          <button type="button" id="prev" title="Previous clip (Left arrow)">Prev</button>
+          <button type="button" id="play" title="Play / pause (Space)">Pause</button>
+          <button type="button" id="next" title="Next clip (Right arrow)">Next</button>
+        </div>
+        <input id="scrub" type="range" min="0" max="1000" step="1" value="0" aria-label="Clip time" />
+        <div class="row time">
+          <span id="time">0.00 / 0.00 s</span>
+          <div class="seg speed" id="speed" role="group" aria-label="Playback speed">
+            <button type="button" data-speed="0.25">0.25x</button>
+            <button type="button" data-speed="0.5">0.5x</button>
+            <button type="button" data-speed="1" class="on">1x</button>
+            <button type="button" data-speed="2">2x</button>
+          </div>
+        </div>
+        <div class="row">
+          <button type="button" id="loop" class="on" title="Loop the clip (L)">Loop</button>
+          <button type="button" id="tour" title="Auto-play every listed clip in order">Tour</button>
+          <button type="button" id="bones" title="Show the skeleton (B)">Bones</button>
+        </div>
+        <p class="hint">Left / Right clips &middot; Space play &middot; L loop &middot; B bones &middot; , . speed</p>
+      </div>
+    </section>
+
     <script type="module" src="/viewer/viewer.js"></script>
   </body>
 </html>

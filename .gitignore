@@ -7,3 +7,16 @@ _tmp/
 .DS_Store
 Thumbs.db
 .superpowers/
+
+# Experiment scratch (harnesses, renders, GLBs) — write-ups live in docs/experiments/
+/experiments/
+__pycache__/
+*.pyc
+
+# Screenshots and scratch files
+final-hud.png
+final-title.png
+final-upgrades.png
+title-two-pick.png
+aistudio-signin-state.png
+resume.html

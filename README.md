@@ -56,7 +56,22 @@ npm run view
 
 Then open http://localhost:4173
 
-Pick a KayKit character to see idle/walk clips. Kenney props have no skeleton (that is correct).
+Pick a KayKit character and the **clip deck** opens on the right: every clip the GLB ships,
+grouped by family (Locomotion, 1H Melee, Spellcasting, Awaken/spawn, Sit, Lie...). Click a
+clip to play it, or use the transport.
+
+| Control | Key |
+|---|---|
+| Next / previous clip | `Right` / `Left` |
+| Play / pause | `Space` |
+| Loop clip | `L` |
+| Skeleton overlay | `B` |
+| Speed down / up | `,` / `.` |
+
+Also on the deck: a clip filter, scrub bar, 0.25x-2x speed, and **Tour** to auto-play every
+listed clip in order. Kenney props have no skeleton and close the deck (that is correct).
+
+The footer prints the exact on-disk path (`library/<pack>/<relPath>`) — click it to copy.
 
 ## What was pulled
 
