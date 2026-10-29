@@ -1,0 +1,110 @@
+{
+  "outTag": "v3",
+  "errors": [],
+  "views": {
+    "entry": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v3\\entry.png",
+      "stats": {
+        "fps": 91,
+        "draws": 85,
+        "triangles": 130212,
+        "playerPos": {
+          "x": 0,
+          "y": 0,
+          "z": 23
+        }
+      }
+    },
+    "plaza": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v3\\plaza.png",
+      "stats": {
+        "fps": 91,
+        "draws": 80,
+        "triangles": 129556,
+        "playerPos": {
+          "x": 2.5,
+          "y": 0,
+          "z": 6.5
+        }
+      }
+    },
+    "mill": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v3\\mill.png",
+      "stats": {
+        "fps": 91,
+        "draws": 78,
+        "triangles": 129532,
+        "playerPos": {
+          "x": -22.2,
+          "y": -0.35,
+          "z": 7.5
+        }
+      }
+    },
+    "arena": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v3\\arena.png",
+      "stats": {
+        "fps": 91,
+        "draws": 29,
+        "triangles": 126280,
+        "playerPos": {
+          "x": 26.5,
+          "y": 0.6,
+          "z": -3.5
+        }
+      }
+    },
+    "shrine": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v3\\shrine.png",
+      "stats": {
+        "fps": 91,
+        "draws": 26,
+        "triangles": 125472,
+        "playerPos": {
+          "x": 4,
+          "y": 6.5,
+          "z": -49.5
+        }
+      }
+    },
+    "shrineLookback": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v3\\shrineLookback.png",
+      "stats": {
+        "fps": 91,
+        "draws": 76,
+        "triangles": 129412,
+        "playerPos": {
+          "x": 4,
+          "y": 6.5,
+          "z": -49.5
+        }
+      }
+    },
+    "aerial": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v3\\aerial.png",
+      "stats": {
+        "fps": 91,
+        "draws": 96,
+        "triangles": 131304,
+        "playerPos": {
+          "x": 4,
+          "y": 6.5,
+          "z": -49.5
+        }
+      }
+    },
+    "topdown": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v3\\topdown.png",
+      "stats": {
+        "fps": 91,
+        "draws": 96,
+        "triangles": 131304,
+        "playerPos": {
+          "x": 4,
+          "y": 6.5,
+          "z": -49.5
+        }
+      }
+    }
+  }
+}

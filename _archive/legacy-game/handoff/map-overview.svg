@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="850" viewBox="0 0 960 850" role="img" aria-labelledby="title desc">
+  <title id="title">Sunpetal Vale map plan</title>
+  <desc id="desc">A 96 metre square playable woodland valley with an open central meadow, northern shrine, western lake outside the playable boundary, eastern camp and a broad connecting loop. This is a layout reference, not a rendered game screenshot.</desc>
+  <defs>
+    <pattern id="woods" width="54" height="48" patternUnits="userSpaceOnUse">
+      <rect width="54" height="48" fill="#527f62"/>
+      <circle cx="12" cy="13" r="14" fill="#759e69"/>
+      <circle cx="42" cy="35" r="17" fill="#83ab74"/>
+    </pattern>
+  </defs>
+  <rect width="960" height="850" fill="#f7f4e9"/>
+  <g font-family="Segoe UI, Arial, sans-serif" fill="#283f38">
+    <text x="48" y="54" font-size="30" font-weight="700">Sunpetal Vale</text>
+    <text x="48" y="84" font-size="16">96 × 96 m · dreamy woodland · broad combat clearings</text>
+    <rect x="48" y="112" width="864" height="600" rx="40" fill="url(#woods)"/>
+    <path d="M66 224 Q121 191 181 238 Q220 290 190 367 Q209 435 161 504 Q103 553 62 492Z" fill="#77c9cf"/>
+    <path d="M76 251 Q121 221 167 255 M85 409 Q127 428 166 398 M75 471 Q113 489 149 467" fill="none" stroke="#c4ece2" stroke-width="4"/>
+    <rect x="240" y="124" width="552" height="552" rx="16" fill="#9fc77b"/>
+    <path d="M266 147 Q338 164 397 141 L606 143 Q697 168 770 147 L771 635 Q720 655 671 641 L330 650 Q293 636 260 647Z" fill="#abd184"/>
+    <ellipse cx="516" cy="400" rx="126" ry="107" fill="#c4d994"/>
+    <path d="M516 544 Q430 558 354 520 Q318 430 332 348 Q354 260 411 231 Q462 198 516 222 Q610 220 665 268 Q703 352 690 430 Q680 513 620 553 Q563 575 516 544Z" fill="none" stroke="#d7caa0" stroke-width="40" stroke-linecap="round"/>
+    <path d="M516 432 L516 242 M430 404 L340 380 M595 425 L683 480 M511 477 L516 544" fill="none" stroke="#e1d3ad" stroke-width="48" stroke-linecap="round"/>
+    <g fill="#7fa76b">
+      <circle cx="277" cy="166" r="25"/><circle cx="316" cy="155" r="27"/>
+      <circle cx="746" cy="175" r="29"/><circle cx="771" cy="220" r="22"/>
+      <circle cx="761" cy="590" r="27"/><circle cx="277" cy="604" r="26"/>
+      <circle cx="426" cy="616" r="22"/><circle cx="603" cy="620" r="23"/>
+    </g>
+    <g fill="#e4bad1">
+      <circle cx="379" cy="510" r="10"/><circle cx="402" cy="535" r="9"/>
+      <circle cx="393" cy="488" r="8"/><circle cx="636" cy="302" r="10"/>
+      <circle cx="654" cy="326" r="8"/><circle cx="583" cy="267" r="7"/>
+    </g>
+    <circle cx="516" cy="180" r="33" fill="#5c8d69"/>
+    <circle cx="499" cy="171" r="21" fill="#87b879"/>
+    <path d="M489 257 L489 229 Q516 202 543 229 L543 257" fill="none" stroke="#eae3cb" stroke-width="13"/>
+    <rect x="505" y="268" width="22" height="12" rx="2" fill="#eee7d1"/>
+    <path d="M708 491 L732 450 L756 491Z" fill="#d7ad7c" stroke="#976e50" stroke-width="3"/>
+    <circle cx="514" cy="434" r="7" fill="#344e6c" stroke="white" stroke-width="3"/>
+    <rect x="240" y="124" width="552" height="552" rx="16" fill="none" stroke="#344e45" stroke-width="2" stroke-dasharray="10 6"/>
+    <g font-size="18" font-weight="600" text-anchor="middle">
+      <text x="516" y="315">Wishing Arch</text>
+      <text x="516" y="386">Sunpetal Meadow</text>
+      <text x="303" y="410">Overlook</text>
+      <text x="712" y="535">Traveller's rest</text>
+      <text x="383" y="574">Petal Walk</text>
+    </g>
+    <g font-size="14" text-anchor="middle">
+      <text x="116" y="335">Turquoise lake</text>
+      <text x="116" y="358">outside bounds</text>
+      <text x="516" y="461">start (0, 6)</text>
+      <text x="829" y="146" fill="#f7f4e9">N / −Z ↑</text>
+      <text x="516" y="699" fill="#f7f4e9">Distant forest and hills frame the playable space</text>
+    </g>
+    <g font-size="16">
+      <path d="M55 755 H100" stroke="#d7caa0" stroke-width="14"/>
+      <text x="114" y="761">6–8 m loop</text>
+      <path d="M290 755 H335" stroke="#344e45" stroke-width="2" stroke-dasharray="8 4"/>
+      <text x="348" y="761">Playable boundary</text>
+      <circle cx="609" cy="755" r="10" fill="#759e69"/>
+      <text x="630" y="761">Clustered foliage</text>
+      <text x="48" y="811" font-size="14">Layout reference only. Walkable ground stays flat; meadow and connections stay open.</text>
+    </g>
+  </g>
+</svg>

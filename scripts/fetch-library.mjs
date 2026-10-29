@@ -29,6 +29,8 @@ const KEEP = new Set([
   ".jpeg",
   ".webp",
   ".ktx2",
+  ".txt",
+  ".md",
 ]);
 
 const UA = { "User-Agent": "kilo-3d-kit/0.2 (local CC0 library fetch)" };
@@ -101,6 +103,33 @@ async function extractKeepers(extractRoot, dest) {
 }
 
 async function resolveUrl(pack) {
+  if (pack.itchPage) {
+    // Follow itch.io's anonymous "No thanks, take me to the downloads" flow.
+    const purchase = await fetch(`${pack.itchPage}/purchase`, { headers: UA });
+    const html = await purchase.text();
+    const csrf = html.match(/name="csrf_token" value="([^"]+)"/)?.[1];
+    const cookie = purchase.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
+    if (!csrf) throw new Error(`No itch.io download form for ${pack.id}`);
+    const headers = { ...UA, Cookie: cookie, "Content-Type": "application/x-www-form-urlencoded" };
+    const access = await fetch(`${pack.itchPage}/download_url`, {
+      method: "POST", headers,
+      body: new URLSearchParams({ csrf_token: csrf }),
+    });
+    const download = await access.json();
+    if (!download.url) throw new Error(`Free download unavailable for ${pack.id}`);
+    const page = await fetch(download.url, { headers: { ...UA, Cookie: cookie } });
+    const downloadHtml = await page.text();
+    const token = downloadHtml.match(/name="csrf_token" value="([^"]+)"/)?.[1];
+    if (!token) throw new Error(`No itch.io file form for ${pack.id}`);
+    headers.Cookie += "; " + page.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
+    const file = await fetch(`${pack.itchPage}/file/${pack.itchUploadId}?source=game_download`, {
+      method: "POST", headers,
+      body: new URLSearchParams({ csrf_token: token }),
+    });
+    const result = await file.json();
+    if (!result.url) throw new Error(`Free file unavailable for ${pack.id}`);
+    return result.url;
+  }
   if (pack.kenneySlug) return kenneyZipUrl(pack.kenneySlug);
   if (pack.github) {
     return `https://codeload.github.com/${pack.github}/zip/refs/heads/main`;

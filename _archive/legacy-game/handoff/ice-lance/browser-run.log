@@ -1,0 +1,58 @@
+device {"gl": "ANGLE (AMD, AMD Radeon RX 6700 (0x000073DF) Direct3D11 vs_5_0 ps_5_0, D3D11)", "headless": true, "browser": "Chrome via Playwright", "viewport": [1600, 900], "dpr": 1, "canvas": [1600, 900]}
+arena {"x": -36, "z": 0, "dx": 0.19509032201612825, "dz": 0.9807852804032304, "len": 12, "side": -1, "clearance": 10.252249200050075}
+targets [{"id": 1, "x": -35.51227419495968, "z": 2.451963201008076, "hp": 1000000}, {"id": 2, "x": -35.02454838991936, "z": 4.903926402016152, "hp": 1000000}, {"id": 3, "x": -34.53682258487904, "z": 7.355889603024228, "hp": 1000000}, {"id": 4, "x": -38.94768951153228, "z": 5.684287690080665, "hp": 1000000}]
+target geometry [{"id": 1, "along": 2.5, "lateral": 0.0}, {"id": 2, "along": 5.0, "lateral": 0.0}, {"id": 3, "along": 7.5, "lateral": 0.0}, {"id": 4, "along": 5.0, "lateral": 4.0}]
+early vfx {"crystals": 96, "frost": 18, "glints": true, "meshes": 4, "slotSpan": 1}
+peak vfx {"crystals": 96, "frost": 18, "glints": true, "meshes": 4, "slotSpan": 1}
+damage {"1": 45, "2": 45, "3": 45, "4": 0}
+aftermath vfx {"crystals": 0, "frost": 0, "glints": true, "meshes": 4, "slotSpan": 0}
+knight light {"hp_before": 1000000, "hp_after": 999940, "vfx": {"crystals": 0, "frost": 0, "glints": false, "meshes": 4, "slotSpan": 0}}
+mage after swap {"crystals": 96, "frost": 18, "glints": true, "meshes": 4, "slotSpan": 1}
+retry {"vfx_immediately_after": {"crystals": 0, "frost": 0, "glints": false, "meshes": 4, "slotSpan": 0}, "player_groups": 1}
+retry no delayed hits True
+heavy {"hp_before": 1000000, "hp_after": 999928}
+momentum {"momentum": 100, "live": 1, "playerAlive": true}
+meteor ready {"momentum": 100, "ready": true, "alive": true, "phase": "playing", "hero": "mage"}
+meteor fired? {"momentum": 0, "phase": "playing", "alive": true}
+Traceback (most recent call last):
+  File "C:\Users\silen\projects\kilo-3d-kit\game\handoff\ice-lance\browser-check.py", line 577, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\silen\projects\kilo-3d-kit\game\handoff\ice-lance\browser-check.py", line 498, in main
+    page.wait_for_function(
+    ~~~~~~~~~~~~~~~~~~~~~~^
+        "(ids) => { const map = {}; for (const e of __game.enemies.list) map[e.id] = e.hp;"
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        timeout=12000,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\silen\AppData\Roaming\Python\Python313\site-packages\playwright\sync_api\_generated.py", line 11560, in wait_for_function
+    self._sync(
+    ~~~~~~~~~~^
+        self._impl_obj.wait_for_function(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+        )
+        ^
+    )
+    ^
+  File "C:\Users\silen\AppData\Roaming\Python\Python313\site-packages\playwright\_impl\_sync_base.py", line 115, in _sync
+    return task.result()
+           ~~~~~~~~~~~^^
+  File "C:\Users\silen\AppData\Roaming\Python\Python313\site-packages\playwright\_impl\_page.py", line 1088, in wait_for_function
+    return await self._main_frame.wait_for_function(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\silen\AppData\Roaming\Python\Python313\site-packages\playwright\_impl\_frame.py", line 771, in wait_for_function
+    return from_channel(await self._channel.send("waitForFunction", params))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\silen\AppData\Roaming\Python\Python313\site-packages\playwright\_impl\_connection.py", line 61, in send
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+    )
+    ^
+  File "C:\Users\silen\AppData\Roaming\Python\Python313\site-packages\playwright\_impl\_connection.py", line 528, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.TimeoutError: Page.wait_for_function: Timeout 12000ms exceeded.

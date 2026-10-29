@@ -1,0 +1,51 @@
+﻿{
+ "trees": [
+  "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_1_A_Color1.gltf",
+  "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_2_A_Color1.gltf",
+  "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_2_C_Color1.gltf",
+  "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_3_A_Color1.gltf",
+  "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_4_A_Color1.gltf",
+  "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_4_C_Color1.gltf"
+ ],
+ "bushes": [
+  "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_1_C_Color1.gltf",
+  "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_2_C_Color1.gltf",
+  "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_4_B_Color1.gltf"
+ ],
+ "grass": [
+  "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_1_B_Color1.gltf",
+  "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_2_A_Color1.gltf"
+ ],
+ "rocks": [
+  "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_C_Color1.gltf",
+  "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_2_C_Color1.gltf",
+  "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_C_Color1.gltf"
+ ],
+ "accents": [
+  "/library/quaternius-stylized-nature-standard/glTF/Flower_3_Group.gltf",
+  "/library/quaternius-stylized-nature-standard/glTF/Flower_4_Group.gltf",
+  "/library/quaternius-stylized-nature-standard/glTF/Fern_1.gltf",
+  "/library/quaternius-stylized-nature-standard/glTF/Clover_1.gltf",
+  "/library/quaternius-stylized-nature-standard/glTF/Bush_Common_Flowers.gltf",
+  "/library/quaternius-stylized-nature-standard/glTF/Pebble_Round_1.gltf"
+ ],
+ "shrine": [
+  "/library/kenney-fantasy-town/Models/GLB format/pillar-stone.glb",
+  "/library/kenney-fantasy-town/Models/GLB format/wall-arch-top.glb",
+  "/library/kenney-fantasy-town/Models/GLB format/wall-broken.glb",
+  "/library/kenney-fantasy-town/Models/GLB format/wall-half.glb",
+  "/library/kenney-fantasy-town/Models/GLB format/stairs-stone.glb"
+ ],
+ "camp": [
+  "/library/kenney-survival/Models/GLB format/tent.glb",
+  "/library/kenney-survival/Models/GLB format/bedroll.glb",
+  "/library/kenney-survival/Models/GLB format/box-large.glb",
+  "/library/kenney-survival/Models/GLB format/campfire-pit.glb",
+  "/library/kenney-survival/Models/GLB format/barrel.glb",
+  "/library/kenney-survival/Models/GLB format/signpost.glb"
+ ],
+ "misc": [
+  "/library/kaykit-dungeon/KayKit-Dungeon-Remastered-1.0-main/addons/kaykit_dungeon_remastered/Assets/gltf/coin.gltf.glb",
+  "/library/kaykit-dungeon/KayKit-Dungeon-Remastered-1.0-main/addons/kaykit_dungeon_remastered/Assets/gltf/column.gltf.glb"
+ ]
+}

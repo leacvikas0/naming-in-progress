@@ -1,0 +1,1062 @@
+{
+  "date": "2026-10-17",
+  "meaning": "File completeness and glTF mesh primitive triangle counts; not a browser rendering or performance test.",
+  "packs": [
+    {
+      "id": "kaykit-forest-free",
+      "modelCount": 105,
+      "archiveBytes": 6435630,
+      "sha256": "2ee83e63bb7695f2d884ec27ddf6fce020789a452e7d5c5b0bbdfc4f6ea1fc8c",
+      "missingDependencies": [],
+      "models": [
+        {
+          "name": "Bush_1_A_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_1_A_Color1.gltf",
+          "triangles": 72,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_1_B_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_1_B_Color1.gltf",
+          "triangles": 168,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_1_C_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_1_C_Color1.gltf",
+          "triangles": 168,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_1_D_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_1_D_Color1.gltf",
+          "triangles": 168,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_1_E_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_1_E_Color1.gltf",
+          "triangles": 552,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_1_F_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_1_F_Color1.gltf",
+          "triangles": 576,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_1_G_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_1_G_Color1.gltf",
+          "triangles": 984,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_2_A_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_2_A_Color1.gltf",
+          "triangles": 44,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_2_B_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_2_B_Color1.gltf",
+          "triangles": 108,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_2_C_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_2_C_Color1.gltf",
+          "triangles": 108,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_2_D_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_2_D_Color1.gltf",
+          "triangles": 196,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_2_E_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_2_E_Color1.gltf",
+          "triangles": 476,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_2_F_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_2_F_Color1.gltf",
+          "triangles": 368,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_3_A_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_3_A_Color1.gltf",
+          "triangles": 208,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_3_B_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_3_B_Color1.gltf",
+          "triangles": 240,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_3_C_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_3_C_Color1.gltf",
+          "triangles": 272,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_4_A_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_4_A_Color1.gltf",
+          "triangles": 44,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_4_B_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_4_B_Color1.gltf",
+          "triangles": 44,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_4_C_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_4_C_Color1.gltf",
+          "triangles": 108,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_4_D_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_4_D_Color1.gltf",
+          "triangles": 132,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_4_E_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_4_E_Color1.gltf",
+          "triangles": 284,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_4_F_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Bush_4_F_Color1.gltf",
+          "triangles": 284,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_1_A_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_1_A_Color1.gltf",
+          "triangles": 44,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_1_A_Singlesided_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_1_A_Singlesided_Color1.gltf",
+          "triangles": 14,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_1_B_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_1_B_Color1.gltf",
+          "triangles": 132,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_1_B_Singlesided_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_1_B_Singlesided_Color1.gltf",
+          "triangles": 42,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_1_C_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_1_C_Color1.gltf",
+          "triangles": 396,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_1_C_Singlesided_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_1_C_Singlesided_Color1.gltf",
+          "triangles": 126,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_1_D_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_1_D_Color1.gltf",
+          "triangles": 528,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_1_D_Singlesided_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_1_D_Singlesided_Color1.gltf",
+          "triangles": 168,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_1_Mesh",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_1_Mesh.gltf",
+          "triangles": 44,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_1_SingleSided_Mesh",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_1_SingleSided_Mesh.gltf",
+          "triangles": 14,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_2_A_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_2_A_Color1.gltf",
+          "triangles": 44,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_2_A_Singlesided_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_2_A_Singlesided_Color1.gltf",
+          "triangles": 14,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_2_B_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_2_B_Color1.gltf",
+          "triangles": 132,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_2_B_Singlesided_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_2_B_Singlesided_Color1.gltf",
+          "triangles": 42,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_2_C_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_2_C_Color1.gltf",
+          "triangles": 528,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_2_C_Singlesided_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_2_C_Singlesided_Color1.gltf",
+          "triangles": 168,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_2_D_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_2_D_Color1.gltf",
+          "triangles": 528,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_2_D_Singlesided_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_2_D_Singlesided_Color1.gltf",
+          "triangles": 168,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_2_Mesh",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_2_Mesh.gltf",
+          "triangles": 44,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_2_SingleSided_Mesh",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Grass_2_SingleSided_Mesh.gltf",
+          "triangles": 14,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_A_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_A_Color1.gltf",
+          "triangles": 48,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_B_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_B_Color1.gltf",
+          "triangles": 48,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_C_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_C_Color1.gltf",
+          "triangles": 48,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_D_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_D_Color1.gltf",
+          "triangles": 84,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_E_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_E_Color1.gltf",
+          "triangles": 84,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_F_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_F_Color1.gltf",
+          "triangles": 84,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_G_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_G_Color1.gltf",
+          "triangles": 104,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_H_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_H_Color1.gltf",
+          "triangles": 104,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_I_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_I_Color1.gltf",
+          "triangles": 104,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_J_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_J_Color1.gltf",
+          "triangles": 521,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_K_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_K_Color1.gltf",
+          "triangles": 529,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_L_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_L_Color1.gltf",
+          "triangles": 494,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_M_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_M_Color1.gltf",
+          "triangles": 528,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_N_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_N_Color1.gltf",
+          "triangles": 355,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_O_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_O_Color1.gltf",
+          "triangles": 223,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_P_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_P_Color1.gltf",
+          "triangles": 405,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_1_Q_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_1_Q_Color1.gltf",
+          "triangles": 497,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_2_A_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_2_A_Color1.gltf",
+          "triangles": 12,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_2_B_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_2_B_Color1.gltf",
+          "triangles": 44,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_2_C_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_2_C_Color1.gltf",
+          "triangles": 108,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_2_D_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_2_D_Color1.gltf",
+          "triangles": 108,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_2_E_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_2_E_Color1.gltf",
+          "triangles": 438,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_2_F_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_2_F_Color1.gltf",
+          "triangles": 428,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_2_G_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_2_G_Color1.gltf",
+          "triangles": 488,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_2_H_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_2_H_Color1.gltf",
+          "triangles": 312,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_A_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_A_Color1.gltf",
+          "triangles": 84,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_B_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_B_Color1.gltf",
+          "triangles": 84,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_C_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_C_Color1.gltf",
+          "triangles": 84,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_D_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_D_Color1.gltf",
+          "triangles": 84,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_E_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_E_Color1.gltf",
+          "triangles": 84,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_F_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_F_Color1.gltf",
+          "triangles": 84,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_G_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_G_Color1.gltf",
+          "triangles": 168,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_H_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_H_Color1.gltf",
+          "triangles": 168,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_I_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_I_Color1.gltf",
+          "triangles": 168,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_J_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_J_Color1.gltf",
+          "triangles": 168,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_K_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_K_Color1.gltf",
+          "triangles": 168,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_L_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_L_Color1.gltf",
+          "triangles": 168,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_M_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_M_Color1.gltf",
+          "triangles": 320,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_N_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_N_Color1.gltf",
+          "triangles": 320,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_O_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_O_Color1.gltf",
+          "triangles": 320,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_P_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_P_Color1.gltf",
+          "triangles": 320,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_Q_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_Q_Color1.gltf",
+          "triangles": 320,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_3_R_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Rock_3_R_Color1.gltf",
+          "triangles": 320,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_1_A_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_1_A_Color1.gltf",
+          "triangles": 530,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_1_B_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_1_B_Color1.gltf",
+          "triangles": 636,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_1_C_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_1_C_Color1.gltf",
+          "triangles": 1364,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_2_A_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_2_A_Color1.gltf",
+          "triangles": 336,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_2_B_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_2_B_Color1.gltf",
+          "triangles": 492,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_2_C_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_2_C_Color1.gltf",
+          "triangles": 648,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_2_D_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_2_D_Color1.gltf",
+          "triangles": 1428,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_2_E_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_2_E_Color1.gltf",
+          "triangles": 1560,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_3_A_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_3_A_Color1.gltf",
+          "triangles": 978,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_3_B_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_3_B_Color1.gltf",
+          "triangles": 988,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_3_C_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_3_C_Color1.gltf",
+          "triangles": 2228,
+          "underPropBudget": false
+        },
+        {
+          "name": "Tree_4_A_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_4_A_Color1.gltf",
+          "triangles": 404,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_4_B_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_4_B_Color1.gltf",
+          "triangles": 522,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_4_C_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_4_C_Color1.gltf",
+          "triangles": 982,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_Bare_1_A_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_Bare_1_A_Color1.gltf",
+          "triangles": 324,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_Bare_1_B_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_Bare_1_B_Color1.gltf",
+          "triangles": 332,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_Bare_1_C_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_Bare_1_C_Color1.gltf",
+          "triangles": 936,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_Bare_2_A_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_Bare_2_A_Color1.gltf",
+          "triangles": 404,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_Bare_2_B_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_Bare_2_B_Color1.gltf",
+          "triangles": 448,
+          "underPropBudget": true
+        },
+        {
+          "name": "Tree_Bare_2_C_Color1",
+          "url": "/library/kaykit-forest-free/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/gltf/Tree_Bare_2_C_Color1.gltf",
+          "triangles": 634,
+          "underPropBudget": true
+        }
+      ]
+    },
+    {
+      "id": "quaternius-stylized-nature-standard",
+      "modelCount": 68,
+      "archiveBytes": 104088529,
+      "sha256": "298f6732b872e4cf7b30e6e7abf9641c7f6dc6b326df37ac089533ed7e3d58c9",
+      "missingDependencies": [],
+      "models": [
+        {
+          "name": "Bush_Common_Flowers",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Bush_Common_Flowers.gltf",
+          "triangles": 1368,
+          "underPropBudget": true
+        },
+        {
+          "name": "Bush_Common",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Bush_Common.gltf",
+          "triangles": 900,
+          "underPropBudget": true
+        },
+        {
+          "name": "Clover_1",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Clover_1.gltf",
+          "triangles": 379,
+          "underPropBudget": true
+        },
+        {
+          "name": "Clover_2",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Clover_2.gltf",
+          "triangles": 615,
+          "underPropBudget": true
+        },
+        {
+          "name": "CommonTree_1",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/CommonTree_1.gltf",
+          "triangles": 6265,
+          "underPropBudget": false
+        },
+        {
+          "name": "CommonTree_2",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/CommonTree_2.gltf",
+          "triangles": 5648,
+          "underPropBudget": false
+        },
+        {
+          "name": "CommonTree_3",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/CommonTree_3.gltf",
+          "triangles": 3505,
+          "underPropBudget": false
+        },
+        {
+          "name": "CommonTree_4",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/CommonTree_4.gltf",
+          "triangles": 4066,
+          "underPropBudget": false
+        },
+        {
+          "name": "CommonTree_5",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/CommonTree_5.gltf",
+          "triangles": 3182,
+          "underPropBudget": false
+        },
+        {
+          "name": "DeadTree_1",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/DeadTree_1.gltf",
+          "triangles": 6169,
+          "underPropBudget": false
+        },
+        {
+          "name": "DeadTree_2",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/DeadTree_2.gltf",
+          "triangles": 6557,
+          "underPropBudget": false
+        },
+        {
+          "name": "DeadTree_3",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/DeadTree_3.gltf",
+          "triangles": 5802,
+          "underPropBudget": false
+        },
+        {
+          "name": "DeadTree_4",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/DeadTree_4.gltf",
+          "triangles": 5702,
+          "underPropBudget": false
+        },
+        {
+          "name": "DeadTree_5",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/DeadTree_5.gltf",
+          "triangles": 5648,
+          "underPropBudget": false
+        },
+        {
+          "name": "Fern_1",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Fern_1.gltf",
+          "triangles": 288,
+          "underPropBudget": true
+        },
+        {
+          "name": "Flower_3_Group",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Flower_3_Group.gltf",
+          "triangles": 755,
+          "underPropBudget": true
+        },
+        {
+          "name": "Flower_3_Single",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Flower_3_Single.gltf",
+          "triangles": 285,
+          "underPropBudget": true
+        },
+        {
+          "name": "Flower_4_Group",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Flower_4_Group.gltf",
+          "triangles": 1690,
+          "underPropBudget": true
+        },
+        {
+          "name": "Flower_4_Single",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Flower_4_Single.gltf",
+          "triangles": 642,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_Common_Short",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Grass_Common_Short.gltf",
+          "triangles": 155,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_Common_Tall",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Grass_Common_Tall.gltf",
+          "triangles": 326,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_Wispy_Short",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Grass_Wispy_Short.gltf",
+          "triangles": 494,
+          "underPropBudget": true
+        },
+        {
+          "name": "Grass_Wispy_Tall",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Grass_Wispy_Tall.gltf",
+          "triangles": 622,
+          "underPropBudget": true
+        },
+        {
+          "name": "Mushroom_Common",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Mushroom_Common.gltf",
+          "triangles": 880,
+          "underPropBudget": true
+        },
+        {
+          "name": "Mushroom_Laetiporus",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Mushroom_Laetiporus.gltf",
+          "triangles": 3216,
+          "underPropBudget": false
+        },
+        {
+          "name": "Pebble_Round_1",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pebble_Round_1.gltf",
+          "triangles": 136,
+          "underPropBudget": true
+        },
+        {
+          "name": "Pebble_Round_2",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pebble_Round_2.gltf",
+          "triangles": 114,
+          "underPropBudget": true
+        },
+        {
+          "name": "Pebble_Round_3",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pebble_Round_3.gltf",
+          "triangles": 128,
+          "underPropBudget": true
+        },
+        {
+          "name": "Pebble_Round_4",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pebble_Round_4.gltf",
+          "triangles": 126,
+          "underPropBudget": true
+        },
+        {
+          "name": "Pebble_Round_5",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pebble_Round_5.gltf",
+          "triangles": 124,
+          "underPropBudget": true
+        },
+        {
+          "name": "Pebble_Square_1",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pebble_Square_1.gltf",
+          "triangles": 104,
+          "underPropBudget": true
+        },
+        {
+          "name": "Pebble_Square_2",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pebble_Square_2.gltf",
+          "triangles": 78,
+          "underPropBudget": true
+        },
+        {
+          "name": "Pebble_Square_3",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pebble_Square_3.gltf",
+          "triangles": 52,
+          "underPropBudget": true
+        },
+        {
+          "name": "Pebble_Square_4",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pebble_Square_4.gltf",
+          "triangles": 48,
+          "underPropBudget": true
+        },
+        {
+          "name": "Pebble_Square_5",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pebble_Square_5.gltf",
+          "triangles": 72,
+          "underPropBudget": true
+        },
+        {
+          "name": "Pebble_Square_6",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pebble_Square_6.gltf",
+          "triangles": 65,
+          "underPropBudget": true
+        },
+        {
+          "name": "Petal_1",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Petal_1.gltf",
+          "triangles": 13,
+          "underPropBudget": true
+        },
+        {
+          "name": "Petal_2",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Petal_2.gltf",
+          "triangles": 15,
+          "underPropBudget": true
+        },
+        {
+          "name": "Petal_3",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Petal_3.gltf",
+          "triangles": 15,
+          "underPropBudget": true
+        },
+        {
+          "name": "Petal_4",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Petal_4.gltf",
+          "triangles": 30,
+          "underPropBudget": true
+        },
+        {
+          "name": "Petal_5",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Petal_5.gltf",
+          "triangles": 15,
+          "underPropBudget": true
+        },
+        {
+          "name": "Pine_1",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pine_1.gltf",
+          "triangles": 3947,
+          "underPropBudget": false
+        },
+        {
+          "name": "Pine_2",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pine_2.gltf",
+          "triangles": 3648,
+          "underPropBudget": false
+        },
+        {
+          "name": "Pine_3",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pine_3.gltf",
+          "triangles": 4964,
+          "underPropBudget": false
+        },
+        {
+          "name": "Pine_4",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pine_4.gltf",
+          "triangles": 3370,
+          "underPropBudget": false
+        },
+        {
+          "name": "Pine_5",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Pine_5.gltf",
+          "triangles": 1646,
+          "underPropBudget": true
+        },
+        {
+          "name": "Plant_1_Big",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Plant_1_Big.gltf",
+          "triangles": 360,
+          "underPropBudget": true
+        },
+        {
+          "name": "Plant_1",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Plant_1.gltf",
+          "triangles": 120,
+          "underPropBudget": true
+        },
+        {
+          "name": "Plant_7_Big",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Plant_7_Big.gltf",
+          "triangles": 112,
+          "underPropBudget": true
+        },
+        {
+          "name": "Plant_7",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Plant_7.gltf",
+          "triangles": 48,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_Medium_1",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Rock_Medium_1.gltf",
+          "triangles": 342,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_Medium_2",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Rock_Medium_2.gltf",
+          "triangles": 244,
+          "underPropBudget": true
+        },
+        {
+          "name": "Rock_Medium_3",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/Rock_Medium_3.gltf",
+          "triangles": 522,
+          "underPropBudget": true
+        },
+        {
+          "name": "RockPath_Round_Small_1",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/RockPath_Round_Small_1.gltf",
+          "triangles": 998,
+          "underPropBudget": true
+        },
+        {
+          "name": "RockPath_Round_Small_2",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/RockPath_Round_Small_2.gltf",
+          "triangles": 1126,
+          "underPropBudget": true
+        },
+        {
+          "name": "RockPath_Round_Small_3",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/RockPath_Round_Small_3.gltf",
+          "triangles": 1002,
+          "underPropBudget": true
+        },
+        {
+          "name": "RockPath_Round_Thin",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/RockPath_Round_Thin.gltf",
+          "triangles": 2254,
+          "underPropBudget": false
+        },
+        {
+          "name": "RockPath_Round_Wide",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/RockPath_Round_Wide.gltf",
+          "triangles": 3500,
+          "underPropBudget": false
+        },
+        {
+          "name": "RockPath_Square_Small_1",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/RockPath_Square_Small_1.gltf",
+          "triangles": 783,
+          "underPropBudget": true
+        },
+        {
+          "name": "RockPath_Square_Small_2",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/RockPath_Square_Small_2.gltf",
+          "triangles": 559,
+          "underPropBudget": true
+        },
+        {
+          "name": "RockPath_Square_Small_3",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/RockPath_Square_Small_3.gltf",
+          "triangles": 568,
+          "underPropBudget": true
+        },
+        {
+          "name": "RockPath_Square_Thin",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/RockPath_Square_Thin.gltf",
+          "triangles": 1793,
+          "underPropBudget": true
+        },
+        {
+          "name": "RockPath_Square_Wide",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/RockPath_Square_Wide.gltf",
+          "triangles": 2256,
+          "underPropBudget": false
+        },
+        {
+          "name": "TwistedTree_1",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/TwistedTree_1.gltf",
+          "triangles": 9564,
+          "underPropBudget": false
+        },
+        {
+          "name": "TwistedTree_2",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/TwistedTree_2.gltf",
+          "triangles": 9134,
+          "underPropBudget": false
+        },
+        {
+          "name": "TwistedTree_3",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/TwistedTree_3.gltf",
+          "triangles": 10089,
+          "underPropBudget": false
+        },
+        {
+          "name": "TwistedTree_4",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/TwistedTree_4.gltf",
+          "triangles": 9600,
+          "underPropBudget": false
+        },
+        {
+          "name": "TwistedTree_5",
+          "url": "/library/quaternius-stylized-nature-standard/glTF/TwistedTree_5.gltf",
+          "triangles": 10104,
+          "underPropBudget": false
+        }
+      ]
+    }
+  ]
+}

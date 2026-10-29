@@ -1,38 +1,17 @@
-# kilo-3d-kit
+# AGENTS.md — Mandatory Operating Contract for All Agents & Subagents
 
-Local, human-made, CC0 3D library for game agents. Open this folder in Kilo Code.
+> **STOP AND READ FIRST:** Before exploring, planning, writing code, or critiquing anything in this repository, every agent and subagent MUST read these four documents in order:
+> 1. [`SOUL.md`](file:///C:/Users/silen/projects/kilo-3d-kit/SOUL.md) — The game vision, hardware targets (`RX 6700` Desktop + `Xiaomi Pad 7` Tablet), romantic Gemini Live voice-judged mechanics ("Artorious, God of Love"), expanded valley + toroidal boundary wrap rule, and the strict **5-Stage Build Order**.
+> 2. [`METHODOLOGY.md`](file:///C:/Users/silen/projects/kilo-3d-kit/METHODOLOGY.md) — The non-negotiable 3D blockout rule, truly blind `/10` critic protocol (never prime critics, inspect PNGs before code), and 2-Pass Parallel Subagent Asset Workflow.
+> 3. [`GIT-DISCIPLINE.md`](file:///C:/Users/silen/projects/kilo-3d-kit/GIT-DISCIPLINE.md) — Clean root structure, git worktree isolation, atomic commit checkpoints, and plan tracking.
+> 4. [`docs/superpowers/plans/2026-10-29-haru-machi-coop-continuation.md`](file:///C:/Users/silen/projects/kilo-3d-kit/docs/superpowers/plans/2026-10-29-haru-machi-coop-continuation.md) — The active step-by-step continuation plan and current state on disk.
 
-## Art bible
+---
 
-One style family: **Kenney low-poly + KayKit adventurers**.
+## Non-Negotiable Hard Bans
 
-Do not mix in:
-
-- 3dassets.dev / AI-generated catalogues
-- random Sketchfab
-- photoreal Poly Haven into a Kenney scene
-
-## Where files live
-
-| Path | What |
-|---|---|
-| `library/` | One folder per pack (Kenney + KayKit, many styles) |
-| `scripts/packs.json` | Pack list + styles. Add a pack here, then `npm run fetch` |
-| `catalog/index.json` | Searchable manifest (`style`, `pack`, `kind`) |
-| `reports/rig-inspect.json` | Bones / skins / clips found |
-
-## Agent rules
-
-1. Search `catalog/index.json` first. Pull from `library/`, never the open web, unless the kit has no match.
-2. Props (Kenney) are **static**. Do not auto-rig crates and walls.
-3. Characters: use **KayKit** files that already have `skins` + `animations`. Play clips. Do not rebuild the skeleton.
-4. License is CC0. Keep `CREDITS.md` if you add a pack.
-5. Triangle budget: prop < 2k, character < 20k unless the catalog says otherwise.
-6. Gap-fill only from: Kenney.nl kits, KayKit, Quaternius CC0. Never 3dassets.dev.
-
-## Commands
-
-```bash
-npm run setup    # fetch + index + inspect rigs
-npm run view     # http://localhost:4173
-```
+1. **BANNED CODE:** Never read, import, or copy code from `C:\Users\silen\Downloads\world 1` or `_archive/legacy-game/src/world.js`.
+2. **BANNED ENVIRONMENT PROPS:** Never use `library/kenney-*` or `library/kaykit-dungeon` prop GLBs for houses, trees, rocks, or village scenery.
+3. **CHARACTERS & MOTION RULE:** Player characters come from `library/kaykit-adventurers` only. Enemies come from `library/kaykit-skeletons` and downloaded CC0 rigged glTF packs. All characters and enemies must use **100% native diverse skeletal animations**—never procedural bone-wiggling.
+4. **VFX REFERENCE:** Spell and miracle VFX in Stage 4 must meet a cinematic quality bar. Use `_archive/legacy-game/src/{ice-lance-vfx,glacial-crown-vfx,thunder-vfx}.js` and `docs/experiments/2026-09-16-vfx-libraries.md` (`three.quarks` `0.16.0` + post-processing bloom) as reference craft.
+5. **BLIND CRITICS:** Any critic subagent must inspect rendered PNGs via `view_file` **before** reading source code, must never be given the previous critic's report or self-praising prompts, and must never be reused across rounds.

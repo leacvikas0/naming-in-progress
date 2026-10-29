@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>meadow-kit · softness lab</title>
+    <style>
+      :root {
+        --paper: #e8e2d2;
+        --ink: #2f3a28;
+        --line: #b9b09a;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #cfd8c2;
+        color: var(--ink);
+        font: 12px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      }
+      #lab {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 1fr 1fr;
+        gap: 1px;
+        background: var(--line);
+        touch-action: none;
+        cursor: grab;
+      }
+      #lab.dragging { cursor: grabbing; }
+      .pane {
+        position: relative;
+        overflow: hidden;
+        background: #dbe4cd;
+      }
+      .pane canvas { display: block; width: 100%; height: 100%; }
+      .pane.solo {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+      }
+      .tag {
+        position: absolute;
+        left: 14px;
+        bottom: 12px;
+        right: 14px;
+        display: flex;
+        gap: 10px;
+        align-items: baseline;
+        pointer-events: none;
+        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+      }
+      .tag b {
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        background: rgba(255, 255, 255, 0.82);
+        padding: 3px 7px;
+        border-radius: 3px;
+        color: #33402b;
+      }
+      .tag span {
+        font-size: 11px;
+        color: #35412c;
+        background: rgba(255, 255, 255, 0.62);
+        padding: 3px 8px;
+        border-radius: 3px;
+        max-width: 46ch;
+      }
+      #bar {
+        position: fixed;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 20;
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        padding: 7px 12px;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid #b8b09c;
+        border-radius: 5px;
+        font-size: 11px;
+        color: #33402b;
+        white-space: nowrap;
+      }
+      #bar kbd {
+        font: inherit;
+        background: #efe9db;
+        border: 1px solid #c3bba7;
+        border-bottom-width: 2px;
+        border-radius: 3px;
+        padding: 0 4px;
+      }
+      #bar button {
+        font: inherit;
+        color: inherit;
+        background: #efe9db;
+        border: 1px solid #c3bba7;
+        border-radius: 3px;
+        padding: 2px 8px;
+        cursor: pointer;
+      }
+      #bar button:hover { background: #e3dccb; }
+      #ref {
+        position: fixed;
+        right: 14px;
+        bottom: 46px;
+        width: 190px;
+        z-index: 15;
+        border: 1px solid #9a927e;
+        border-radius: 3px;
+        box-shadow: 0 6px 18px rgba(40, 45, 30, 0.25);
+        display: none;
+      }
+      #ref.on { display: block; }
+      #hint {
+        position: fixed;
+        left: 14px;
+        top: 12px;
+        z-index: 20;
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        color: #4a5540;
+        background: rgba(255, 255, 255, 0.55);
+        padding: 3px 7px;
+        border-radius: 3px;
+        text-transform: uppercase;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/vendor/three/build/three.module.js",
+          "three/addons/": "/vendor/three/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="hint">softness lab · drag orbit · wheel zoom · 1–4 solo · h head/plant · r reference</div>
+
+    <div id="bar">
+      <span><kbd>1</kbd>–<kbd>4</kbd> solo</span>
+      <span><kbd>0</kbd> grid</span>
+      <button id="viewbtn">view: head</button>
+      <button id="spin">spin: on</button>
+      <button id="refbtn">reference: off</button>
+    </div>
+
+    <div id="lab"></div>
+    <img id="ref" src="../ref/reference.png" alt="reference" />
+
+    <script type="module">
+      import * as THREE from "three";
+      import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+      import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+      import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+      import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+      import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+
+      import { resolveConfig } from "../src/core/config.js";
+      import { createWind } from "../src/core/wind.js";
+      import { finalizeGeometry } from "../src/core/geom.js";
+      import { lightCol } from "../src/core/palette.js";
+      import { spec as daisy } from "../src/foliage/daisy.js";
+
+      // ---------------------------------------------------------------- setup
+      const config = resolveConfig({});
+      const wind = createWind(config);
+      const L = config.palette.light;
+      const geometry = finalizeGeometry(daisy.build({ seed: 1234 }));
+      const SCALE = 0.3; // metres
+
+      const sunDir = new THREE.Vector3(
+        Math.cos(THREE.MathUtils.degToRad(L.sunElevation)) * Math.sin(THREE.MathUtils.degToRad(L.sunAzimuth)),
+        Math.sin(THREE.MathUtils.degToRad(L.sunElevation)),
+        Math.cos(THREE.MathUtils.degToRad(L.sunElevation)) * Math.cos(THREE.MathUtils.degToRad(L.sunAzimuth))
+      ).normalize();
+
+      // ------------------------------------------------------------- helpers
+      function makeGradient(steps) {
+        const data = new Uint8Array(steps.length * 4);
+        steps.forEach((v, i) => {
+          const c = Math.round(THREE.MathUtils.clamp(v, 0, 1) * 255);
+          data[i * 4] = c;
+          data[i * 4 + 1] = c;
+          data[i * 4 + 2] = c;
+          data[i * 4 + 3] = 255;
+        });
+        const tex = new THREE.DataTexture(data, steps.length, 1, THREE.RGBAFormat);
+        tex.minFilter = THREE.NearestFilter;
+        tex.magFilter = THREE.NearestFilter;
+        tex.generateMipmaps = false;
+        tex.needsUpdate = true;
+        return tex;
+      }
+
+      const GRADIENT_SOFT = makeGradient([0.16, 0.24, 0.34, 0.46, 0.6, 0.76, 0.91, 1.0]);
+
+      /**
+       * The soft-look shader. Two ideas, both standard in foliage rendering:
+       *  1. bend the shading normal toward "up"  -> kills hard terminator lines
+       *  2. add light transmitted through the petal -> petals glow when backlit
+       */
+      function makeSoftMaterial({
+        transmission = 0.55,
+        rim = 0.32,
+        bend = 0.6,
+        roughness = 0.9,
+      } = {}) {
+        const m = new THREE.MeshStandardMaterial({
+          vertexColors: true,
+          side: THREE.DoubleSide,
+          roughness,
+          metalness: 0,
+          dithering: true,
+        });
+
+        m.onBeforeCompile = (shader) => {
+          shader.uniforms.uSunDir = { value: sunDir };
+          shader.uniforms.uTransmission = { value: transmission };
+          shader.uniforms.uRim = { value: rim };
+          shader.uniforms.uBend = { value: bend };
+
+          shader.fragmentShader =
+            "uniform vec3 uSunDir;\nuniform float uTransmission;\nuniform float uRim;\nuniform float uBend;\n" +
+            shader.fragmentShader;
+
+          shader.fragmentShader = shader.fragmentShader.replace(
+            "#include <normal_fragment_begin>",
+            `#include <normal_fragment_begin>
+             {
+               vec3 upView = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+               normal = normalize(mix(normal, upView, uBend));
+             }`
+          );
+
+          shader.fragmentShader = shader.fragmentShader.replace(
+            "#include <emissivemap_fragment>",
+            `#include <emissivemap_fragment>
+             {
+               vec3 sunView = normalize((viewMatrix * vec4(uSunDir, 0.0)).xyz);
+               float back = pow(saturate(dot(-normal, sunView)), 2.2);
+               float rimT = pow(1.0 - saturate(dot(normal, vec3(0.0, 0.0, 1.0))), 3.0);
+               totalEmissiveRadiance += diffuseColor.rgb * back * uTransmission;
+               totalEmissiveRadiance += vec3(0.11, 0.12, 0.085) * rimT * uRim;
+             }`
+          );
+        };
+        m.customProgramCacheKey = () => "meadow-soft";
+        return m;
+      }
+
+      // Kuwahara: for each pixel take the four surrounding quadrants, keep the
+      // mean of the one with the lowest variance. Flattens detail into brush
+      // strokes while preserving edges. This is the painterly workhorse.
+      function kuwaharaShader(radius) {
+        return {
+          uniforms: {
+            tDiffuse: { value: null },
+            uResolution: { value: new THREE.Vector2(1, 1) },
+            uSharp: { value: 0.18 },
+            uVignette: { value: 0.0 },
+            uSaturation: { value: 1.0 },
+            uWarm: { value: 0.0 },
+          },
+          vertexShader: /* glsl */ `
+            varying vec2 vUv;
+            void main() {
+              vUv = uv;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+          `,
+          fragmentShader: /* glsl */ `
+            uniform sampler2D tDiffuse;
+            uniform vec2 uResolution;
+            uniform float uSharp;
+            uniform float uVignette;
+            uniform float uSaturation;
+            uniform float uWarm;
+            varying vec2 vUv;
+
+            void main() {
+              const int R = ${radius};
+              vec2 texel = 1.0 / uResolution;
+
+              vec3 m0 = vec3(0.0), m1 = vec3(0.0), m2 = vec3(0.0), m3 = vec3(0.0);
+              vec3 s0 = vec3(0.0), s1 = vec3(0.0), s2 = vec3(0.0), s3 = vec3(0.0);
+
+              for (int j = -R; j <= R; j++) {
+                for (int i = -R; i <= R; i++) {
+                  vec3 c = texture2D(tDiffuse, vUv + vec2(float(i), float(j)) * texel).rgb;
+                  float w0 = (i <= 0 && j <= 0) ? 1.0 : 0.0;
+                  float w1 = (i >  0 && j <= 0) ? 1.0 : 0.0;
+                  float w2 = (i <= 0 && j >  0) ? 1.0 : 0.0;
+                  float w3 = (i >  0 && j >  0) ? 1.0 : 0.0;
+                  m0 += c * w0; s0 += c * c * w0;
+                  m1 += c * w1; s1 += c * c * w1;
+                  m2 += c * w2; s2 += c * c * w2;
+                  m3 += c * w3; s3 += c * c * w3;
+                }
+              }
+
+              float n = float((R + 1) * (R + 1));
+              vec3 v0 = s0 / n - (m0 / n) * (m0 / n);
+              vec3 v1 = s1 / n - (m1 / n) * (m1 / n);
+              vec3 v2 = s2 / n - (m2 / n) * (m2 / n);
+              vec3 v3 = s3 / n - (m3 / n) * (m3 / n);
+
+              float a0 = dot(v0, vec3(0.333));
+              float a1 = dot(v1, vec3(0.333));
+              float a2 = dot(v2, vec3(0.333));
+              float a3 = dot(v3, vec3(0.333));
+
+              vec3 best = m0 / n;
+              float low = a0;
+              if (a1 < low) { low = a1; best = m1 / n; }
+              if (a2 < low) { low = a2; best = m2 / n; }
+              if (a3 < low) { best = m3 / n; }
+
+              vec3 base = texture2D(tDiffuse, vUv).rgb;
+              vec3 color = mix(best, base, uSharp);
+
+              // optional grade
+              float lum = dot(color, vec3(0.2126, 0.7152, 0.0722));
+              color = mix(vec3(lum), color, uSaturation);
+              color += vec3(0.030, 0.018, -0.012) * uWarm * (1.0 - lum);
+              vec2 p = vUv - 0.5;
+              float vig = 1.0 - dot(p, p) * uVignette;
+              color *= clamp(vig, 0.0, 1.0);
+
+              gl_FragColor = vec4(color, 1.0);
+            }
+          `,
+        };
+      }
+
+      // ---------------------------------------------------------------- scene
+      function makeScene(material) {
+        const scene = new THREE.Scene();
+        scene.background = lightCol("background");
+        scene.fog = new THREE.Fog(lightCol("fog"), 1.4, 6);
+
+        const sun = new THREE.DirectionalLight(lightCol("sun"), L.sunIntensity);
+        sun.position.copy(sunDir).multiplyScalar(10);
+        scene.add(sun);
+        scene.add(new THREE.HemisphereLight(lightCol("sky"), lightCol("groundBounce"), L.hemiIntensity));
+        scene.add(new THREE.AmbientLight(lightCol("ambient"), L.ambientIntensity));
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.scale.setScalar(SCALE);
+        scene.add(mesh);
+        scene.userData.mesh = mesh;
+        return scene;
+      }
+
+      // ---------------------------------------------------------------- panes
+      const PANES = [
+        {
+          key: "A",
+          name: "soft toon ramp",
+          note: "8-step gradient map, wide transitions. Cheapest, most controllable, reads as painted anime.",
+          make: () =>
+            new THREE.MeshToonMaterial({
+              vertexColors: true,
+              side: THREE.DoubleSide,
+              gradientMap: GRADIENT_SOFT,
+            }),
+        },
+        {
+          key: "B",
+          name: "bent normals + backlit petals",
+          note: "Shading normal pulled 75% toward 'up', plus light transmitted through the petal. Orbit until the sun is behind — that is when petals glow.",
+          make: () => makeSoftMaterial({ bend: 0.75, transmission: 0.7, rim: 0.32 }),
+        },
+        {
+          key: "C",
+          name: "kuwahara painterly post",
+          note: "Lowest-variance quadrant around each pixel, radius 2. Detail flattens into brush-like regions.",
+          make: () => new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.9, metalness: 0 }),
+          post: "kuwahara",
+        },
+        {
+          key: "D",
+          name: "all of it",
+          note: "Bent normals + transmission + bloom + kuwahara + warm grade + vignette. This is the destination.",
+          make: () => makeSoftMaterial({ bend: 0.78, transmission: 0.62, rim: 0.45 }),
+          post: "full",
+        },
+      ];
+
+      const lab = document.getElementById("lab");
+      const camera = new THREE.PerspectiveCamera(34, 1, 0.01, 50);
+
+      // shared orbit state -> every pane renders the same view
+      const VIEWS = {
+        head: { target: new THREE.Vector3(0, 0.272, 0), dist: 0.2, pitch: 0.16 },
+        plant: { target: new THREE.Vector3(0, 0.15, 0), dist: 0.68, pitch: 0.2 },
+      };
+      const orbit = { yaw: 0.62, pitch: VIEWS.head.pitch, dist: VIEWS.head.dist, target: VIEWS.head.target.clone() };
+      let viewName = "head";
+
+      function setView(name) {
+        viewName = name;
+        const v = VIEWS[name];
+        orbit.target.copy(v.target);
+        orbit.dist = v.dist;
+        orbit.pitch = v.pitch;
+        updateCamera();
+        const btn = document.getElementById("viewbtn");
+        if (btn) btn.textContent = `view: ${name}`;
+      }
+      function updateCamera() {
+        const cp = Math.cos(orbit.pitch);
+        camera.position.set(
+          orbit.target.x + Math.sin(orbit.yaw) * cp * orbit.dist,
+          orbit.target.y + Math.sin(orbit.pitch) * orbit.dist,
+          orbit.target.z + Math.cos(orbit.yaw) * cp * orbit.dist
+        );
+        camera.lookAt(orbit.target);
+      }
+      updateCamera();
+
+      const views = [];
+
+      for (const def of PANES) {
+        const pane = document.createElement("div");
+        pane.className = "pane";
+        pane.dataset.key = def.key;
+
+        const tag = document.createElement("div");
+        tag.className = "tag";
+        tag.innerHTML = `<b>${def.key} · ${def.name}</b><span>${def.note}</span>`;
+
+        const canvas = document.createElement("canvas");
+        pane.appendChild(canvas);
+        pane.appendChild(tag);
+        lab.appendChild(pane);
+
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+        renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = L.exposure;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+        const material = def.make();
+        const scene = makeScene(material);
+
+        let composer = null;
+        let kuwahara = null;
+
+        if (def.post) {
+          composer = new EffectComposer(renderer);
+          composer.addPass(new RenderPass(scene, camera));
+
+          if (def.post === "full") {
+            const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.26, 0.72, 0.86);
+            composer.addPass(bloom);
+          }
+
+          kuwahara = new ShaderPass(kuwaharaShader(2));
+          if (def.post === "full") {
+            kuwahara.uniforms.uSharp.value = 0.2;
+            kuwahara.uniforms.uVignette.value = 0.5;
+            kuwahara.uniforms.uSaturation.value = 1.05;
+            kuwahara.uniforms.uWarm.value = 0.9;
+          } else {
+            kuwahara.uniforms.uSharp.value = 0.3;
+          }
+          composer.addPass(kuwahara);
+          composer.addPass(new OutputPass());
+        }
+
+        views.push({ def, pane, canvas, renderer, scene, material, composer, kuwahara });
+      }
+
+      // expose for debugging / automated framing checks
+      window.__SOFT_LAB__ = { views, camera, orbit, THREE, updateCamera };
+      let dragging = false;
+      let lastX = 0;
+      let lastY = 0;
+
+      lab.addEventListener("pointerdown", (e) => {
+        dragging = true;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        lab.classList.add("dragging");
+        lab.setPointerCapture(e.pointerId);
+      });
+      lab.addEventListener("pointermove", (e) => {
+        if (!dragging) return;
+        orbit.yaw -= (e.clientX - lastX) * 0.0075;
+        orbit.pitch = THREE.MathUtils.clamp(orbit.pitch + (e.clientY - lastY) * 0.006, -0.25, 1.32);
+        lastX = e.clientX;
+        lastY = e.clientY;
+        updateCamera();
+      });
+      lab.addEventListener("pointerup", (e) => {
+        dragging = false;
+        lab.classList.remove("dragging");
+        if (lab.hasPointerCapture(e.pointerId)) lab.releasePointerCapture(e.pointerId);
+      });
+      lab.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          orbit.dist = THREE.MathUtils.clamp(orbit.dist * Math.exp(e.deltaY * 0.0012), 0.16, 2.6);
+          updateCamera();
+        },
+        { passive: false }
+      );
+
+      let solo = null;
+      function applySolo(key) {
+        solo = key;
+        for (const v of views) v.pane.classList.toggle("solo", key === v.def.key);
+        resize();
+      }
+
+      addEventListener("keydown", (e) => {
+        if (e.key === "0") applySolo(null);
+        else if (e.key >= "1" && e.key <= "4") applySolo(PANES[Number(e.key) - 1].key);
+        else if (e.key === "r" || e.key === "R") toggleRef();
+        else if (e.key === "s" || e.key === "S") toggleSpin();
+        else if (e.key === "h" || e.key === "H") setView(viewName === "head" ? "plant" : "head");
+      });
+
+      document.getElementById("viewbtn").addEventListener("click", () => {
+        setView(viewName === "head" ? "plant" : "head");
+      });
+
+      let spinning = true;
+      const spinBtn = document.getElementById("spin");
+      function toggleSpin() {
+        spinning = !spinning;
+        spinBtn.textContent = `spin: ${spinning ? "on" : "off"}`;
+      }
+      spinBtn.addEventListener("click", toggleSpin);
+
+      const refImg = document.getElementById("ref");
+      const refBtn = document.getElementById("refbtn");
+      function toggleRef() {
+        refImg.classList.toggle("on");
+        refBtn.textContent = `reference: ${refImg.classList.contains("on") ? "on" : "off"}`;
+      }
+      refBtn.addEventListener("click", toggleRef);
+
+      // ---------------------------------------------------------------- resize
+      function resize() {
+        for (const v of views) {
+          const r = v.pane.getBoundingClientRect();
+          const w = Math.max(1, Math.round(r.width));
+          const h = Math.max(1, Math.round(r.height));
+          v.renderer.setSize(w, h, false);
+          if (v.composer) v.composer.setSize(w, h);
+          if (v.kuwahara) {
+            v.kuwahara.uniforms.uResolution.value.set(w * v.renderer.getPixelRatio(), h * v.renderer.getPixelRatio());
+          }
+        }
+      }
+
+      addEventListener("resize", resize);
+      resize();
+
+      // ---------------------------------------------------------------- loop
+      const clock = new THREE.Clock();
+      let first = true;
+
+      function frame() {
+        const t = clock.getElapsedTime();
+        wind.update(t);
+        if (spinning) {
+          for (const v of views) v.scene.userData.mesh.rotation.y = t * 0.3;
+        }
+        for (const v of views) {
+          // Panes can differ in size (solo mode), so the shared camera's aspect
+          // is set per pane immediately before it renders.
+          const r = v.pane.getBoundingClientRect();
+          camera.aspect = r.width / Math.max(1, r.height);
+          camera.updateProjectionMatrix();
+          if (v.composer) v.composer.render();
+          else v.renderer.render(v.scene, camera);
+        }
+        if (first) {
+          first = false;
+          document.title = "ready:softness-lab";
+          window.__SOFT_LAB_READY__ = true;
+        }
+        requestAnimationFrame(frame);
+      }
+      frame();
+    </script>
+  </body>
+</html>

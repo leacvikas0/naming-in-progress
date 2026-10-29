@@ -230,5 +230,23 @@
     "style": "medieval",
     "kind": "prop",
     "github": "KayKit-Game-Assets/KayKit-Medieval-Hexagon-Pack-1.0"
+  },
+  {
+    "id": "kaykit-forest-free",
+    "author": "Kay Lousberg",
+    "license": "CC0-1.0",
+    "style": "nature",
+    "kind": "prop",
+    "itchPage": "https://kaylousberg.itch.io/kaykit-forest",
+    "itchUploadId": "13520330"
+  },
+  {
+    "id": "quaternius-stylized-nature-standard",
+    "author": "Quaternius",
+    "license": "CC0-1.0",
+    "style": "stylized-nature",
+    "kind": "prop",
+    "itchPage": "https://quaternius.itch.io/stylized-nature-megakit",
+    "itchUploadId": "11055123"
   }
 ]

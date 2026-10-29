@@ -1,0 +1,99 @@
+{
+  "$schema": "meadow-kit/recipe@1",
+  "meta": {
+    "note": "Every number here is metres, radians or a plain multiplier. Nothing is engine-specific.",
+    "units": "metres, Y-up, right-handed, origin at meadow centre"
+  },
+
+  "seed": 20261018,
+  "area": { "width": 26, "depth": 26 },
+  "quality": "high",
+
+  "qualityTiers": {
+    "low": { "density": 0.34, "lodDistance": 30 },
+    "medium": { "density": 0.6, "lodDistance": 44 },
+    "high": { "density": 1.0, "lodDistance": 62 },
+    "ultra": { "density": 1.55, "lodDistance": 90 }
+  },
+
+  "terrain": {
+    "segments": 128,
+    "relief": 0.26,
+    "reliefScale": 7.5,
+    "tilt": 0.035,
+    "soilRadius": 2.1,
+    "soilStrength": 0.72
+  },
+
+  "paths": [
+    {
+      "id": "main",
+      "width": 1.2,
+      "feather": 0.9,
+      "lift": 0.012,
+      "points": [
+        [-14.0, 1.6],
+        [-9.2, -1.1],
+        [-4.4, -3.5],
+        [0.6, -4.4],
+        [5.2, -2.7],
+        [9.4, 0.1],
+        [14.0, 1.9]
+      ]
+    },
+    {
+      "id": "upper",
+      "width": 0.92,
+      "feather": 0.75,
+      "lift": 0.014,
+      "points": [
+        [5.4, -14.0],
+        [7.4, -11.2],
+        [9.6, -8.6],
+        [11.6, -6.2],
+        [14.0, -4.6]
+      ]
+    }
+  ],
+
+  "wind": {
+    "direction": [0.86, 0.51],
+    "strength": 1.0,
+    "speed": 1.0,
+    "grassSway": 0.17,
+    "flowerSway": 0.075,
+    "flutter": 1.35
+  },
+
+  "scatter": {
+    "cellSize": 0,
+    "pathMargin": 0.42,
+    "edgeBias": 1.45,
+    "edgeBiasRange": 2.6,
+    "clumpScale": 4.2,
+    "globalJitter": 0.16
+  },
+
+  "_scaleNote": "scale is the plant's ACTUAL HEIGHT IN METRES. Geometry is always built at unit height and rescaled, so this is the only size control.",
+
+  "species": {
+    "grass": { "density": 13.0, "scale": [0.2, 0.36], "clump": 0.24, "lod": 0.55 },
+    "broadLeaf": { "density": 1.2, "scale": [0.34, 0.66], "clump": 0.3, "lod": 0.7 },
+    "daisy": { "density": 1.8, "scale": [0.18, 0.29], "clump": 0.18, "lod": 1 },
+    "buttercup": { "density": 1.4, "scale": [0.14, 0.23], "clump": 0.2, "lod": 1 },
+    "clover": { "density": 1.2, "scale": [0.09, 0.16], "clump": 0.24, "lod": 0.85 },
+    "campanula": { "density": 0.45, "scale": [0.3, 0.46], "clump": 0.4, "lod": 1 },
+    "lupine": { "density": 0.55, "scale": [0.38, 0.62], "clump": 0.44, "lod": 1 },
+    "cosmos": { "density": 0.45, "scale": [0.32, 0.52], "clump": 0.34, "lod": 1 },
+    "phlox": { "density": 0.9, "scale": [0.12, 0.21], "clump": 0.22, "lod": 0.9 },
+    "blossomPuff": { "density": 0.35, "scale": [0.2, 0.34], "clump": 0.28, "lod": 1 },
+    "motes": { "count": 190, "height": [0.4, 2.6], "size": [0.012, 0.036] },
+    "butterflies": { "count": 5, "height": [0.5, 1.4] }
+  },
+
+  "camera": {
+    "position": [0.4, 2.15, 10.8],
+    "target": [-0.2, 0.62, -1.4],
+    "fov": 42
+  }
+}

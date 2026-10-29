@@ -1,0 +1,193 @@
+/* ============================================================
+   Pixel chrome layer.
+   ============================================================
+   The game's HUD is built from hand-authored pixel art, compiled to PNG by
+   game/ui/build-ui.mjs and applied through `border-image` 9-slices. Three
+   rules make it work:
+
+   1. `image-rendering: pixelated` on EVERY element that shows chrome. Without
+      it the browser bilinearly filters the PNG and the pixels turn to mush.
+   2. `border-image-slice` must equal the source art's border width, and the
+      `border-width` must equal the slice, so source pixels map 1:1 to CSS
+      pixels. A mismatch silently blurs or clips every panel.
+   3. Asset URLs come from `ui/gen/asset-urls.css`, which build-ui.mjs writes
+      with a content hash appended. The dev server sends no Cache-Control, so
+      browsers heuristically cache PNGs and would otherwise keep serving art
+      from a previous build.
+
+   Source sizes (see game/ui/lib/frames.mjs):
+     frame-slab          32x32  slice 10
+     frame-ornate        40x40  slice 14
+     frame-button        56x28  slice 9
+     frame-trough        20x20  slice 7
+     frame-keycap        22x22  slice 6
+     frame-well          28x28  slice 10
+     frame-divider      128x12  slice 0 32
+   ============================================================ */
+
+@font-face {
+  font-family: "PixelChrome";
+  src: url("./ui/gen/PixelChrome-Regular.ttf") format("truetype");
+  font-display: block;
+  /* a bitmap-derived face must not be synthetically emboldened or slanted */
+  font-weight: 400;
+  font-style: normal;
+}
+
+/* ---------- the chrome primitives ---------- */
+
+/* Base stone slab. Everything structural uses this. */
+.px-slab {
+  border-style: solid;
+  border-width: 10px;
+  border-image-source: var(--px-slab);
+  border-image-slice: 10 fill;
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+}
+
+.px-slab-dark {
+  border-image-source: var(--px-slab-dark);
+}
+
+.px-slab-deep {
+  border-image-source: var(--px-slab-deep);
+}
+
+/* Ornate tiered panel — hero plaque, upgrade cards, death panel. */
+.px-ornate {
+  border-style: solid;
+  border-width: 14px;
+  border-image-source: var(--px-ornate-common);
+  border-image-slice: 14 fill;
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+}
+
+.px-ornate.rare { border-image-source: var(--px-ornate-rare); }
+.px-ornate.epic { border-image-source: var(--px-ornate-epic); }
+
+/* Struck-metal button plate. */
+.px-btn {
+  border-style: solid;
+  border-width: 9px;
+  border-image-source: var(--px-button-common);
+  border-image-slice: 9 fill;
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+  font-family: "PixelChrome", var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.px-btn.rare { border-image-source: var(--px-button-rare); }
+.px-btn.epic { border-image-source: var(--px-button-epic); }
+
+/* Recessed channel — HP bar, cooldown wells. */
+.px-trough {
+  border-style: solid;
+  border-width: 7px;
+  border-image-source: var(--px-trough);
+  border-image-slice: 7 fill;
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+}
+
+.px-trough.gold {
+  border-image-source: var(--px-trough-gold);
+}
+
+/* Iron keycap. */
+.px-keycap {
+  display: inline-block;
+  border-style: solid;
+  border-width: 6px;
+  border-image-source: var(--px-keycap);
+  border-image-slice: 6 fill;
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+  font-family: "PixelChrome", var(--font-mono);
+  line-height: 1;
+  color: var(--bone);
+}
+
+.px-keycap.hot {
+  border-image-source: var(--px-keycap-hot);
+  color: #1c1409;
+}
+
+/* Roster bar: left edge only, vertical stretch. */
+.px-roster {
+  border-style: solid;
+  border-width: 0 0 0 8px;
+  border-image-source: var(--px-roster);
+  border-image-slice: 0 0 0 8;
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+}
+
+.px-roster.selected {
+  border-image-source: var(--px-roster-selected);
+}
+
+/* Icon socket: a recessed square well. */
+.px-well {
+  border-style: solid;
+  border-width: 10px;
+  border-image-source: var(--px-well-common);
+  border-image-slice: 10 fill;
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+  display: grid;
+  place-items: center;
+}
+
+.px-well.rare { border-image-source: var(--px-well-rare); }
+.px-well.epic { border-image-source: var(--px-well-epic); }
+
+/* Divider rule. The tier boss is a separate <img> so it never stretches. */
+.px-divider {
+  border-style: solid;
+  border-width: 0 32px;
+  border-image-source: var(--px-divider);
+  border-image-slice: 0 32 fill;
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+  height: 12px;
+}
+
+.px-divider.rare { border-image-source: var(--px-divider-rare); }
+.px-divider.epic { border-image-source: var(--px-divider-epic); }
+
+.px-divider-boss {
+  image-rendering: pixelated;
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+/* Small icon helper — all stat glyphs and sigils. */
+.px-icon {
+  image-rendering: pixelated;
+  display: block;
+  flex: none;
+}
+
+/* A divider with a boss centred in it. */
+.px-rule {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.px-rule > .px-divider {
+  flex: 1;
+  min-width: 0;
+}
+
+.px-rule > .px-divider-boss {
+  margin: 0 -6px;
+  z-index: 1;
+}

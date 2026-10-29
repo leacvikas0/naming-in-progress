@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sunpetal Vale — anime hero tree</title>
+<style>
+  :root { --ink:#f2fbf6; --panel:rgba(12,30,24,0.72); --edge:rgba(200,240,210,0.18); --accent:#c1dc79; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; overflow:hidden; background:#d6ecea; }
+  canvas { display:block; }
+  #hud { position:fixed; left:14px; bottom:14px; z-index:10; font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--ink); background:var(--panel); border:1px solid var(--edge); border-radius:10px; padding:9px 12px; white-space:pre; backdrop-filter:blur(10px); pointer-events:none; }
+  #hud b { color:var(--accent); font-weight:600; }
+  #keys { position:fixed; right:14px; top:14px; z-index:10; font:11px/1.6 ui-monospace,monospace; color:var(--ink); background:var(--panel); border:1px solid var(--edge); border-radius:10px; padding:8px 11px; backdrop-filter:blur(10px); pointer-events:none; }
+  #keys kbd { display:inline-block; min-width:14px; text-align:center; padding:0 4px; border-radius:4px; background:rgba(193,220,121,0.16); color:#eaf7c4; border:1px solid rgba(193,220,121,0.32); font:inherit; }
+  #title { position:fixed; left:14px; top:14px; z-index:10; font:600 13px/1.4 ui-monospace,monospace; letter-spacing:0.06em; color:var(--ink); text-transform:uppercase; background:var(--panel); border:1px solid var(--edge); border-radius:10px; padding:7px 11px; backdrop-filter:blur(10px); pointer-events:none; }
+  #title span { color:var(--accent); }
+  #loading { position:fixed; inset:0; z-index:20; display:grid; place-items:center; background:#d6ecea; color:#2c4a3c; font:600 12px/1.5 ui-monospace,monospace; letter-spacing:0.12em; text-transform:uppercase; transition:opacity 0.5s ease; }
+  #loading.gone { opacity:0; pointer-events:none; }
+  .hidden { display:none !important; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "@dgreenheck/ez-tree": "/node_modules/@dgreenheck/ez-tree/build/ez-tree.es.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="loading">growing the tree…</div>
+<div id="title">Sunpetal Vale <span>· anime hero tree</span></div>
+<div id="keys">
+  <kbd>1</kbd> shrine · <kbd>2</kbd> closeup · <kbd>3</kbd> gameplay · <kbd>4</kbd> side · <kbd>5</kbd> aerial<br />
+  <kbd>drag</kbd> orbit · <kbd>wheel</kbd> zoom · <kbd>H</kbd> hide ui
+</div>
+<div id="hud">building…</div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { createMeadowBackground } from "/game/src/map/index.js";
+import { createAnimeTree } from "/game/src/map/port/anime-tree-kit.js";
+import { makeRng, CONFIG } from "/game/src/balance.js";
+
+const params = new URLSearchParams(location.search);
+const quality = params.get("quality") || "high";
+const postEnabled = params.get("post") === "1";
+const palette = params.get("palette") || "summer";
+const preset = params.get("preset") || "Oak Medium";
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 700);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.maxPolarAngle = Math.PI * 0.497;
+controls.minDistance = 2.5;
+controls.maxDistance = 300;
+controls.target.set(0, 1.0, 0);
+
+const VIEWS = {
+  shrine:   { pos: [2, 6.4, -20],  target: [0, 1.2, -34] },
+  closeup:  { pos: [7, 3.4, -26],  target: [0, 7.5, -38.5] },
+  gameplay: { pos: [0, 7.6, 10.6], target: [0, 1.1, -0.5] },
+  side:     { pos: [26, 7.0, -38.5], target: [0, 6.0, -38.5] },
+  aerial:   { pos: [0, 78, 92],    target: [0, 0, 0] },
+};
+function applyView(name) {
+  const v = VIEWS[name] || VIEWS.shrine;
+  camera.position.set(...v.pos);
+  controls.target.set(...v.target);
+  controls.update();
+}
+
+const rng = makeRng(CONFIG.run?.seed ?? 1337);
+const bg = createMeadowBackground({
+  scene, renderer, camera, rng, quality, post: postEnabled,
+  width: innerWidth, height: innerHeight,
+  centreTree: false,
+});
+
+/* ---------------- anime hero tree ---------------- */
+
+const tree = createAnimeTree({
+  seed: 20261017,
+  preset,
+  palette,
+  height: 12.5,
+  leafSize: 0.5,
+  leafCount: 150,
+});
+tree.group.position.set(0, 0, -38.5);
+scene.add(tree.group);
+
+applyView(params.get("view") || "shrine");
+
+/* ---------------- input ---------------- */
+
+let hudVisible = true;
+addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase();
+  if (k === "1") applyView("shrine");
+  if (k === "2") applyView("closeup");
+  if (k === "3") applyView("gameplay");
+  if (k === "4") applyView("side");
+  if (k === "5") applyView("aerial");
+  if (k === "h") {
+    hudVisible = !hudVisible;
+    for (const id of ["hud", "keys", "title"]) document.getElementById(id).classList.toggle("hidden", !hudVisible);
+  }
+});
+
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  bg.resize(innerWidth, innerHeight);
+});
+
+/* ---------------- frame loop ---------------- */
+
+const hudEl = document.getElementById("hud");
+const clock = new THREE.Clock();
+let fps = 60, last = performance.now(), hudTimer = 0;
+
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  const elapsed = clock.elapsedTime;
+  bg.update(elapsed, dt);
+  tree.update(elapsed);
+  controls.update();
+  bg.render(dt);
+
+  const now = performance.now();
+  fps = fps * 0.93 + (1000 / Math.max(1, now - last)) * 0.07;
+  last = now;
+
+  hudTimer += dt;
+  if (hudTimer > 0.25) {
+    hudTimer = 0;
+    const info = renderer.info.render;
+    const s = bg.stats;
+    hudEl.innerHTML =
+      `<b>triangles</b> ${(info.triangles / 1000).toFixed(0)}k   <b>draws</b> ${info.calls}   <b>fps</b> ${fps.toFixed(0)}\n` +
+      `<b>tree</b>      ${(tree.stats.triangles / 1000).toFixed(1)}k tris · ${tree.stats.draws} draws · ${tree.stats.height.toFixed(1)} m tall\n` +
+      `<b>meadow</b>    ${(s.kit.triangles / 1000).toFixed(0)}k tris · ${s.kit.instances} instances\n` +
+      `<b>palette</b>   ${palette}   <b>preset</b> ${preset}`;
+  }
+  requestAnimationFrame(frame);
+}
+
+bg.update(0, 0);
+bg.render(0);
+document.getElementById("loading").classList.add("gone");
+frame();
+
+window.__meadow = { scene, camera, renderer, bg, tree, applyView, controls };
+</script>
+</body>
+</html>

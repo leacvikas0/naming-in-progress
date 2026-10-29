@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sunpetal Vale — sky / light / post harness</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #cfe6e4; overflow: hidden; }
+      canvas { display: block; }
+      #hud {
+        position: fixed; left: 12px; top: 10px; padding: 10px 12px;
+        font: 11px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        color: #12332c; background: rgba(255, 255, 255, 0.72);
+        border: 1px solid rgba(18, 51, 44, 0.18); border-radius: 8px;
+        white-space: pre; pointer-events: none; backdrop-filter: blur(4px);
+      }
+      #hud b { color: #0b5c46; }
+      #hud .dim { color: #4a6b62; }
+      #keys {
+        position: fixed; left: 12px; bottom: 10px; padding: 8px 10px;
+        font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #12332c;
+        background: rgba(255, 255, 255, 0.62); border: 1px solid rgba(18, 51, 44, 0.16);
+        border-radius: 8px; white-space: pre; pointer-events: none;
+      }
+      #err {
+        position: fixed; inset: 0; display: none; padding: 24px;
+        font: 12px/1.6 ui-monospace, monospace; color: #7a1f1f; background: #fff;
+        white-space: pre-wrap; overflow: auto; z-index: 9;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="hud">loading…</div>
+    <div id="keys">
+1 gameplay   2 sun side 20°   3 sky 35° up   4 cool side 20°   5 hero
+P  post on/off        H  hide HUD        R  reset camera
+    </div>
+    <pre id="err"></pre>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+      import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+      import { MEADOW, MEADOW_LIGHT } from "../../src/map/palette.js";
+      import { createMeadowSky } from "../../src/map/sky.js";
+      import { createMeadowPost } from "../../src/map/post.js";
+
+      const hud = document.getElementById("hud");
+      const errBox = document.getElementById("err");
+      const fail = (e) => {
+        errBox.style.display = "block";
+        errBox.textContent = "preview failed:\n\n" + (e && e.stack ? e.stack : String(e));
+        console.error(e);
+      };
+      window.addEventListener("error", (e) => fail(e.error || e.message));
+
+      /* ------------------------------------------------------------------ */
+      /* renderer — the HOST owns these settings, not post.js               */
+      /* ------------------------------------------------------------------ */
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = MEADOW_LIGHT.exposure;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.info.autoReset = false;
+      document.body.appendChild(renderer.domElement);
+
+      /* ------------------------------------------------------------------ */
+      /* scene                                                              */
+      /* ------------------------------------------------------------------ */
+
+      const scene = new THREE.Scene();
+      // Warm-green haze per REF-NOTES §5.11 — never lavender over grass.
+      scene.fog = new THREE.Fog(MEADOW.fog, 45, 190);
+
+      const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 900);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      // No polar clamp: the sky-judging presets look up at 35°, which puts the
+      // orbit target above the camera. Clamping here would fight the presets.
+      controls.minPolarAngle = 0;
+      controls.maxPolarAngle = Math.PI;
+      controls.minDistance = 2;
+      controls.maxDistance = 160;
+
+      /* ---- sky, clouds, ridges, light rig -------------------------------- */
+
+      const sky = createMeadowSky({ palette: MEADOW, camera });
+      scene.add(sky.group);
+
+      /* ---- ground -------------------------------------------------------- */
+
+      const groundMat = new THREE.MeshStandardMaterial({
+        color: MEADOW.grassBase,
+        roughness: 1.0,
+        metalness: 0.0,
+      });
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), groundMat);
+      ground.rotation.x = -Math.PI / 2;
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      // A few painterly patches so the plane is not a dead flat green.
+      // Merged into one geometry (one draw call) with baked vertex colours.
+      const patchColors = [MEADOW.grassWarm, MEADOW.grassCool, MEADOW.moss, MEADOW.grassWarm];
+      const patchRand = (() => {
+        let s = 20261017;
+        return () => {
+          s = (s * 1664525 + 1013904223) >>> 0;
+          return s / 4294967296;
+        };
+      })();
+      const patchGeos = [];
+      for (let i = 0; i < 90; i++) {
+        const geo = new THREE.CircleGeometry(1, 20);
+        geo.rotateX(-Math.PI / 2);
+        geo.rotateY(patchRand() * Math.PI);
+        geo.scale(3 + patchRand() * 12, 1, 2 + patchRand() * 8);
+        const a = patchRand() * Math.PI * 2;
+        const r = 6 + patchRand() * 150;
+        geo.translate(Math.cos(a) * r, 0.012, Math.sin(a) * r);
+
+        const col = new THREE.Color(patchColors[i % patchColors.length]);
+        const n = geo.attributes.position.count;
+        const arr = new Float32Array(n * 3);
+        for (let v = 0; v < n; v++) {
+          arr[v * 3 + 0] = col.r;
+          arr[v * 3 + 1] = col.g;
+          arr[v * 3 + 2] = col.b;
+        }
+        geo.setAttribute("color", new THREE.BufferAttribute(arr, 3));
+        patchGeos.push(geo);
+      }
+      const patchMesh = new THREE.Mesh(
+        mergeGeometries(patchGeos, false),
+        new THREE.MeshStandardMaterial({
+          vertexColors: true,
+          roughness: 1,
+          transparent: true,
+          opacity: 0.32,
+          depthWrite: false,
+        })
+      );
+      patchMesh.receiveShadow = true;
+      scene.add(patchMesh);
+      for (const g of patchGeos) g.dispose();
+
+      /* ---- test geometry: judge warm light / cool shadow ------------------ */
+
+      const testGroup = new THREE.Group();
+      scene.add(testGroup);
+
+      const make = (geo, color, pos, opts = {}) => {
+        const mat = new THREE.MeshStandardMaterial({
+          color,
+          roughness: opts.roughness ?? 0.9,
+          metalness: opts.metalness ?? 0.0,
+          flatShading: opts.flatShading ?? false,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(...pos);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        testGroup.add(mesh);
+        return mesh;
+      };
+
+      // White sphere — the honest test of sun colour vs sky fill.
+      make(new THREE.SphereGeometry(1.15, 24, 16), MEADOW.flowerWhite, [3.2, 1.15, -3.2]);
+      // Cream crate.
+      make(new THREE.BoxGeometry(1.6, 1.6, 1.6), MEADOW.flowerCream, [-3.4, 0.8, -4.6]);
+      // Green box.
+      make(new THREE.BoxGeometry(1.4, 2.2, 1.4), MEADOW.grassCool, [5.6, 1.1, -6.4]);
+      // Lilac low-poly sphere.
+      make(new THREE.IcosahedronGeometry(1.0, 0), MEADOW.flowerLilac, [-6.2, 1.0, -8.0], {
+        flatShading: true,
+      });
+      // A taller mass to read shadow length / direction.
+      make(new THREE.BoxGeometry(2.6, 4.4, 1.2), MEADOW.path, [0.4, 2.2, -10.5]);
+      // Small warm stone.
+      make(new THREE.DodecahedronGeometry(0.75, 0), MEADOW.pathStone, [7.6, 0.6, -2.2], {
+        flatShading: true,
+      });
+
+      /* ------------------------------------------------------------------ */
+      /* post chain                                                         */
+      /* ------------------------------------------------------------------ */
+
+      const post = createMeadowPost({
+        renderer,
+        scene,
+        camera,
+        width: innerWidth,
+        height: innerHeight,
+        enabled: true,
+      });
+
+      /* ------------------------------------------------------------------ */
+      /* camera presets                                                     */
+      /* ------------------------------------------------------------------ */
+
+      const sunAz = Math.atan2(sky.sunDir.z, sky.sunDir.x);
+      const sunH = new THREE.Vector3(Math.cos(sunAz), 0, Math.sin(sunAz));
+
+      function viewDir(az, elevDeg) {
+        const e = THREE.MathUtils.degToRad(elevDeg);
+        return new THREE.Vector3(Math.cos(az) * Math.cos(e), Math.sin(e), Math.sin(az) * Math.cos(e));
+      }
+
+      const PRESETS = {
+        gameplay: {
+          label: "gameplay — fov 58, 11.5 m back, 2.4 m high, ~5° up",
+          pos: [0, 2.4, 11.5],
+          target: [0, 4.2, -10],
+        },
+        sun: {
+          label: "sun side — 20° above horizon, facing the warm west",
+          pos: [0, 3.0, 30],
+          dir: viewDir(sunAz, 20),
+        },
+        sky35: {
+          label: "sky judge — 35° above horizon, facing the sun",
+          pos: [0, 3.0, 30],
+          dir: viewDir(sunAz, 35),
+        },
+        cool: {
+          label: "cool side — 20° above horizon, away from the sun",
+          pos: [0, 3.0, 30],
+          dir: viewDir(sunAz + Math.PI, 20),
+        },
+        elevated: {
+          label: "hero — 7 m up, wide meadow + horizon + sky",
+          pos: [0, 7.0, 26.0],
+          target: [0, 2.6, -18.0],
+        },
+      };
+
+      let presetName = "gameplay";
+
+      function applyPreset(name) {
+        const p = PRESETS[name];
+        if (!p) return;
+        presetName = name;
+        camera.position.set(...p.pos);
+        if (p.target) {
+          controls.target.set(...p.target);
+        } else {
+          controls.target.copy(camera.position).addScaledVector(p.dir, 40);
+        }
+        controls.update();
+      }
+
+      applyPreset("gameplay");
+
+      /* ------------------------------------------------------------------ */
+      /* HUD + loop                                                         */
+      /* ------------------------------------------------------------------ */
+
+      let hudVisible = true;
+      let frames = 0;
+      let fpsAccum = 0;
+      let fps = 0;
+      let postEnabled = true;
+      let last = performance.now();
+      const clock = new THREE.Clock();
+
+      window.addEventListener("keydown", (e) => {
+        const k = e.key.toLowerCase();
+        if (k === "1") applyPreset("gameplay");
+        else if (k === "2") applyPreset("sun");
+        else if (k === "3") applyPreset("sky35");
+        else if (k === "4") applyPreset("cool");
+        else if (k === "5") applyPreset("elevated");
+        else if (k === "r") applyPreset("gameplay");
+        else if (k === "p") {
+          postEnabled = !postEnabled;
+          post.setEnabled(postEnabled);
+        } else if (k === "h") {
+          hudVisible = !hudVisible;
+          hud.style.display = hudVisible ? "block" : "none";
+          document.getElementById("keys").style.display = hudVisible ? "block" : "none";
+        }
+      });
+
+      window.addEventListener("resize", () => {
+        renderer.setSize(innerWidth, innerHeight);
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+        post.setSize(innerWidth, innerHeight);
+      });
+
+      function pitchDeg() {
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        return THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1)));
+      }
+
+      function animate() {
+        const now = performance.now();
+        const dt = Math.min(0.05, (now - last) / 1000);
+        last = now;
+
+        frames++;
+        fpsAccum += dt;
+        if (fpsAccum >= 0.4) {
+          fps = frames / fpsAccum;
+          frames = 0;
+          fpsAccum = 0;
+        }
+
+        const elapsed = clock.getElapsedTime();
+        sky.update(elapsed);
+        controls.update();
+
+        renderer.info.reset();
+        post.render(dt);
+        const info = renderer.info.render;
+
+        if (hudVisible) {
+          const p = PRESETS[presetName];
+          hud.textContent =
+            `SUNPETAL VALE — sky / light / post harness\n` +
+            `fps ${fps.toFixed(0)}   draw calls ${info.calls}   tris ${(info.triangles / 1000).toFixed(1)}k\n` +
+            `sky mesh: ${sky.stats.triangles} tris / ${sky.stats.drawCalls} calls, ${sky.stats.clouds} clouds, ${sky.stats.ridges} ridges\n` +
+            `sun dir ${sky.sunDir.x.toFixed(2)}, ${sky.sunDir.y.toFixed(2)}, ${sky.sunDir.z.toFixed(2)}   ` +
+            `elev ${THREE.MathUtils.radToDeg(Math.asin(sky.sunDir.y)).toFixed(1)}°   ` +
+            `az ${THREE.MathUtils.radToDeg(Math.atan2(sky.sunDir.z, sky.sunDir.x)).toFixed(0)}°\n` +
+            `sun ${sky.sun.intensity.toFixed(2)} ${'#' + sky.sun.color.getHexString()}   ` +
+            `hemi ${sky.hemi.intensity.toFixed(2)}   ambient ${sky.ambient.intensity.toFixed(2)}\n` +
+            `post ${postEnabled ? "ON " : "OFF"}  bloom ${post.params.bloomStrength} / ${post.params.bloomRadius} / ${post.params.bloomThreshold}` +
+            `  exposure ${renderer.toneMappingExposure.toFixed(2)}  ACES\n` +
+            `fog ${scene.fog.near}–${scene.fog.far} ${'#' + scene.fog.color.getHexString()}\n` +
+            `camera ${p.label}\n` +
+            `cam pos ${camera.position.x.toFixed(1)}, ${camera.position.y.toFixed(1)}, ${camera.position.z.toFixed(1)}   ` +
+            `pitch ${pitchDeg().toFixed(1)}°`;
+        }
+
+        requestAnimationFrame(animate);
+      }
+
+      // expose a tiny handle for automated screenshotting / debugging
+      window.__meadow = { scene, camera, renderer, sky, post, applyPreset, PRESETS };
+
+      requestAnimationFrame(animate);
+    </script>
+  </body>
+</html>

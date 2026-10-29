@@ -1,0 +1,118 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>composition test</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #cfe3e8; overflow: hidden; }
+      canvas { display: block; }
+      #hud { position: fixed; left: 10px; top: 8px; font: 12px/1.5 monospace; color: #14301f; white-space: pre; }
+    </style>
+    <script type="importmap">
+      { "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      } }
+    </script>
+  </head>
+  <body>
+    <div id="hud">loading…</div>
+    <script type="module">
+      import * as THREE from "three";
+      import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+      const catalog = await (await fetch("/catalog/index.json")).json();
+      const byPack = new Map();
+      for (const a of catalog.assets) {
+        if (!byPack.has(a.pack)) byPack.set(a.pack, new Map());
+        byPack.get(a.pack).set(a.url.split("/").pop().toLowerCase(), a.url);
+      }
+      const url = (pack, name) => (byPack.get(pack) || new Map()).get(name.toLowerCase());
+
+      const loader = new GLTFLoader();
+      const cache = new Map();
+      async function load(pack, name, scale, x, y, z, rotY = 0) {
+        const u = url(pack, name);
+        if (!u) { console.warn("missing", pack, name); return null; }
+        if (!cache.has(u)) cache.set(u, await loader.loadAsync(u).then((g) => g.scene).catch((e) => { console.warn("fail", u, e.message); return null; }));
+        const src = await cache.get(u);
+        if (!src) return null;
+        const root = src.clone(true);
+        root.scale.setScalar(scale);
+        root.position.set(x, y, z);
+        root.rotation.y = rotY;
+        scene.add(root);
+        return root;
+      }
+      function boxMesh(w, h, d, color, x, y, z) {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: 0.9 }));
+        m.position.set(x, y, z);
+        scene.add(m);
+        return m;
+      }
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(1);
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.0;
+      document.body.appendChild(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xcfe3e8);
+      scene.fog = new THREE.Fog(0xcfe3e8, 40, 90);
+      scene.add(new THREE.HemisphereLight(0xdff0ff, 0x8a9a70, 2.0));
+      const sun = new THREE.DirectionalLight(0xfff0d0, 2.6);
+      sun.position.set(8, 14, 6);
+      scene.add(sun);
+
+      // ground
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), new THREE.MeshStandardMaterial({ color: 0x8fbe6c, roughness: 1 }));
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
+
+      // ---- SHRINE at (0,0) ----
+      // pale stone arch: two pillars + arch top (fantasy-town cream), scaled 3.2
+      const S = 3.2;
+      await load("kenney-fantasy-town", "pillar-stone.glb", S, -1.7, 0, 0);
+      await load("kenney-fantasy-town", "pillar-stone.glb", S, 1.7, 0, 0);
+      // broken: one pillar shorter -> scale that one down
+      await load("kenney-fantasy-town", "wall-arch-top.glb", S, 0, 3.05, 0, Math.PI / 2);
+      // pedestal: low cream slab
+      boxMesh(1.5, 0.5, 1.1, 0xd9d0b4, 0, 0.25, 2.6);
+      boxMesh(1.9, 0.14, 1.5, 0xcfc6a8, 0, 0.07, 2.6);
+      // old spreading tree behind
+      await load("kaykit-forest-free", "Tree_2_C_Color1.gltf", 1.25, 0, 0, -5.5);
+      // ruined side slabs
+      await load("kenney-fantasy-town", "wall-broken.glb", S * 0.8, -4.5, 0, 1.2, 0.4);
+      await load("kenney-fantasy-town", "wall-broken.glb", S * 0.8, 4.6, 0, 0.4, -0.5);
+
+      // ---- CAMP at (16,0) ----
+      const C = 4.0;
+      await load("kenney-survival", "tent.glb", C, 16, 0, 0, 0.5);
+      await load("kenney-survival", "bedroll.glb", 3.2, 19.2, 0, 1.6, 0.3);
+      await load("kenney-survival", "box-large.glb", C, 13.4, 0, 1.2, 0.4);
+      await load("kenney-survival", "box-large.glb", C * 0.8, 13.0, 0, 2.4, -0.3);
+      await load("kenney-survival", "campfire-pit.glb", 4.2, 17.4, 0, 3.4);
+      await load("kenney-survival", "barrel.glb", 3.4, 14.6, 0, -1.2);
+      await load("kenney-survival", "signpost.glb", 3.4, 19.8, 0, -1.0, 0.4);
+
+      // hero reference
+      const hero = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 1.1, 4, 12), new THREE.MeshStandardMaterial({ color: 0xd23b3b }));
+      hero.position.set(0, 0.95, 6.5);
+      scene.add(hero);
+      const hero2 = hero.clone();
+      hero2.position.set(17, 0.95, 6.0);
+      scene.add(hero2);
+
+      document.getElementById("hud").textContent = "shrine (left) + camp (right), red capsule = 1.9 m hero";
+
+      const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 300);
+      camera.position.set(8, 8.5, 20);
+      camera.lookAt(new THREE.Vector3(8, 2.0, 0));
+      renderer.render(scene, camera);
+      window.__ready = true;
+    </script>
+  </body>
+</html>

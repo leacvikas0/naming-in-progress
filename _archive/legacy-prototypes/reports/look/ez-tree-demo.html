@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ez-tree reference render</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #b9c9b2; }
+  canvas { display: block; }
+  #label {
+    position: fixed; left: 16px; top: 16px; z-index: 5;
+    font: 12px/1.5 ui-monospace, monospace; color: #22301f;
+    background: rgba(255,255,255,0.55); border-radius: 8px; padding: 8px 10px;
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="label">ez-tree (MIT) · Oak Medium · expert-grade three.js procedural tree</div>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { Tree } from "/node_modules/@dgreenheck/ez-tree/build/ez-tree.es.js";
+
+const params = new URLSearchParams(location.search);
+const preset = params.get("preset") || "Oak Medium";
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xb9c9b2);
+scene.fog = new THREE.Fog(0xc9d6c0, 60, 160);
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 400);
+camera.position.set(0, 9, 26);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 6.5, 0);
+controls.enableDamping = true;
+controls.update();
+
+const hemi = new THREE.HemisphereLight(0xdfeaff, 0x5f6b4e, 1.4);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff0d0, 2.4);
+sun.position.set(-14, 22, 12);
+scene.add(sun);
+const fill = new THREE.DirectionalLight(0xbcd0e8, 0.5);
+fill.position.set(12, 8, -10);
+scene.add(fill);
+
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(60, 48),
+  new THREE.MeshStandardMaterial({ color: 0x8fae72, roughness: 1, metalness: 0 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.02;
+scene.add(ground);
+
+const tree = new Tree();
+tree.loadPreset(preset);
+tree.options.seed = Number(params.get("seed") || 7);
+tree.generate();
+// ez-tree presets are authored around 20 units tall; bring it to ~11 m.
+tree.scale.setScalar(0.55);
+scene.add(tree);
+
+// Frame the whole tree regardless of preset size.
+const box = new THREE.Box3().setFromObject(tree);
+const size = box.getSize(new THREE.Vector3());
+const center = box.getCenter(new THREE.Vector3());
+const maxDim = Math.max(size.x, size.y, size.z);
+const dist = (maxDim / (2 * Math.tan((camera.fov * Math.PI) / 360))) * 1.25;
+camera.position.set(center.x, center.y + size.y * 0.06, center.z + dist);
+controls.target.set(center.x, center.y, center.z);
+controls.update();
+console.log("tree size", size.toArray(), "center", center.toArray(), "camera dist", dist);
+
+window.__ez = { scene, camera, renderer, tree, controls, preset };
+
+function frame() {
+  tree.update?.(performance.now() / 1000);
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+frame();
+
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
