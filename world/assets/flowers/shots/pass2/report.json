@@ -1,0 +1,87 @@
+{
+  "pass": "pass2",
+  "timestamp": "2026-10-29T13:19:12.821Z",
+  "consoleErrors": [],
+  "meadowDrawCalls": 6,
+  "fps": 139,
+  "species": {
+    "grassTuft": {
+      "id": "grassTuft",
+      "name": "Meadow Grass Tuft",
+      "triangles": 24,
+      "budget": 24,
+      "withinBudget": true
+    },
+    "bellflower": {
+      "id": "bellflower",
+      "name": "Violet Campanula Cluster",
+      "triangles": 96,
+      "budget": 96,
+      "withinBudget": true
+    },
+    "daisy": {
+      "id": "daisy",
+      "name": "Meadow Daisy Cluster",
+      "triangles": 88,
+      "budget": 88,
+      "withinBudget": true
+    },
+    "lupine": {
+      "id": "lupine",
+      "name": "Lavender Lupine Spike",
+      "triangles": 109,
+      "budget": 110,
+      "withinBudget": true
+    },
+    "cosmos": {
+      "id": "cosmos",
+      "name": "Rose-Pink Cosmos Cluster",
+      "triangles": 88,
+      "budget": 88,
+      "withinBudget": true
+    },
+    "toonShrub": {
+      "id": "toonShrub",
+      "name": "Cel-Shaded Village Bush",
+      "triangles": 140,
+      "budget": 140,
+      "withinBudget": true
+    }
+  },
+  "profiles": {
+    "tablet": {
+      "drawCalls": 6,
+      "grassRadius": 42,
+      "instanceCounts": {
+        "grassTuft": 22000,
+        "bellflower": 220,
+        "daisy": 260,
+        "lupine": 180,
+        "cosmos": 220,
+        "toonShrub": 85
+      }
+    },
+    "desktop": {
+      "drawCalls": 6,
+      "grassRadius": 56,
+      "instanceCounts": {
+        "grassTuft": 40000,
+        "bellflower": 340,
+        "daisy": 400,
+        "lupine": 280,
+        "cosmos": 340,
+        "toonShrub": 130
+      }
+    }
+  },
+  "shots": {
+    "grassTuft": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\flowers\\shots\\pass2\\grassTuft.png",
+    "bellflower": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\flowers\\shots\\pass2\\bellflower.png",
+    "daisy": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\flowers\\shots\\pass2\\daisy.png",
+    "lupine": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\flowers\\shots\\pass2\\lupine.png",
+    "cosmos": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\flowers\\shots\\pass2\\cosmos.png",
+    "toonShrub": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\flowers\\shots\\pass2\\toonShrub.png",
+    "meadow-drift": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\flowers\\shots\\pass2\\meadow-drift.png",
+    "species-sheet": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\flowers\\shots\\pass2\\species-sheet.png"
+  }
+}

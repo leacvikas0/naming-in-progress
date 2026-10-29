@@ -1,0 +1,195 @@
+{
+  "pass": "assembled-v1",
+  "timestamp": "2026-10-29T14:56:51.056Z",
+  "budgets": {
+    "desktopMaxDrawCalls": 60,
+    "desktopMaxTriangles": 620000,
+    "tabletMaxDrawCalls": 48,
+    "tabletMaxTriangles": 380000
+  },
+  "consoleErrors": [],
+  "shots": {
+    "day-plaza": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\assembled-v1\\day-plaza.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 107,
+      "frameMs": 0.29,
+      "draws": 41,
+      "composerDraws": 52,
+      "triangles": 596394,
+      "bloomStrength": 0.16,
+      "playerPos": {
+        "x": 1.5,
+        "y": 0,
+        "z": 11.5
+      }
+    },
+    "day-mill-pier": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\assembled-v1\\day-mill-pier.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 128,
+      "frameMs": 0.29,
+      "draws": 40,
+      "composerDraws": 51,
+      "triangles": 594246,
+      "bloomStrength": 0.16,
+      "playerPos": {
+        "x": -38.5,
+        "y": -0.3,
+        "z": 8.5
+      }
+    },
+    "day-arena-wisteria": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\assembled-v1\\day-arena-wisteria.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 105,
+      "frameMs": 0.23,
+      "draws": 24,
+      "composerDraws": 35,
+      "triangles": 543930,
+      "bloomStrength": 0.16,
+      "playerPos": {
+        "x": 46,
+        "y": 0.6,
+        "z": -3.5
+      }
+    },
+    "day-shrine-arch": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\assembled-v1\\day-shrine-arch.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 117,
+      "frameMs": 0.14,
+      "draws": 24,
+      "composerDraws": 35,
+      "triangles": 543930,
+      "bloomStrength": 0.16,
+      "playerPos": {
+        "x": 0,
+        "y": 8,
+        "z": -76.5
+      }
+    },
+    "evening-sunset-vista": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\assembled-v1\\evening-sunset-vista.png",
+      "profile": "desktop",
+      "timeOfDay": "evening",
+      "todT": 0.76,
+      "fps": 117,
+      "frameMs": 0.29,
+      "draws": 45,
+      "composerDraws": 56,
+      "triangles": 605090,
+      "bloomStrength": 0.24,
+      "playerPos": {
+        "x": 0,
+        "y": 7.5,
+        "z": -68
+      }
+    },
+    "night-moon-shrine": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\assembled-v1\\night-moon-shrine.png",
+      "profile": "desktop",
+      "timeOfDay": "night",
+      "todT": 0.96,
+      "fps": 108,
+      "frameMs": 0.15,
+      "draws": 24,
+      "composerDraws": 35,
+      "triangles": 543930,
+      "bloomStrength": 0.32,
+      "playerPos": {
+        "x": 0,
+        "y": 8,
+        "z": -76.5
+      }
+    },
+    "night-plaza-lanterns": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\assembled-v1\\night-plaza-lanterns.png",
+      "profile": "desktop",
+      "timeOfDay": "night",
+      "todT": 0.96,
+      "fps": 144,
+      "frameMs": 0.22,
+      "draws": 43,
+      "composerDraws": 54,
+      "triangles": 596042,
+      "bloomStrength": 0.32,
+      "playerPos": {
+        "x": 1.8,
+        "y": 0,
+        "z": 8.5
+      }
+    },
+    "aerial-masterplan": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\assembled-v1\\aerial-masterplan.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 110,
+      "frameMs": 0.28,
+      "draws": 51,
+      "composerDraws": 62,
+      "triangles": 611102,
+      "bloomStrength": 0.16,
+      "playerPos": {
+        "x": 0,
+        "y": 0,
+        "z": 14
+      }
+    }
+  },
+  "profiles": {
+    "desktop": {
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 144,
+      "frameMs": 0.28,
+      "draws": 41,
+      "composerDraws": 52,
+      "triangles": 596394,
+      "bloomStrength": 0.16,
+      "playerPos": {
+        "x": 1.5,
+        "y": 0,
+        "z": 11.5
+      }
+    },
+    "tablet": {
+      "profile": "tablet",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 144,
+      "frameMs": 0.25,
+      "draws": 41,
+      "composerDraws": 52,
+      "triangles": 368929,
+      "bloomStrength": 0.16,
+      "playerPos": {
+        "x": 1.5,
+        "y": 0,
+        "z": 11.5
+      }
+    }
+  },
+  "summary": {
+    "maxSceneDrawCalls": 51,
+    "minSceneDrawCalls": 24,
+    "maxSceneTriangles": 611102,
+    "minSceneTriangles": 543930,
+    "desktopDraws": 41,
+    "desktopTriangles": 596394,
+    "tabletDraws": 41,
+    "tabletTriangles": 368929,
+    "consoleErrorCount": 0,
+    "passesAllBudgets": true
+  }
+}

@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import {
+  PLAY_BOUNDARY_RADIUS,
   ZONES,
   BUILDINGS,
   LANDMARKS,
@@ -33,13 +34,13 @@ renderer.toneMappingExposure = 1.04;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xcfeaf8);
-scene.fog = new THREE.Fog(0xd8eef8, 95, 290);
+scene.fog = new THREE.Fog(0xd8eef8, 150, 520);
 
 const camera = new THREE.PerspectiveCamera(
   50,
   window.innerWidth / window.innerHeight,
   0.1,
-  500
+  900
 );
 
 // Sun + Hemisphere + Rim Lighting matching house3d's clean cel-shaded look
@@ -64,8 +65,8 @@ scene.add(playerGroup);
 
 const player = {
   x: 0,
-  z: 22,
-  y: walkableHeightAt(0, 22),
+  z: 26,
+  y: walkableHeightAt(0, 26),
   vy: 0,
   yaw: Math.PI, // facing North (-Z) into the Hamlet Well Plaza
   speed: 7.5,
@@ -82,8 +83,8 @@ const camState = {
   yaw: Math.PI,
   pitch: 0.34,
   dist: 8.8,
-  vistaPos: new THREE.Vector3(0, 45, 75),
-  vistaTarget: new THREE.Vector3(0, 2, -8),
+  vistaPos: new THREE.Vector3(0, 118, 142),
+  vistaTarget: new THREE.Vector3(0, 0, -10),
 };
 
 export const VIEWS = {
@@ -92,74 +93,74 @@ export const VIEWS = {
     label: '1 · South Road Entry (Player Walk)',
     mode: 'player',
     px: 0,
-    pz: 23,
+    pz: 26,
     yaw: Math.PI,
-    pitch: 0.28,
-    dist: 8.5,
+    pitch: 0.25,
+    dist: 9.0,
   },
   plaza: {
     id: 'plaza',
     label: '2 · Hamlet Well Plaza & 4 Cottages',
     mode: 'player',
-    px: 2.5,
-    pz: 6.5,
-    yaw: Math.PI + 0.35,
-    pitch: 0.30,
-    dist: 9.0,
+    px: 2.8,
+    pz: 7.8,
+    yaw: Math.PI + 0.32,
+    pitch: 0.28,
+    dist: 9.5,
   },
   mill: {
     id: 'mill',
     label: '3 · Waterfall, Watermill & Pier',
     mode: 'player',
-    px: -22.2,
-    pz: 7.5,
-    yaw: Math.PI - 0.25,
+    px: -39.5,
+    pz: 8.5,
+    yaw: Math.PI + 0.46,
     pitch: 0.22,
-    dist: 9.2,
+    dist: 15.0,
   },
   arena: {
     id: 'arena',
     label: '4 · East Wisteria Combat Ring',
     mode: 'player',
-    px: 26.5,
-    pz: -3.5,
-    yaw: 1.48,
-    pitch: 0.28,
-    dist: 9.5,
+    px: 42.5,
+    pz: -4.0,
+    yaw: 1.54,
+    pitch: 0.14,
+    dist: 11.8,
   },
   shrine: {
     id: 'shrine',
     label: '5 · North Shrine Overlook & Vista',
     mode: 'player',
-    px: 4.0,
-    pz: -49.5,
+    px: 0.0,
+    pz: -74.5,
     yaw: Math.PI,
-    pitch: 0.24,
-    dist: 9.2,
+    pitch: 0.10,
+    dist: 11.2,
   },
   shrineLookback: {
     id: 'shrineLookback',
     label: '6 · Shrine Overlook -> Town & Lake',
     mode: 'vista',
-    pos: [-1.8, 12.2, -55.0],
-    target: [-10.0, -1.5, 6.0],
-    fov: 54,
+    pos: [0.0, 17.5, -75.0],
+    target: [-3.5, -0.5, 8.0],
+    fov: 60,
   },
   aerial: {
     id: 'aerial',
     label: '7 · Bird’s-Eye Masterplan',
     mode: 'vista',
-    pos: [-10, 66, 76],
-    target: [0, 1, -10],
-    fov: 46,
+    pos: [-16, 118, 142],
+    target: [0, 0, -10],
+    fov: 48,
   },
   topdown: {
     id: 'topdown',
     label: '8 · Top-Down Architectural Map',
     mode: 'vista',
-    pos: [0, 142, -8],
-    target: [0, 0, -8.1],
-    fov: 44,
+    pos: [0, 260, -6],
+    target: [0, 0, -6.1],
+    fov: 46,
   },
 };
 
@@ -193,7 +194,7 @@ function setView(id) {
     camState.mode = 'vista';
     camState.vistaPos.set(...v.pos);
     camState.vistaTarget.set(...v.target);
-    camera.fov = v.fov || 46;
+    camera.fov = v.fov || 48;
     camera.updateProjectionMatrix();
   }
   updateCamera();
@@ -269,7 +270,7 @@ canvas.addEventListener(
   'wheel',
   (e) => {
     if (camState.mode === 'player') {
-      camState.dist = clamp(camState.dist + e.deltaY * 0.008, 4.5, 22);
+      camState.dist = clamp(camState.dist + e.deltaY * 0.008, 4.5, 24);
     } else {
       const offset = camState.vistaPos.clone().sub(camState.vistaTarget);
       offset.multiplyScalar(clamp(1 + e.deltaY * 0.001, 0.8, 1.25));
@@ -280,12 +281,23 @@ canvas.addEventListener(
 );
 
 // ============================================================================
-// COLLISION RESOLUTION & PLAYER LOCOMOTION
+// COLLISION RESOLUTION, TOROIDAL BOUNDARY WRAP & PLAYER LOCOMOTION
 // ============================================================================
 
 function resolveCollisions(px, pz, radius) {
   let x = px;
   let z = pz;
+  let wrapped = false;
+
+  // Toroidal Boundary Teleport: crossing PLAY_BOUNDARY_RADIUS (125m) wraps to the opposite side of the valley
+  if (Math.hypot(x, z) > PLAY_BOUNDARY_RADIUS) {
+    const angle = Math.atan2(z, x) + Math.PI;
+    const wrapR = PLAY_BOUNDARY_RADIUS - 6;
+    x = Math.cos(angle) * wrapR;
+    z = Math.sin(angle) * wrapR;
+    wrapped = true;
+  }
+
   for (const c of world.colliders) {
     if (c.type === 'circle') {
       const dx = x - c.x;
@@ -328,9 +340,8 @@ function resolveCollisions(px, pz, radius) {
       }
     }
   }
-  x = clamp(x, -92, 92);
-  z = clamp(z, -92, 92);
-  return { x, z };
+
+  return { x, z, wrapped };
 }
 
 function updatePlayer(dt) {
@@ -341,6 +352,7 @@ function updatePlayer(dt) {
   if (keys.has('d') || keys.has('arrowright')) right += 1;
   if (keys.has('a') || keys.has('arrowleft')) right -= 1;
 
+  let didWrap = false;
   const mag = Math.hypot(fwd, right);
   if (mag > 1e-4) {
     fwd /= mag;
@@ -360,6 +372,7 @@ function updatePlayer(dt) {
     );
     player.x = next.x;
     player.z = next.z;
+    didWrap = next.wrapped;
 
     const targetYaw = Math.atan2(moveX, moveZ);
     let diff = (targetYaw - player.yaw) % (Math.PI * 2);
@@ -369,7 +382,11 @@ function updatePlayer(dt) {
   }
 
   const floorY = walkableHeightAt(player.x, player.z);
-  if (keys.has(' ') && player.grounded) {
+  if (didWrap) {
+    player.y = floorY;
+    player.vy = 0;
+    player.grounded = true;
+  } else if (keys.has(' ') && player.grounded) {
     player.vy = 7.2;
     player.grounded = false;
   }
@@ -426,27 +443,27 @@ const LABEL_POINTS = [
     kind: 'zone',
   },
   {
-    title: '5.4m Waterfall & Timber Flume',
-    sub: 'Zone B Hydro Drop · y=+4.2m -> -1.2m',
-    pos: new THREE.Vector3(-33.5, 6.2, -18.5),
+    title: '6.4m Waterfall & Timber Flume',
+    sub: 'Zone B Hydro Drop · y=+5.2m -> -1.2m',
+    pos: new THREE.Vector3(-50.2, 7.2, -20.5),
     kind: 'zone',
   },
   {
     title: 'Lakeside Wooden Pier',
-    sub: 'Zone B Dock (-27, 7.5) · y=-0.35m',
-    pos: new THREE.Vector3(-27, 2.2, 7.5),
+    sub: 'Zone B Dock (-43.5, 8.5) · y=-0.35m',
+    pos: new THREE.Vector3(-43.5, 2.2, 8.5),
     kind: 'zone',
   },
   {
     title: 'Wisteria Combat Ring',
-    sub: 'Zone C Arena (42, -4) · y=+0.6m · r=16m',
-    pos: new THREE.Vector3(42, 6.2, -4),
+    sub: 'Zone C Arena (68, -4) · y=+0.6m · r=19.5m',
+    pos: new THREE.Vector3(68, 6.2, -4),
     kind: 'zone',
   },
   {
     title: 'Northern Shrine Arch & Medallion',
-    sub: 'Zone D Overlook (4, -56) · y=+6.5m',
-    pos: new THREE.Vector3(4, 12.8, -59),
+    sub: 'Zone D Overlook (0, -86) · y=+8.0m',
+    pos: new THREE.Vector3(0, 15.6, -90),
     kind: 'zone',
   },
 ];
@@ -561,8 +578,30 @@ window.__BLOCKOUT__ = {
   player,
   camState,
   VIEWS,
+  PLAY_BOUNDARY_RADIUS,
   setView,
   toggleLabels,
+  testBoundaryWrap() {
+    const saved = { x: player.x, y: player.y, z: player.z, yaw: player.yaw };
+    const startX = PLAY_BOUNDARY_RADIUS + 4.0;
+    const startZ = 0.0;
+    const next = resolveCollisions(startX, startZ, player.radius);
+    player.x = next.x;
+    player.z = next.z;
+    player.y = walkableHeightAt(player.x, player.z);
+    const result = {
+      boundaryRadius: PLAY_BOUNDARY_RADIUS,
+      before: { x: startX, z: startZ },
+      after: { x: player.x, y: player.y, z: player.z },
+      wrapped: Boolean(next.wrapped && player.x < -(PLAY_BOUNDARY_RADIUS - 12)),
+    };
+    player.x = saved.x;
+    player.y = saved.y;
+    player.z = saved.z;
+    player.yaw = saved.yaw;
+    playerGroup.position.set(player.x, player.y, player.z);
+    return result;
+  },
   getStats() {
     const info = renderer.info.render;
     return {

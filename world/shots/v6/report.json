@@ -1,0 +1,123 @@
+{
+  "outTag": "v6",
+  "errors": [],
+  "boundaryWrapTest": {
+    "boundaryRadius": 125,
+    "before": {
+      "x": 129,
+      "z": 0
+    },
+    "after": {
+      "x": -119,
+      "y": 3.363191522157864,
+      "z": 1.4573296909853505e-14
+    },
+    "wrapped": true
+  },
+  "views": {
+    "entry": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v6\\entry.png",
+      "stats": {
+        "fps": 97,
+        "draws": 64,
+        "triangles": 275090,
+        "playerPos": {
+          "x": 0,
+          "y": 0,
+          "z": 26
+        }
+      }
+    },
+    "plaza": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v6\\plaza.png",
+      "stats": {
+        "fps": 101,
+        "draws": 71,
+        "triangles": 274874,
+        "playerPos": {
+          "x": 2.8,
+          "y": 0,
+          "z": 7.8
+        }
+      }
+    },
+    "mill": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v6\\mill.png",
+      "stats": {
+        "fps": 99,
+        "draws": 98,
+        "triangles": 259166,
+        "playerPos": {
+          "x": -39.5,
+          "y": -0.35,
+          "z": 8.5
+        }
+      }
+    },
+    "arena": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v6\\arena.png",
+      "stats": {
+        "fps": 91,
+        "draws": 28,
+        "triangles": 270248,
+        "playerPos": {
+          "x": 42.5,
+          "y": 0.16948411158605953,
+          "z": -4
+        }
+      }
+    },
+    "shrine": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v6\\shrine.png",
+      "stats": {
+        "fps": 81,
+        "draws": 30,
+        "triangles": 271816,
+        "playerPos": {
+          "x": 0,
+          "y": 8,
+          "z": -74.5
+        }
+      }
+    },
+    "shrineLookback": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v6\\shrineLookback.png",
+      "stats": {
+        "fps": 64,
+        "draws": 79,
+        "triangles": 275830,
+        "playerPos": {
+          "x": 0,
+          "y": 8,
+          "z": -74.5
+        }
+      }
+    },
+    "aerial": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v6\\aerial.png",
+      "stats": {
+        "fps": 87,
+        "draws": 126,
+        "triangles": 277950,
+        "playerPos": {
+          "x": 0,
+          "y": 8,
+          "z": -74.5
+        }
+      }
+    },
+    "topdown": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\v6\\topdown.png",
+      "stats": {
+        "fps": 75,
+        "draws": 126,
+        "triangles": 277950,
+        "playerPos": {
+          "x": 0,
+          "y": 8,
+          "z": -74.5
+        }
+      }
+    }
+  }
+}

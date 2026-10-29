@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
+  PLAY_BOUNDARY_RADIUS,
   ZONES,
   BUILDINGS,
   LANDMARKS,
   TREES,
+  getBuildingDoorWorldPos,
   terrainHeightAt,
   roadDistanceAt,
   streamCenterX,
@@ -32,6 +34,7 @@ export const PALETTE = {
   dirtRoad: 0xd4b483,
   dirtEdge: 0xb89768,
   cobble: 0xc8c2b4,
+  sandBank: 0xdfc99b,
   arenaEarth: 0xd9c298,
   shrineStone: 0xe4decb,
   shrineAccent: 0x6f95ad,
@@ -205,6 +208,7 @@ export function createBlockoutWorld(scene) {
   staticArch.add(buildArenaFence(mats));
   staticArch.add(buildWoodenPier(mats));
   staticArch.add(buildShrineOverlook(mats, colliders));
+  staticArch.add(buildBoundaryMarkers(mats));
   root.add(batchStaticGroup(staticArch, 0.02));
 
   root.add(batchStaticGroup(buildTreesAndFlowerDrifts(mats, colliders), 0.02));
@@ -222,7 +226,7 @@ export function createBlockoutWorld(scene) {
 }
 
 function buildSkyDome() {
-  const geo = new THREE.SphereGeometry(320, 32, 20);
+  const geo = new THREE.SphereGeometry(780, 32, 20);
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
@@ -267,36 +271,77 @@ function buildDistantBackdrop(toon) {
   const group = new THREE.Group();
   group.name = 'distantBackdrop';
 
-  const ridgeMat = toon(0x88b4a6, { flatShading: true });
-  const farRidgeMat = toon(0xa2c6cc, { flatShading: true });
-  const count = 28;
-  for (let i = 0; i < count; i++) {
-    const a = (i / count) * Math.PI * 2;
-    const r = 185 + (i % 2) * 28;
-    const h = 26 + ((i * 7) % 19);
-    const w = 36 + ((i * 5) % 18);
-    const cone = new THREE.Mesh(
-      new THREE.ConeGeometry(w, h, 6),
-      i % 2 === 0 ? ridgeMat : farRidgeMat
+  const foothillMat = toon(0x7ea899, { flatShading: true });
+  const midRidgeMat = toon(0x8db0c2, { flatShading: true });
+  const farPeakMat = toon(0x9ec0d4, { flatShading: true });
+  const snowCapMat = toon(0xeaf4fa, { flatShading: true });
+
+  // Inner foothill ridge ring (r = 180m .. 220m, h = 20m .. 34m)
+  const foothillCount = 32;
+  for (let i = 0; i < foothillCount; i++) {
+    const a = (i / foothillCount) * Math.PI * 2;
+    const x = Math.cos(a);
+    const z = Math.sin(a);
+    // Keep southern approach pass slightly lower for scenic valley entry
+    const southPass = z > 0.85 && Math.abs(x) < 0.22 ? 0.55 : 1.0;
+    const r = 186 + (i % 3) * 14;
+    const h = (20 + ((i * 7) % 15)) * southPass;
+    const w = 38 + ((i * 5) % 18);
+    const ridge = new THREE.Mesh(
+      new THREE.ConeGeometry(w, h, 7),
+      i % 2 === 0 ? foothillMat : midRidgeMat
     );
-    cone.position.set(Math.cos(a) * r, h * 0.38 - 2, Math.sin(a) * r);
-    cone.rotation.y = a;
-    group.add(cone);
+    ridge.position.set(x * r, h * 0.42 + 2.0, z * r);
+    ridge.scale.set(1.35, 1.0, 0.85);
+    ridge.rotation.y = a + Math.PI * 0.5;
+    group.add(ridge);
+  }
+
+  // Outer high alpine mountain horizon ring (r = 235m .. 300m, h = 34m .. 52m) with snow/mist caps
+  const peakCount = 36;
+  for (let i = 0; i < peakCount; i++) {
+    const a = (i / peakCount) * Math.PI * 2 + 0.08;
+    const x = Math.cos(a);
+    const z = Math.sin(a);
+    const r = 242 + (i % 3) * 24;
+    const h = 34 + ((i * 11) % 19);
+    const w = 44 + ((i * 7) % 20);
+
+    const peak = new THREE.Mesh(
+      new THREE.ConeGeometry(w, h, 7),
+      i % 2 === 0 ? midRidgeMat : farPeakMat
+    );
+    const py = h * 0.46 + 4.0;
+    peak.position.set(x * r, py, z * r);
+    peak.rotation.y = a * 1.7;
+    group.add(peak);
+
+    if (h >= 38) {
+      const capH = h * 0.36;
+      const capW = w * 0.37;
+      const snowCap = new THREE.Mesh(
+        new THREE.ConeGeometry(capW, capH, 7),
+        snowCapMat
+      );
+      snowCap.position.set(x * r, py + h * 0.5 - capH * 0.48, z * r);
+      snowCap.rotation.y = peak.rotation.y;
+      group.add(snowCap);
+    }
   }
 
   const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2 + 0.3;
-    const r = 155 + (i % 3) * 22;
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2 + 0.25;
+    const r = 225 + (i % 3) * 28;
     const cluster = new THREE.Group();
-    cluster.position.set(Math.cos(a) * r, 48 + (i % 4) * 7, Math.sin(a) * r);
+    cluster.position.set(Math.cos(a) * r, 64 + (i % 4) * 8, Math.sin(a) * r);
     for (let j = 0; j < 4; j++) {
       const puff = new THREE.Mesh(
-        new THREE.DodecahedronGeometry(6 + (j === 1 ? 3 : 0), 1),
+        new THREE.DodecahedronGeometry(8 + (j === 1 ? 4 : 0), 1),
         cloudMat
       );
-      puff.position.set((j - 1.5) * 6.5, (j % 2) * 2.2, 0);
-      puff.scale.set(1.3, 0.72, 0.8);
+      puff.position.set((j - 1.5) * 8.5, (j % 2) * 2.8, 0);
+      puff.scale.set(1.35, 0.72, 0.85);
       cluster.add(puff);
     }
     group.add(cluster);
@@ -306,7 +351,7 @@ function buildDistantBackdrop(toon) {
 }
 
 function buildSmoothTerrainSplatTexture(size) {
-  const res = 1024;
+  const res = 2048;
   const canvas = document.createElement('canvas');
   canvas.width = res;
   canvas.height = res;
@@ -320,10 +365,18 @@ function buildSmoothTerrainSplatTexture(size) {
   const cDirt = new THREE.Color(PALETTE.dirtRoad);
   const cDirtEdge = new THREE.Color(PALETTE.dirtEdge);
   const cCobble = new THREE.Color(PALETTE.cobble);
+  const cSand = new THREE.Color(PALETTE.sandBank);
   const cArena = new THREE.Color(PALETTE.arenaEarth);
   const cShrine = new THREE.Color(PALETTE.shrineStone);
   const cLakeBed = new THREE.Color(0x3a94a0);
+  const cMountainRock = new THREE.Color(0x8899a2);
+  const cMountainMist = new THREE.Color(0xddeaf2);
   const col = new THREE.Color();
+
+  const buildingDoors = BUILDINGS.map((b) => ({
+    b,
+    door: getBuildingDoorWorldPos(b, 1.35),
+  }));
 
   for (let py = 0; py < res; py++) {
     const z = ((py + 0.5) / res - 0.5) * size;
@@ -331,66 +384,105 @@ function buildSmoothTerrainSplatTexture(size) {
       const x = ((px + 0.5) / res - 0.5) * size;
       const h = terrainHeightAt(x, z);
 
-      const n = noise2(x * 0.08, z * 0.08, 77);
+      const n = noise2(x * 0.06, z * 0.06, 77);
       col.copy(cGrassMid).lerp(cGrassLight, smoothstep(0.32, 0.82, n));
       if (n < 0.35) col.lerp(cGrassDark, (0.35 - n) * 1.45);
 
-      const rd = roadDistanceAt(x, z);
-      if (rd.road) {
-        const hw = rd.road.width * 0.5;
-        const edgeJitter = (noise2(x * 0.6, z * 0.6, 33) - 0.5) * 0.25;
-        const dEdge = rd.dist - (hw + edgeJitter);
-        const wBorder = 1.0 - smoothstep(-0.05, 0.22, dEdge);
-        const wRoad = 1.0 - smoothstep(-0.35, -0.08, dEdge);
-        if (wBorder > 0) {
-          const targetCol =
-            rd.road.surface === 'cobble'
-              ? cCobble
-              : rd.road.surface === 'stone_steps'
-              ? cShrine
-              : cDirt;
-          col.lerp(cDirtEdge, wBorder * 0.75);
-          col.lerp(targetCol, wRoad);
+      const distOrigin = Math.hypot(x, z);
+      if (distOrigin > 125) {
+        const wRock = smoothstep(9.5, 22.0, h) * smoothstep(125, 165, distOrigin);
+        if (wRock > 0) col.lerp(cMountainRock, wRock * 0.85);
+        const wSnow = smoothstep(24.0, 36.0, h) * smoothstep(160, 210, distOrigin);
+        if (wSnow > 0) col.lerp(cMountainMist, wSnow * 0.9);
+      }
+
+      // Warm sandy/pebbled shoreline bank (#dfc99b) where terrain height h is in [-1.25m, -0.35m] around Lake & Plunge Pool
+      const mp = ZONES.millpond;
+      const dPond = Math.hypot((x - mp.x) / mp.rx, (z - mp.z) / mp.rz);
+      const dPlunge = Math.hypot(
+        x - LANDMARKS.waterfall.x,
+        z - LANDMARKS.waterfall.z
+      ) / 14.0;
+      const nearShore = 1.0 - smoothstep(0.95, 1.18, Math.min(dPond, dPlunge));
+      if (nearShore > 0) {
+        const wSand =
+          nearShore *
+          smoothstep(-0.22, -0.45, h) *
+          (1.0 - smoothstep(-1.18, -1.55, h));
+        if (wSand > 0) col.lerp(cSand, wSand);
+      }
+
+      if (Math.abs(x) < 112 && Math.abs(z) < 112) {
+        const rd = roadDistanceAt(x, z);
+        if (rd.road) {
+          const hw = rd.road.width * 0.5;
+          const edgeJitter = (noise2(x * 0.6, z * 0.6, 33) - 0.5) * 0.25;
+          const dEdge = rd.dist - (hw + edgeJitter);
+          const wBorder = 1.0 - smoothstep(-0.05, 0.24, dEdge);
+          const wRoad = 1.0 - smoothstep(-0.35, -0.06, dEdge);
+          if (wBorder > 0) {
+            const targetCol =
+              rd.road.surface === 'cobble'
+                ? cCobble
+                : rd.road.surface === 'stone_steps'
+                ? cShrine
+                : cDirt;
+            col.lerp(cDirtEdge, wBorder * 0.72);
+            col.lerp(targetCol, wRoad);
+          }
         }
+
+        const dWell = Math.hypot(x - LANDMARKS.well.x, z - LANDMARKS.well.z);
+        const wWell =
+          1.0 -
+          smoothstep(
+            LANDMARKS.well.plazaRadius - 0.15,
+            LANDMARKS.well.plazaRadius + 0.15,
+            dWell
+          );
+        if (wWell > 0) col.lerp(cCobble, wWell);
+
+        // Smooth rounded cobblestone apron around each building & its computed (doorX, doorZ)
+        for (const { b, door } of buildingDoors) {
+          const cos = Math.cos(-b.rotY);
+          const sin = Math.sin(-b.rotY);
+          const lx = (x - b.x) * cos - (z - b.z) * sin;
+          const lz = (x - b.x) * sin + (z - b.z) * cos;
+          if (b.id === 'watermill' && lx < -b.w * 0.45) continue;
+
+          const frontExt = 1.65;
+          const sideExt = b.awning === 'forge_shed' && lx > 0 ? 2.8 : 0.45;
+          const halfW = b.w * 0.5 + (lx > 0 ? sideExt : 0.45);
+          const centerX = lx > 0 && b.awning === 'forge_shed' ? 1.1 : 0.0;
+          const dx = Math.max(0, Math.abs(lx - centerX) - halfW);
+          const dz = Math.max(
+            0,
+            Math.abs(lz - frontExt * 0.5) - (b.d * 0.5 + frontExt * 0.5)
+          );
+          const dApron = Math.hypot(dx, dz);
+          const wApron = 1.0 - smoothstep(0.55, 1.35, dApron);
+          if (wApron > 0) col.lerp(cCobble, wApron);
+
+          const dDoor = Math.hypot(x - door[0], z - door[1]);
+          const wDoor = 1.0 - smoothstep(2.0, 2.75, dDoor);
+          if (wDoor > 0) col.lerp(cCobble, wDoor);
+        }
+
+        const dArena = Math.hypot(x - ZONES.arena.x, z - ZONES.arena.z);
+        const wArenaOuter = 1.0 - smoothstep(18.6, 19.1, dArena);
+        const wArenaInner = 1.0 - smoothstep(16.8, 17.2, dArena);
+        if (wArenaOuter > 0) {
+          col.lerp(cCobble, wArenaOuter);
+          col.lerp(cArena, wArenaInner);
+        }
+
+        const dShrine = Math.hypot(x - ZONES.shrine.x, z - ZONES.shrine.z);
+        const wShrine = 1.0 - smoothstep(14.2, 14.6, dShrine);
+        if (wShrine > 0) col.lerp(cShrine, wShrine);
       }
-
-      const dWell = Math.hypot(x - LANDMARKS.well.x, z - LANDMARKS.well.z);
-      const wWell =
-        1.0 -
-        smoothstep(
-          LANDMARKS.well.plazaRadius - 0.12,
-          LANDMARKS.well.plazaRadius + 0.12,
-          dWell
-        );
-      if (wWell > 0) col.lerp(cCobble, wWell);
-
-      for (const b of BUILDINGS) {
-        const cos = Math.cos(-b.rotY);
-        const sin = Math.sin(-b.rotY);
-        const lx = (x - b.x) * cos - (z - b.z) * sin;
-        const lz = (x - b.x) * sin + (z - b.z) * cos;
-        const frontExt = b.id === 'watermill' && lz > 0 ? 2.2 : 0.7;
-        const dx = Math.max(0, Math.abs(lx) - (b.w * 0.5 + 0.35));
-        const dz = Math.max(0, Math.abs(lz - frontExt * 0.5) - (b.d * 0.5 + frontExt * 0.5));
-        const dApron = Math.hypot(dx, dz);
-        const wApron = 1.0 - smoothstep(0.55, 0.80, dApron);
-        if (wApron > 0) col.lerp(cCobble, wApron);
-      }
-
-      const dArena = Math.hypot(x - ZONES.arena.x, z - ZONES.arena.z);
-      const wArenaOuter = 1.0 - smoothstep(14.8, 15.1, dArena);
-      const wArenaInner = 1.0 - smoothstep(13.2, 13.5, dArena);
-      if (wArenaOuter > 0) {
-        col.lerp(cCobble, wArenaOuter);
-        col.lerp(cArena, wArenaInner);
-      }
-
-      const dShrine = Math.hypot(x - ZONES.shrine.x, z - ZONES.shrine.z);
-      const wShrine = 1.0 - smoothstep(9.7, 10.0, dShrine);
-      if (wShrine > 0) col.lerp(cShrine, wShrine);
 
       const wLake = smoothstep(
-        ZONES.millpond.waterY + 0.15,
+        ZONES.millpond.waterY + 0.05,
         ZONES.millpond.waterY - 0.45,
         h
       );
@@ -414,16 +506,35 @@ function buildSmoothTerrainSplatTexture(size) {
 }
 
 function buildTerrainMesh(gradientMap) {
-  const size = 220;
-  const segs = 220;
+  const size = 640;
+  const segs = 320;
   const geo = new THREE.PlaneGeometry(size, size, segs, segs);
   geo.rotateX(-Math.PI / 2);
+
+  const millB = BUILDINGS.find((b) => b.id === 'watermill');
+  const mCos = Math.cos(-millB.rotY);
+  const mSin = Math.sin(-millB.rotY);
 
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
     const z = pos.getZ(i);
-    pos.setY(i, terrainHeightAt(x, z));
+    let y = terrainHeightAt(x, z);
+
+    // Guarantee that every 2m grid vertex in the Waterwheel Tailrace channel sits at bedY (-3.0m)
+    // so no coarse triangle edge can ever bridge above waterY (-1.2m) underneath the wheel.
+    const lx = (x - millB.x) * mCos - (z - millB.z) * mSin;
+    const lz = (x - millB.x) * mSin + (z - millB.z) * mCos;
+    if (
+      lx <= -millB.w * 0.5 + 0.45 &&
+      lx >= -millB.w * 0.5 - 3.6 &&
+      lz >= -5.2 &&
+      lz <= 15.5
+    ) {
+      y = ZONES.millpond.bedY;
+    }
+
+    pos.setY(i, y);
   }
   geo.computeVertexNormals();
 
@@ -439,10 +550,10 @@ function buildTerrainMesh(gradientMap) {
 }
 
 function buildCurvedStreamMesh(mat) {
-  const segs = 24;
-  const zStart = -42.5;
-  const zEnd = -16.8;
-  const halfW = 1.65;
+  const segs = 28;
+  const zStart = -64.0;
+  const zEnd = LANDMARKS.waterfall.z;
+  const halfW = 1.85;
   const positions = [];
   const indices = [];
 
@@ -450,7 +561,7 @@ function buildCurvedStreamMesh(mat) {
     const t = i / segs;
     const z = lerp(zStart, zEnd, t);
     const cx = streamCenterX(z);
-    positions.push(cx - halfW, 4.16, z, cx + halfW, 4.16, z);
+    positions.push(cx - halfW, 5.18, z, cx + halfW, 5.18, z);
     if (i < segs) {
       const b = i * 2;
       indices.push(b, b + 2, b + 1, b + 1, b + 2, b + 3);
@@ -469,77 +580,130 @@ function buildWaterSystem(mats, animated) {
   group.name = 'waterSystem';
 
   const mp = ZONES.millpond;
+  const wf = LANDMARKS.waterfall;
+  const millB = BUILDINGS.find((b) => b.id === 'watermill');
+
   const lakeMat = new THREE.MeshBasicMaterial({
     color: PALETTE.waterShallow,
     transparent: true,
-    opacity: 0.90,
+    opacity: 0.92,
+  });
+  const foamMat = new THREE.MeshBasicMaterial({
+    color: PALETTE.waterFoam,
+    side: THREE.DoubleSide,
   });
 
-  const lakeGeo = new THREE.CircleGeometry(1, 48);
+  // Main Millpond Lake surface
+  const lakeGeo = new THREE.CircleGeometry(1, 56);
   lakeGeo.rotateX(-Math.PI / 2);
   lakeGeo.scale(mp.rx * 0.96, 1, mp.rz * 0.96);
   const lake = new THREE.Mesh(lakeGeo, lakeMat);
   lake.position.set(mp.x, mp.waterY, mp.z);
   group.add(lake);
 
+  // Waterfall Plunge Pool surface
   const plungePool = new THREE.Mesh(
-    new THREE.CircleGeometry(4.8, 24).rotateX(-Math.PI / 2),
+    new THREE.CircleGeometry(5.6, 28).rotateX(-Math.PI / 2),
     lakeMat
   );
-  plungePool.position.set(-30.5, mp.waterY + 0.01, -15.2);
+  plungePool.position.set(wf.x + 0.6, mp.waterY + 0.01, wf.z + 1.8);
   group.add(plungePool);
+
+  // Dedicated Waterwheel Tailrace Channel surface & White Foam Strip right under the Waterwheel paddles
+  const tailraceGroup = new THREE.Group();
+  tailraceGroup.position.set(millB.x, mp.waterY + 0.015, millB.z);
+  tailraceGroup.rotation.y = millB.rotY;
+
+  const tailraceWater = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.6, 11.5).rotateX(-Math.PI / 2),
+    lakeMat
+  );
+  tailraceWater.position.set(-millB.w * 0.5 - 1.35, 0, 0.8);
+  tailraceGroup.add(tailraceWater);
+
+  const wheelFoamStrip = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.75, 6.2).rotateX(-Math.PI / 2),
+    foamMat
+  );
+  wheelFoamStrip.position.set(-millB.w * 0.5 - 0.72, 0.02, 0.4);
+  tailraceGroup.add(wheelFoamStrip);
+  group.add(tailraceGroup);
 
   group.add(buildCurvedStreamMesh(lakeMat));
 
-  // Natural rock formations lining the stream banks and spring source
-  const rockCoords = [
-    [streamCenterX(-42.5), 4.6, -43.0, 2.2, 1.3, 0.7, 1.1],
-    [streamCenterX(-42.5) - 2.2, 4.4, -41.5, 1.6, 1.1, 0.75, 1.1],
-    [streamCenterX(-42.5) + 2.1, 4.4, -41.2, 1.5, 1.1, 0.75, 1.0],
-    [streamCenterX(-32.0) - 2.5, 4.2, -32.0, 1.3, 1.2, 0.65, 1.0],
-    [streamCenterX(-26.0) + 2.4, 4.2, -26.0, 1.2, 1.1, 0.65, 1.1],
-    [-34.6, 3.8, -17.5, 1.8, 1.2, 0.85, 1.1],
-    [-34.8, 1.6, -15.8, 2.0, 1.2, 0.9, 1.1],
+  // Terraced, flat-topped stratified cliff rock ledges framing the waterfall & stream (zero stacked spheres!)
+  const strataLedges = [
+    // Left & right tiered cliff ledges flanking the waterfall drop
+    { x: wf.x - 3.0, y: 2.1, z: wf.z - 0.4, w: 3.2, h: 4.4, d: 2.8, rotY: 0.18 },
+    { x: wf.x - 4.2, y: 0.8, z: wf.z + 1.4, w: 2.8, h: 2.6, d: 2.6, rotY: -0.12 },
+    { x: wf.x + 2.6, y: 2.3, z: wf.z - 1.4, w: 2.6, h: 4.4, d: 2.4, rotY: 0.35 },
+    { x: wf.x - 1.6, y: 4.6, z: wf.z - 2.2, w: 2.6, h: 1.4, d: 2.2, rotY: 0.08 },
+    // Northern Headwaters Rock Spring Grotto & shelf strata slabs
+    { x: streamCenterX(-64.0), y: 5.8, z: -65.2, w: 5.4, h: 2.2, d: 3.2, rotY: 0.08 },
+    { x: streamCenterX(-64.0) - 2.6, y: 5.4, z: -63.2, w: 2.8, h: 1.5, d: 2.6, rotY: 0.25 },
+    { x: streamCenterX(-64.0) + 2.6, y: 5.4, z: -63.2, w: 2.8, h: 1.5, d: 2.6, rotY: -0.22 },
+    { x: streamCenterX(-50.0) - 3.0, y: 5.3, z: -50.0, w: 2.6, h: 0.9, d: 2.2, rotY: -0.2 },
+    { x: streamCenterX(-36.0) + 2.9, y: 5.3, z: -36.0, w: 2.4, h: 0.85, d: 2.0, rotY: 0.25 },
   ];
-  for (const [rx, ry, rz, rs, sx, sy, sz] of rockCoords) {
-    const rock = attachOutline(
-      new THREE.Mesh(new THREE.DodecahedronGeometry(rs, 0), mats.cliff),
+  for (const s of strataLedges) {
+    const ledgeGroup = new THREE.Group();
+    ledgeGroup.position.set(s.x, s.y, s.z);
+    ledgeGroup.rotation.y = s.rotY;
+
+    const mainSlab = attachOutline(
+      new THREE.Mesh(new THREE.BoxGeometry(s.w, s.h, s.d), mats.cliff),
       0.018
     );
-    rock.position.set(rx, ry, rz);
-    rock.scale.set(sx, sy, sz);
-    group.add(rock);
+    ledgeGroup.add(mainSlab);
+
+    // Upper flat stratified stone shelf cap
+    const capSlab = attachOutline(
+      new THREE.Mesh(
+        new THREE.BoxGeometry(s.w * 0.86, 0.36, s.d * 0.86),
+        mats.stoneDark
+      ),
+      0.014
+    );
+    capSlab.position.y = s.h * 0.5 + 0.18;
+    ledgeGroup.add(capSlab);
+    group.add(ledgeGroup);
   }
 
-  // Timber Trestle Headrace Flume feeding water over the top of the Waterwheel
+  // Timber Trestle Headrace Flume carrying water from the NW stream shelf over the Waterwheel
   const flumeGroup = new THREE.Group();
-  flumeGroup.position.set(-30.8, 3.88, -15.8);
-  flumeGroup.rotation.y = 0.38;
+  flumeGroup.position.set(millB.x, 0, millB.z);
+  flumeGroup.rotation.y = millB.rotY;
+
+  const flumeX = -millB.w * 0.5 - 0.72;
+  const flumeY = 4.25;
+  const flumeLen = 6.2;
   const trough = attachOutline(
-    new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.48, 4.8), mats.timber),
+    new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.48, flumeLen), mats.timber),
     0.016
   );
+  trough.position.set(flumeX, flumeY, -2.6);
   flumeGroup.add(trough);
 
-  // Two vertical timber trestle legs supporting the flume so it never floats
-  for (const tz of [-1.4, 1.4]) {
-    for (const tx of [-0.65, 0.65]) {
+  for (const tz of [-5.0, -1.8]) {
+    for (const tx of [flumeX - 0.58, flumeX + 0.58]) {
       const leg = attachOutline(
-        new THREE.Mesh(new THREE.BoxGeometry(0.18, 3.6, 0.18), mats.timber),
+        new THREE.Mesh(new THREE.BoxGeometry(0.2, 6.2, 0.2), mats.timber),
         0.012
       );
-      leg.position.set(tx, -1.8, tz);
+      leg.position.set(tx, flumeY - 3.2, tz);
       flumeGroup.add(leg);
     }
   }
 
-  const flumeWater = new THREE.Mesh(new THREE.PlaneGeometry(1.32, 4.7), lakeMat);
-  flumeWater.rotation.x = -Math.PI / 2;
-  flumeWater.position.y = 0.26;
+  const flumeWater = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.24, flumeLen - 0.15).rotateX(-Math.PI / 2),
+    lakeMat
+  );
+  flumeWater.position.set(flumeX, flumeY + 0.25, -2.6);
   flumeGroup.add(flumeWater);
   group.add(flumeGroup);
 
-  const wf = LANDMARKS.waterfall;
+  // Animated Waterfall Curtain
   const fallH = wf.topY - wf.bottomY;
   const fallGeo = new THREE.PlaneGeometry(wf.width, fallH, 8, 16);
   const fallMat = new THREE.ShaderMaterial({
@@ -573,17 +737,17 @@ function buildWaterSystem(mats, animated) {
   });
   const waterfallMesh = new THREE.Mesh(fallGeo, fallMat);
   waterfallMesh.position.set(wf.x, (wf.topY + wf.bottomY) * 0.5, wf.z);
-  waterfallMesh.rotation.y = 0.38;
-  waterfallMesh.rotation.x = -0.22;
+  waterfallMesh.rotation.y = millB.rotY;
+  waterfallMesh.rotation.x = -0.2;
   waterfallMesh.userData.dynamic = true;
   group.add(waterfallMesh);
 
   const foamRing = new THREE.Mesh(
-    new THREE.RingGeometry(0.9, 3.6, 24),
-    new THREE.MeshBasicMaterial({ color: PALETTE.waterFoam, side: THREE.DoubleSide })
+    new THREE.RingGeometry(1.1, 4.2, 28),
+    foamMat
   );
   foamRing.rotation.x = -Math.PI / 2;
-  foamRing.position.set(wf.x + 0.5, mp.waterY + 0.04, wf.z + 1.0);
+  foamRing.position.set(wf.x + 0.5, mp.waterY + 0.04, wf.z + 1.2);
   foamRing.userData.dynamic = true;
   group.add(foamRing);
 
@@ -657,7 +821,8 @@ function buildHouseBlockout(b, mats, gradientMap, colliders, animated, dynamicRo
 
   const roofMat = new THREE.MeshToonMaterial({ color: b.roofColor, gradientMap });
 
-  const plinthH = 2.15;
+  // Deep stone plinth reaching cleanly into the terrain / water channel bed
+  const plinthH = b.id === 'watermill' ? 3.8 : 2.25;
   const plinth = markOutline(
     new THREE.Mesh(new THREE.BoxGeometry(b.w + 0.36, plinthH, b.d + 0.36), mats.stone)
   );
@@ -675,7 +840,7 @@ function buildHouseBlockout(b, mats, gradientMap, colliders, animated, dynamicRo
   gableFill.position.y = 0.55 + b.wallH;
   group.add(gableFill);
 
-  // Timber frame posts on all 4 corners + center studs on side & back walls
+  // Timber frame posts on all 4 corners + side gable king-post studs
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
       const post = new THREE.Mesh(
@@ -694,7 +859,6 @@ function buildHouseBlockout(b, mats, gradientMap, colliders, animated, dynamicRo
       brace.rotation.z = sx * 0.55;
       group.add(brace);
     }
-    // Side gable king-post & mid-stud
     const sideStud = new THREE.Mesh(
       new THREE.BoxGeometry(0.14, b.wallH + b.roofH - 0.3, 0.22),
       mats.timber
@@ -726,70 +890,113 @@ function buildHouseBlockout(b, mats, gradientMap, colliders, animated, dynamicRo
   ridgeBeam.position.set(0, 0.55 + b.wallH + b.roofH, 0);
   group.add(ridgeBeam);
 
+  // Flush front cross-gable (w * 0.46, matching eave & ridge height cleanly without protruding wall box seams)
   if (b.crossGable) {
-    const cgW = b.w * 0.40;
-    const cgBody = markOutline(
-      new THREE.Mesh(new THREE.BoxGeometry(cgW, b.wallH, 1.2), mats.stucco)
-    );
-    cgBody.position.set(0, 0.55 + b.wallH * 0.5, b.d * 0.5 + 0.25);
-    group.add(cgBody);
+    const cgW = b.w * 0.46;
+    const cgDepth = b.d * 0.54;
+    const cgRise = b.roofH * 0.96;
+
+    const cgFillGeo = buildGableRoofGeometry(cgDepth - 0.08, cgW - 0.12, cgRise - 0.06, 0.0);
+    const cgFill = new THREE.Mesh(cgFillGeo, mats.stucco);
+    cgFill.rotation.y = Math.PI * 0.5;
+    cgFill.position.set(0, 0.55 + b.wallH, b.d * 0.5 - cgDepth * 0.48);
+    group.add(cgFill);
 
     const cgRoof = markOutline(
-      new THREE.Mesh(buildGableRoofGeometry(1.5, cgW, b.roofH * 0.72, 0.28), roofMat)
+      new THREE.Mesh(buildGableRoofGeometry(cgDepth, cgW, cgRise, 0.28), roofMat)
     );
     cgRoof.rotation.y = Math.PI * 0.5;
-    cgRoof.position.set(0, 0.55 + b.wallH, b.d * 0.5 + 0.15);
+    cgRoof.position.set(0, 0.55 + b.wallH, b.d * 0.5 - cgDepth * 0.48);
     group.add(cgRoof);
+
+    addWindowUnit(
+      group,
+      mats,
+      0,
+      0.55 + b.wallH + cgRise * 0.38,
+      b.d * 0.5 + 0.05,
+      0,
+      0.92,
+      1.05
+    );
   }
 
-  if (b.dormer) {
-    const dx = b.crossGable ? b.w * 0.30 : 0.85;
-    const dy = 0.55 + b.wallH + b.roofH * 0.42;
-    const dz = b.d * 0.35;
+  // Setback roof dormer whose ridge & rear slope stay well below the main roof ridge
+  if (b.dormer && !b.crossGable) {
+    const dx = 0.85;
+    const dy = 0.55 + b.wallH + b.roofH * 0.26;
+    const dz = b.d * 0.28;
     const dBox = markOutline(
-      new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.05, 1.4), mats.stucco)
+      new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.82, 1.15), mats.stucco)
     );
     dBox.position.set(dx, dy, dz);
     group.add(dBox);
 
     const dRoof = markOutline(
-      new THREE.Mesh(buildGableRoofGeometry(1.45, 1.4, 0.62, 0.18), roofMat)
+      new THREE.Mesh(buildGableRoofGeometry(1.22, 1.25, 0.44, 0.16), roofMat)
     );
     dRoof.rotation.y = Math.PI * 0.5;
-    dRoof.position.set(dx, dy + 0.52, dz);
+    dRoof.position.set(dx, dy + 0.41, dz);
     group.add(dRoof);
 
-    const dWin = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.68, 0.14), mats.window);
-    dWin.position.set(dx, dy + 0.05, dz + 0.72);
+    const dWin = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.54, 0.14), mats.window);
+    dWin.position.set(dx, dy + 0.02, dz + 0.58);
     group.add(dWin);
   }
 
+  // Stone chimney with projecting stone collar, beveled chimney cap & flue pot
   if (b.chimneySide !== 0) {
     const chW = b.heavyForge ? 1.15 : 0.92;
     const chH = b.wallH + b.roofH + (b.heavyForge ? 1.35 : 1.05);
+    const chX = b.chimneySide * (b.w * 0.34);
+    const chZ = -b.d * 0.22;
+    const topY = 0.55 + chH;
+
     const chimney = markOutline(
       new THREE.Mesh(new THREE.BoxGeometry(chW, chH, chW), mats.stoneDark)
     );
-    chimney.position.set(b.chimneySide * (b.w * 0.34), 0.55 + chH * 0.5, -b.d * 0.22);
+    chimney.position.set(chX, 0.55 + chH * 0.5, chZ);
     group.add(chimney);
+
+    const collar = markOutline(
+      new THREE.Mesh(new THREE.BoxGeometry(chW + 0.22, 0.18, chW + 0.22), mats.stone)
+    );
+    collar.position.set(chX, topY - 0.28, chZ);
+    group.add(collar);
+
+    const cap = markOutline(
+      new THREE.Mesh(new THREE.BoxGeometry(chW + 0.32, 0.22, chW + 0.32), mats.stone)
+    );
+    cap.position.set(chX, topY + 0.08, chZ);
+    group.add(cap);
+
+    const fluePot = markOutline(
+      new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.25, 0.36, 8), mats.iron)
+    );
+    fluePot.position.set(chX, topY + 0.34, chZ);
+    group.add(fluePot);
   }
 
-  const doorFrontZ = b.d * 0.5 + (b.crossGable ? 0.85 : 0.02);
+  // Every building has its front door flush at lz = +b.d * 0.5 and 2.3m-wide front steps extending to +b.d * 0.5 + 1.35
+  const doorFrontZ = b.d * 0.5;
   if (b.awning === 'front_porch') {
+    // Porch canopy (w = 4.2m) centered over lx = 0, posts at lx = -1.75 and +1.75 straddling outside the 2.3m steps
     const porchRoof = markOutline(
-      new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.22, 2.3), roofMat)
+      new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.22, 2.2), roofMat)
     );
     porchRoof.position.set(0, 3.35, doorFrontZ + 0.95);
     porchRoof.rotation.x = 0.22;
     group.add(porchRoof);
-    for (const px of [-2.4, 2.4]) {
-      const pPost = new THREE.Mesh(new THREE.BoxGeometry(0.22, 3.1, 0.22), mats.timber);
-      pPost.position.set(px, 1.55, doorFrontZ + 1.85);
+    for (const px of [-1.75, 1.75]) {
+      const pPost = markOutline(
+        new THREE.Mesh(new THREE.BoxGeometry(0.22, 3.15, 0.22), mats.timber)
+      );
+      pPost.position.set(px, 1.52, doorFrontZ + 1.75);
       group.add(pPost);
     }
-    // Proper outdoor wooden table with 4 legs + 2 benches
-    const tx = -3.4;
-    const tz = doorFrontZ + 1.5;
+    // Outdoor wooden table with 4 legs + 2 benches set cleanly to the side of the porch
+    const tx = -3.55;
+    const tz = doorFrontZ + 1.35;
     const tableTop = markOutline(
       new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.12, 0.95), mats.timber)
     );
@@ -840,6 +1047,7 @@ function buildHouseBlockout(b, mats, gradientMap, colliders, animated, dynamicRo
     ghRoof.rotation.z = 0.22;
     group.add(ghRoof);
   } else if (b.awning === 'forge_shed') {
+    // Open-sided forge shed awning on the +X side wall
     const shedRoof = markOutline(
       new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.22, 4.4), roofMat)
     );
@@ -847,7 +1055,9 @@ function buildHouseBlockout(b, mats, gradientMap, colliders, animated, dynamicRo
     shedRoof.rotation.z = -0.26;
     group.add(shedRoof);
     for (const sz of [-1.4, 2.2]) {
-      const sPost = new THREE.Mesh(new THREE.BoxGeometry(0.22, 3.0, 0.22), mats.timber);
+      const sPost = markOutline(
+        new THREE.Mesh(new THREE.BoxGeometry(0.22, 3.0, 0.22), mats.timber)
+      );
       sPost.position.set(b.w * 0.5 + 3.1, 1.5, sz);
       group.add(sPost);
     }
@@ -885,9 +1095,9 @@ function buildHouseBlockout(b, mats, gradientMap, colliders, animated, dynamicRo
 
   for (let s = 0; s < 2; s++) {
     const step = markOutline(
-      new THREE.Mesh(new THREE.BoxGeometry(2.3 - s * 0.25, 0.75, 0.68), mats.stone)
+      new THREE.Mesh(new THREE.BoxGeometry(2.3 - s * 0.22, 0.75, 0.68), mats.stone)
     );
-    step.position.set(0, (1 - s) * 0.24 - 0.12, doorFrontZ + 0.42 + s * 0.46);
+    step.position.set(0, (1 - s) * 0.24 - 0.12, doorFrontZ + 0.42 + s * 0.48);
     group.add(step);
   }
 
@@ -897,7 +1107,7 @@ function buildHouseBlockout(b, mats, gradientMap, colliders, animated, dynamicRo
     group.add(lantern);
   }
 
-  // Windows on ALL 4 ELEVATIONS (Front +Z, Back -Z, and Gable Sides +/-X) so no side ever reads as a blank box!
+  // Windows on all 4 elevations
   const fZ = b.d * 0.5 + 0.04;
   for (const sx of [-b.w * 0.31, b.w * 0.31]) {
     addWindowUnit(group, mats, sx, 2.15, fZ, 0);
@@ -908,7 +1118,6 @@ function buildHouseBlockout(b, mats, gradientMap, colliders, animated, dynamicRo
     }
   }
 
-  // Side gable windows (skipping the wall side occupied by greenhouse/forge_shed/waterwheel/garden)
   for (const side of [-1, 1]) {
     if (side === -1 && (b.awning === 'side_greenhouse' || b.hasWaterwheel)) continue;
     if (side === 1 && b.awning === 'forge_shed') continue;
@@ -920,15 +1129,17 @@ function buildHouseBlockout(b, mats, gradientMap, colliders, animated, dynamicRo
     }
   }
 
+  // Waterwheel on Watermill's -X wall: bottom paddles dip directly into the -1.2m water channel & white foam!
   if (b.hasWaterwheel && dynamicRoot) {
     const wheelWorld = new THREE.Group();
     wheelWorld.position.set(b.x, b.y, b.z);
     wheelWorld.rotation.y = b.rotY;
 
     const wheelGroup = new THREE.Group();
-    wheelGroup.position.set(-b.w * 0.5 - 0.65, 1.65, 0);
+    // Hub at ly = 0.85 (world y = 1.15m); with radius 2.55m, bottom paddles reach y = -1.50m (submerged in -1.20m water!)
+    wheelGroup.position.set(-b.w * 0.5 - 0.72, 0.85, 0);
     const rim = attachOutline(
-      new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.18, 8, 24), mats.timber),
+      new THREE.Mesh(new THREE.TorusGeometry(2.45, 0.18, 8, 28), mats.timber),
       0.018
     );
     rim.rotation.y = Math.PI * 0.5;
@@ -936,13 +1147,13 @@ function buildHouseBlockout(b, mats, gradientMap, colliders, animated, dynamicRo
 
     for (let p = 0; p < 12; p++) {
       const ang = (p / 12) * Math.PI * 2;
-      const paddle = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.15, 0.58), mats.door);
-      paddle.position.set(0, Math.cos(ang) * 2.15, Math.sin(ang) * 2.15);
+      const paddle = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.16, 0.62), mats.door);
+      paddle.position.set(0, Math.cos(ang) * 2.45, Math.sin(ang) * 2.45);
       paddle.rotation.x = ang;
       wheelGroup.add(paddle);
 
       if (p < 6) {
-        const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.16, 4.3, 0.16), mats.timber);
+        const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.18, 4.85, 0.18), mats.timber);
         spoke.rotation.x = ang;
         wheelGroup.add(spoke);
       }
@@ -954,6 +1165,7 @@ function buildHouseBlockout(b, mats, gradientMap, colliders, animated, dynamicRo
     });
   }
 
+  // Kitchen garden patch on Gardener's +X side (ox: +6.6, oz: 0) on flat hamlet ground
   if (b.gardenPatch) {
     const gp = b.gardenPatch;
     const soilMat = new THREE.MeshBasicMaterial({ color: 0x6b4c32 });
@@ -1045,8 +1257,9 @@ function buildWellPlaza(mats, colliders) {
   wellRoof.position.y = 2.7;
   group.add(wellRoof);
 
-  const arcAngles = [0.68, 2.40, -2.32, -0.78];
-  const r = LANDMARKS.well.plazaRadius - 0.32;
+  // 4 low bollard-and-rail segments with vertical bollards at BOTH ends of every rail
+  const arcAngles = [0.72, 2.38, -2.35, -0.74];
+  const r = LANDMARKS.well.plazaRadius - 0.35;
   for (const ang of arcAngles) {
     const segGroup = new THREE.Group();
     segGroup.position.set(Math.cos(ang) * r, 0, Math.sin(ang) * r);
@@ -1054,13 +1267,15 @@ function buildWellPlaza(mats, colliders) {
 
     for (const px of [-1.15, 1.15]) {
       const bollard = markOutline(
-        new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.82, 0.34), mats.stoneDark)
+        new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.86, 0.36), mats.stoneDark)
       );
-      bollard.position.set(px, 0.41, 0);
+      bollard.position.set(px, 0.43, 0);
       segGroup.add(bollard);
     }
     for (const ry of [0.32, 0.62]) {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.11, 0.11), mats.timber);
+      const rail = markOutline(
+        new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.12, 0.12), mats.timber)
+      );
       rail.position.set(0, ry, 0);
       segGroup.add(rail);
     }
@@ -1078,34 +1293,66 @@ function buildWoodenPier(mats) {
   const len = Math.abs(pier.xEnd - pier.xStart);
   const cx = (pier.xStart + pier.xEnd) * 0.5;
 
+  // Solid stone pier abutment / masonry landing at the shore end (x = [-35.5, -31.7], z = 8.5)
+  // Top face sits at pier.y + 0.12 (-0.23m), 100% flush with the top of the wooden pier deck!
+  const abutW = 3.8;
+  const abutH = 2.8;
+  const abutment = markOutline(
+    new THREE.Mesh(
+      new THREE.BoxGeometry(abutW, abutH, pier.width + 0.9),
+      mats.stone
+    )
+  );
+  abutment.position.set(pier.xStart + abutW * 0.5, pier.y + 0.12 - abutH * 0.5, pier.z);
+  group.add(abutment);
+
+  // Landward approach step transitioning smoothly to the West Mill Road
+  const roadStep = markOutline(
+    new THREE.Mesh(
+      new THREE.BoxGeometry(0.95, 1.8, pier.width + 0.5),
+      mats.stone
+    )
+  );
+  roadStep.position.set(pier.xStart + abutW + 0.42, pier.y + 0.24 - 0.9, pier.z);
+  group.add(roadStep);
+
+  for (const sz of [-(pier.width * 0.5 + 0.25), pier.width * 0.5 + 0.25]) {
+    const curb = markOutline(
+      new THREE.Mesh(new THREE.BoxGeometry(abutW - 0.1, 0.38, 0.42), mats.stoneDark)
+    );
+    curb.position.set(pier.xStart + abutW * 0.5, pier.y + 0.31, pier.z + sz);
+    group.add(curb);
+  }
+
+  // Wooden pier deck extending cleanly from xStart (-35.5) to xEnd (-52.0) flush with abutment top
   const deck = markOutline(
-    new THREE.Mesh(new THREE.BoxGeometry(len, 0.22, pier.width), mats.timber)
+    new THREE.Mesh(new THREE.BoxGeometry(len, 0.24, pier.width), mats.timber)
   );
   deck.position.set(cx, pier.y, pier.z);
   group.add(deck);
 
-  for (let x = pier.xEnd + 0.8; x <= pier.xStart - 0.6; x += 3.2) {
+  for (let x = pier.xEnd + 0.8; x <= pier.xStart - 0.6; x += 3.1) {
     for (const sz of [-pier.width * 0.44, pier.width * 0.44]) {
-      // Submerged support pilings under the deck + low 0.35m mooring bollards along the side edge
       const piling = markOutline(
-        new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 2.6, 8), mats.door)
+        new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 2.8, 8), mats.door)
       );
-      piling.position.set(x, pier.y - 1.4, pier.z + sz);
+      piling.position.set(x, pier.y - 1.45, pier.z + sz);
       group.add(piling);
 
       const bollard = markOutline(
-        new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.15, 0.38, 8), mats.door)
+        new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.16, 0.42, 8), mats.door)
       );
-      bollard.position.set(x, pier.y + 0.25, pier.z + sz);
+      bollard.position.set(x, pier.y + 0.28, pier.z + sz);
       group.add(bollard);
     }
   }
 
+  // Moored wooden boat next to the pier on the southern bay side in full view
   const boat = markOutline(
-    new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.55, 1.45), mats.door)
+    new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.58, 1.55), mats.door)
   );
-  boat.position.set(pier.xEnd + 1.8, ZONES.millpond.waterY + 0.15, pier.z + 2.5);
-  boat.rotation.y = 0.18;
+  boat.position.set(pier.xEnd + 5.8, ZONES.millpond.waterY + 0.16, pier.z + 2.65);
+  boat.rotation.y = 0.14;
   group.add(boat);
 
   return group;
@@ -1116,140 +1363,274 @@ function buildArenaFence(mats) {
   group.name = 'arenaFence';
 
   const arena = ZONES.arena;
-  const fenceR = 15.8;
-  const segCount = 20;
-  for (let i = 0; i < segCount; i++) {
-    const a = (i / segCount) * Math.PI * 2;
-    if (Math.abs(a - Math.PI) < 0.38) continue;
+  const fenceR = arena.fenceR || 19.5;
+  const postCount = 24;
+  // Angle 0 is East (+X), Angle PI / -PI is West (-X) where the West Gate is located
+  const gateHalfAngle = 0.22;
+  const aStart = -Math.PI + gateHalfAngle;
+  const aEnd = Math.PI - gateHalfAngle;
+
+  const posts = [];
+  for (let i = 0; i <= postCount; i++) {
+    const t = i / postCount;
+    const a = lerp(aStart, aEnd, t);
     const fx = arena.x + Math.cos(a) * fenceR;
     const fz = arena.z + Math.sin(a) * fenceR;
     const fy = terrainHeightAt(fx, fz);
+    posts.push({ x: fx, y: fy, z: fz, isGatePost: i === 0 || i === postCount });
 
+    const isGate = i === 0 || i === postCount;
+    const postH = isGate ? 1.75 : 1.28;
+    const postW = isGate ? 0.36 : 0.25;
     const post = markOutline(
-      new THREE.Mesh(new THREE.BoxGeometry(0.24, 1.25, 0.24), mats.timber)
+      new THREE.Mesh(new THREE.BoxGeometry(postW, postH, postW), mats.timber)
     );
-    post.position.set(fx, fy + 0.6, fz);
+    post.position.set(fx, fy + postH * 0.5, fz);
     group.add(post);
 
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 4.9), mats.timber);
-    rail.position.set(fx, fy + 0.9, fz);
-    rail.rotation.y = -a;
-    group.add(rail);
+    if (isGate) {
+      const cap = markOutline(
+        new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.16, 0.48), mats.stoneDark)
+      );
+      cap.position.set(fx, fy + postH + 0.08, fz);
+      group.add(cap);
+
+      const lantern = new THREE.Mesh(
+        new THREE.BoxGeometry(0.28, 0.36, 0.28),
+        mats.lantern
+      );
+      lantern.position.set(fx, fy + postH + 0.34, fz);
+      group.add(lantern);
+    }
+  }
+
+  // Every rail spans strictly between post[i] and post[i+1] — zero cantilevered rails hanging in mid-air!
+  for (let i = 0; i < posts.length - 1; i++) {
+    const p0 = posts[i];
+    const p1 = posts[i + 1];
+    const dx = p1.x - p0.x;
+    const dz = p1.z - p0.z;
+    const segLen = Math.hypot(dx, dz);
+    const mx = (p0.x + p1.x) * 0.5;
+    const my = (p0.y + p1.y) * 0.5;
+    const mz = (p0.z + p1.z) * 0.5;
+    const yaw = Math.atan2(dx, dz);
+
+    for (const ry of [0.46, 0.92]) {
+      const rail = markOutline(
+        new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, segLen), mats.timber)
+      );
+      rail.position.set(mx, my + ry, mz);
+      rail.rotation.y = yaw;
+      group.add(rail);
+    }
   }
 
   return group;
+}
+
+function buildSlopedStringerGeometry(width, zStart, zEnd, yStart, yEnd) {
+  const len = Math.abs(zEnd - zStart);
+  const height = 0.82;
+  // Start from a non-indexed BoxGeometry (which has 100% outward right-handed normals)
+  // and shear Y linearly by Z so end faces stay vertical at zStart and zEnd.
+  const geo = new THREE.BoxGeometry(width, height, len).toNonIndexed();
+  geo.translate(0, 0, (zStart + zEnd) * 0.5);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const z = pos.getZ(i);
+    const t = clamp((zStart - z) / (zStart - zEnd), 0, 1);
+    const slopeY = lerp(yStart - 0.08, yEnd - 0.12, t);
+    pos.setY(i, pos.getY(i) + slopeY);
+  }
+  geo.computeVertexNormals();
+  return geo;
 }
 
 function buildShrineOverlook(mats, colliders) {
   const group = new THREE.Group();
   group.name = 'shrineOverlook';
 
-  const stepsCount = 46;
-  const zStart = -8.6;
-  const zEnd = -46.8;
-  const xStart = 0.4;
-  const xEnd = 4.0;
-  const yaw = -Math.atan2(xEnd - xStart, Math.abs(zEnd - zStart));
+  // Axial Grand Northern Staircase along x = 0.0 from z = -15.0 (y = 0.0) to z = -71.5 (y = 8.0)
+  const stepsCount = 56;
+  const zStart = -15.0;
+  const zEnd = -71.5;
+  const yStart = 0.0;
+  const yEnd = ZONES.shrine.y;
+  const stepDepth = Math.abs(zEnd - zStart) / stepsCount + 0.12;
 
   for (let i = 0; i < stepsCount; i++) {
-    const t = i / (stepsCount - 1);
-    const sx = lerp(xStart, xEnd, t);
-    const sz = lerp(zStart, zEnd, t);
-    const sy = terrainHeightAt(sx, sz);
-    const step = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.42, 1.05), mats.stone);
-    step.position.set(sx, sy + 0.04, sz);
-    step.rotation.y = yaw;
+    const t0 = i / stepsCount;
+    const t1 = (i + 1) / stepsCount;
+    const sz = lerp(zStart, zEnd, (t0 + t1) * 0.5);
+    const stepTopY = lerp(yStart, yEnd, t1);
+    const stepH = 0.68;
+    const step = new THREE.Mesh(
+      new THREE.BoxGeometry(4.32, stepH, stepDepth),
+      mats.stone
+    );
+    step.position.set(0.0, stepTopY - stepH * 0.5, sz);
     group.add(step);
   }
 
-  const stairLen = Math.hypot(xEnd - xStart, zEnd - zStart, 6.5);
-  const pitch = Math.atan2(6.5, Math.hypot(xEnd - xStart, zEnd - zStart));
-  for (const side of [-2.25, 2.25]) {
-    const cheekHolder = new THREE.Group();
-    cheekHolder.position.set(
-      (xStart + xEnd) * 0.5 + side,
-      3.25 + 0.14,
-      (zStart + zEnd) * 0.5
+  // Continuous, flush sloped stone stringers on left (x = -2.35) and right (x = +2.35)
+  const stringerGeo = buildSlopedStringerGeometry(0.46, zStart, zEnd, yStart, yEnd);
+  for (const sx of [-2.35, 2.35]) {
+    const stringer = markOutline(new THREE.Mesh(stringerGeo, mats.stoneDark));
+    stringer.position.x = sx;
+    group.add(stringer);
+
+    // Bottom entry newel post at z = -15.0
+    const botPost = markOutline(
+      new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.72, 0.58), mats.stoneDark)
     );
-    cheekHolder.rotation.y = yaw;
-    const cheek = markOutline(
-      new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.58, stairLen), mats.stoneDark)
+    botPost.position.set(sx, yStart + 0.32, zStart + 0.15);
+    group.add(botPost);
+
+    // Top landing newel post at z = -71.5
+    const topPost = markOutline(
+      new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.64, 0.58), mats.stoneDark)
     );
-    cheek.rotation.x = pitch;
-    cheekHolder.add(cheek);
-    group.add(cheekHolder);
+    topPost.position.set(sx, yEnd + 0.24, zEnd - 0.15);
+    group.add(topPost);
   }
 
   const shX = ZONES.shrine.x;
   const shZ = ZONES.shrine.z;
   const shY = ZONES.shrine.y;
+  const platR = ZONES.shrine.platformR || 14.5;
 
   const platformCurb = markOutline(
-    new THREE.Mesh(new THREE.CylinderGeometry(9.8, 10.2, 0.24, 40), mats.stone)
+    new THREE.Mesh(new THREE.CylinderGeometry(platR, platR + 0.4, 0.28, 48), mats.stone)
   );
   platformCurb.position.set(shX, shY + 0.04, shZ);
   group.add(platformCurb);
 
   const innerRing = new THREE.Mesh(
-    new THREE.CylinderGeometry(5.5, 5.5, 0.25, 32),
+    new THREE.CylinderGeometry(7.8, 7.8, 0.29, 36),
     mats.stoneDark
   );
-  innerRing.position.set(shX, shY + 0.048, shZ);
+  innerRing.position.set(shX, shY + 0.05, shZ);
   group.add(innerRing);
 
   for (let p = 0; p < 8; p++) {
     const a = (p / 8) * Math.PI * 2;
-    const diamondGeo = new THREE.CylinderGeometry(0.72, 0.72, 0.25, 4);
-    diamondGeo.scale(1.0, 1.0, 2.35);
+    const diamondGeo = new THREE.CylinderGeometry(0.95, 0.95, 0.30, 4);
+    diamondGeo.scale(1.0, 1.0, 2.5);
     const petal = new THREE.Mesh(diamondGeo, mats.shrineAccent);
     petal.position.set(
-      shX + Math.sin(a) * 2.65,
-      shY + 0.055,
-      shZ + Math.cos(a) * 2.65
+      shX + Math.sin(a) * 3.6,
+      shY + 0.06,
+      shZ + Math.cos(a) * 3.6
     );
     petal.rotation.y = a;
     group.add(petal);
   }
 
   const centerHub = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.15, 1.15, 0.26, 16),
+    new THREE.CylinderGeometry(1.5, 1.5, 0.32, 20),
     mats.stone
   );
-  centerHub.position.set(shX, shY + 0.06, shZ);
+  centerHub.position.set(shX, shY + 0.068, shZ);
   group.add(centerHub);
 
+  // Romanesque Stone Shrine Arch at (0.0, -93.5, y: 8.0, span: 6.2, height: 5.8)
   const arch = LANDMARKS.shrineArch;
   const pierOffset = arch.span * 0.5;
   for (const sx of [-pierOffset, pierOffset]) {
     const plinth = markOutline(
-      new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.65, 1.65), mats.stoneDark)
+      new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.72, 1.85), mats.stoneDark)
     );
-    plinth.position.set(arch.x + sx, arch.y + 0.32, arch.z);
+    plinth.position.set(arch.x + sx, arch.y + 0.36, arch.z);
     group.add(plinth);
 
     const pier = markOutline(
-      new THREE.Mesh(new THREE.BoxGeometry(1.25, arch.height, 1.25), mats.stone)
+      new THREE.Mesh(new THREE.BoxGeometry(1.38, arch.height, 1.38), mats.stone)
     );
     pier.position.set(arch.x + sx, arch.y + arch.height * 0.5, arch.z);
     group.add(pier);
-    colliders.push({ type: 'circle', x: arch.x + sx, z: arch.z, r: 0.85 });
+
+    const capital = markOutline(
+      new THREE.Mesh(new THREE.BoxGeometry(1.68, 0.42, 1.68), mats.stoneDark)
+    );
+    capital.position.set(arch.x + sx, arch.y + arch.height - 0.1, arch.z);
+    group.add(capital);
+
+    colliders.push({ type: 'circle', x: arch.x + sx, z: arch.z, r: 0.95 });
   }
 
   const archCrown = markOutline(
     new THREE.Mesh(
-      new THREE.TorusGeometry(pierOffset, 0.58, 8, 18, Math.PI),
+      new THREE.TorusGeometry(pierOffset, 0.64, 10, 24, Math.PI),
       mats.stone
     )
   );
-  archCrown.position.set(arch.x, arch.y + arch.height - 0.15, arch.z);
+  archCrown.position.set(arch.x, arch.y + arch.height - 0.1, arch.z);
   group.add(archCrown);
 
-  const ped = markOutline(
-    new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.05, 1.15, 8), mats.stoneDark)
+  // Top Romanesque Keystone Crown
+  const keystone = markOutline(
+    new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.15, 1.48), mats.stoneDark)
   );
-  ped.position.set(shX - 4.8, arch.y + 0.57, shZ - 2.2);
+  keystone.position.set(arch.x, arch.y + arch.height + pierOffset - 0.05, arch.z);
+  group.add(keystone);
+
+  // Shrine Spell Pedestal
+  const ped = markOutline(
+    new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.15, 1.25, 8), mats.stoneDark)
+  );
+  ped.position.set(shX - 5.8, arch.y + 0.62, shZ - 1.8);
   group.add(ped);
-  colliders.push({ type: 'circle', x: shX - 4.8, z: shZ - 2.2, r: 1.0 });
+  colliders.push({ type: 'circle', x: shX - 5.8, z: shZ - 1.8, r: 1.1 });
+
+  return group;
+}
+
+function buildBoundaryMarkers(mats) {
+  const group = new THREE.Group();
+  group.name = 'boundaryMarkers';
+
+  const markerCount = 24;
+  for (let i = 0; i < markerCount; i++) {
+    const a = (i / markerCount) * Math.PI * 2;
+    const bx = Math.cos(a) * PLAY_BOUNDARY_RADIUS;
+    const bz = Math.sin(a) * PLAY_BOUNDARY_RADIUS;
+    // Skip placing pillar directly in the center of the South Approach road
+    if (bz > 90 && Math.abs(bx) < 6.0) continue;
+    const by = terrainHeightAt(bx, bz);
+    if (by < ZONES.millpond.waterY + 0.2) continue;
+
+    const pillar = new THREE.Group();
+    pillar.position.set(bx, by, bz);
+    pillar.rotation.y = -a + Math.PI * 0.5;
+
+    const base = markOutline(
+      new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.45, 0.85), mats.stoneDark)
+    );
+    base.position.y = 0.22;
+    pillar.add(base);
+
+    const shaft = markOutline(
+      new THREE.Mesh(new THREE.BoxGeometry(0.54, 1.85, 0.54), mats.stone)
+    );
+    shaft.position.y = 1.15;
+    pillar.add(shaft);
+
+    const cap = markOutline(
+      new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.28, 0.92), mats.stoneDark)
+    );
+    cap.position.y = 2.15;
+    pillar.add(cap);
+
+    const rune = new THREE.Mesh(
+      new THREE.BoxGeometry(0.28, 0.34, 0.28),
+      mats.lantern
+    );
+    rune.position.y = 2.42;
+    pillar.add(rune);
+
+    group.add(pillar);
+  }
 
   return group;
 }
@@ -1258,11 +1639,28 @@ function buildTreesAndFlowerDrifts(mats, colliders) {
   const group = new THREE.Group();
   group.name = 'treesAndFlowers';
 
+  const planterSoilMat = new THREE.MeshBasicMaterial({ color: 0x5c4028 });
+
   for (const t of TREES) {
     const ty = terrainHeightAt(t.x, t.z);
     const tree = new THREE.Group();
     tree.position.set(t.x, ty, t.z);
     const s = t.scale || 1.0;
+
+    if (t.hasPlanter) {
+      const planterRim = markOutline(
+        new THREE.Mesh(new THREE.CylinderGeometry(1.78, 1.92, 0.56, 20), mats.stoneDark)
+      );
+      planterRim.position.y = 0.28;
+      tree.add(planterRim);
+
+      const planterSoil = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.48, 1.48, 0.60, 20),
+        planterSoilMat
+      );
+      planterSoil.position.y = 0.29;
+      tree.add(planterSoil);
+    }
 
     if (t.kind === 'wisteria' || t.kind === 'sakura') {
       const trunk = markOutline(
@@ -1288,17 +1686,28 @@ function buildTreesAndFlowerDrifts(mats, colliders) {
         tree.add(puff);
       }
 
+      // Soft, rounded cascade clusters (3 stacked ovoids per hanging strand — zero spiky cones!)
       if (t.kind === 'wisteria') {
-        for (let r = 0; r < 14; r++) {
-          const a = (r / 14) * Math.PI * 2;
-          const rad = (1.6 + (r % 3) * 1.1) * s;
-          const raceme = new THREE.Mesh(
-            new THREE.ConeGeometry(0.26 * s, 1.85 * s, 5),
-            mats.wisteriaLight
-          );
-          raceme.rotation.x = Math.PI;
-          raceme.position.set(Math.cos(a) * rad, 5.1 * s, Math.sin(a) * rad);
-          tree.add(raceme);
+        const strandCount = 14;
+        for (let r = 0; r < strandCount; r++) {
+          const a = (r / strandCount) * Math.PI * 2;
+          const rad = (1.65 + (r % 3) * 0.95) * s;
+          const sx = Math.cos(a) * rad;
+          const sz = Math.sin(a) * rad;
+          const beads = [
+            { dy: 5.55, br: 0.34, mat: mats.wisteria },
+            { dy: 4.92, br: 0.27, mat: mats.wisteriaLight },
+            { dy: 4.38, br: 0.20, mat: mats.wisteriaLight },
+          ];
+          for (const b of beads) {
+            const bead = new THREE.Mesh(
+              new THREE.DodecahedronGeometry(b.br * s, 1),
+              b.mat
+            );
+            bead.position.set(sx, b.dy * s, sz);
+            bead.scale.set(0.85, 1.32, 0.85);
+            tree.add(bead);
+          }
         }
       }
       colliders.push({ type: 'circle', x: t.x, z: t.z, r: 0.9 * s });
@@ -1362,16 +1771,23 @@ export function createCharacterMannequin(color = 0x3b82f6) {
 function buildScaleMannequins() {
   const group = new THREE.Group();
   group.name = 'scaleMannequins';
+
+  // Compute Inn NPC in local Inn coordinates (lz = inn.d * 0.5 + 2.4, lx = -2.2) so it never clips into the steps
+  const inn = BUILDINGS.find((b) => b.id === 'inn');
+  const lx = -2.2;
+  const lz = inn.d * 0.5 + 2.4;
+  const innNpcX = inn.x + lx * Math.cos(inn.rotY) + lz * Math.sin(inn.rotY);
+  const innNpcZ = inn.z - lx * Math.sin(inn.rotY) + lz * Math.cos(inn.rotY);
+
   const spots = [
-    { x: -7.5, z: -6.5, rotY: 0.65, color: 0xea580c }, // On the cobblestone spur outside Inn
-    { x: -31.8, z: 7.5, rotY: 1.57, color: 0x0ea5e9 }, // At the far end of the Wooden Pier
-    { x: 42.0, z: -4.0, rotY: -1.5, color: 0xa855f7 }, // Center of Wisteria Combat Ring
-    { x: 0.5, z: -57.5, rotY: 0.4, color: 0x10b981 }, // Beside Shrine Spell Pedestal
+    { x: innNpcX, z: innNpcZ, y: 0.0, rotY: inn.rotY, color: 0xea580c }, // Outside Inn steps on cobblestone apron
+    { x: -48.5, z: LANDMARKS.pier.z, y: LANDMARKS.pier.y, rotY: 1.57, color: 0x0ea5e9 }, // On Wooden Pier deck
+    { x: ZONES.arena.x, z: ZONES.arena.z, y: ZONES.arena.y, rotY: -1.5, color: 0xa855f7 }, // Center of East Wisteria Combat Ring
+    { x: -3.8, z: -87.5, y: ZONES.shrine.y, rotY: 0.4, color: 0x10b981 }, // Beside Shrine Spell Pedestal
   ];
   for (const s of spots) {
     const m = createCharacterMannequin(s.color);
-    const y = s.x < -20.5 && Math.abs(s.z - 7.5) < 2 ? LANDMARKS.pier.y : terrainHeightAt(s.x, s.z);
-    m.position.set(s.x, y, s.z);
+    m.position.set(s.x, s.y, s.z);
     m.rotation.y = s.rotY;
     group.add(m);
   }

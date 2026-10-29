@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tudor Village Houses Kit — Preview</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #b8dff5;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        color: #2b1c11;
+      }
+      #scene { display: block; width: 100%; height: 100%; }
+      .hud {
+        position: fixed;
+        top: 18px;
+        left: 22px;
+        background: rgba(250, 244, 231, 0.88);
+        border: 1px solid rgba(60, 38, 22, 0.2);
+        border-radius: 12px;
+        padding: 12px 16px;
+        pointer-events: none;
+        box-shadow: 0 4px 16px rgba(42, 26, 18, 0.1);
+      }
+      .hud h1 {
+        margin: 0 0 4px;
+        font-size: 16px;
+        font-weight: 700;
+      }
+      .hud p {
+        margin: 0;
+        font-size: 12px;
+        color: #5a3d28;
+      }
+      .dock {
+        position: fixed;
+        bottom: 18px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 6px;
+        background: rgba(250, 244, 231, 0.85);
+        padding: 6px;
+        border-radius: 999px;
+        border: 1px solid rgba(60, 38, 22, 0.2);
+      }
+      .dock button {
+        border: 0;
+        background: transparent;
+        color: #3a2414;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 7px 12px;
+        border-radius: 999px;
+        cursor: pointer;
+      }
+      .dock button.active {
+        background: #3a2414;
+        color: #f7ecd8;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../../../node_modules/three/build/three.module.js",
+          "three/addons/": "../../../node_modules/three/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div class="hud" id="hud">
+      <h1 id="title">Tudor Village Houses Kit</h1>
+      <p id="stats">Loading...</p>
+    </div>
+    <div class="dock" id="dock">
+      <button data-shot="inn-3q" class="active">Inn 3/4</button>
+      <button data-shot="inn-front">Inn Front</button>
+      <button data-shot="herbalist-3q">Herbalist</button>
+      <button data-shot="smithy-3q">Smithy</button>
+      <button data-shot="gardener-3q">Gardener</button>
+      <button data-shot="watermill-3q">Watermill</button>
+      <button data-shot="all-lineup">All 5 Lineup</button>
+      <button data-shot="all-rear-lineup">Rear Lineup</button>
+    </div>
+
+    <script type="module">
+      import * as THREE from 'three';
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+      import { createHousesKit, VILLAGE_BUILDING_SPECS, LINEUP_SPECS } from './index.js';
+
+      const canvas = document.getElementById('scene');
+      const titleEl = document.getElementById('title');
+      const statsEl = document.getElementById('stats');
+
+      const renderer = new THREE.WebGLRenderer({
+        canvas,
+        antialias: true,
+        preserveDrawingBuffer: true,
+        powerPreference: 'high-performance',
+      });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.04;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xb8dff5);
+      scene.fog = new THREE.Fog(0xd4ecf8, 75, 190);
+
+      const camera = new THREE.PerspectiveCamera(34, window.innerWidth / window.innerHeight, 0.1, 350);
+      const controls = new OrbitControls(camera, canvas);
+      controls.enableDamping = true;
+
+      // Lighting
+      scene.add(new THREE.HemisphereLight(0xe4f2ff, 0x8f7c5a, 1.1));
+      const sun = new THREE.DirectionalLight(0xfff1d6, 2.45);
+      sun.position.set(-18, 28, 24);
+      sun.castShadow = true;
+      sun.shadow.mapSize.set(2048, 2048);
+      sun.shadow.camera.left = -52;
+      sun.shadow.camera.right = 52;
+      sun.shadow.camera.top = 28;
+      sun.shadow.camera.bottom = -20;
+      sun.shadow.camera.near = 1;
+      sun.shadow.camera.far = 110;
+      sun.shadow.bias = -0.0004;
+      sun.shadow.normalBias = 0.025;
+      scene.add(sun);
+
+      const fill = new THREE.DirectionalLight(0xc2dcff, 0.85);
+      fill.position.set(20, 14, -22);
+      scene.add(fill);
+
+      // Ground plane
+      const groundMat = new THREE.MeshToonMaterial({ color: 0x7cb35a });
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), groundMat);
+      ground.rotation.x = -Math.PI / 2;
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      const kit = createHousesKit(renderer);
+      const contentHolder = new THREE.Group();
+      scene.add(contentHolder);
+
+      const SHOTS = {
+        'inn-3q': {
+          mode: 'single',
+          type: 'inn',
+          label: '1. Crossroads Inn & Bakery (3/4 View)',
+          pos: [-13.2, 8.2, 17.5],
+          target: [-0.3, 3.9, 0.6],
+        },
+        'inn-front': {
+          mode: 'single',
+          type: 'inn',
+          label: '1. Crossroads Inn & Bakery (Front Elevation)',
+          pos: [0, 5.0, 22.0],
+          target: [0, 4.3, 0.5],
+        },
+        'herbalist-3q': {
+          mode: 'single',
+          type: 'herbalist',
+          label: '2. Apothecary & Herb Conservatory (3/4 View)',
+          pos: [-14.2, 7.2, 14.8],
+          target: [-1.1, 3.2, 0.2],
+        },
+        'smithy-3q': {
+          mode: 'single',
+          type: 'smithy',
+          label: '3. Foothill Smithy & Cooperage (3/4 View)',
+          pos: [16.8, 7.4, 17.0],
+          target: [1.4, 3.8, 0.2],
+        },
+        'gardener-3q': {
+          mode: 'single',
+          type: 'gardener',
+          label: '4. Shepherd & Gardener Cottage (3/4 View)',
+          pos: [15.8, 7.2, 14.8],
+          target: [1.8, 2.8, 0.2],
+        },
+        'watermill-3q': {
+          mode: 'single',
+          type: 'watermill',
+          label: '5. Waterfall Stream Mill (3/4 View)',
+          pos: [-15.2, 7.3, 15.6],
+          target: [-1.0, 3.3, 0.2],
+        },
+        'all-lineup': {
+          mode: 'lineup',
+          label: 'All 5 Village Buildings — Complete Lineup (Front)',
+          pos: [1.5, 20.5, 90.0],
+          target: [1.5, 3.6, 0],
+        },
+        'all-rear-lineup': {
+          mode: 'lineup',
+          label: 'All 5 Village Buildings — Rear 3/4 Elevation Lineup',
+          pos: [1.5, 22.0, -90.0],
+          target: [1.5, 3.6, 0],
+        },
+      };
+
+      let activeUpdater = null;
+      let activeAssetRoot = null;
+
+      function countAssetGeometry(root) {
+        let meshCount = 0;
+        let triangles = 0;
+        root.traverse((obj) => {
+          if (!obj.isMesh) return;
+          meshCount++;
+          const g = obj.geometry;
+          const tri = g.index ? g.index.count / 3 : g.attributes.position.count / 3;
+          const instances = obj.isInstancedMesh ? obj.count : 1;
+          triangles += Math.round(tri * instances);
+        });
+        return { meshCount, triangles };
+      }
+
+      function setShot(shotName, { hideUI = false } = {}) {
+        const cfg = SHOTS[shotName] || SHOTS['inn-3q'];
+        document.getElementById('hud').style.display = hideUI ? 'none' : 'block';
+        document.getElementById('dock').style.display = hideUI ? 'none' : 'flex';
+
+        for (const btn of document.querySelectorAll('#dock button')) {
+          btn.classList.toggle('active', btn.dataset.shot === shotName);
+        }
+
+        while (contentHolder.children.length > 0) {
+          contentHolder.remove(contentHolder.children[0]);
+        }
+
+        if (cfg.mode === 'lineup') {
+          const built = kit.buildAllVillageBuildings(LINEUP_SPECS);
+          built.update(0.35);
+          contentHolder.add(built.group);
+          activeUpdater = built.update;
+          activeAssetRoot = built.group;
+        } else {
+          const spec = VILLAGE_BUILDING_SPECS[cfg.type];
+          const built = kit.buildVillageBuilding(cfg.type, {
+            ...spec,
+            x: 0,
+            y: cfg.type === 'watermill' ? 0.3 : 0,
+            z: 0,
+            rotY: 0,
+          });
+          built.update(0.35);
+          contentHolder.add(built.group);
+          activeUpdater = built.update;
+          activeAssetRoot = built.group;
+        }
+
+        camera.position.set(...cfg.pos);
+        controls.target.set(...cfg.target);
+        controls.update();
+
+        // Render asset-only pass to measure exact asset draw calls & triangles
+        ground.visible = false;
+        renderer.render(scene, camera);
+        const assetCalls = renderer.info.render.calls;
+        const assetTriangles = renderer.info.render.triangles;
+
+        // Render full scene with ground
+        ground.visible = true;
+        renderer.render(scene, camera);
+        const sceneCalls = renderer.info.render.calls;
+        const sceneTriangles = renderer.info.render.triangles;
+        const geoStats = countAssetGeometry(activeAssetRoot);
+
+        titleEl.textContent = cfg.label;
+        statsEl.textContent = `Asset Draw Calls: ${assetCalls} | Asset Triangles: ${assetTriangles.toLocaleString()} (Scene: ${sceneCalls} calls)`;
+
+        return {
+          shot: shotName,
+          drawCalls: assetCalls,
+          triangles: assetTriangles,
+          sceneDrawCalls: sceneCalls,
+          sceneTriangles,
+          meshNodes: geoStats.meshCount,
+        };
+      }
+
+      for (const btn of document.querySelectorAll('#dock button')) {
+        btn.addEventListener('click', () => setShot(btn.dataset.shot));
+      }
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      const clock = new THREE.Clock();
+      renderer.setAnimationLoop(() => {
+        const dt = Math.min(clock.getDelta(), 0.05);
+        if (activeUpdater) activeUpdater(dt);
+        controls.update();
+        renderer.render(scene, camera);
+      });
+
+      const initialStats = setShot('inn-3q');
+      window.__housesPreview = {
+        setShot,
+        kit,
+        scene,
+        camera,
+        renderer,
+        initialStats,
+      };
+      window.__ready = true;
+    </script>
+  </body>
+</html>

@@ -1,0 +1,95 @@
+{
+  "pass": "pass1",
+  "timestamp": "2026-10-29T13:33:24.875Z",
+  "budgets": {
+    "targetFps": 144,
+    "maxDrawCalls": 22,
+    "maxTriangles": 55000,
+    "maxMaskBuildMs": 30
+  },
+  "consoleErrors": [],
+  "shots": {
+    "shrine-arch-stairs": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\terrain\\shots\\pass1\\shrine-arch-stairs.png",
+      "shot": "shrine-arch-stairs",
+      "fps": 144,
+      "measuredFrameMs": 0.09,
+      "draws": 9,
+      "triangles": 29198,
+      "totalSceneTriangles": 54248,
+      "visibleChunks": 5,
+      "totalChunks": 16,
+      "maskBuildMs": 30.8
+    },
+    "waterfall-flume-channel": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\terrain\\shots\\pass1\\waterfall-flume-channel.png",
+      "shot": "waterfall-flume-channel",
+      "fps": 144,
+      "measuredFrameMs": 0.1,
+      "draws": 14,
+      "triangles": 37832,
+      "totalSceneTriangles": 54248,
+      "visibleChunks": 8,
+      "totalChunks": 16,
+      "maskBuildMs": 30.8
+    },
+    "pier-shoreline": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\terrain\\shots\\pass1\\pier-shoreline.png",
+      "shot": "pier-shoreline",
+      "fps": 144,
+      "measuredFrameMs": 0.05,
+      "draws": 12,
+      "triangles": 32648,
+      "totalSceneTriangles": 54248,
+      "visibleChunks": 6,
+      "totalChunks": 16,
+      "maskBuildMs": 30.8
+    },
+    "wisteria-trees-arena": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\terrain\\shots\\pass1\\wisteria-trees-arena.png",
+      "shot": "wisteria-trees-arena",
+      "fps": 144,
+      "measuredFrameMs": 0.04,
+      "draws": 9,
+      "triangles": 29198,
+      "totalSceneTriangles": 54248,
+      "visibleChunks": 5,
+      "totalChunks": 16,
+      "maskBuildMs": 30.8
+    },
+    "well-plaza-roads": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\terrain\\shots\\pass1\\well-plaza-roads.png",
+      "shot": "well-plaza-roads",
+      "fps": 144,
+      "measuredFrameMs": 0.05,
+      "draws": 14,
+      "triangles": 38336,
+      "totalSceneTriangles": 54248,
+      "visibleChunks": 9,
+      "totalChunks": 16,
+      "maskBuildMs": 30.8
+    },
+    "aerial-overview": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\terrain\\shots\\pass1\\aerial-overview.png",
+      "shot": "aerial-overview",
+      "fps": 144,
+      "measuredFrameMs": 0.07,
+      "draws": 22,
+      "triangles": 54248,
+      "totalSceneTriangles": 54248,
+      "visibleChunks": 16,
+      "totalChunks": 16,
+      "maskBuildMs": 30.8
+    }
+  },
+  "summary": {
+    "maxDrawCallsObserved": 22,
+    "minDrawCallsObserved": 9,
+    "maxFrustumTrianglesObserved": 54248,
+    "minFrustumTrianglesObserved": 29198,
+    "totalSceneTriangles": 54248,
+    "maskBuildMs": 30.8,
+    "consoleErrorCount": 0,
+    "passesAllBudgets": true
+  }
+}

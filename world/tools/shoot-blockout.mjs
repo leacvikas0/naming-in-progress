@@ -61,7 +61,12 @@ await page.waitForFunction(() => Boolean(window.__BLOCKOUT__), null, { timeout: 
 await page.waitForTimeout(400);
 
 const viewKeys = ['entry', 'plaza', 'mill', 'arena', 'shrine', 'shrineLookback', 'aerial', 'topdown'];
-const report = { outTag, errors, views: {} };
+const boundaryWrapTest = await page.evaluate(() =>
+  typeof window.__BLOCKOUT__.testBoundaryWrap === 'function'
+    ? window.__BLOCKOUT__.testBoundaryWrap()
+    : null
+);
+const report = { outTag, errors, boundaryWrapTest, views: {} };
 
 for (const v of viewKeys) {
   await page.evaluate((viewId) => {

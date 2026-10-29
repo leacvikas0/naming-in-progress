@@ -1,761 +1,1244 @@
 import * as THREE from 'three';
-import { addOutline } from '../../../house3d/src/materials.js';
-import { box, cyl, beamBetween, TILE } from '../../../house3d/src/parts.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
-  WORLD_SIZE,
   INNER_EXTENT,
-  WATER,
-  WELL_PLAZA,
-  SHRINE,
-  ARENA,
-  BUILDINGS,
-  BUILDING_LIST,
-  ROADS,
-  CLIFF_BOULDERS,
-  sampleWorld,
-  worldToBuildingLocal,
+  WORLD_SIZE,
+  ZONES,
+  BUILDINGS_BY_ID,
+  LANDMARKS,
+  terrainHeightAt,
+  terrainNormalAt,
+  streamCenterX,
+  createWorldMaskTexture,
+  clamp,
+  lerp,
+  smoothstep,
 } from './geography.js';
 
 /**
- * Sculpted Valley Terrain, Gouache Splat Texture, Stratified Rock Ravine,
- * Timber Trestle Flume, Animated Waterfall Shader, Carved Waterwheel Tailrace
- * Channel (`y = -2.2m` at `x = -26.2, z = -14.2`), and Sandy/Pebbled Lake Shoreline (`#d8c89e`).
+ * Frustum-Culled Chunked Valley Terrain, 512x512 Gouache Splat Shader,
+ * Seamless Outer Mountain Skirt & Horizon Ring, and v7 Hydrological System
+ * (`world/assets/terrain/terrain-water.js`).
  */
 
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = Math.imul(a ^ (a >>> 15), a | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+export const PALETTE = {
+  ink: 0x22140d,
+  stucco: 0xf4e7cc,
+  stuccoWarm: 0xeee0c2,
+  timber: 0x9e6838,
+  timberDark: 0x7c4e29,
+  timberLight: 0xc28b56,
+  stone: 0xd4cfc2,
+  stoneWarm: 0xe2dcd0,
+  stoneDark: 0xa8a294,
+  roofRed: 0xd94e28,
+  doorWood: 0x7c4a24,
+  windowBlue: 0x2f6fc4,
+  glassTint: 0x7cc5eb,
+  lanternGlow: 0xffd27d,
+  emberGlow: 0xff5a1f,
+  grassMid: 0x5f9450,
+  grassLight: 0x9ec85e,
+  grassDark: 0x467364,
+  dirtRoad: 0xd4b483,
+  dirtEdge: 0xb89768,
+  cobble: 0xc8c2b4,
+  sandBank: 0xdfc99b,
+  arenaEarth: 0xd9c298,
+  shrineStone: 0xe4decb,
+  shrineAccent: 0x6f95ad,
+  shrineGold: 0xe2ba5a,
+  cliffRock: 0x8e8c84,
+  cliffDark: 0x6e6c64,
+  cliffLight: 0xa8a498,
+  waterShallow: 0x4cc4c8,
+  waterDeep: 0x2a92a4,
+  waterFoam: 0xeffbff,
+  wisteriaViolet: 0xb580ea,
+  wisteriaDeep: 0x8b56c8,
+  wisteriaPink: 0xe8a4d8,
+  sakuraPink: 0xf7b0c6,
+  sakuraDeep: 0xd87ca0,
+  leafGreen: 0x62a84c,
+  leafLight: 0x8ad064,
+  leafDark: 0x498438,
+  trunk: 0x8c623e,
+};
 
-function clamp(v, lo, hi) {
-  return v < lo ? lo : v > hi ? hi : v;
-}
+const SUN_DIR = new THREE.Vector3(-48, 76, 58).normalize();
 
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-
-function smoothstep(e0, e1, x) {
-  const t = clamp((x - e0) / (e1 - e0), 0, 1);
-  return t * t * (3 - 2 * t);
-}
-
-/**
- * Paints the high-resolution 2048x2048 world terrain splat canvas covering [-160..+160]m.
- * Composites:
- * - 3-tone gouache meadow grass with painted brushstroke variation
- * - Warm sandy/pebbled shoreline gradient (#d8c89e) around the Millpond (waterY = -1.2m)
- * - Packed warm earth roads & Wisteria Combat Clearing ring (#d2ad74)
- * - Hand-painted cobblestone plaza, doorway aprons & spur paths
- * - Stratified cliff rock & contact AO
- */
-function buildTerrainSplatTexture(renderer, textures) {
-  const S = 2048;
-  const span = INNER_EXTENT * 2; // 320m
-  const canvas = document.createElement('canvas');
-  canvas.width = S;
-  canvas.height = S;
-  const ctx = canvas.getContext('2d');
-
-  const grassPat = textures?.grass?.image ? ctx.createPattern(textures.grass.image, 'repeat') : null;
-  const pathPat = textures?.path?.image ? ctx.createPattern(textures.path.image, 'repeat') : null;
-  const stonePat = textures?.stone?.image ? ctx.createPattern(textures.stone.image, 'repeat') : null;
-
-  const imgData = ctx.createImageData(S, S);
-  const data = imgData.data;
-
-  // Base pixel pass driven by exact mathematical `sampleWorld(wx, wz)`
-  for (let py = 0; py < S; py++) {
-    const wz = ((py + 0.5) / S - 0.5) * span;
-    for (let px = 0; px < S; px++) {
-      const wx = ((px + 0.5) / S - 0.5) * span;
-      const s = sampleWorld(wx, wz);
-
-      // 1. Meadow Gouache Grass Base (3-tone sunlit yellow-green to cool emerald)
-      const n1 = Math.sin(wx * 0.14 + wz * 0.11) * 0.5 + 0.5;
-      const n2 = Math.cos(wx * 0.31 - wz * 0.27) * 0.5 + 0.5;
-      let r = lerp(110, 146, n1 * 0.7 + n2 * 0.3);
-      let g = lerp(168, 202, n1 * 0.7 + n2 * 0.3);
-      let b = lerp(78, 102, n1 * 0.6 + n2 * 0.4);
-
-      // 2. Sandy/Pebbled Lake Shoreline Gradient (#d8c89e = rgb(216, 200, 158))
-      if (s.sandWeight > 0.001) {
-        const wetFactor = smoothstep(-0.35, 0.25, s.y - WATER.waterY);
-        const sandR = lerp(182, 216, wetFactor);
-        const sandG = lerp(164, 200, wetFactor);
-        const sandB = lerp(124, 158, wetFactor);
-        // Subtle pebble speckle
-        const peb = ((Math.imul(px, 1973) ^ Math.imul(py, 9277)) & 31) / 31 - 0.5;
-        r = lerp(r, sandR + peb * 14, s.sandWeight);
-        g = lerp(g, sandG + peb * 12, s.sandWeight);
-        b = lerp(b, sandB + peb * 10, s.sandWeight);
-      }
-
-      // 3. Underwater Lakebed / Tailrace Channel Floor (deep teal-slate stone)
-      if (s.y < WATER.waterY - 0.08) {
-        const depthT = smoothstep(WATER.waterY - 0.08, WATER.waterY - 0.9, s.y);
-        r = lerp(r, 76, depthT);
-        g = lerp(g, 112, depthT);
-        b = lerp(b, 118, depthT);
-      }
-
-      // 4. Warm Packed Dirt Roads & Eastern Combat Arena (#d4ae76)
-      if (s.roadWeight > 0.001) {
-        const dirtNoise = Math.sin(wx * 0.8 + wz * 0.7) * 5;
-        const dirtR = 212 + dirtNoise;
-        const dirtG = 174 + dirtNoise * 0.8;
-        const dirtB = 118 + dirtNoise * 0.6;
-        r = lerp(r, dirtR, s.roadWeight);
-        g = lerp(g, dirtG, s.roadWeight);
-        b = lerp(b, dirtB, s.roadWeight);
-      }
-
-      // 5. Cobblestone Plaza, Spur Paths & Shrine Overlook (#cfc7b6)
-      if (s.cobbleWeight > 0.001) {
-        const cobR = 204;
-        const cobG = 195;
-        const cobB = 178;
-        r = lerp(r, cobR, s.cobbleWeight);
-        g = lerp(g, cobG, s.cobbleWeight);
-        b = lerp(b, cobB, s.cobbleWeight);
-      }
-
-      // 6. Cliff Rock Strata (#918b80)
-      if (s.rockWeight > 0.001) {
-        const strata = Math.sin(s.y * 5.2 + wx * 0.4) * 9;
-        r = lerp(r, 146 + strata, s.rockWeight);
-        g = lerp(g, 140 + strata, s.rockWeight);
-        b = lerp(b, 128 + strata, s.rockWeight);
-      }
-
-      // 7. Apply Contact Ambient Occlusion
-      const ao = s.ao;
-      const idx = (py * S + px) * 4;
-      data[idx] = clamp(Math.round(r * ao), 0, 255);
-      data[idx + 1] = clamp(Math.round(g * ao), 0, 255);
-      data[idx + 2] = clamp(Math.round(b * ao), 0, 255);
-      data[idx + 3] = 255;
-    }
-  }
-
-  ctx.putImageData(imgData, 0, 0);
-
-  // Overlay hand-painted grass, cobblestone, and shoreline pebble details in vector canvas pass
-  const toPx = (wx, wz) => [((wx + INNER_EXTENT) / span) * S, ((wz + INNER_EXTENT) / span) * S];
-  const mToPx = (m) => (m / span) * S;
-
-  // Overlay subtle tiled grass texture across the canvas
-  if (grassPat) {
-    ctx.save();
-    ctx.globalAlpha = 0.22;
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = grassPat;
-    ctx.fillRect(0, 0, S, S);
-    ctx.restore();
-  }
-
-  // Paint crisp cobblestone detail on Well Plaza, Doorway Spur Paths, and Building Aprons
-  if (pathPat) {
-    ctx.save();
-    ctx.fillStyle = pathPat;
-    ctx.globalAlpha = 0.65;
-
-    // Well Plaza circle
-    const [cx, cy] = toPx(0, 0);
-    ctx.beginPath();
-    ctx.arc(cx, cy, mToPx(WELL_PLAZA.cobbleRadius), 0, Math.PI * 2);
-    ctx.fill();
-
-    // Every doorway spur path and rotated building apron
-    for (const road of ROADS) {
-      if (road.surface !== 'cobble') continue;
-      ctx.beginPath();
-      road.points.forEach(([rx, rz], idx) => {
-        const [px, py] = toPx(rx, rz);
-        if (idx === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      });
-      ctx.lineWidth = mToPx(road.width);
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = pathPat;
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  // Paint shoreline pebbles along the #d8c89e sandy bank around the Millpond
-  const rng = mulberry32(0x7712ab);
-  ctx.save();
-  for (let i = 0; i < 420; i++) {
-    const wx = -54 + rng() * 36;
-    const wz = -14 + rng() * 42;
-    const s = sampleWorld(wx, wz);
-    if (s.sandWeight < 0.35) continue;
-    const [px, py] = toPx(wx, wz);
-    const pr = 1.4 + rng() * 2.8;
-    ctx.fillStyle = rng() > 0.5 ? 'rgba(190, 174, 136, 0.7)' : 'rgba(235, 224, 192, 0.75)';
-    ctx.beginPath();
-    ctx.arc(px, py, pr, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.generateMipmaps = true;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  if (renderer?.capabilities?.getMaxAnisotropy) {
-    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  }
-  texture.needsUpdate = true;
-  return texture;
-}
-
-/**
- * Builds the sculpted valley terrain mesh (`320m x 320m` high-density inner mesh + outer skirt).
- */
-function buildTerrainMesh(materials, renderer, textures) {
-  const segs = 240;
-  const span = INNER_EXTENT * 2; // 320m
-  const geo = new THREE.PlaneGeometry(span, span, segs, segs);
-  geo.rotateX(-Math.PI / 2);
-
-  const pos = geo.attributes.position;
-  const uv = geo.attributes.uv;
-
-  for (let i = 0; i < pos.count; i++) {
-    const wx = pos.getX(i);
-    const wz = pos.getZ(i);
-    const s = sampleWorld(wx, wz);
-    pos.setY(i, s.y);
-    uv.setXY(i, (wx + INNER_EXTENT) / span, (wz + INNER_EXTENT) / span);
-  }
-
-  geo.computeVertexNormals();
-
-  const splatTex = buildTerrainSplatTexture(renderer, textures);
-  const terrainMat = new THREE.MeshToonMaterial({
-    map: splatTex,
-    gradientMap: materials.gradientMap,
+let sharedGradientMap = null;
+export function makeToonGradient() {
+  if (sharedGradientMap) return sharedGradientMap;
+  const steps = [0.38, 0.62, 0.84, 1.0];
+  const data = new Uint8Array(steps.length * 4);
+  steps.forEach((s, i) => {
+    const v = Math.round(s * 255);
+    data.set([v, v, v, 255], i * 4);
   });
-
-  const mesh = new THREE.Mesh(geo, terrainMat);
-  mesh.name = 'valley-terrain';
-  mesh.receiveShadow = true;
-  return mesh;
+  const tex = new THREE.DataTexture(data, steps.length, 1, THREE.RGBAFormat);
+  tex.minFilter = THREE.NearestFilter;
+  tex.magFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  sharedGradientMap = tex;
+  return tex;
 }
 
-/**
- * Builds 3D Cobblestone Road Ribbons, Ring Road, and Exact Doorway Spur Paths + Rotated Stone Aprons.
- * Guarantees every building's front door (`doorX, doorZ`) meets a warm stone apron & cobblestone spur
- * with zero misaligned grey rectangles or doors opening onto bare grass.
- */
-function buildRoadsAndDoorAprons(materials) {
-  const group = new THREE.Group();
-  group.name = 'roads-and-door-aprons';
-
-  // 1. Village Ring Road cobblestone/dirt border segments around Well Plaza
-  const ringSegs = 64;
-  const ringPositions = [];
-  const ringUvs = [];
-  const ringIndices = [];
-  const rIn = WELL_PLAZA.ringInnerRadius - 0.1;
-  const rOut = WELL_PLAZA.ringOuterRadius;
-
-  for (let i = 0; i <= ringSegs; i++) {
-    const a = (i / ringSegs) * Math.PI * 2;
-    const c = Math.cos(a);
-    const s = Math.sin(a);
-    const xIn = c * rIn;
-    const zIn = s * rIn;
-    const xOut = c * rOut;
-    const zOut = s * rOut;
-    ringPositions.push(xIn, 0.014, zIn, xOut, 0.014, zOut);
-    const arcU = (i / ringSegs) * 18.0;
-    ringUvs.push(0, arcU, (rOut - rIn) / TILE.path, arcU);
-    if (i < ringSegs) {
-      const b = i * 2;
-      ringIndices.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
-    }
-  }
-  const ringGeo = new THREE.BufferGeometry();
-  ringGeo.setAttribute('position', new THREE.Float32BufferAttribute(ringPositions, 3));
-  ringGeo.setAttribute('uv', new THREE.Float32BufferAttribute(ringUvs, 2));
-  ringGeo.setIndex(ringIndices);
-  ringGeo.computeVertexNormals();
-  const ringMesh = new THREE.Mesh(ringGeo, materials.path);
-  ringMesh.receiveShadow = true;
-  ringMesh.name = 'village-ring-road';
-  group.add(ringMesh);
-
-  // 2. Swept Cobblestone Spur Paths & Arterial Road Ribbons
-  for (const road of ROADS) {
-    const curvePts = road.points.map(([px, pz]) => new THREE.Vector3(px, 0, pz));
-    const curve = new THREE.CatmullRomCurve3(curvePts, false, 'centripetal', 0.25);
-    const steps = 32;
-    const positions = [];
-    const uvs = [];
-    const indices = [];
-    let distAcc = 0;
-    let prev = curve.getPoint(0);
-
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      const pt = curve.getPoint(t);
-      const tan = curve.getTangent(t);
-      distAcc += pt.distanceTo(prev);
-      prev = pt;
-
-      const nx = -tan.z;
-      const nz = tan.x;
-      const halfW = road.width * 0.5 * (1 + Math.sin(i * 0.7) * 0.03);
-
-      const lx = pt.x + nx * halfW;
-      const lz = pt.z + nz * halfW;
-      const rx = pt.x - nx * halfW;
-      const rz = pt.z - nz * halfW;
-
-      const ly = sampleWorld(lx, lz).y + (road.surface === 'cobble' ? 0.022 : 0.015);
-      const ry = sampleWorld(rx, rz).y + (road.surface === 'cobble' ? 0.022 : 0.015);
-
-      positions.push(lx, ly, lz, rx, ry, rz);
-      uvs.push(0, distAcc / TILE.path, road.width / TILE.path, distAcc / TILE.path);
-
-      if (i < steps) {
-        const base = i * 2;
-        indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
-      }
-    }
-
-    const rGeo = new THREE.BufferGeometry();
-    rGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    rGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    rGeo.setIndex(indices);
-    rGeo.computeVertexNormals();
-
-    const rMesh = new THREE.Mesh(
-      rGeo,
-      road.surface === 'cobble' ? materials.path : materials.stoneWarm
-    );
-    rMesh.receiveShadow = true;
-    rMesh.name = `road-${road.id}`;
-    group.add(rMesh);
-  }
-
-  // 3. Rotated Building Flagstone Aprons & Stepping Stones at exact `(doorX, doorZ)`
-  for (const b of BUILDING_LIST) {
-    const apronGroup = new THREE.Group();
-    apronGroup.name = `door-apron-${b.id}`;
-    apronGroup.position.set(b.x, b.y, b.z);
-    apronGroup.rotation.y = b.rotY;
-
-    // Warm dressed stone apron slabs extending from front wall (z = d/2) through doorstep (z = d/2 + 0.9)
-    // and blending with rounded stepping stones into the cobblestone spur path
-    const slabRows = 3;
-    const slabCols = 2;
-    for (let r = 0; r < slabRows; r++) {
-      for (let c = 0; c < slabCols; c++) {
-        const sw = 1.18 - r * 0.06;
-        const sd = 0.56;
-        const sh = 0.055 - r * 0.008;
-        const slab = box(sw, sh, sd, r % 2 === 0 ? materials.stoneWarm : materials.stoneTrim, {
-          tile: TILE.stone,
-          outline: 0.01,
-        });
-        slab.position.set(
-          (c - 0.5) * (sw + 0.06),
-          sh * 0.5 + 0.008,
-          b.d * 0.5 + 0.22 + r * 0.54
-        );
-        apronGroup.add(slab);
-      }
-    }
-
-    // Two low stone threshold curb blocks flanking the doorstep
-    for (const sx of [-1, 1]) {
-      const curb = box(0.32, 0.18, 0.95, materials.stone, { tile: TILE.stone, outline: 0.012 });
-      curb.position.set(sx * 1.32, 0.09, b.d * 0.5 + 0.45);
-      apronGroup.add(curb);
-    }
-
-    group.add(apronGroup);
-  }
-
-  return group;
-}
-
-/**
- * Builds a single natural, stratified, flat-shaded limestone cliff boulder
- * (NEVER a sphere or snowman stack!).
- */
-export function buildStratifiedRock(w, h, d, seed, materials, withMoss = true) {
-  const rng = mulberry32(seed);
-  const group = new THREE.Group();
-
-  // Base angular stratified rock block: 4x3x4 box with faceted horizontal strata offsets
-  const geo = new THREE.BoxGeometry(w, h, d, 4, 3, 4);
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    let vx = pos.getX(i);
-    let vy = pos.getY(i);
-    let vz = pos.getZ(i);
-
-    const ny = vy / (h * 0.5); // -1..+1
-    // Taper upper strata slightly for natural cliff batter
-    const taper = ny > 0 ? 1.0 - ny * 0.18 : 1.0 + Math.abs(ny) * 0.08;
-    // Stratified horizontal ledge step
-    const strataStep = Math.floor((ny + 1.0) * 2.0) * 0.08;
-    const hHash = Math.sin(vx * 1.7 + vz * 2.3 + seed) * 0.14 + Math.cos(vy * 3.1 - vx * 1.3) * 0.09;
-
-    vx = vx * (taper + hHash) + strataStep * (vx >= 0 ? 1 : -1);
-    vz = vz * (taper + hHash * 0.85);
-    if (ny > 0.85) {
-      vy += Math.sin(vx * 1.5 + vz * 1.5) * 0.08;
-    }
-
-    pos.setXYZ(i, vx, vy, vz);
-  }
-
-  const flatGeo = geo.toNonIndexed();
-  flatGeo.computeVertexNormals();
-
-  const rockMesh = new THREE.Mesh(flatGeo, materials.stone);
-  rockMesh.castShadow = true;
-  rockMesh.receiveShadow = true;
-  addOutline(rockMesh, 0.018);
-  group.add(rockMesh);
-
-  // Secondary lower rock ledge shelf so every boulder reads as multi-layered strata
-  const ledgeW = w * rng() * 0.35 + w * 0.45;
-  const ledgeH = h * 0.42;
-  const ledgeD = d * 0.58;
-  const ledgeGeo = new THREE.BoxGeometry(ledgeW, ledgeH, ledgeD, 2, 2, 2).toNonIndexed();
-  ledgeGeo.computeVertexNormals();
-  const ledge = new THREE.Mesh(ledgeGeo, materials.stoneTrim);
-  ledge.position.set((rng() - 0.5) * w * 0.35, -h * 0.26, d * 0.32);
-  ledge.rotation.y = (rng() - 0.5) * 0.3;
-  ledge.castShadow = true;
-  ledge.receiveShadow = true;
-  addOutline(ledge, 0.015);
-  group.add(ledge);
-
-  // Flat-shaded green moss cap sitting on the upper horizontal strata shelf
-  if (withMoss) {
-    const mossGeo = new THREE.BoxGeometry(w * 0.76, 0.18, d * 0.74, 3, 1, 3).toNonIndexed();
-    mossGeo.computeVertexNormals();
-    const moss = new THREE.Mesh(mossGeo, materials.leafA);
-    moss.position.set(0, h * 0.5 + 0.05, 0);
-    moss.castShadow = true;
-    moss.receiveShadow = true;
-    addOutline(moss, 0.014);
-    group.add(moss);
-  }
-
-  return group;
-}
-
-/**
- * Builds the Carved Waterwheel Tailrace Channel stone masonry walls, the Stepped Rock Cliff Cascade,
- * the Timber Trestle Flume, and the Animated Water & Waterfall Shaders.
- */
-function buildHydrologicalSystem(materials) {
-  const group = new THREE.Group();
-  group.name = 'hydrological-system';
-  const animatedUniforms = [];
-
-  // 1. CARVED WATERWHEEL TAILRACE CHANNEL MASONRY LINER (`x = -26.2, z = -14.2`, floor `y = -2.2m`)
-  const channelGroup = new THREE.Group();
-  channelGroup.name = 'waterwheel-tailrace-channel';
-
-  // Stone paved floor of the carved tailrace at y = -2.2m
-  const channelFloor = box(4.8, 0.24, 15.0, materials.stone, {
-    tile: TILE.stone,
-    outline: 0.012,
-    name: 'tailrace-stone-floor',
-  });
-  channelFloor.position.set(-27.3, WATER.tailraceBottomY - 0.1, -13.5);
-  channelGroup.add(channelFloor);
-
-  // East stone retaining wall (right between the Watermill at x = -22.0 and the -X waterwheel at x = -26.2)
-  const eastWall = box(0.55, 2.75, 13.5, materials.stone, {
-    tile: TILE.stone,
-    outline: 0.016,
-    name: 'tailrace-east-wall',
-  });
-  eastWall.position.set(-25.15, -0.82, -14.2);
-  channelGroup.add(eastWall);
-
-  // Warm stone coping cap on top of the east tailrace wall
-  const eastCoping = box(0.72, 0.18, 13.8, materials.stoneWarm, {
-    tile: TILE.stone,
-    outline: 0.014,
-  });
-  eastCoping.position.set(-25.15, 0.58, -14.2);
-  channelGroup.add(eastCoping);
-
-  // West stone channel curb wall (`x = -29.55`)
-  const westWall = box(0.55, 2.1, 11.5, materials.stone, {
-    tile: TILE.stone,
-    outline: 0.016,
-    name: 'tailrace-west-wall',
-  });
-  westWall.position.set(-29.55, -1.15, -15.0);
-  channelGroup.add(westWall);
-
-  group.add(channelGroup);
-
-  // 2. STEPPED CASCADE ROCK RAVINE & CLIFF BOULDERS (zero snowman spheres!)
-  const rockGroup = new THREE.Group();
-  rockGroup.name = 'ravine-cliff-boulders';
-  CLIFF_BOULDERS.forEach((b, idx) => {
-    const baseGroundY = sampleWorld(b.x, b.z).y;
-    const rock = buildStratifiedRock(b.w, b.h, b.d, 0x900 + idx * 37, materials, b.moss);
-    rock.position.set(b.x, baseGroundY + b.h * 0.36, b.z);
-    rock.rotation.y = b.rotY;
-    rockGroup.add(rock);
-  });
-  group.add(rockGroup);
-
-  // 3. TIMBER TRESTLE FLUME (`x = -26.2`, `z = -23.6 -> -15.2`, `y = +2.92m -> +2.68m`)
-  // Carries water from the upper rock shelf directly to the top of the Watermill's -X waterwheel!
-  const flumeGroup = new THREE.Group();
-  flumeGroup.name = 'timber-trestle-flume';
-  const flumeX = WATER.wheelX; // -26.2
-  const flumeStartZ = -23.6;
-  const flumeEndZ = -15.1;
-  const flumeLen = flumeEndZ - flumeStartZ; // 8.5m
-  const flumeMidZ = (flumeStartZ + flumeEndZ) * 0.5;
-  const flumeY = 2.82;
-  const flumeSlope = -0.028;
-
-  const chuteGroup = new THREE.Group();
-  chuteGroup.position.set(flumeX, flumeY, flumeMidZ);
-  chuteGroup.rotation.x = -flumeSlope;
-
-  // Chute bottom plank bed + left/right wooden side walls
-  const chuteBed = box(1.06, 0.12, flumeLen, materials.timber, { tile: TILE.wood, outline: 0.014 });
-  chuteGroup.add(chuteBed);
-
-  for (const sx of [-1, 1]) {
-    const sideWall = box(0.11, 0.52, flumeLen, materials.timberDark, {
-      tile: TILE.wood,
-      outline: 0.014,
-    });
-    sideWall.position.set(sx * 0.48, 0.28, 0);
-    chuteGroup.add(sideWall);
-  }
-
-  // Top wooden tie-bars & collar yokes along the flume
-  for (let zOff = -flumeLen * 0.44; zOff <= flumeLen * 0.44; zOff += 1.55) {
-    const tie = box(1.26, 0.1, 0.14, materials.timber, { tile: TILE.wood, outline: 0.012 });
-    tie.position.set(0, 0.56, zOff);
-    chuteGroup.add(tie);
-  }
-  flumeGroup.add(chuteGroup);
-
-  // Trestle Bents supporting the flume down to solid rock/stone footings
-  const bentZs = [-22.4, -20.2, -18.0, -16.0];
-  for (const bz of bentZs) {
-    const topY = flumeY - 0.06;
-    const groundY = Math.max(sampleWorld(flumeX, bz).y, -2.15);
-    const h = topY - groundY;
-
-    // Stone pier footing block so timber legs never sit directly in water
-    const footing = box(1.65, 0.75, 0.72, materials.stone, { tile: TILE.stone, outline: 0.014 });
-    footing.position.set(flumeX, groundY + 0.35, bz);
-    flumeGroup.add(footing);
-
-    const legBottomY = groundY + 0.72;
-    for (const sx of [-1, 1]) {
-      const postA = [flumeX + sx * 0.62, legBottomY, bz];
-      const postB = [flumeX + sx * 0.44, topY, bz];
-      flumeGroup.add(beamBetween(postA, postB, 0.16, 0.16, materials.timberDark));
-    }
-
-    // Horizontal cross-beam cap & mid-ledger
-    const capBeam = box(1.36, 0.16, 0.22, materials.timber, { tile: TILE.wood, outline: 0.014 });
-    capBeam.position.set(flumeX, topY - 0.08, bz);
-    flumeGroup.add(capBeam);
-
-    if (h > 2.4) {
-      const midY = (legBottomY + topY) * 0.52;
-      const midLedger = box(1.28, 0.12, 0.18, materials.timber, { tile: TILE.wood, outline: 0.012 });
-      midLedger.position.set(flumeX, midY, bz);
-      flumeGroup.add(midLedger);
-
-      // Diagonal X-bracing
-      flumeGroup.add(
-        beamBetween(
-          [flumeX - 0.56, legBottomY + 0.2, bz],
-          [flumeX + 0.46, topY - 0.15, bz],
-          0.09,
-          0.09,
-          materials.timber
-        )
-      );
-      flumeGroup.add(
-        beamBetween(
-          [flumeX + 0.56, legBottomY + 0.2, bz],
-          [flumeX - 0.46, topY - 0.15, bz],
-          0.09,
-          0.09,
-          materials.timber
-        )
-      );
-    }
-  }
-  group.add(flumeGroup);
-
-  // 4. ANIMATED CEL-SHADED WATERFALL, FLUME SPILL & MILLPOND WATER SHADERS
-  const waterfallUniforms = {
-    uTime: { value: 0 },
-    uTopColor: { value: new THREE.Color(0xdcfaff) },
-    uMidColor: { value: new THREE.Color(0x5ad2e8) },
-    uDeepColor: { value: new THREE.Color(0x2692b8) },
-    uFoamColor: { value: new THREE.Color(0xffffff) },
-  };
-  animatedUniforms.push(waterfallUniforms);
-
-  const waterfallMat = new THREE.ShaderMaterial({
-    uniforms: waterfallUniforms,
-    side: THREE.DoubleSide,
-    transparent: false,
+export function makeOutlineMaterial(thickness = 0.02, color = PALETTE.ink) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uThickness: { value: thickness },
+      uColor: { value: new THREE.Color(color) },
+    },
     vertexShader: /* glsl */ `
-      varying vec2 vUv;
-      varying vec3 vWorldPos;
-      uniform float uTime;
+      uniform float uThickness;
       void main() {
-        vUv = uv;
-        vec3 p = position;
-        // Subtle organic crest ripple along waterfall face
-        float wave = sin(uv.y * 18.0 - uTime * 7.5 + uv.x * 9.0) * 0.045 * sin(uv.y * 3.14159);
-        p.z += wave;
-        vec4 wp = modelMatrix * vec4(p, 1.0);
-        vWorldPos = wp.xyz;
-        gl_Position = projectionMatrix * viewMatrix * wp;
+        vec3 n = normalize(normalMatrix * normal);
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        mv.xyz += n * uThickness;
+        gl_Position = projectionMatrix * mv;
       }
     `,
     fragmentShader: /* glsl */ `
-      varying vec2 vUv;
+      uniform vec3 uColor;
+      void main() {
+        gl_FragColor = vec4(uColor, 1.0);
+      }
+    `,
+    side: THREE.BackSide,
+  });
+}
+
+/**
+ * Strips downward-facing (-Y) buried bottom faces from a non-indexed geometry
+ * to save triangles on grounded boxes, steps, plinths, and curbs.
+ */
+function stripBottomFaces(nonIndexedGeo) {
+  const pos = nonIndexedGeo.attributes.position;
+  const norm = nonIndexedGeo.attributes.normal;
+  const col = nonIndexedGeo.attributes.color;
+  const triCount = pos.count / 3;
+  const keepPos = [];
+  const keepNorm = [];
+  const keepCol = col ? [] : null;
+
+  for (let t = 0; t < triCount; t++) {
+    const i0 = t * 3;
+    const ny = (norm.getY(i0) + norm.getY(i0 + 1) + norm.getY(i0 + 2)) / 3;
+    if (ny < -0.92) continue;
+    for (let k = 0; k < 3; k++) {
+      const vi = i0 + k;
+      keepPos.push(pos.getX(vi), pos.getY(vi), pos.getZ(vi));
+      keepNorm.push(norm.getX(vi), norm.getY(vi), norm.getZ(vi));
+      if (keepCol) {
+        keepCol.push(col.getX(vi), col.getY(vi), col.getZ(vi));
+      }
+    }
+  }
+
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(keepPos, 3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(keepNorm, 3));
+  if (keepCol) {
+    out.setAttribute('color', new THREE.Float32BufferAttribute(keepCol, 3));
+  }
+  return out;
+}
+
+/**
+ * Builds a reversed-winding inverted-hull outline geometry that renders inside a
+ * standard `FrontSide` `MeshToonMaterial` with zero extra draw calls!
+ */
+function buildBakedOutlineGeo(nonIndexedGeo, thickness = 0.022) {
+  const pos = nonIndexedGeo.attributes.position;
+  const norm = nonIndexedGeo.attributes.normal;
+  const count = pos.count;
+
+  // Compute smoothed vertex normals by quantized position key so edges don't split
+  const smoothMap = new Map();
+  const keys = new Array(count);
+  for (let i = 0; i < count; i++) {
+    const kx = Math.round(pos.getX(i) * 200);
+    const ky = Math.round(pos.getY(i) * 200);
+    const kz = Math.round(pos.getZ(i) * 200);
+    const key = `${kx},${ky},${kz}`;
+    keys[i] = key;
+    let acc = smoothMap.get(key);
+    if (!acc) {
+      acc = [0, 0, 0];
+      smoothMap.set(key, acc);
+    }
+    acc[0] += norm.getX(i);
+    acc[1] += norm.getY(i);
+    acc[2] += norm.getZ(i);
+  }
+
+  for (const acc of smoothMap.values()) {
+    const len = Math.hypot(acc[0], acc[1], acc[2]) || 1;
+    acc[0] /= len;
+    acc[1] /= len;
+    acc[2] /= len;
+  }
+
+  const outPos = new Float32Array(count * 3);
+  const outNorm = new Float32Array(count * 3);
+  const outCol = new Float32Array(count * 3);
+  const ink = new THREE.Color(PALETTE.ink);
+
+  for (let i = 0; i < count; i += 3) {
+    // Reverse winding order: (0, 2, 1) so hardware FrontSide culling keeps only back-facing hull triangles
+    const remap = [i, i + 2, i + 1];
+    for (let k = 0; k < 3; k++) {
+      const src = remap[k];
+      const dst = (i + k) * 3;
+      const sn = smoothMap.get(keys[src]);
+      outPos[dst] = pos.getX(src) + sn[0] * thickness;
+      outPos[dst + 1] = pos.getY(src) + sn[1] * thickness;
+      outPos[dst + 2] = pos.getZ(src) + sn[2] * thickness;
+      outNorm[dst] = 0;
+      outNorm[dst + 1] = 1;
+      outNorm[dst + 2] = 0;
+      outCol[dst] = ink.r;
+      outCol[dst + 1] = ink.g;
+      outCol[dst + 2] = ink.b;
+    }
+  }
+
+  const og = new THREE.BufferGeometry();
+  og.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
+  og.setAttribute('normal', new THREE.BufferAttribute(outNorm, 3));
+  og.setAttribute('color', new THREE.BufferAttribute(outCol, 3));
+  return og;
+}
+
+/**
+ * Merges an arbitrary hierarchy of meshes into a SINGLE `THREE.Mesh` draw call
+ * (`MeshToonMaterial({ vertexColors: true, gradientMap })`), preserving custom
+ * per-vertex color gradients when present and baking reversed-winding outlines.
+ */
+export function batchVertexColorGroup(
+  group,
+  {
+    gradientMap = makeToonGradient(),
+    flatShading = false,
+    outlineThickness = 0.022,
+    stripBottom = true,
+    castShadow = true,
+    receiveShadow = true,
+  } = {}
+) {
+  group.updateMatrixWorld(true);
+  const invRoot = new THREE.Matrix4().copy(group.matrixWorld).invert();
+
+  const mergedGeos = [];
+  const emissiveGeos = [];
+  const tmpColor = new THREE.Color();
+
+  group.traverse((child) => {
+    if (!child.isMesh || child.userData.dynamic || child.userData.isOutline) return;
+    let g = child.geometry.clone();
+    if (g.index) g = g.toNonIndexed();
+
+    const localMat = new THREE.Matrix4().multiplyMatrices(invRoot, child.matrixWorld);
+    g.applyMatrix4(localMat);
+
+    for (const k of Object.keys(g.attributes)) {
+      if (k !== 'position' && k !== 'normal' && k !== 'color') g.deleteAttribute(k);
+    }
+    const useFlat = child.userData.flatShading ?? flatShading;
+    if (!g.attributes.normal || useFlat) {
+      g.computeVertexNormals();
+    }
+
+    if (stripBottom && child.userData.stripBottom !== false) {
+      g = stripBottomFaces(g);
+    }
+
+    const count = g.attributes.position.count;
+    if (count === 0) return;
+
+    const hex = child.userData.color ?? child.material?.color?.getHex?.() ?? 0xffffff;
+    const isEmissiveGlow =
+      child.userData.unlit &&
+      (hex === PALETTE.lanternGlow || hex === 0x7ceeff || hex === PALETTE.emberGlow);
+
+    // If unlit (lanterns, windows, glowing runes), align normals to SUN_DIR for 100% toon ramp brightness
+    if (child.userData.unlit) {
+      const norm = g.attributes.normal;
+      for (let i = 0; i < count; i++) {
+        norm.setXYZ(i, SUN_DIR.x, SUN_DIR.y, SUN_DIR.z);
+      }
+    }
+
+    if (!g.attributes.color) {
+      const colors = new Float32Array(count * 3);
+      tmpColor.setHex(hex);
+      for (let i = 0; i < count; i++) {
+        colors[i * 3] = tmpColor.r;
+        colors[i * 3 + 1] = tmpColor.g;
+        colors[i * 3 + 2] = tmpColor.b;
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    }
+
+    if (isEmissiveGlow) {
+      emissiveGeos.push(g);
+    } else {
+      mergedGeos.push(g);
+    }
+
+    if (child.userData.outline) {
+      mergedGeos.push(buildBakedOutlineGeo(g, child.userData.outlineThickness ?? outlineThickness));
+    }
+  });
+
+  const outGroup = new THREE.Group();
+  outGroup.name = `${group.name || 'group'}-batched`;
+
+  if (mergedGeos.length > 0) {
+    const merged = mergeGeometries(mergedGeos, false);
+    const toonMat = new THREE.MeshToonMaterial({
+      vertexColors: true,
+      gradientMap,
+    });
+    const toonMesh = new THREE.Mesh(merged, toonMat);
+    toonMesh.name = `${group.name || 'group'}-toon`;
+    toonMesh.castShadow = castShadow;
+    toonMesh.receiveShadow = receiveShadow;
+    outGroup.add(toonMesh);
+  }
+
+  if (emissiveGeos.length > 0) {
+    const mergedEmissive = mergeGeometries(emissiveGeos, false);
+    const emissiveMat = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      toneMapped: false,
+    });
+    const emissiveMesh = new THREE.Mesh(mergedEmissive, emissiveMat);
+    emissiveMesh.name = `${group.name || 'group'}-emissive`;
+    outGroup.add(emissiveMesh);
+  }
+
+  return outGroup;
+}
+
+/**
+ * Builds the Gouache Terrain ShaderMaterial driven by the fast 512x512 `uWorldMask` DataTexture.
+ */
+function createGouacheTerrainMaterial(worldMaskTex) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uWorldMask: { value: worldMaskTex },
+      uInnerSpan: { value: INNER_EXTENT * 2.0 }, // 280.0m
+      uSunDir: { value: SUN_DIR.clone() },
+      uLightTint: { value: new THREE.Color(1, 1, 1) },
+      uGrassMid: { value: new THREE.Color(PALETTE.grassMid) },
+      uGrassLight: { value: new THREE.Color(PALETTE.grassLight) },
+      uGrassDark: { value: new THREE.Color(PALETTE.grassDark) },
+      uDirt: { value: new THREE.Color(PALETTE.dirtRoad) },
+      uDirtEdge: { value: new THREE.Color(PALETTE.dirtEdge) },
+      uCobble: { value: new THREE.Color(PALETTE.cobble) },
+      uSand: { value: new THREE.Color(PALETTE.sandBank) },
+      uArena: { value: new THREE.Color(PALETTE.arenaEarth) },
+      uShrine: { value: new THREE.Color(PALETTE.shrineStone) },
+      uLakeBed: { value: new THREE.Color(0x3a94a0) },
+      uMountainRock: { value: new THREE.Color(0x7c988a) },
+      uMountainSnow: { value: new THREE.Color(0xe6f1f8) },
+      uFogColor: { value: new THREE.Color(0xd8eef8) },
+      uFogNear: { value: 165.0 },
+      uFogFar: { value: 540.0 },
+    },
+    vertexShader: /* glsl */ `
       varying vec3 vWorldPos;
-      uniform float uTime;
-      uniform vec3 uTopColor;
-      uniform vec3 uMidColor;
-      uniform vec3 uDeepColor;
-      uniform vec3 uFoamColor;
+      varying vec3 vWorldNormal;
+      varying float vViewDist;
 
       void main() {
-        float flow = vUv.y * 5.5 - uTime * 2.4;
-        float streak1 = sin(vUv.x * 26.0 + sin(flow * 2.2) * 1.4);
-        float streak2 = cos(vUv.x * 42.0 - flow * 3.6);
-        float combined = streak1 * 0.55 + streak2 * 0.45;
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vWorldPos = wp.xyz;
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        vec4 mv = viewMatrix * wp;
+        vViewDist = -mv.z;
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uWorldMask;
+      uniform float uInnerSpan;
+      uniform vec3 uSunDir;
+      uniform vec3 uLightTint;
+      uniform vec3 uGrassMid;
+      uniform vec3 uGrassLight;
+      uniform vec3 uGrassDark;
+      uniform vec3 uDirt;
+      uniform vec3 uDirtEdge;
+      uniform vec3 uCobble;
+      uniform vec3 uSand;
+      uniform vec3 uArena;
+      uniform vec3 uShrine;
+      uniform vec3 uLakeBed;
+      uniform vec3 uMountainRock;
+      uniform vec3 uMountainSnow;
+      uniform vec3 uFogColor;
+      uniform float uFogNear;
+      uniform float uFogFar;
 
-        // Cel-shaded 3-band water + bright white crest/plunge foam
-        vec3 col = mix(uDeepColor, uMidColor, step(-0.15, combined));
-        col = mix(col, uTopColor, step(0.35, combined));
+      varying vec3 vWorldPos;
+      varying vec3 vWorldNormal;
+      varying float vViewDist;
 
-        // Crest lip foam (top of cascade) & splash base foam (bottom of cascade)
-        float topFoam = smoothstep(0.82, 0.96, vUv.y);
-        float botFoam = smoothstep(0.24, 0.03, vUv.y);
-        float midLedgeFoam = exp(-pow((vUv.y - 0.52) * 9.5, 2.0)) * step(-0.1, streak1);
-        float foamMask = clamp(topFoam + botFoam + midLedgeFoam + step(0.68, combined) * 0.65, 0.0, 1.0);
+      float hash21(vec2 p) {
+        p = fract(p * vec2(123.34, 456.21));
+        p += dot(p, p + 45.32);
+        return fract(p.x * p.y);
+      }
 
-        col = mix(col, uFoamColor, foamMask);
+      float vnoise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(
+          mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x),
+          mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x),
+          u.y
+        );
+      }
+
+      vec3 evalCobblestone(vec2 xz, vec3 baseCol, float isShrine) {
+        vec2 scale = isShrine > 0.5 ? vec2(1.35, 1.85) : vec2(2.15, 2.15);
+        vec2 p = xz * scale;
+        vec2 row = floor(p);
+        p.x += mod(row.y, 2.0) * 0.45;
+        vec2 cell = floor(p);
+        vec2 f = fract(p) - 0.5;
+        float h = hash21(cell);
+        vec2 jitter = (vec2(h, fract(h * 17.3)) - 0.5) * (isShrine > 0.5 ? 0.08 : 0.20);
+        vec2 d = abs(f - jitter);
+        float stoneDist = isShrine > 0.5
+          ? max(d.x, d.y)
+          : length(max(d - vec2(0.14), 0.0)) + min(max(d.x - 0.14, d.y - 0.14), 0.0);
+        float mortar = smoothstep(0.31, 0.43, stoneDist);
+        vec3 warmVar = mix(vec3(0.95, 0.93, 0.90), vec3(1.06, 1.03, 0.98), h);
+        vec3 stoneTint = baseCol * warmVar;
+        vec3 mortarCol = baseCol * 0.74;
+        return mix(stoneTint, mortarCol, mortar * 0.62);
+      }
+
+      void main() {
+        vec2 xz = vWorldPos.xz;
+        float h = vWorldPos.y;
+
+        vec2 maskUv = xz / uInnerSpan + 0.5;
+        float inInner = step(abs(xz.x), uInnerSpan * 0.5 - 0.5) * step(abs(xz.y), uInnerSpan * 0.5 - 0.5);
+        vec4 mask = texture2D(uWorldMask, clamp(maskUv, 0.001, 0.999));
+
+        // 1. 3-Band Cel-Shaded Gouache Grass Brushwork & World-Space Canopy Dapple
+        float nBroad = vnoise(xz * 0.085 + vec2(3.1, 1.7));
+        float nBrush = vnoise(xz * 0.28 + vec2(nBroad * 1.4, -nBroad * 1.1));
+        float grassMix = mix(nBroad, nBrush, 0.36);
+        float celGrass = 0.5 * smoothstep(0.34, 0.41, grassMix) + 0.5 * smoothstep(0.62, 0.69, grassMix);
+        vec3 col = mix(uGrassDark, uGrassMid, smoothstep(0.0, 0.5, celGrass));
+        col = mix(col, uGrassLight, smoothstep(0.5, 1.0, celGrass));
+
+        if (inInner > 0.5) {
+          // Clean independent unpacking: R = cobbleWeight, G (0..0.5) = dirtWeight
+          float cobbleW = mask.r;
+          float gVal = mask.g;
+          float dirtW = (gVal < 0.502 && !(xz.x < -36.0 && xz.y > -28.0 && xz.y < 44.0))
+            ? clamp(gVal * 2.0, 0.0, 1.0)
+            : 0.0;
+
+          // Elevation-gated sandy shoreline (#dfc99b) around Millpond (-62, 6) & Plunge Pool (-51.4, -20.8)
+          float dPond = length((xz - vec2(-62.0, 6.0)) / vec2(28.0, 36.0));
+          float dPlunge = length(xz - vec2(-51.4, -20.8)) / 14.0;
+          float nearShore = 1.0 - smoothstep(0.95, 1.18, min(dPond, dPlunge));
+          float sandW = nearShore * (1.0 - smoothstep(-0.45, -0.22, h)) * smoothstep(-1.55, -1.18, h);
+
+          if (sandW > 0.01) {
+            float peb = (vnoise(xz * 3.8) - 0.5) * 0.07;
+            col = mix(col, uSand + peb, sandW);
+          }
+
+          if (dirtW > 0.01) {
+            float dArena = length(xz - vec2(68.0, -4.0));
+            float isArena = 1.0 - smoothstep(16.0, 18.0, dArena);
+            vec3 earthBase = mix(uDirt, uArena, isArena);
+            float earthGrain = (vnoise(xz * 1.9) - 0.5) * 0.05;
+            // Subtle flagstone stepping-stone hint along country roads outside the arena
+            vec3 flagCol = evalCobblestone(xz * 0.85, mix(uDirt, uCobble, 0.55), 0.0);
+            float centerStone = (1.0 - isArena) * smoothstep(0.55, 0.92, dirtW) * 0.38;
+            vec3 pathInterior = mix(earthBase + earthGrain, flagCol, centerStone);
+            float borderBand = dirtW * (1.0 - dirtW) * 3.0;
+            vec3 roadCol = mix(pathInterior, uDirtEdge, clamp(borderBand, 0.0, 0.65));
+            col = mix(col, roadCol, smoothstep(0.02, 0.88, dirtW));
+          }
+
+          if (cobbleW > 0.01) {
+            float isShrine = (1.0 - smoothstep(-18.0, -14.0, xz.y)) * (1.0 - smoothstep(15.0, 20.0, abs(xz.x)));
+            float rOrigin = length(xz);
+            float isWellCore = 1.0 - smoothstep(6.0, 7.2, rOrigin);
+            vec3 baseStone = mix(uCobble, uShrine, max(isShrine, isWellCore * 0.65));
+            vec3 cobbleCol = evalCobblestone(xz, baseStone, isShrine);
+            // Soft mossy-verge stone transition directly into grass (zero muddy halo!)
+            float verge = cobbleW * (1.0 - cobbleW) * 2.8;
+            vec3 vergeCol = mix(cobbleCol, uGrassDark * 0.95 + uCobble * 0.2, clamp(verge * (1.0 - dirtW), 0.0, 0.45));
+            col = mix(col, vergeCol, smoothstep(0.03, 0.82, cobbleW));
+          }
+        }
+
+        float wLake = 1.0 - smoothstep(-1.65, -1.15, h);
+        if (wLake > 0.001) {
+          col = mix(col, uLakeBed, wLake);
+        }
+
+        float distOrigin = length(xz);
+        if (distOrigin > 122.0) {
+          float nMtn = vnoise(xz * 0.025) * 6.0;
+          float hMod = h + nMtn;
+          float wRock = smoothstep(11.0, 24.0, hMod) * smoothstep(122.0, 175.0, distOrigin);
+          if (wRock > 0.001) {
+            col = mix(col, uMountainRock, wRock * 0.72);
+          }
+          float wSnow = smoothstep(26.0, 38.0, hMod) * smoothstep(168.0, 225.0, distOrigin);
+          if (wSnow > 0.001) {
+            col = mix(col, uMountainSnow, wSnow * 0.85);
+          }
+        }
+
+        float ndl = dot(normalize(vWorldNormal), normalize(uSunDir)) * 0.5 + 0.5;
+        float toonBand = 0.34 * smoothstep(0.30, 0.36, ndl)
+                       + 0.33 * smoothstep(0.52, 0.58, ndl)
+                       + 0.33 * smoothstep(0.72, 0.78, ndl);
+        float toonShade = mix(0.72, 1.05, toonBand);
+        float ao = inInner > 0.5 ? mix(0.64, 1.0, mask.a) : 1.0;
+        col *= toonShade * ao * uLightTint;
+
+        float fogFactor = smoothstep(uFogNear, uFogFar, vViewDist);
+        col = mix(col, uFogColor, fogFactor);
+
         gl_FragColor = vec4(col, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });
+}
 
-  // Main Stepped Rock Ravine Waterfall Ribbon (`x = -27.6`, `y = +4.55m -> -1.2m`, `z = -22.5 -> -19.2`)
-  const wfWidth = 2.7;
-  const wfSegsY = 32;
-  const wfSegsX = 12;
-  const wfGeo = new THREE.PlaneGeometry(wfWidth, 1, wfSegsX, wfSegsY);
-  const wfPos = wfGeo.attributes.position;
-  for (let i = 0; i < wfPos.count; i++) {
-    const u = wfPos.getX(i) / wfWidth + 0.5; // 0..1
-    const v = wfPos.getY(i) + 0.5; // 0 (bottom) .. 1 (top)
-    const y = lerp(WATER.waterY - 0.05, WATER.upperStreamY + 0.08, v);
-    // Stepped S-curve profile over the middle rock shelf
-    const baseZ = lerp(-19.4, -22.6, v);
-    const stepBulge =
-      Math.sin(v * Math.PI) * 0.65 +
-      Math.exp(-Math.pow((v - 0.52) * 5.5, 2)) * 0.55;
-    const edgeCurve = Math.sin(u * Math.PI) * 0.18;
-    wfPos.setXYZ(i, -27.65 + (u - 0.5) * wfWidth, y, baseZ + stepBulge + edgeCurve);
+/**
+ * Appends a 1-strip downward perimeter skirt lip along the outer `±INNER_EXTENT`
+ * boundary of a peripheral terrain chunk so zero T-junction sky cracks can ever appear.
+ */
+function buildChunkWithOuterLip(chunkSize, chunkSegs, cx, cz) {
+  const baseGeo = new THREE.PlaneGeometry(chunkSize, chunkSize, chunkSegs, chunkSegs);
+  baseGeo.rotateX(-Math.PI / 2);
+  baseGeo.deleteAttribute('uv');
+
+  const pos = baseGeo.attributes.position;
+  const norm = baseGeo.attributes.normal;
+  for (let i = 0; i < pos.count; i++) {
+    const lx = pos.getX(i);
+    const lz = pos.getZ(i);
+    const wx = cx + lx;
+    const wz = cz + lz;
+    const wy = terrainHeightAt(wx, wz);
+    const [nx, ny, nz] = terrainNormalAt(wx, wz);
+    pos.setY(i, wy);
+    norm.setXYZ(i, nx, ny, nz);
   }
-  wfGeo.computeVertexNormals();
-  const mainWaterfall = new THREE.Mesh(wfGeo, waterfallMat);
-  mainWaterfall.name = 'main-stepped-waterfall';
-  group.add(mainWaterfall);
+  pos.needsUpdate = true;
+  norm.needsUpdate = true;
 
-  // Flume-to-Waterwheel Spill Stream (`x = -26.2`, `y = +2.68m -> -1.2m`, `z = -15.1 -> -13.8`)
-  const spillGeo = new THREE.PlaneGeometry(0.76, 1, 6, 20);
-  const spPos = spillGeo.attributes.position;
-  for (let i = 0; i < spPos.count; i++) {
-    const v = spPos.getY(i) + 0.5; // 0 bottom .. 1 top at flume lip
-    const y = lerp(WATER.waterY, 2.75, v);
-    const arcZ = lerp(-13.65, -15.15, v) + Math.sin(v * Math.PI) * 0.42;
-    spPos.setXYZ(i, WATER.wheelX + spPos.getX(i), y, arcZ);
-  }
-  spillGeo.computeVertexNormals();
-  const flumeSpill = new THREE.Mesh(spillGeo, waterfallMat);
-  flumeSpill.name = 'flume-waterwheel-spill';
-  group.add(flumeSpill);
+  // Check if this chunk borders ±INNER_EXTENT
+  const half = chunkSize * 0.5;
+  const onWest = Math.abs((cx - half) - (-INNER_EXTENT)) < 0.1;
+  const onEast = Math.abs((cx + half) - INNER_EXTENT) < 0.1;
+  const onNorth = Math.abs((cz - half) - (-INNER_EXTENT)) < 0.1;
+  const onSouth = Math.abs((cz + half) - INNER_EXTENT) < 0.1;
 
-  // Water strip flowing inside the Timber Trestle Flume trough
-  const flumeWaterGeo = new THREE.PlaneGeometry(0.82, flumeLen - 0.1, 2, 16);
-  flumeWaterGeo.rotateX(-Math.PI / 2);
-  const flumeWater = new THREE.Mesh(flumeWaterGeo, waterfallMat);
-  flumeWater.position.set(flumeX, flumeY + 0.36, flumeMidZ);
-  flumeWater.rotation.x = -flumeSlope;
-  group.add(flumeWater);
-
-  // 3D Cel-Shaded Splash Foam Collars at Waterfall Plunge Pool & Waterwheel Paddles
-  const foamMat = new THREE.MeshBasicMaterial({ color: 0xf7feff, toneMapped: false });
-  const foamLocations = [
-    // Waterfall plunge pool foam cluster
-    [-28.3, WATER.waterY + 0.08, -19.4, 0.52],
-    [-27.6, WATER.waterY + 0.12, -19.2, 0.65],
-    [-26.9, WATER.waterY + 0.08, -19.4, 0.48],
-    [-27.6, WATER.waterY + 0.95, -21.0, 0.42], // mid-ledge splash
-    // Waterwheel paddle splash foam right at (-26.2, -14.2)
-    [-26.2, WATER.waterY + 0.09, -13.6, 0.44],
-    [-26.2, WATER.waterY + 0.07, -14.8, 0.38],
-  ];
-  for (const [fx, fy, fz, fr] of foamLocations) {
-    const puff = new THREE.Mesh(new THREE.IcosahedronGeometry(fr, 1), foamMat);
-    puff.scale.set(1.25, 0.42, 0.95);
-    puff.position.set(fx, fy, fz);
-    group.add(puff);
+  if (!onWest && !onEast && !onNorth && !onSouth) {
+    baseGeo.computeBoundingBox();
+    baseGeo.computeBoundingSphere();
+    return baseGeo;
   }
 
-  // 5. ANIMATED MILLPOND & TAILRACE WATER SURFACE (`waterY = -1.2m`)
-  // Extends continuously from the main Millpond right through the Carved Tailrace Channel
-  // (`x = -29.6..-25.2, z = -21.5..+28.0`) directly beneath the Watermill's -X waterwheel (`x = -26.2, z = -14.2`).
-  const pondUniforms = {
-    uTime: { value: 0 },
-    uShallow: { value: new THREE.Color(0x42c4d6) },
-    uDeep: { value: new THREE.Color(0x1f82a8) },
-    uFoam: { value: new THREE.Color(0xf4fdff) },
+  const lipGeos = [baseGeo.toNonIndexed()];
+  const lipDrop = 2.4;
+
+  const addEdgeLip = (getEdgePoint) => {
+    const lipPos = [];
+    const lipNorm = [];
+    for (let s = 0; s < chunkSegs; s++) {
+      const t0 = s / chunkSegs - 0.5;
+      const t1 = (s + 1) / chunkSegs - 0.5;
+      const [lx0, lz0] = getEdgePoint(t0 * chunkSize);
+      const [lx1, lz1] = getEdgePoint(t1 * chunkSize);
+      const wx0 = cx + lx0;
+      const wz0 = cz + lz0;
+      const wx1 = cx + lx1;
+      const wz1 = cz + lz1;
+      const y0 = terrainHeightAt(wx0, wz0);
+      const y1 = terrainHeightAt(wx1, wz1);
+      const n0 = terrainNormalAt(wx0, wz0);
+      const n1 = terrainNormalAt(wx1, wz1);
+
+      // Outward-facing quad strip dropping straight down by lipDrop
+      lipPos.push(
+        lx0, y0, lz0,
+        lx1, y1, lz1,
+        lx0, y0 - lipDrop, lz0,
+        lx1, y1, lz1,
+        lx1, y1 - lipDrop, lz1,
+        lx0, y0 - lipDrop, lz0
+      );
+      for (let k = 0; k < 2; k++) {
+        lipNorm.push(n0[0], n0[1], n0[2], n1[0], n1[1], n1[2], n0[0], n0[1], n0[2]);
+      }
+    }
+    const lg = new THREE.BufferGeometry();
+    lg.setAttribute('position', new THREE.Float32BufferAttribute(lipPos, 3));
+    lg.setAttribute('normal', new THREE.Float32BufferAttribute(lipNorm, 3));
+    lipGeos.push(lg);
   };
-  animatedUniforms.push(pondUniforms);
 
-  const pondMat = new THREE.ShaderMaterial({
-    uniforms: pondUniforms,
+  if (onWest) addEdgeLip((t) => [-half, t]);
+  if (onEast) addEdgeLip((t) => [half, t]);
+  if (onNorth) addEdgeLip((t) => [t, -half]);
+  if (onSouth) addEdgeLip((t) => [t, half]);
+
+  const merged = mergeGeometries(lipGeos, false);
+  merged.computeBoundingBox();
+  merged.computeBoundingSphere();
+  return merged;
+}
+
+/**
+ * 1. Inner Playable Valley (`280m x 280m`, `-140..+140`): `4 x 4` grid of separate
+ *    frustum-culled `THREE.Mesh` chunks (`70m x 70m` at uniform `30 x 30` segments = 1,800 tris/chunk,
+ *    zero internal chunk seams, plus a 2.4m downward perimeter skirt lip along `±140m`).
+ * 2. Outer Mountain & Valley Skirt (`640m x 640m` outside `±140m`): overlaps inward to `±136m`
+ *    underneath the inner chunks so zero T-junction sky cracks can ever appear.
+ */
+function buildChunkedTerrainAndSkirt(terrainMat) {
+  const group = new THREE.Group();
+  group.name = 'chunked-terrain';
+
+  const gridCount = 4;
+  const chunkSize = (INNER_EXTENT * 2) / gridCount; // 70m
+  const chunkSegs = 30; // Uniform 30x30 across all 16 chunks -> zero internal T-junctions!
+  const chunks = [];
+
+  for (let r = 0; r < gridCount; r++) {
+    const cz = -INNER_EXTENT + (r + 0.5) * chunkSize;
+    for (let c = 0; c < gridCount; c++) {
+      const cx = -INNER_EXTENT + (c + 0.5) * chunkSize;
+      const geo = buildChunkWithOuterLip(chunkSize, chunkSegs, cx, cz);
+
+      const chunkMesh = new THREE.Mesh(geo, terrainMat);
+      chunkMesh.name = `terrain-chunk-${r}-${c}`;
+      chunkMesh.position.set(cx, 0, cz);
+      chunkMesh.frustumCulled = true;
+      chunkMesh.receiveShadow = true;
+      group.add(chunkMesh);
+      chunks.push(chunkMesh);
+    }
+  }
+
+  // Outer Mountain & Valley Skirt (640m x 640m on a 36x36 grid, overlapping inward to ±135m underneath the inner valley)
+  const skirtSegs = 36;
+  const ringSkipMin = 11;
+  const ringSkipMax = 25;
+  const overlapExtent = INNER_EXTENT - 4.5; // ±135.5m tucked underneath the inner ±140m chunks
+
+  const vertCount = (skirtSegs + 1) * (skirtSegs + 1);
+  const positions = new Float32Array(vertCount * 3);
+  const normals = new Float32Array(vertCount * 3);
+  const indices = [];
+
+  for (let iz = 0; iz <= skirtSegs; iz++) {
+    const tz = iz / skirtSegs;
+    let wz = (tz - 0.5) * WORLD_SIZE;
+    if (iz === ringSkipMin - 1) wz = -overlapExtent;
+    else if (iz === ringSkipMin - 2) wz = -INNER_EXTENT;
+    else if (iz === ringSkipMax + 1) wz = overlapExtent;
+    else if (iz === ringSkipMax + 2) wz = INNER_EXTENT;
+
+    for (let ix = 0; ix <= skirtSegs; ix++) {
+      const tx = ix / skirtSegs;
+      let wx = (tx - 0.5) * WORLD_SIZE;
+      if (ix === ringSkipMin - 1) wx = -overlapExtent;
+      else if (ix === ringSkipMin - 2) wx = -INNER_EXTENT;
+      else if (ix === ringSkipMax + 1) wx = overlapExtent;
+      else if (ix === ringSkipMax + 2) wx = INNER_EXTENT;
+
+      const idx = iz * (skirtSegs + 1) + ix;
+      const maxAbs = Math.max(Math.abs(wx), Math.abs(wz));
+      // Depress slightly at ±135.5m (-0.45m) and ±140m (-0.06m) so the outer skirt never pokes above the inner chunks,
+      // while the inner chunks' 2.4m downward skirt lip blocks any gap where the outer skirt chord dips below!
+      const tuckDrop =
+        maxAbs < INNER_EXTENT - 0.5
+          ? 0.45
+          : maxAbs <= INNER_EXTENT + 0.5
+          ? 0.06
+          : 0.0;
+      const wy = terrainHeightAt(wx, wz) - tuckDrop;
+      const [nx, ny, nz] = terrainNormalAt(wx, wz, 0.8);
+
+      positions[idx * 3] = wx;
+      positions[idx * 3 + 1] = wy;
+      positions[idx * 3 + 2] = wz;
+      normals[idx * 3] = nx;
+      normals[idx * 3 + 1] = ny;
+      normals[idx * 3 + 2] = nz;
+    }
+  }
+
+  for (let iz = 0; iz < skirtSegs; iz++) {
+    for (let ix = 0; ix < skirtSegs; ix++) {
+      if (
+        ix >= ringSkipMin - 1 &&
+        ix <= ringSkipMax &&
+        iz >= ringSkipMin - 1 &&
+        iz <= ringSkipMax
+      ) {
+        continue;
+      }
+      const a = iz * (skirtSegs + 1) + ix;
+      const b = a + 1;
+      const c = (iz + 1) * (skirtSegs + 1) + ix;
+      const d = c + 1;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+
+  const skirtGeo = new THREE.BufferGeometry();
+  skirtGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  skirtGeo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  skirtGeo.setIndex(indices);
+  skirtGeo.computeBoundingBox();
+  skirtGeo.computeBoundingSphere();
+
+  const skirtMesh = new THREE.Mesh(skirtGeo, terrainMat);
+  skirtMesh.name = 'outer-valley-skirt';
+  skirtMesh.receiveShadow = true;
+  group.add(skirtMesh);
+
+  return { group, chunks, skirtMesh };
+}
+
+/**
+ * Helper to create a multi-shaded stratified rock prism with organic beveled facets
+ * and a mossy/slate cap, avoiding blocky axis-aligned cubes.
+ */
+function addStratifiedRockMass(parent, { x, y, z, rx, ry, rz, rotY = 0, mossCap = true, segs = 7 }) {
+  const g = new THREE.Group();
+  g.position.set(x, y, z);
+  g.rotation.y = rotY;
+
+  const bodyGeo = new THREE.CylinderGeometry(rx * 0.82, rx * 1.04, ry, segs, 1, false);
+  bodyGeo.scale(1.0, 1.0, rz / rx);
+  const body = new THREE.Mesh(bodyGeo);
+  body.userData.color = PALETTE.cliffRock;
+  body.userData.outline = false;
+  g.add(body);
+
+  const lowerStrataGeo = new THREE.CylinderGeometry(rx * 0.96, rx * 1.12, ry * 0.45, segs, 1, false);
+  lowerStrataGeo.scale(1.04, 1.0, (rz / rx) * 1.04);
+  const lower = new THREE.Mesh(lowerStrataGeo);
+  lower.position.y = -ry * 0.26;
+  lower.rotation.y = 0.25;
+  lower.userData.color = PALETTE.cliffDark;
+  lower.userData.outline = false;
+  g.add(lower);
+
+  const capGeo = new THREE.CylinderGeometry(rx * 0.68, rx * 0.84, 0.42, segs, 1, false);
+  capGeo.scale(1.0, 1.0, rz / rx);
+  const cap = new THREE.Mesh(capGeo);
+  cap.position.y = ry * 0.5 + 0.16;
+  cap.userData.color = mossCap ? PALETTE.grassDark : PALETTE.cliffLight;
+  cap.userData.outline = false;
+  g.add(cap);
+
+  parent.add(g);
+}
+
+/**
+ * Builds the Merged Distant Alpine Mountain Ridge Ring + Clouds + Sculpted Hydro Cliffs & Connected Timber Flume.
+ * Total cost: 1 draw call.
+ */
+function buildSkyAndAlpineHorizonAndHydroStructures(gradientMap, opts = {}) {
+  const root = new THREE.Group();
+  root.name = 'sky-and-alpine-horizon';
+
+  const envRaw = new THREE.Group();
+  envRaw.name = 'alpine-and-hydro-env';
+
+  const addColoredMesh = (parent, geo, colorHex, outline = false, unlit = false) => {
+    const m = new THREE.Mesh(geo);
+    m.userData.color = colorHex;
+    m.userData.outline = outline;
+    m.userData.unlit = unlit;
+    parent.add(m);
+    return m;
+  };
+
+  if (opts.includeConeMountains !== false) {
+    // Inner foothill ridge ring seated directly on terrainHeightAt(px, pz) around the perimeter, leaving the South Pass open
+    const foothillCount = 24;
+    for (let i = 0; i < foothillCount; i++) {
+      const a = (i / foothillCount) * Math.PI * 2;
+      const x = Math.cos(a);
+      const z = Math.sin(a);
+      if (z > 0.85 && Math.abs(x) < 0.28) continue;
+      const r = 196 + (i % 3) * 14;
+      const px = x * r;
+      const pz = z * r;
+      const groundY = terrainHeightAt(px, pz);
+      const h = 22 + ((i * 7) % 14);
+      const w = 38 + ((i * 5) % 16);
+      const ridge = addColoredMesh(
+        envRaw,
+        new THREE.ConeGeometry(w, h, 6, 1, true),
+        i % 2 === 0 ? 0x7ea899 : 0x8db0c2,
+        false
+      );
+      ridge.position.set(px, groundY + h * 0.35 - 2.0, pz);
+      ridge.scale.set(1.3, 1.0, 0.88);
+      ridge.rotation.y = a + Math.PI * 0.5;
+    }
+
+    // Outer high alpine mountain horizon ring with snow caps seated above the outer skirt around all 360°
+    const peakCount = 28;
+    for (let i = 0; i < peakCount; i++) {
+      const a = (i / peakCount) * Math.PI * 2 + 0.08;
+      const x = Math.cos(a);
+      const z = Math.sin(a);
+      const r = 246 + (i % 3) * 20;
+      const px = x * r;
+      const pz = z * r;
+      const groundY = terrainHeightAt(px, pz);
+      const h = 38 + ((i * 11) % 20);
+      const w = 46 + ((i * 7) % 18);
+      const py = groundY + h * 0.36 - 2.0;
+
+      const peak = addColoredMesh(
+        envRaw,
+        new THREE.ConeGeometry(w, h, 6, 1, true),
+        i % 2 === 0 ? 0x8db0c2 : 0x9ec0d4,
+        false
+      );
+      peak.position.set(px, py, pz);
+      peak.rotation.y = a * 1.7;
+
+      if (h >= 40) {
+        const capH = h * 0.38;
+        const capW = w * 0.39;
+        const snowCap = addColoredMesh(
+          envRaw,
+          new THREE.ConeGeometry(capW, capH, 6, 1, true),
+          0xeaf4fa,
+          false
+        );
+        snowCap.position.set(px, py + h * 0.5 - capH * 0.48, pz);
+        snowCap.rotation.y = peak.rotation.y;
+      }
+    }
+  }
+
+  if (opts.includeHorizonClouds !== false) {
+    // Horizon stylized puff clouds placed cleanly above camera frustum edges
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + 0.38;
+      const r = 255 + (i % 2) * 24;
+      const cx = Math.cos(a) * r;
+      const cy = 88 + (i % 3) * 9;
+      const cz = Math.sin(a) * r;
+      for (let j = 0; j < 3; j++) {
+        const puff = addColoredMesh(
+          envRaw,
+          new THREE.IcosahedronGeometry(8 + (j === 1 ? 3.5 : 0), 1),
+          0xf8fcff,
+          false,
+          true
+        );
+        puff.position.set(cx + (j - 1) * 8.5, cy + (j % 2) * 2.0, cz);
+        puff.scale.set(1.4, 0.65, 0.85);
+      }
+    }
+  }
+
+  // Sculpted Stratified Cliff Buttresses framing the Waterfall Canyon & Upstream Grotto
+  // Positioned cleanly outside the waterfall ribbon (wf.x = -51.4, width = 3.8m) so zero rock clips the cascade!
+  const wf = LANDMARKS.waterfall;
+  const rockMasses = [
+    // West (Left) Canyon Buttress Tier
+    { x: wf.x - 3.85, y: 2.3, z: wf.z - 1.2, rx: 1.95, ry: 5.4, rz: 1.85, rotY: 0.22, mossCap: true },
+    { x: wf.x - 4.75, y: 1.0, z: wf.z + 0.6, rx: 1.80, ry: 3.4, rz: 1.70, rotY: -0.18, mossCap: true },
+    { x: wf.x - 3.30, y: -0.2, z: wf.z + 1.9, rx: 1.35, ry: 1.8, rz: 1.25, rotY: 0.45, mossCap: false },
+    { x: wf.x - 2.95, y: 4.1, z: wf.z - 2.4, rx: 1.45, ry: 2.2, rz: 1.40, rotY: 0.12, mossCap: true },
+    // East (Right) Canyon Buttress & Flume Weir Support (between waterfall and watermill)
+    { x: wf.x + 2.85, y: 2.3, z: wf.z - 1.4, rx: 1.75, ry: 5.2, rz: 1.65, rotY: 0.35, mossCap: true },
+    { x: wf.x + 2.35, y: 0.6, z: wf.z + 0.2, rx: 1.35, ry: 2.6, rz: 1.30, rotY: -0.24, mossCap: false },
+    // Submerged weir lip stones under the waterfall crest
+    { x: wf.x, y: 3.8, z: wf.z - 1.85, rx: 2.1, ry: 2.2, rz: 0.95, rotY: 0.42, mossCap: false },
+    // Upstream Rock Spring Grotto & Stream Boulders
+    { x: streamCenterX(-64.0), y: 5.6, z: -65.2, rx: 2.8, ry: 2.4, rz: 1.8, rotY: 0.10, mossCap: true },
+    { x: streamCenterX(-64.0) - 2.6, y: 5.2, z: -63.2, rx: 1.6, ry: 1.6, rz: 1.4, rotY: 0.28, mossCap: true },
+    { x: streamCenterX(-64.0) + 2.6, y: 5.2, z: -63.2, rx: 1.6, ry: 1.6, rz: 1.4, rotY: -0.25, mossCap: true },
+    { x: streamCenterX(-50.0) - 2.9, y: 5.1, z: -50.0, rx: 1.4, ry: 1.1, rz: 1.2, rotY: -0.2, mossCap: true },
+    { x: streamCenterX(-36.0) + 2.8, y: 5.1, z: -36.0, rx: 1.3, ry: 1.0, rz: 1.1, rotY: 0.25, mossCap: true },
+  ];
+  for (const rm of rockMasses) {
+    addStratifiedRockMass(envRaw, rm);
+  }
+
+  // Timber Trestle Headrace Flume carrying water from the Right Weir Intake directly over the Waterwheel Crown!
+  // In millB local coords: waterwheel is at lx = -millB.w * 0.5 - 0.72 = -4.62, lz = 0.0, crown at y = 3.60m.
+  const millB = BUILDINGS_BY_ID.watermill;
+  const flumeGroup = new THREE.Group();
+  flumeGroup.position.set(millB.x, 0, millB.z);
+  flumeGroup.rotation.y = millB.rotY;
+
+  const flumeX = -millB.w * 0.5 - 0.72; // -4.62 (exact plane of waterwheel!)
+  const flumeY = 3.88; // Just above the 3.60m waterwheel crown for overshot feed!
+  const zIntake = -5.1;
+  const zSpout = -0.15;
+  const flumeLen = zSpout - zIntake; // 4.95m
+  const flumeMidZ = (zIntake + zSpout) * 0.5; // -2.625
+
+  // Stone intake weir box anchoring the upstream end of the flume into the right cliff buttress
+  const intakeBox = addColoredMesh(
+    flumeGroup,
+    new THREE.BoxGeometry(1.75, 1.45, 1.35),
+    PALETTE.stoneDark,
+    false
+  );
+  intakeBox.position.set(flumeX, flumeY - 0.35, zIntake - 0.25);
+
+  // Flume trough bed + raised sideboards (open U-channel trough)
+  const troughBed = addColoredMesh(
+    flumeGroup,
+    new THREE.BoxGeometry(1.22, 0.16, flumeLen),
+    PALETTE.timberDark,
+    false
+  );
+  troughBed.position.set(flumeX, flumeY - 0.12, flumeMidZ);
+
+  for (const side of [-0.54, 0.54]) {
+    const wall = addColoredMesh(
+      flumeGroup,
+      new THREE.BoxGeometry(0.14, 0.42, flumeLen + 0.1),
+      PALETTE.timber,
+      false
+    );
+    wall.position.set(flumeX + side, flumeY + 0.06, flumeMidZ);
+  }
+
+  // Sturdy timber trestle bents with cross-beams and knee braces
+  for (const tz of [-3.85, -1.75]) {
+    const capBeam = addColoredMesh(
+      flumeGroup,
+      new THREE.BoxGeometry(1.52, 0.20, 0.24),
+      PALETTE.timber,
+      false
+    );
+    capBeam.position.set(flumeX, flumeY - 0.28, tz);
+
+    const midTie = addColoredMesh(
+      flumeGroup,
+      new THREE.BoxGeometry(1.46, 0.16, 0.18),
+      PALETTE.timberDark,
+      false
+    );
+    midTie.position.set(flumeX, 1.45, tz);
+
+    for (const sx of [-0.52, 0.52]) {
+      const leg = addColoredMesh(
+        flumeGroup,
+        new THREE.BoxGeometry(0.20, 5.2, 0.20),
+        PALETTE.timberDark,
+        false
+      );
+      leg.position.set(flumeX + sx, flumeY - 2.8, tz);
+
+      const brace = addColoredMesh(
+        flumeGroup,
+        new THREE.BoxGeometry(0.14, 0.85, 0.14),
+        PALETTE.timber,
+        false
+      );
+      brace.position.set(flumeX + sx * 0.62, flumeY - 0.62, tz);
+      brace.rotation.z = sx > 0 ? 0.58 : -0.58;
+    }
+  }
+  envRaw.add(flumeGroup);
+
+  root.add(
+    batchVertexColorGroup(envRaw, {
+      gradientMap,
+      flatShading: true,
+      outlineThickness: 0.018,
+      castShadow: true,
+      receiveShadow: true,
+    })
+  );
+
+  return root;
+}
+
+/**
+ * Builds the upstream river ribbon nestled strictly inside the carved NW headwaters channel,
+ * terminating cleanly at the waterfall weir crest (`z = -21.55`) with zero mid-air overhang.
+ */
+function buildCurvedStreamGeometry() {
+  const segs = 22;
+  const zStart = -64.0;
+  const zEnd = LANDMARKS.waterfall.z - 0.75; // -21.55 (right at the waterfall weir crest)
+  const positions = [];
+  const uvs = [];
+  const indices = [];
+
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    const z = lerp(zStart, zEnd, t);
+    const cx = streamCenterX(z);
+    const halfW = lerp(1.62, 1.50, smoothstep(0.75, 1.0, t));
+    const groundCenter = terrainHeightAt(cx, z);
+    const wy = lerp(clamp(groundCenter + 0.26, 4.82, 5.10), 4.96, smoothstep(0.8, 1.0, t));
+    positions.push(cx - halfW, wy, z, cx + halfW, wy, z);
+    uvs.push(0, t * 6.0, 1, t * 6.0);
+    if (i < segs) {
+      const b = i * 2;
+      indices.push(b, b + 2, b + 1, b + 1, b + 2, b + 3);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo.toNonIndexed();
+}
+
+/**
+ * Builds a smooth, continuous parabolic waterfall cascade ribbon that rolls over the upper
+ * weir crest (`z = -21.55, y = 4.96m`) and plunges into the pool (`y = -1.22m`) with flared splash base.
+ */
+function buildWaterfallCascadeGeometry() {
+  const wf = LANDMARKS.waterfall;
+  const cols = 6;
+  const rows = 14;
+  const positions = [];
+  const uvs = [];
+  const indices = [];
+
+  const xWeir = streamCenterX(wf.z - 0.75); // ~ -51.6
+  const zWeir = wf.z - 0.75; // -21.55
+  const yTop = 4.96;
+  const yBot = ZONES.millpond.waterY - 0.04; // -1.24
+
+  // Waterfall faces slightly toward SSE (rotY = 0.22) into the plunge pool
+  const dirX = Math.sin(0.22);
+  const dirZ = Math.cos(0.22);
+  const rightX = Math.cos(0.22);
+  const rightZ = -Math.sin(0.22);
+
+  for (let r = 0; r <= rows; r++) {
+    const v = r / rows; // 0 at top weir, 1 at bottom plunge pool
+    // Smooth roll-over crest at top (v = 0..0.18), then accelerating parabolic drop
+    const forward = v < 0.18 ? v * 2.8 : 0.50 + Math.pow((v - 0.18) / 0.82, 0.85) * 1.95;
+    const dropT = v < 0.12 ? (v / 0.12) * 0.06 : 0.06 + Math.pow((v - 0.12) / 0.88, 1.35) * 0.94;
+    const wy = lerp(yTop, yBot, dropT);
+    const halfW = lerp(1.52, 2.08, v * v);
+
+    for (let c = 0; c <= cols; c++) {
+      const u = c / cols;
+      const lat = (u - 0.5) * 2.0 * halfW;
+      // Slight forward bow in the center of the cascade for organic volume
+      const centerBow = (1.0 - (u - 0.5) * (u - 0.5) * 4.0) * 0.28 * Math.sin(v * Math.PI);
+      const fwd = forward + centerBow;
+      const wx = xWeir + dirX * fwd + rightX * lat;
+      const wz = zWeir + dirZ * fwd + rightZ * lat;
+      positions.push(wx, wy, wz);
+      uvs.push(u, 1.0 - v);
+    }
+  }
+
+  const stride = cols + 1;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const a = r * stride + c;
+      const b = a + 1;
+      const d = (r + 1) * stride + c;
+      const e = d + 1;
+      indices.push(a, d, b, b, d, e);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo.toNonIndexed();
+}
+
+/**
+ * Builds the overshot water chute pouring out of the end of the timber flume onto the waterwheel crown.
+ */
+function buildFlumeSpoutChuteGeometry(flumeX) {
+  const rows = 8;
+  const cols = 3;
+  const halfW = 0.42;
+  const positions = [];
+  const uvs = [];
+  const indices = [];
+
+  for (let r = 0; r <= rows; r++) {
+    const v = r / rows;
+    const lz = lerp(-0.22, 1.25, v);
+    const ly = 3.92 - v * v * 1.55;
+    for (let c = 0; c <= cols; c++) {
+      const u = c / cols;
+      const lx = flumeX + (u - 0.5) * 2.0 * halfW;
+      positions.push(lx, ly, lz);
+      uvs.push(u, 1.0 - v);
+    }
+  }
+
+  const stride = cols + 1;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const a = r * stride + c;
+      const b = a + 1;
+      const d = (r + 1) * stride + c;
+      const e = d + 1;
+      indices.push(a, d, b, b, d, e);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo.toNonIndexed();
+}
+
+/**
+ * Builds ALL Water & Waterfall Surfaces (Millpond Lake, Plunge Pool, Waterwheel Tailrace
+ * Channel + Elliptical Splash Wake, Curved NW Stream, Flume Water + Overshot Spout, and Curved Waterfall)
+ * merged into a SINGLE draw call!
+ */
+function buildAnimatedWaterSurfaces() {
+  const group = new THREE.Group();
+  group.name = 'water-surfaces';
+
+  const mp = ZONES.millpond;
+  const wf = LANDMARKS.waterfall;
+  const millB = BUILDINGS_BY_ID.watermill;
+
+  const waterParts = [];
+  // mode: 0 = lake/stream water, 1 = pure white foam, 2 = vertical waterfall curtain
+  const addWaterGeo = (geo, matrix, mode = 0) => {
+    let g = geo.index ? geo.toNonIndexed() : geo.clone();
+    if (matrix) g.applyMatrix4(matrix);
+    for (const k of Object.keys(g.attributes)) {
+      if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k);
+    }
+    if (!g.attributes.normal) g.computeVertexNormals();
+    if (!g.attributes.uv) {
+      g.setAttribute(
+        'uv',
+        new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)
+      );
+    }
+    const count = g.attributes.position.count;
+    const modeAttr = new Float32Array(count);
+    modeAttr.fill(mode);
+    g.setAttribute('aWaterMode', new THREE.BufferAttribute(modeAttr, 1));
+    waterParts.push(g);
+  };
+
+  // 1. Main Millpond Lake surface at (-62, -1.2, 6)
+  const lakeGeo = new THREE.CircleGeometry(1, 44);
+  lakeGeo.rotateX(-Math.PI / 2);
+  lakeGeo.scale(mp.rx * 0.96, 1, mp.rz * 0.96);
+  lakeGeo.translate(mp.x, mp.waterY, mp.z);
+  addWaterGeo(lakeGeo, null, 0);
+
+  // 2. Waterfall Plunge Pool surface
+  const plungeGeo = new THREE.CircleGeometry(5.8, 24);
+  plungeGeo.rotateX(-Math.PI / 2);
+  plungeGeo.translate(wf.x + 0.5, mp.waterY + 0.01, wf.z + 1.6);
+  addWaterGeo(plungeGeo, null, 0);
+
+  // 3. Plunge Pool Concentric Foam Disc + Ring (smooth organic splash at waterfall base)
+  const foamCoreGeo = new THREE.CircleGeometry(2.6, 20);
+  foamCoreGeo.rotateX(-Math.PI / 2);
+  foamCoreGeo.translate(wf.x + 0.45, mp.waterY + 0.032, wf.z + 1.45);
+  addWaterGeo(foamCoreGeo, null, 1);
+
+  const foamOuterGeo = new THREE.RingGeometry(3.0, 4.1, 22);
+  foamOuterGeo.rotateX(-Math.PI / 2);
+  foamOuterGeo.translate(wf.x + 0.45, mp.waterY + 0.028, wf.z + 1.45);
+  addWaterGeo(foamOuterGeo, null, 1);
+
+  // 4. Waterwheel Tailrace Channel water + organic elliptical splash wake (no hard rectangular cyan slab!)
+  const millMat = new THREE.Matrix4()
+    .makeRotationY(millB.rotY)
+    .setPosition(millB.x, mp.waterY + 0.012, millB.z);
+
+  const tailraceGeo = new THREE.CircleGeometry(1, 20);
+  tailraceGeo.rotateX(-Math.PI / 2);
+  tailraceGeo.scale(1.65, 1, 4.8);
+  tailraceGeo.translate(-millB.w * 0.5 - 1.15, 0, 0.5);
+  addWaterGeo(tailraceGeo, millMat, 0);
+
+  const wheelWakeGeo = new THREE.CircleGeometry(1, 18);
+  wheelWakeGeo.rotateX(-Math.PI / 2);
+  wheelWakeGeo.scale(0.95, 1, 2.35);
+  wheelWakeGeo.translate(-millB.w * 0.5 - 0.72, 0.022, 0.25);
+  addWaterGeo(wheelWakeGeo, millMat, 1);
+
+  // 5. Flume Trough water strip + Overshot Pouring Water Chute onto the Waterwheel Crown
+  const flumeX = -millB.w * 0.5 - 0.72;
+  const flumeY = 3.88;
+  const flumeMat = new THREE.Matrix4()
+    .makeRotationY(millB.rotY)
+    .setPosition(millB.x, 0, millB.z);
+  const flumeWaterGeo = new THREE.PlaneGeometry(0.94, 4.85);
+  flumeWaterGeo.rotateX(-Math.PI / 2);
+  flumeWaterGeo.translate(flumeX, flumeY + 0.08, -2.62);
+  addWaterGeo(flumeWaterGeo, flumeMat, 2);
+
+  addWaterGeo(buildFlumeSpoutChuteGeometry(flumeX), flumeMat, 2);
+
+  // 6. Curved NW Headwaters Stream surface
+  addWaterGeo(buildCurvedStreamGeometry(), null, 0);
+
+  // 7. Smooth Parabolic Waterfall Cascade Ribbon
+  addWaterGeo(buildWaterfallCascadeGeometry(), null, 2);
+
+  const mergedWaterGeo = mergeGeometries(waterParts, false);
+  const waterMat = new THREE.ShaderMaterial({
+    transparent: true,
+    side: THREE.DoubleSide,
+    uniforms: {
+      uTime: { value: 0 },
+      uShallow: { value: new THREE.Color(PALETTE.waterShallow) },
+      uDeep: { value: new THREE.Color(PALETTE.waterDeep) },
+      uFoam: { value: new THREE.Color(PALETTE.waterFoam) },
+      uLightTint: { value: new THREE.Color(1, 1, 1) },
+    },
     vertexShader: /* glsl */ `
+      attribute float aWaterMode;
       varying vec3 vWorldPos;
       varying vec2 vUv;
+      varying float vWaterMode;
       void main() {
+        vWaterMode = aWaterMode;
         vUv = uv;
         vec4 wp = modelMatrix * vec4(position, 1.0);
         vWorldPos = wp.xyz;
@@ -763,209 +1246,100 @@ function buildHydrologicalSystem(materials) {
       }
     `,
     fragmentShader: /* glsl */ `
-      varying vec3 vWorldPos;
-      varying vec2 vUv;
       uniform float uTime;
       uniform vec3 uShallow;
       uniform vec3 uDeep;
       uniform vec3 uFoam;
+      uniform vec3 uLightTint;
+      varying vec3 vWorldPos;
+      varying vec2 vUv;
+      varying float vWaterMode;
 
       void main() {
+        if (vWaterMode > 1.5) {
+          // Waterfall cascade & flume chute mode
+          float flow = fract(vUv.y * 2.8 + uTime * 1.8);
+          float streak = sin(vUv.x * 22.0 + sin(vUv.y * 8.0) * 0.6) * 0.5 + 0.5;
+          float edgeFoam = smoothstep(0.18, 0.02, vUv.x) + smoothstep(0.82, 0.98, vUv.x);
+          float crestAndBaseFoam = smoothstep(0.26, 0.0, vUv.y) + smoothstep(0.76, 1.0, vUv.y);
+          float foamMask = smoothstep(0.38, 0.82, streak * flow) + crestAndBaseFoam + edgeFoam * 0.55;
+          vec3 base = mix(uDeep, uShallow, smoothstep(0.25, 0.75, streak));
+          vec3 col = mix(base, uFoam, clamp(foamMask, 0.0, 1.0)) * uLightTint;
+          gl_FragColor = vec4(col, 0.96);
+          return;
+        }
+
         vec2 p = vWorldPos.xz;
-        float w1 = sin(p.x * 0.55 + p.y * 0.45 - uTime * 1.4);
-        float w2 = cos(p.x * 0.85 - p.y * 0.72 + uTime * 1.1);
-        float wave = w1 * 0.5 + w2 * 0.5;
+        // Elliptical radial distance in Millpond basin (-62, 6, rx=28, rz=36)
+        vec2 pondRel = (p - vec2(-62.0, 6.0)) / vec2(26.8, 34.5);
+        float rPond = length(pondRel);
 
-        // Depth tint from east shore (-21m) to west deep basin (-44m)
-        float depthT = clamp((-22.0 - p.x) / 18.0, 0.0, 1.0);
-        vec3 col = mix(uShallow, uDeep, depthT * 0.75);
+        // Smooth Ghibli depth gradient from turquoise shallow edge to deep cerulean center
+        float depthT = 1.0 - smoothstep(0.15, 0.95, rPond);
+        vec3 col = mix(uShallow, uDeep, depthT * 0.72);
 
-        // Cel-shaded wave highlight bands
-        float shimmer = step(0.68, wave);
-        col = mix(col, mix(uShallow, uFoam, 0.55), shimmer * 0.45);
+        // Organic domain-warped wind-ripple streaks
+        float warp = sin(p.x * 0.14 + p.y * 0.11 + uTime * 0.5) * 2.2;
+        float rippleWave = sin(p.y * 0.65 + warp - uTime * 1.2)
+          * cos(p.x * 0.22 - p.y * 0.18 + uTime * 0.7);
+        float shimmer = smoothstep(0.76, 0.88, rippleWave);
+        col = mix(col, mix(uShallow, uFoam, 0.55), shimmer * 0.36);
 
-        // Concentric animated foam rings around Waterfall Plunge Pool (-27.6, -19.3)
-        float dPlunge = length(p - vec2(-27.6, -19.3));
-        float plungeRing = step(0.62, sin(dPlunge * 3.4 - uTime * 3.8)) * smoothstep(5.2, 0.6, dPlunge);
+        // Shoreline contour foam band at lake edge + concentric plunge-pool ripples
+        float shoreEdgeFoam = smoothstep(0.92, 0.99, rPond) * (0.65 + 0.35 * sin(rPond * 28.0 - uTime * 2.5));
+        float dPlunge = length(p - vec2(-50.8, -19.2));
+        float plungeRip = smoothstep(0.58, 0.82, sin(dPlunge * 2.4 - uTime * 3.4)) * smoothstep(6.2, 1.2, dPlunge);
 
-        // Concentric animated foam rings & tailrace wake directly under Waterwheel (-26.2, -14.2)
-        float dWheel = length(p - vec2(-26.2, -14.2));
-        float wheelRing = step(0.55, sin(dWheel * 4.2 - uTime * 4.5)) * smoothstep(3.8, 0.3, dWheel);
+        float foamMask = clamp(vWaterMode * 0.88 + shoreEdgeFoam * 0.55 + plungeRip * 0.72, 0.0, 1.0);
+        col = mix(col, uFoam, foamMask) * uLightTint;
 
-        float foamMask = clamp(plungeRing + wheelRing, 0.0, 1.0);
-        col = mix(col, uFoam, foamMask * 0.88);
-
-        gl_FragColor = vec4(col, 1.0);
+        gl_FragColor = vec4(col, mix(0.92, 0.98, foamMask));
       }
     `,
   });
 
-  // Main Millpond + Tailrace Water Plane at y = -1.2m
-  // Shaped to fit the Millpond and Tailrace Channel without overlapping dry eastern land
-  const waterShape = new THREE.Shape();
-  // Note: Shape is in XY, rotated -PI/2 around X so Shape Y = -World Z (or we set vertices directly in XZ)
-  const waterGeo = new THREE.PlaneGeometry(42, 54, 42, 54);
-  waterGeo.rotateX(-Math.PI / 2);
-  const wPos = waterGeo.attributes.position;
-  for (let i = 0; i < wPos.count; i++) {
-    const lx = wPos.getX(i) - 38.0; // -59 .. -17
-    const lz = wPos.getZ(i) + 4.0; // -23 .. +31
-    // Keep water plane strictly at WATER.waterY (-1.2m) inside basin/tailrace, and tuck edges slightly down under dry land
-    const groundY = sampleWorld(lx, lz).y;
-    const isWaterArea =
-      groundY < WATER.waterY + 0.15 ||
-      (lx >= -29.8 && lx <= -25.15 && lz >= -21.2 && lz <= -4.0);
-    wPos.setXYZ(i, lx, isWaterArea ? WATER.waterY : Math.min(WATER.waterY - 0.35, groundY - 0.15), lz);
-  }
-  waterGeo.computeVertexNormals();
-  const pondWater = new THREE.Mesh(waterGeo, pondMat);
-  pondWater.name = 'millpond-and-tailrace-water';
-  group.add(pondWater);
-
-  // Dedicated high-precision Tailrace Water Strip right at `y = -1.2m` (`x = -29.4..-25.25, z = -21.2..-4.5`)
-  // Guarantees 100% crisp water surface right under the waterwheel at `(-26.2, -14.2)` regardless of grid resolution!
-  const tailraceWaterGeo = new THREE.PlaneGeometry(4.15, 16.8, 8, 24);
-  tailraceWaterGeo.rotateX(-Math.PI / 2);
-  const tailraceWater = new THREE.Mesh(tailraceWaterGeo, pondMat);
-  tailraceWater.position.set(-27.35, WATER.waterY + 0.01, -12.8);
-  tailraceWater.name = 'tailrace-channel-water-surface';
-  group.add(tailraceWater);
-
-  // Upper Stream Water Surface (`y = +4.52m`) on the NW rock shelf
-  const upperStreamGeo = new THREE.PlaneGeometry(3.4, 15.5, 4, 12);
-  upperStreamGeo.rotateX(-Math.PI / 2);
-  const upperStream = new THREE.Mesh(upperStreamGeo, pondMat);
-  upperStream.position.set(-27.2, WATER.upperStreamY + 0.02, -30.0);
-  upperStream.name = 'upper-stream-water';
-  group.add(upperStream);
-
-  // 6. SHORELINE PEBBLE CLUSTERS & REEDS ALONG THE #d8c89e SANDY BANK
-  const rng = mulberry32(0x4419a);
-  const shoreGroup = new THREE.Group();
-  shoreGroup.name = 'shoreline-pebbles-and-reeds';
-  const shoreSpots = [
-    [-21.8, 2.5],
-    [-22.4, 4.8],
-    [-21.6, 11.4],
-    [-22.5, 14.5],
-    [-24.2, 18.2],
-    [-27.0, 21.5],
-    [-24.8, -4.2],
-    [-23.2, -1.2],
-  ];
-  for (const [sx, sz] of shoreSpots) {
-    const sy = sampleWorld(sx, sz).y;
-    for (let k = 0; k < 4; k++) {
-      const pr = 0.16 + rng() * 0.22;
-      const px = sx + (rng() - 0.5) * 1.6;
-      const pz = sz + (rng() - 0.5) * 1.6;
-      const py = sampleWorld(px, pz).y;
-      const pebGeo = new THREE.IcosahedronGeometry(pr, 0).toNonIndexed();
-      pebGeo.computeVertexNormals();
-      const peb = new THREE.Mesh(pebGeo, k % 2 === 0 ? materials.stoneWarm : materials.stoneTrim);
-      peb.scale.set(1.2, 0.55, 1.0);
-      peb.position.set(px, py + pr * 0.22, pz);
-      peb.rotation.y = rng() * Math.PI;
-      peb.castShadow = true;
-      peb.receiveShadow = true;
-      addOutline(peb, 0.01);
-      shoreGroup.add(peb);
-    }
-    // Riverside reed tuft
-    for (let r = 0; r < 5; r++) {
-      const h = 0.55 + rng() * 0.45;
-      const reed = new THREE.Mesh(
-        new THREE.ConeGeometry(0.04, h, 4),
-        r % 2 === 0 ? materials.leafA : materials.leafC
-      );
-      reed.position.set(sx + (rng() - 0.5) * 0.6, sy + h * 0.45, sz + (rng() - 0.5) * 0.6);
-      reed.rotation.z = (rng() - 0.5) * 0.28;
-      shoreGroup.add(reed);
-    }
-  }
-  group.add(shoreGroup);
+  const waterMesh = new THREE.Mesh(mergedWaterGeo, waterMat);
+  waterMesh.name = 'merged-water-and-waterfall';
+  group.add(waterMesh);
 
   return {
     group,
-    update(dt, elapsed) {
-      for (const u of animatedUniforms) {
-        u.uTime.value = elapsed;
-      }
+    waterMat,
+    update(_dt, elapsed) {
+      waterMat.uniforms.uTime.value = elapsed;
     },
   };
 }
 
-/**
- * Builds distant scenic mountain ridges, horizon lake vista, and cartoon clouds.
- */
-function buildScenicBackdrop(materials) {
-  const group = new THREE.Group();
-  group.name = 'scenic-backdrop';
-  const rng = mulberry32(0x8831c);
-
-  // Distant layered hill ridges around the valley perimeter
-  const hillCount = 22;
-  for (let i = 0; i < hillCount; i++) {
-    const a = (i / hillCount) * Math.PI * 2 + (rng() - 0.5) * 0.12;
-    const dist = 128 + (i % 3) * 18;
-    const hx = Math.cos(a) * dist;
-    const hz = Math.sin(a) * dist;
-    const w = 26 + rng() * 18;
-    const h = 18 + (i % 3) * 8 + rng() * 8;
-    const d = 20 + rng() * 12;
-
-    const hillGeo = new THREE.IcosahedronGeometry(1, 1).toNonIndexed();
-    hillGeo.computeVertexNormals();
-    const mat = i % 3 === 0 ? materials.hillNear : i % 3 === 1 ? materials.hillMid : materials.hillFar;
-    const hill = new THREE.Mesh(hillGeo, mat);
-    hill.scale.set(w, h, d);
-    hill.position.set(hx, -h * 0.25, hz);
-    hill.rotation.y = -a + Math.PI * 0.5;
-    group.add(hill);
-  }
-
-  // Cartoon puff clouds high in the sky
-  const puffGeo = new THREE.SphereGeometry(1, 8, 6);
-  for (let c = 0; c < 10; c++) {
-    const a = (c / 10) * Math.PI * 2 + 0.3;
-    const r = 95 + (c % 2) * 24;
-    const cloud = new THREE.Group();
-    cloud.position.set(Math.cos(a) * r, 38 + (c % 3) * 6, Math.sin(a) * r);
-    cloud.rotation.y = -a;
-    const puffs = 4 + (c % 3);
-    for (let p = 0; p < puffs; p++) {
-      const puff = new THREE.Mesh(puffGeo, materials.cloud);
-      puff.position.set((p - (puffs - 1) * 0.5) * 4.2, (p % 2) * 1.1, (rng() - 0.5) * 1.5);
-      puff.scale.set(3.8 + rng() * 1.8, 1.8 + rng() * 0.9, 2.6 + rng() * 1.2);
-      cloud.add(puff);
-    }
-    group.add(cloud);
-  }
-
-  return group;
-}
-
-export function buildTerrainAndWater(materials, textures, renderer) {
+export function buildTerrainAndWater(renderer, opts = {}) {
   const root = new THREE.Group();
   root.name = 'terrain-and-water';
 
-  const terrainMesh = buildTerrainMesh(materials, renderer, textures);
-  root.add(terrainMesh);
+  const gradientMap = makeToonGradient();
+  const worldMaskTex = opts.worldMaskTex || createWorldMaskTexture(512);
+  const terrainMat = createGouacheTerrainMaterial(worldMaskTex);
 
-  const roadsAndAprons = buildRoadsAndDoorAprons(materials);
-  root.add(roadsAndAprons);
+  const { group: terrainGroup, chunks, skirtMesh } = buildChunkedTerrainAndSkirt(terrainMat);
+  root.add(terrainGroup);
 
-  const hydro = buildHydrologicalSystem(materials);
-  root.add(hydro.group);
+  const horizonAndHydro = buildSkyAndAlpineHorizonAndHydroStructures(gradientMap, opts);
+  root.add(horizonAndHydro);
 
-  const backdrop = buildScenicBackdrop(materials);
-  root.add(backdrop);
+  const waterSys = buildAnimatedWaterSurfaces();
+  root.add(waterSys.group);
 
   return {
     group: root,
-    terrainMesh,
+    terrainGroup,
+    chunks,
+    skirtMesh,
+    terrainMat,
+    waterMat: waterSys.waterMat,
+    horizonGroup: horizonAndHydro,
+    worldMaskTex,
+    maskBuildMs: worldMaskTex.userData.buildTimeMs || 0,
     update(dt, elapsed) {
-      hydro.update(dt, elapsed);
+      waterSys.update(dt, elapsed);
     },
   };
 }

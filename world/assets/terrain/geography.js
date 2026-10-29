@@ -1,195 +1,253 @@
 import * as THREE from 'three';
 
 /**
- * Deterministic Geography & Settlement Masterplan for Haru-machi (`world/assets/terrain/geography.js`).
+ * Haru-machi v7 Expanded Valley & Toroidal Map Geography (`world/assets/terrain/geography.js`).
  *
- * Enforces:
- * 1. Exact Doorway-to-Road Mathematical Alignment:
- *    `doorX = x + Math.sin(rotY) * (d * 0.5 + 0.9)`
- *    `doorZ = z + Math.cos(rotY) * (d * 0.5 + 0.9)`
- * 2. Complete Hydrological System:
- *    - Upper stream rock shelf (`y = +4.5m`) in NW
- *    - Stepped rock waterfall cascade (`z = -22.5 -> -19.5`)
- *    - Timber trestle flume (`x = -26.2, z = -23.5 -> -15.2`) feeding the `-X` waterwheel
- *    - Carved Waterwheel Tailrace Channel (`x = -26.2, z = -14.2`, floor `y = -2.2m`, water `y = -1.2m`)
- *    - Millpond basin (`waterY = -1.2m`) with warm sand/pebble shoreline gradient (`#d8c89e`)
- *    - Grounded stone shoreline abutment at `(-20.5, 8.0)` for the Wooden Pier
- * 3. Axial Grand Northern Staircase (`x = 0.0`, `z = -10.5 -> -46.8`, `y = 0.0 -> +6.5m`, 46 steps)
- *    leading to the 13m circular Shrine Overlook (`(0, -56, y = +6.5m)`).
- * 4. Eastern Wisteria Combat Clearing (`(38, -6, y = +0.5m)`, fence radius `15.8m`) with
- *    Wisteria hero trees placed >= 3.7m clear of the split-rail fence.
+ * Synchronized 100% with `world/src/blockout/geography.js` (v7):
+ * - `PLAY_BOUNDARY_RADIUS = 125`
+ * - `INNER_EXTENT = 140` (`280m × 280m` inner playable valley, `-140..+140`)
+ * - `WORLD_SIZE = 640` (`640m × 640m` outer valley & mountain skirt, `-320..+320`)
+ * - `ZONES.hamlet` at `(0, 0, y = 0.0)`, `r = 10.5m` ring road, 4 inward-facing cottages
+ * - `ZONES.millpond` at `(-62, 6, waterY = -1.2, bedY = -3.0, rx = 28, rz = 36)`,
+ *   `watermill` at `(-44.0, -18.0, y = 0.3, rotY = 0.42)`, `waterfall` at `(-51.4, -20.8, topY = 5.2, bottomY = -1.2)`,
+ *   `pier` at `xStart = -35.5, xEnd = -52.0, z = 8.5, y = -0.35`
+ * - `ZONES.arena` at `(68, -4, y = 0.6, fenceR = 19.5)` with 3 Wisteria hero trees >= 3.8m outside the fence
+ * - `ZONES.shrine` at `(0.0, -86.0, y = 8.0, platformR = 14.5)` at top of 56-step axial staircase (`z = -15.0 -> -71.5`),
+ *   Romanesque Stone Archway at `(0.0, -93.5)`, and raised stone planters at `(±10.6, -90.8)`
  */
 
-export const WORLD_SIZE = 480;
-export const INNER_EXTENT = 160; // high-res playable valley half-extent (-160..+160)
+export const PLAY_BOUNDARY_RADIUS = 125;
+export const INNER_EXTENT = 140; // 280m x 280m high-res chunked inner valley (-140..+140)
+export const OUTER_EXTENT = 320; // 640m x 640m outer mountain & valley skirt (-320..+320)
+export const WORLD_SIZE = 640;
 
-export const WATER = {
-  waterY: -1.2,
-  tailraceBottomY: -2.2,
-  upperStreamY: 4.5,
-  wheelX: -26.2,
-  wheelZ: -14.2,
-  wheelY: 0.48,
-  wheelRadius: 2.1,
-  pierAbutment: { x: -20.6, z: 8.0, y: -0.32, w: 3.2, d: 4.2 },
-  pierEnd: { x: -33.2, z: 8.0, y: -0.32 },
-};
+export function clamp(v, lo, hi) {
+  return v < lo ? lo : v > hi ? hi : v;
+}
 
-export const WELL_PLAZA = {
-  x: 0,
-  z: 0,
-  y: 0.0,
-  cobbleRadius: 6.5,
-  ringInnerRadius: 6.5,
-  ringCenterRadius: 8.2,
-  ringOuterRadius: 9.8,
-};
+export function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
 
-export const SHRINE = {
-  x: 0.0,
-  z: -56.0,
-  y: 6.5,
-  platformRadius: 6.5, // 13m circular stone platform
-  medallionRadius: 3.45,
-  arch: { x: 0.0, z: -60.2, y: 6.5, span: 4.4, height: 5.2 },
-  pedestal: { x: 0.0, z: -58.1, y: 6.5 },
-  stairs: {
+export function smoothstep(edge0, edge1, x) {
+  const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+export function hash2(ix, iz, seed = 101) {
+  let n = Math.imul(ix | 0, 374761393) + Math.imul(iz | 0, 668265263) + Math.imul(seed | 0, 1442695041);
+  n = Math.imul(n ^ (n >>> 13), 1274126177);
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967295;
+}
+
+export function noise2(x, z, seed = 101) {
+  const ix = Math.floor(x);
+  const iz = Math.floor(z);
+  const fx = x - ix;
+  const fz = z - iz;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uz = fz * fz * (3 - 2 * fz);
+  const a = hash2(ix, iz, seed);
+  const b = hash2(ix + 1, iz, seed);
+  const c = hash2(ix, iz + 1, seed);
+  const d = hash2(ix + 1, iz + 1, seed);
+  return lerp(lerp(a, b, ux), lerp(c, d, ux), uz);
+}
+
+export function fbm2(x, z, seed = 101) {
+  let v = 0;
+  let amp = 0.5;
+  let freq = 1;
+  for (let i = 0; i < 3; i++) {
+    v += noise2(x * freq, z * freq, seed + i * 31) * amp;
+    freq *= 2.02;
+    amp *= 0.5;
+  }
+  return v;
+}
+
+export const ZONES = {
+  hamlet: {
+    id: 'hamlet',
+    name: 'Zone A · Haru-machi Crossroads & Well Plaza',
+    x: 0,
+    z: 0,
+    y: 0.0,
+    innerR: 28,
+    outerR: 42,
+  },
+  arena: {
+    id: 'arena',
+    name: 'Zone C · Wisteria Festival & Combat Ring',
+    x: 68,
+    z: -4,
+    y: 0.6,
+    innerR: 21.0,
+    outerR: 31.0,
+    fenceR: 19.5,
+  },
+  shrine: {
+    id: 'shrine',
+    name: 'Zone D · Northern Wisteria Arch Shrine Overlook',
     x: 0.0,
-    startZ: -10.5,
-    endZ: -46.8,
-    startY: 0.0,
-    endY: 6.5,
-    steps: 46,
-    treadWidth: 3.8,
-    cheekWallWidth: 0.56,
+    z: -86.0,
+    y: 8.0,
+    innerR: 15.8,
+    outerR: 28.5,
+    platformR: 14.5,
+  },
+  millpond: {
+    id: 'millpond',
+    name: 'Zone B · Waterfall, Watermill & Lake Basin',
+    x: -62,
+    z: 6,
+    waterY: -1.2,
+    bedY: -3.0,
+    rx: 28,
+    rz: 36,
   },
 };
 
-export const ARENA = {
-  x: 38.0,
-  z: -6.0,
-  y: 0.5,
-  dirtRadius: 15.4,
-  fenceRadius: 15.8,
-  gateAngle: Math.PI, // West entrance facing hamlet road (x = 22.2, z = -6.0)
-  gateHalfAngle: 0.24,
-};
+export function getBuildingDoorWorldPos(b, offsetFromFrontWall = 1.35) {
+  const dist = b.d * 0.5 + offsetFromFrontWall;
+  return [
+    b.x + Math.sin(b.rotY) * dist,
+    b.z + Math.cos(b.rotY) * dist,
+  ];
+}
 
-/**
- * Helper that computes exact doorway world coordinates per the specification:
- *   doorX = x + Math.sin(rotY) * (d * 0.5 + 0.9)
- *   doorZ = z + Math.cos(rotY) * (d * 0.5 + 0.9)
- */
-function defineBuilding(spec) {
-  const { x, z, d, rotY } = spec;
-  const doorOffset = d * 0.5 + 0.9;
-  const doorX = x + Math.sin(rotY) * doorOffset;
-  const doorZ = z + Math.cos(rotY) * doorOffset;
-  const wallDoorX = x + Math.sin(rotY) * (d * 0.5);
-  const wallDoorZ = z + Math.cos(rotY) * (d * 0.5);
+function enrichBuilding(b) {
+  const [doorX, doorZ] = getBuildingDoorWorldPos(b, 1.35);
+  const [wallDoorX, wallDoorZ] = getBuildingDoorWorldPos(b, 0.15);
   return {
-    ...spec,
-    doorOffset,
+    ...b,
     doorX,
     doorZ,
     wallDoorX,
     wallDoorZ,
+    cosNeg: Math.cos(-b.rotY),
+    sinNeg: Math.sin(-b.rotY),
   };
 }
 
-export const BUILDINGS = {
-  inn: defineBuilding({
+export const BUILDINGS = [
+  enrichBuilding({
     id: 'inn',
-    name: 'The Crossroads Inn & Bakery',
-    x: -11.0,
+    name: '1. Crossroads Inn & Bakery',
+    role: 'Co-Op Lobby & Hearth Buffs',
+    x: -15.5,
+    z: -14.5,
     y: 0.0,
-    z: -13.0,
-    w: 11.0,
-    d: 8.0,
-    rotY: 0.55,
+    w: 10.4,
+    d: 7.4,
+    wallH: 5.4,
+    roofH: 3.4,
+    rotY: Math.atan2(15.5, 14.5), // ~0.818 rad, +Z door facing SE toward ring road
     stories: 2,
-    chimneySide: -1,
-    hasDormer: true,
-    hasPorch: true,
+    crossGable: true,
+    dormer: true,
+    chimneySide: 1,
+    awning: 'front_porch',
+    roofColor: 0xd94e28,
+    colliderPad: 0.6,
   }),
-  herbalist: defineBuilding({
+  enrichBuilding({
     id: 'herbalist',
-    name: 'The Apothecary & Herb Cottage',
-    x: 13.0,
+    name: '2. Apothecary & Herb Greenhouse',
+    role: 'Partner Elixirs & Aura Potions',
+    x: 16.5,
+    z: -13.5,
     y: 0.0,
-    z: -11.0,
-    w: 8.5,
-    d: 6.5,
-    rotY: -0.62,
+    w: 8.6,
+    d: 6.4,
+    wallH: 4.3,
+    roofH: 3.0,
+    rotY: Math.atan2(-16.5, 13.5), // ~-0.885 rad, +Z door facing SW toward ring road
     stories: 1.5,
-    chimneySide: 1,
-    hasAwning: true,
-    hasPorch: true,
-  }),
-  smithy: defineBuilding({
-    id: 'smithy',
-    name: 'The Cooper & Smithy Cottage',
-    x: 14.0,
-    y: 0.0,
-    z: 12.0,
-    w: 9.5,
-    d: 7.0,
-    rotY: -2.35,
-    stories: 1.5,
+    crossGable: false,
+    dormer: true,
     chimneySide: -1,
-    hasPorch: true,
+    awning: 'side_greenhouse',
+    roofColor: 0xe05a32,
+    colliderPad: 0.5,
   }),
-  gardener: defineBuilding({
-    id: 'gardener',
-    name: "The Gardener's Cottage",
-    x: -13.0,
+  enrichBuilding({
+    id: 'smithy',
+    name: '3. Foothill Smithy & Cooperage',
+    role: 'Weapon & Link-Strike Upgrades',
+    x: 16.8,
+    z: 14.2,
     y: 0.0,
-    z: 13.0,
-    w: 8.0,
-    d: 6.5,
-    rotY: 2.30,
-    stories: 1,
-    chimneySide: 1,
-    hasGarden: true,
-    hasPorch: true,
-  }),
-  watermill: defineBuilding({
-    id: 'watermill',
-    name: 'The Watermill',
-    x: -22.0,
-    y: 0.4,
-    z: -14.2,
-    w: 7.2,
-    d: 6.5,
-    rotY: 0.35,
+    w: 9.0,
+    d: 6.8,
+    wallH: 4.5,
+    roofH: 3.1,
+    rotY: Math.atan2(-16.8, -14.2), // ~-2.440 rad, +Z door facing NW toward ring road
     stories: 1.5,
-    hasWheel: true,
-    wheelX: -26.2,
-    wheelZ: -14.2,
-    wheelY: 0.48,
-    wheelRadius: 2.1,
+    crossGable: false,
+    dormer: true,
+    chimneySide: 1,
+    heavyForge: true,
+    awning: 'forge_shed',
+    roofColor: 0xc64120,
+    colliderPad: 0.5,
   }),
-};
+  enrichBuilding({
+    id: 'gardener',
+    name: '4. Shepherd & Gardener Cottage',
+    role: 'Town Defense Anchor & Kitchen Garden',
+    x: -15.8,
+    z: 14.8,
+    y: 0.0,
+    w: 8.2,
+    d: 6.2,
+    wallH: 3.9,
+    roofH: 2.9,
+    rotY: Math.atan2(15.8, -14.8), // ~+2.323 rad, +Z door facing NE toward ring road
+    stories: 1,
+    crossGable: false,
+    dormer: true,
+    chimneySide: -1,
+    awning: 'front_hood',
+    roofColor: 0xde552c,
+    colliderPad: 0.5,
+    gardenPatch: { ox: 6.6, oz: 0.0, w: 4.2, d: 5.6 },
+  }),
+  enrichBuilding({
+    id: 'watermill',
+    name: '5. Waterfall Stream Mill',
+    role: 'Hydro Wheel Landmark & Pier Anchor',
+    x: -44.0,
+    z: -18.0,
+    y: 0.3,
+    w: 7.8,
+    d: 6.4,
+    wallH: 4.6,
+    roofH: 3.0,
+    rotY: 0.42, // +Z door facing SSE toward mill_service_path
+    stories: 1.5,
+    crossGable: false,
+    dormer: true,
+    chimneySide: 0,
+    hasWaterwheel: true,
+    roofColor: 0xc94927,
+    colliderPad: 0.5,
+  }),
+];
 
-export const BUILDING_LIST = Object.values(BUILDINGS);
+export const BUILDING_LIST = BUILDINGS;
+export const BUILDINGS_BY_ID = Object.fromEntries(BUILDINGS.map((b) => [b.id, b]));
+const millBuilding = BUILDINGS_BY_ID.watermill;
 
-/**
- * Transform a world (wx, wz) into a building's local frame (lx, lz) where +Z is the front door direction.
- */
 export function worldToBuildingLocal(wx, wz, b) {
   const dx = wx - b.x;
   const dz = wz - b.z;
-  const c = Math.cos(b.rotY);
-  const s = Math.sin(b.rotY);
   return {
-    lx: dx * c - dz * s,
-    lz: dx * s + dz * c,
+    lx: dx * b.cosNeg - dz * b.sinNeg,
+    lz: dx * b.sinNeg + dz * b.cosNeg,
   };
 }
 
-/**
- * Transform a building's local (lx, lz) into world (wx, wz).
- */
 export function buildingLocalToWorld(lx, lz, b) {
   const c = Math.cos(b.rotY);
   const s = Math.sin(b.rotY);
@@ -199,534 +257,747 @@ export function buildingLocalToWorld(lx, lz, b) {
   };
 }
 
-/**
- * Compute doorway cobblestone spur path control points for every building.
- * Every spur path starts at `(doorX, doorZ)` and joins the Village Ring Road or West Mill Road.
- */
-function buildDoorSpurs() {
-  const spurs = [];
-  for (const key of ['inn', 'herbalist', 'smithy', 'gardener']) {
-    const b = BUILDINGS[key];
-    const dist = Math.hypot(b.doorX, b.doorZ) || 1;
-    const ux = b.doorX / dist;
-    const uz = b.doorZ / dist;
-    const roadX = ux * WELL_PLAZA.ringCenterRadius;
-    const roadZ = uz * WELL_PLAZA.ringCenterRadius;
-    spurs.push({
-      id: `${key}-spur`,
-      buildingId: key,
-      width: 2.35,
-      surface: 'cobble',
-      points: [
-        [b.wallDoorX, b.wallDoorZ],
-        [b.doorX, b.doorZ],
-        [(b.doorX + roadX) * 0.5, (b.doorZ + roadZ) * 0.5],
-        [roadX, roadZ],
-      ],
-    });
-  }
-
-  // Watermill spur: terminates at watermill (doorX, doorZ) and joins the West Mill Road
-  const wm = BUILDINGS.watermill;
-  spurs.push({
-    id: 'watermill-spur',
-    buildingId: 'watermill',
-    width: 2.4,
-    surface: 'cobble',
-    points: [
-      [wm.wallDoorX, wm.wallDoorZ],
-      [wm.doorX, wm.doorZ],
-      [-18.8, -6.2],
-      [-16.2, 1.2],
-      [-13.0, 3.2],
-    ],
-  });
-
-  return spurs;
+export const RING_RADIUS = 10.5;
+const RING_PTS = [];
+for (let i = 0; i <= 32; i++) {
+  const a = (i / 32) * Math.PI * 2;
+  RING_PTS.push([Math.cos(a) * RING_RADIUS, Math.sin(a) * RING_RADIUS]);
 }
 
-export const DOOR_SPURS = buildDoorSpurs();
-
-export const ROADS = [
-  // South Approach Road
-  {
-    id: 'south-road',
-    width: 3.8,
-    surface: 'dirt',
-    points: [
-      [0.0, 8.4],
-      [-0.8, 20.0],
-      [0.9, 34.0],
-      [-0.4, 48.0],
-      [0.0, 66.0],
-    ],
-  },
-  // East Road to Wisteria Combat Clearing
-  {
-    id: 'east-arena-road',
-    width: 3.5,
-    surface: 'dirt',
-    points: [
-      [8.3, -1.5],
-      [13.8, -3.6],
-      [18.2, -5.2],
-      [23.0, -6.0],
-    ],
-  },
-  // West Mill & Pier Road (connects Ring Road cleanly to Stone Pier Abutment at x=-20.6, z=8.0)
-  {
-    id: 'west-pier-road',
-    width: 3.4,
-    surface: 'dirt',
-    points: [
-      [-8.2, 1.2],
-      [-13.0, 3.2],
-      [-17.2, 6.2],
-      [-20.6, 8.0],
-    ],
-  },
-  ...DOOR_SPURS,
-];
-
-/**
- * Wisteria & Sakura Hero Tree placements.
- * Arena fence is at radius 15.8m from (38, -6).
- * Every arena Wisteria tree trunk is placed at radius 19.6m..20.2m (>= 3.8m clear of the fence!).
- */
-export const WISTERIA_TREES = [
-  {
-    id: 'arena-nw-wisteria',
-    x: 29.2,
-    z: -23.5, // dist from (38,-6) = 19.59m -> 3.79m clear of 15.8m fence
-    scale: 1.18,
-    rotY: 0.6,
-    variant: 'violet',
-  },
-  {
-    id: 'arena-ne-wisteria',
-    x: 49.5,
-    z: -22.2, // dist from (38,-6) = 19.87m -> 4.07m clear of 15.8m fence
-    scale: 1.22,
-    rotY: -1.1,
-    variant: 'violet',
-  },
-  {
-    id: 'arena-se-wisteria',
-    x: 54.8,
-    z: 4.2, // dist from (38,-6) = 19.65m -> 3.85m clear of 15.8m fence
-    scale: 1.05,
-    rotY: 2.1,
-    variant: 'sakura',
-  },
-  {
-    id: 'shrine-east-wisteria',
-    x: 7.8,
-    z: -58.5, // arches over the Romanesque Shrine Archway like ref-shrine-vista-mood.png
-    scale: 1.28,
-    rotY: -0.75,
-    variant: 'violet',
-  },
-  {
-    id: 'shrine-west-sakura',
-    x: -8.2,
-    z: -57.8,
-    scale: 1.02,
-    rotY: 1.25,
-    variant: 'sakura',
-  },
-];
-
-/**
- * Stratified Rock Cliff & Ravine Boulders (NO snowman spheres, and kept strictly disjoint from trees).
- */
-export const CLIFF_BOULDERS = [
-  // Waterfall stepped cascade cliff strata (x = -34..-23, z = -26..-18)
-  { x: -30.5, z: -23.2, w: 5.4, h: 5.8, d: 4.8, rotY: 0.22, moss: true },
-  { x: -24.2, z: -22.8, w: 4.6, h: 5.4, d: 4.4, rotY: -0.18, moss: true },
-  { x: -31.2, z: -19.2, w: 4.4, h: 3.6, d: 4.0, rotY: 0.45, moss: true },
-  { x: -27.4, z: -21.2, w: 3.4, h: 2.5, d: 2.6, rotY: 0.08, moss: false }, // mid-cascade ledge rock
-  { x: -30.8, z: -15.4, w: 3.6, h: 2.2, d: 3.4, rotY: -0.35, moss: true }, // west tailrace bank rock
-  { x: -32.0, z: -11.2, w: 3.2, h: 1.8, d: 2.8, rotY: 0.62, moss: true },
-  // Arena northern cliff backdrop shoulders (behind the wisteria trees, clear of trunks)
-  { x: 22.5, z: -28.0, w: 6.5, h: 4.8, d: 4.5, rotY: 0.3, moss: true },
-  { x: 39.0, z: -29.5, w: 7.8, h: 5.6, d: 5.0, rotY: -0.15, moss: true },
-  { x: 56.5, z: -26.5, w: 6.8, h: 5.0, d: 4.8, rotY: -0.4, moss: true },
-  // Shrine flank cliff boulders
-  { x: -11.5, z: -51.5, w: 4.5, h: 3.2, d: 3.8, rotY: 0.4, moss: true },
-  { x: 11.8, z: -51.0, w: 4.6, h: 3.4, d: 3.8, rotY: -0.35, moss: true },
-];
-
-/**
- * Green Cel-Shaded Village Trees — every coordinate verified to be >= 4m clear of all boulders,
- * roads, buildings, fences, and water.
- */
-export const VILLAGE_TREES = [
-  { x: -20.5, z: -2.2, scale: 1.05, seed: 101 },
-  { x: -19.0, z: 18.5, scale: 1.12, seed: 102 },
-  { x: -6.5, z: 24.5, scale: 0.96, seed: 103 },
-  { x: 8.5, z: 24.0, scale: 1.08, seed: 104 },
-  { x: 23.5, z: 16.5, scale: 1.15, seed: 105 },
-  { x: 24.0, z: -16.5, scale: 0.95, seed: 106 },
-  { x: -7.8, z: -24.5, scale: 1.04, seed: 107 },
-  { x: 8.2, z: -24.5, scale: 1.02, seed: 108 },
-  { x: -8.5, z: -37.0, scale: 1.10, seed: 109 },
-  { x: 8.5, z: -37.0, scale: 1.06, seed: 110 },
-  { x: -36.5, z: -29.5, scale: 1.18, seed: 111 },
-  { x: -17.5, z: -30.0, scale: 1.05, seed: 112 },
-  { x: -46.0, z: 22.0, scale: 1.15, seed: 113 },
-  { x: 56.0, z: 18.0, scale: 1.12, seed: 114 },
-];
-
-/* ---------------------------------------------------------- math utilities */
-
-function clamp(v, lo, hi) {
-  return v < lo ? lo : v > hi ? hi : v;
-}
-
-function smoothstep(edge0, edge1, x) {
-  const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
-  return t * t * (3 - 2 * t);
-}
-
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-
-function distToSegment(px, pz, ax, az, bx, bz) {
-  const vx = bx - ax;
-  const vz = bz - az;
-  const lenSq = vx * vx + vz * vz;
-  if (lenSq < 1e-6) return { dist: Math.hypot(px - ax, pz - az), t: 0 };
-  const t = clamp(((px - ax) * vx + (pz - az) * vz) / lenSq, 0, 1);
-  const cx = ax + vx * t;
-  const cz = az + vz * t;
-  return { dist: Math.hypot(px - cx, pz - cz), t, cx, cz };
-}
-
-export function distToPolyline(px, pz, points) {
-  let minDist = Infinity;
-  for (let i = 0; i < points.length - 1; i++) {
-    const [ax, az] = points[i];
-    const [bx, bz] = points[i + 1];
-    const { dist } = distToSegment(px, pz, ax, az, bx, bz);
-    if (dist < minDist) minDist = dist;
-  }
-  return minDist;
-}
-
-/**
- * Signed distance to an axis-aligned box centered at (0,0) with half-extents (hx, hz).
- */
-function sdBox2D(lx, lz, hx, hz) {
-  const dx = Math.abs(lx) - hx;
-  const dz = Math.abs(lz) - hz;
-  const outDist = Math.hypot(Math.max(dx, 0), Math.max(dz, 0));
-  const inDist = Math.min(Math.max(dx, dz), 0);
-  return outDist + inDist;
-}
-
-/**
- * Deterministic multi-frequency value noise for organic outer hills.
- */
-function hash2(ix, iz) {
-  let h = Math.imul(ix | 0, 374761393) ^ Math.imul(iz | 0, 668265263);
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-
-function valueNoise(x, z) {
-  const ix = Math.floor(x);
-  const iz = Math.floor(z);
-  const fx = x - ix;
-  const fz = z - iz;
-  const ux = fx * fx * (3 - 2 * fx);
-  const uz = fz * fz * (3 - 2 * fz);
-  const a = hash2(ix, iz);
-  const b = hash2(ix + 1, iz);
-  const c = hash2(ix, iz + 1);
-  const d = hash2(ix + 1, iz + 1);
-  return lerp(lerp(a, b, ux), lerp(c, d, ux), uz);
-}
-
-export function fbm2(x, z) {
-  return (
-    0.55 * valueNoise(x, z) +
-    0.30 * valueNoise(x * 2.03 + 13.7, z * 2.03 + 7.1) +
-    0.15 * valueNoise(x * 4.07 + 31.2, z * 4.07 + 19.4)
-  );
-}
-
-/**
- * Core analytical terrain & water height + surface classifier `sampleWorld(x, z)`.
- *
- * Returns:
- * - `y`: terrain ground elevation at `(x, z)`
- * - `walkY`: walkable elevation (includes stone staircase, shrine platform, and wooden pier deck)
- * - `roadWeight`: `[0..1]` road/plaza surface blend
- * - `cobbleWeight`: `[0..1]` cobblestone vs packed dirt blend
- * - `sandWeight`: `[0..1]` warm sandy/pebbled shoreline gradient (`#d8c89e`)
- * - `rockWeight`: `[0..1]` cliff/ravine rock strata weight
- * - `foliageMask`: `0.0` in all exclusion zones, `1.0` on open meadow
- * - `ao`: `[0..1]` contact ambient occlusion around plinths, walls, and cliffs
- */
-export function sampleWorld(x, z) {
-  // 1. Base valley bowl + northern hill climb + NW rock shelf
-  const rOrigin = Math.hypot(x, z);
-  const valleyFlat = smoothstep(18, 52, rOrigin);
-  const hillNoise = (fbm2(x * 0.022, z * 0.022) - 0.45) * 6.5;
-
-  let y = valleyFlat * hillNoise * 0.65;
-
-  // Outer scenic valley rim (> 68m) rises into gentle rolling hills
-  const outerRim = smoothstep(64, 155, rOrigin);
-  y += outerRim * (8.5 + fbm2(x * 0.015 + 5.2, z * 0.015 - 3.8) * 14.0);
-
-  // Northern Shrine Hilltop plateau + gradual ridge ramp (centered around x=0, z=-56, y=+6.5m)
-  const distShrine = Math.hypot(x - SHRINE.x, z - SHRINE.z);
-  const northRidgeWeight =
-    smoothstep(-10.0, -48.0, z) * smoothstep(42.0, 12.0, Math.abs(x));
-  const shrineHillY = 6.5;
-  y = lerp(y, shrineHillY, northRidgeWeight);
-
-  // Extended Shrine Overlook + Wisteria tree shoulder plateau (r <= 11.5m around (0, -56))
-  const shrinePlateauWeight = smoothstep(14.5, 8.8, distShrine);
-  y = lerp(y, SHRINE.y, shrinePlateauWeight);
-
-  // Axial Grand Northern Staircase corridor (x = 0, z = -10.5 -> -46.8)
-  if (z <= -9.8 && z >= -49.8 && Math.abs(x) <= 6.5) {
-    const stairT = clamp((-10.5 - z) / (46.8 - 10.5), 0, 1);
-    const stairSlopeY = stairT * SHRINE.y;
-    const corridorBlend = smoothstep(6.2, 2.4, Math.abs(x));
-    y = lerp(y, stairSlopeY - 0.08, corridorBlend);
-  }
-
-  // Northwest Upper Stream Rock Shelf (x = -44..-19, z = -44..-21.5, y = +4.5m..+5.8m)
-  const nwShelfX = smoothstep(-16.0, -23.0, x) * smoothstep(-48.0, -38.0, x);
-  const nwShelfZ = smoothstep(-19.5, -23.2, z) * smoothstep(-46.0, -36.0, z);
-  const nwShelfWeight = nwShelfX * nwShelfZ;
-  if (nwShelfWeight > 0) {
-    // Carve upper stream bed right around x = -27.2
-    const streamTrough = Math.exp(-Math.pow((x - -27.2) / 2.2, 2));
-    const shelfTargetY = 5.1 - streamTrough * 0.85;
-    y = lerp(y, shelfTargetY, nwShelfWeight);
-  }
-
-  // Eastern Wisteria Combat Clearing (center (38, -6), y = +0.5m)
-  const distArena = Math.hypot(x - ARENA.x, z - ARENA.z);
-  const arenaPlateau = smoothstep(26.0, 17.5, distArena);
-  y = lerp(y, ARENA.y, arenaPlateau);
-
-  // Northern rocky cliff shoulder behind Wisteria Arena (z < -24, x = 18..60)
-  const arenaBackCliff =
-    smoothstep(-22.5, -29.0, z) *
-    smoothstep(14.0, 22.0, x) *
-    smoothstep(66.0, 54.0, x);
-  y += arenaBackCliff * 4.8;
-
-  // Hamlet Commons flat datum (r <= 21m around (0, 0) stays at y = 0.0m)
-  const hamletFlat = smoothstep(25.5, 17.5, rOrigin);
-  y = lerp(y, 0.0, hamletFlat);
-
-  // Building flat terraces & rotated footprints
-  let minBuildingDist = Infinity;
-  let insideApron = 0;
-  for (const b of BUILDING_LIST) {
-    const { lx, lz } = worldToBuildingLocal(x, z, b);
-    const padDist = sdBox2D(lx, lz, b.w * 0.5 + 0.4, b.d * 0.5 + 0.4);
-    if (padDist < minBuildingDist) minBuildingDist = padDist;
-
-    // Flatten terrain cleanly under every building site
-    // Note: for watermill, only flatten x >= -25.1 so we never overwrite the -X waterwheel channel!
-    if (b.id !== 'watermill' || x >= -25.15) {
-      const terraceBlend = smoothstep(3.2, 0.4, padDist);
-      y = lerp(y, b.y, terraceBlend);
-    }
-
-    // Rotated stone doorstep apron extending from front wall (lz = d*0.5) to (doorX, doorZ) (lz = d*0.5 + 0.9)
-    const apronDist = sdBox2D(lx, lz - (b.d * 0.5 + 0.55), 1.35, 0.78);
-    if (apronDist < 0.35) {
-      insideApron = Math.max(insideApron, smoothstep(0.35, -0.05, apronDist));
-    }
-  }
-
-  // Stone Shoreline Abutment platform for Wooden Pier at (-20.6, 8.0, y = -0.32m)
-  // Keeps the West Mill Road -> Pier transition on solid stone above waterY (-1.2m)!
-  const abut = WATER.pierAbutment;
-  const abutDist = sdBox2D(x - abut.x, z - abut.z, abut.w * 0.5, abut.d * 0.5);
-  const abutBlend = smoothstep(2.4, 0.2, abutDist);
-  y = lerp(y, abut.y, abutBlend);
-
-  // Millpond Basin (west of x = -21.5, z = -19..30, bowing around the pier abutment)
-  const pondDx = (x - -36.5) / 14.8;
-  const pondDz = (z - 7.5) / 21.5;
-  const pondRadial = Math.hypot(pondDx, pondDz);
-  // Protect the pier abutment peninsula at (-20.6, 8.0) so shoreline wraps behind x = -21.8
-  const pierPeninsulaProtect = smoothstep(2.6, 0.3, sdBox2D(x - -19.5, z - 8.0, 2.4, 2.8));
-  const pondDepthWeight = smoothstep(1.12, 0.58, pondRadial) * (1 - pierPeninsulaProtect * 0.88);
-  if (pondDepthWeight > 0) {
-    const basinFloor = -2.45;
-    y = lerp(y, basinFloor, pondDepthWeight);
-  }
-
-  // CARVED WATERWHEEL TAILRACE CHANNEL:
-  // Explicitly carve the terrain directly beneath the Watermill's -X waterwheel
-  // (x = -26.2, z = -14.2) down to y = -2.2m, extending from the waterfall plunge pool
-  // (z = -20.8) down into the Millpond (z = -4.0).
-  const inTailraceX = smoothstep(-24.95, -25.45, x) * smoothstep(-30.2, -29.1, x);
-  const inTailraceZ = smoothstep(-21.4, -19.8, z) * smoothstep(-2.0, -5.5, z);
-  const tailraceWeight = inTailraceX * inTailraceZ;
-  if (tailraceWeight > 0) {
-    y = lerp(y, WATER.tailraceBottomY, tailraceWeight);
-  }
-
-  // Surface Weights for Terrain Splat Shader (`uWorldMask`)
-  let roadWeight = 0;
-  let cobbleWeight = 0;
-
-  // Well Plaza cobblestones (r <= 6.5m) + Village Ring Road (r = 6.5..9.8m)
-  if (rOrigin < 10.6) {
-    const plazaW = smoothstep(6.7, 6.1, rOrigin);
-    const ringW = smoothstep(10.2, 9.3, rOrigin) * smoothstep(6.1, 6.7, rOrigin);
-    roadWeight = Math.max(roadWeight, plazaW, ringW);
-    cobbleWeight = Math.max(cobbleWeight, plazaW, ringW * 0.32);
-  }
-
-  // Roads & Doorway Cobblestone Spur Paths
-  for (const road of ROADS) {
-    const d = distToPolyline(x, z, road.points);
-    const halfW = road.width * 0.5;
-    const w = smoothstep(halfW + 0.45, halfW - 0.25, d);
-    if (w > 0) {
-      roadWeight = Math.max(roadWeight, w);
-      if (road.surface === 'cobble') {
-        cobbleWeight = Math.max(cobbleWeight, w);
-      }
-    }
-  }
-
-  // Building rotated stone aprons blend 100% into the cobblestone spur paths
-  if (insideApron > 0) {
-    roadWeight = Math.max(roadWeight, insideApron);
-    cobbleWeight = Math.max(cobbleWeight, insideApron);
-  }
-
-  // Eastern Wisteria Combat Clearing packed-earth floor
-  const arenaFloorW = smoothstep(ARENA.dirtRadius + 0.8, ARENA.dirtRadius - 0.8, distArena);
-  roadWeight = Math.max(roadWeight, arenaFloorW * 0.92);
-
-  // Northern Shrine platform & stair corridor paving
-  const shrineFloorW = smoothstep(SHRINE.platformRadius + 0.9, SHRINE.platformRadius - 0.3, distShrine);
-  if (shrineFloorW > 0) {
-    roadWeight = Math.max(roadWeight, shrineFloorW);
-    cobbleWeight = Math.max(cobbleWeight, shrineFloorW);
-  }
-
-  // Sandy/Pebbled Lake Shoreline Gradient (#d8c89e) around the Millpond (waterY = -1.2m)
-  const nearWaterZone = x < -17.0 && z > -16.0 && z < 32.0;
-  let sandWeight = 0;
-  if (nearWaterZone) {
-    const heightAboveWater = y - WATER.waterY;
-    // Warm sand band from y = -1.65m (shallow water) up to y = -0.18m (dry bank)
-    sandWeight =
-      smoothstep(-0.65, -0.05, heightAboveWater) *
-      smoothstep(1.05, 0.15, heightAboveWater) *
-      (1.0 - tailraceWeight * 0.85);
-  }
-
-  // Rock strata weight on steep slopes, waterfall cliff, and shrine hillside
-  const rockCascadeZone =
-    smoothstep(-16.0, -21.0, z) *
-    smoothstep(-35.0, -24.0, z) *
-    smoothstep(-19.0, -23.5, x) *
-    smoothstep(-35.0, -30.5, x);
-  const rockWeight = clamp(rockCascadeZone + arenaBackCliff * 0.85, 0, 1);
-
-  // Exact Foliage Exclusion Mask (0.0 on buildings, aprons, roads, arena, shrine, stairs, water, shoreline)
-  let foliageMask = 1.0;
-  if (minBuildingDist < 1.5) foliageMask = 0.0;
-  if (roadWeight > 0.15 || cobbleWeight > 0.15 || sandWeight > 0.25 || rockWeight > 0.35) {
-    foliageMask = 0.0;
-  }
-  if (y < WATER.waterY + 0.35) foliageMask = 0.0;
-  if (distArena < ARENA.fenceRadius + 1.0) foliageMask = 0.0;
-  if (distShrine < SHRINE.platformRadius + 1.5) foliageMask = 0.0;
-  if (z <= -9.5 && z >= -50.0 && Math.abs(x) <= 3.2) foliageMask = 0.0;
-
-  // Contact Ambient Occlusion around building plinths, well curb, and cliff bases
-  const buildingAo = smoothstep(0.0, 1.4, Math.abs(minBuildingDist));
-  const wellAo = smoothstep(1.1, 2.2, rOrigin);
-  const ao = clamp(0.45 + 0.55 * buildingAo * wellAo, 0.35, 1.0);
-
-  // Walkable height (includes stairs, shrine platform, and wooden pier deck)
-  let walkY = y;
-  if (z <= SHRINE.stairs.startZ && z >= SHRINE.stairs.endZ && Math.abs(x) <= 2.2) {
-    const t = clamp((SHRINE.stairs.startZ - z) / (SHRINE.stairs.startZ - SHRINE.stairs.endZ), 0, 1);
-    walkY = Math.max(walkY, t * SHRINE.y);
-  }
-  if (distShrine <= SHRINE.platformRadius + 0.4) {
-    walkY = Math.max(walkY, SHRINE.y);
-  }
-  if (x <= -20.0 && x >= -33.5 && Math.abs(z - 8.0) <= 1.8) {
-    walkY = Math.max(walkY, WATER.pierAbutment.y);
-  }
-
+function buildCottageSpur(id, name, width, buildingId) {
+  const b = BUILDINGS_BY_ID[buildingId];
+  const doorPt = getBuildingDoorWorldPos(b, 1.35);
+  const wallPt = getBuildingDoorWorldPos(b, 0.15);
+  const ang = Math.atan2(doorPt[1], doorPt[0]);
+  const ringPt = [Math.cos(ang) * RING_RADIUS, Math.sin(ang) * RING_RADIUS];
   return {
-    y,
-    walkY,
-    roadWeight: clamp(roadWeight, 0, 1),
-    cobbleWeight: clamp(cobbleWeight, 0, 1),
-    sandWeight: clamp(sandWeight, 0, 1),
-    rockWeight: clamp(rockWeight, 0, 1),
-    foliageMask,
-    ao,
+    id,
+    name,
+    width,
+    surface: 'cobble',
+    points: [ringPt, doorPt, wallPt],
   };
 }
 
-export function heightAt(x, z) {
-  return sampleWorld(x, z).walkY;
+const millDoorPt = getBuildingDoorWorldPos(millBuilding, 1.35);
+const millWallPt = getBuildingDoorWorldPos(millBuilding, 0.15);
+
+export const ROADS = [
+  {
+    id: 'village_ring',
+    name: 'Hamlet Commons Loop',
+    width: 4.2,
+    surface: 'cobble',
+    points: RING_PTS,
+  },
+  {
+    id: 'south_approach',
+    name: 'South Valley Approach',
+    width: 4.5,
+    surface: 'dirt',
+    points: [
+      [0, 105],
+      [1.4, 78],
+      [-0.8, 52],
+      [0.4, 28],
+      [0, RING_RADIUS],
+    ],
+  },
+  {
+    id: 'west_mill_road',
+    name: 'West Mill & Pier Lane',
+    width: 4.0,
+    surface: 'cobble',
+    points: [
+      [-RING_RADIUS, 1.2],
+      [-18.5, 4.2],
+      [-26.5, 7.2],
+      [-31.5, 8.5],
+      [-35.5, 8.5],
+    ],
+  },
+  {
+    id: 'mill_service_path',
+    name: 'Millhouse Spur Path',
+    width: 3.8,
+    surface: 'cobble',
+    points: [
+      [-30.5, 8.2],
+      [-32.8, 2.2],
+      [-36.8, -5.8],
+      millDoorPt,
+      millWallPt,
+    ],
+  },
+  {
+    id: 'east_arena_road',
+    name: 'East Wisteria Ring Way',
+    width: 4.2,
+    surface: 'dirt',
+    points: [
+      [RING_RADIUS, -0.5],
+      [23.0, -1.8],
+      [36.0, -3.2],
+      [48.5, -4.0],
+    ],
+  },
+  {
+    id: 'north_shrine_approach',
+    name: 'Northern Staircase Approach',
+    width: 4.4,
+    surface: 'cobble',
+    points: [
+      [0.0, -RING_RADIUS],
+      [0.0, -15.0],
+    ],
+  },
+  {
+    id: 'north_shrine_climb',
+    name: 'Northern Shrine Stepped Path',
+    width: 4.4,
+    surface: 'stone_steps',
+    points: [
+      [0.0, -15.0],
+      [0.0, -34.0],
+      [0.0, -53.0],
+      [0.0, -71.5],
+    ],
+  },
+  buildCottageSpur('spur_inn', 'Inn Porch Spur', 4.2, 'inn'),
+  buildCottageSpur('spur_herbalist', 'Herbalist Spur', 4.0, 'herbalist'),
+  buildCottageSpur('spur_smithy', 'Smithy Forge Yard Spur', 4.2, 'smithy'),
+  buildCottageSpur('spur_gardener', 'Gardener Gate Spur', 4.0, 'gardener'),
+];
+
+// Precompute road bounding boxes and segments for fast O(1) culling during mask build
+const RING_ROAD_OBJ = ROADS[0]; // village_ring (exact circle of radius RING_RADIUS = 10.5m)
+const PRECOMPUTED_ROADS = ROADS.slice(1).map((road) => {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  const segs = [];
+  const pts = road.points;
+  const segPad = road.width * 0.5 + 0.5;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const ax = pts[i][0];
+    const az = pts[i][1];
+    const bx = pts[i + 1][0];
+    const bz = pts[i + 1][1];
+    const dx = bx - ax;
+    const dz = bz - az;
+    const invLen2 = 1.0 / (dx * dx + dz * dz || 1);
+    segs.push({
+      ax,
+      az,
+      dx,
+      dz,
+      invLen2,
+      idx: i,
+      minX: Math.min(ax, bx) - segPad,
+      maxX: Math.max(ax, bx) + segPad,
+      minZ: Math.min(az, bz) - segPad,
+      maxZ: Math.max(az, bz) + segPad,
+    });
+    minX = Math.min(minX, ax, bx);
+    maxX = Math.max(maxX, ax, bx);
+    minZ = Math.min(minZ, az, bz);
+    maxZ = Math.max(maxZ, az, bz);
+  }
+  const pad = road.width * 0.5 + 1.5;
+  return {
+    road,
+    segs,
+    segCount: Math.max(1, pts.length - 1),
+    minX: minX - pad,
+    maxX: maxX + pad,
+    minZ: minZ - pad,
+    maxZ: maxZ + pad,
+  };
+});
+
+export const LANDMARKS = {
+  well: {
+    name: 'Hamlet Roofed Stone Well',
+    x: 0,
+    z: 0,
+    y: 0,
+    plazaRadius: 6.4,
+    colliderRadius: 1.65,
+  },
+  pier: {
+    name: 'Lakeside Wooden Boat Pier',
+    xStart: -35.5,
+    xEnd: -52.0,
+    z: 8.5,
+    y: -0.35,
+    width: 3.6,
+  },
+  waterfall: {
+    name: 'Northwest Cascade & Timber Flume',
+    x: -51.4,
+    z: -20.8,
+    topY: 5.2,
+    bottomY: -1.2,
+    width: 4.2,
+  },
+  shrineArch: {
+    name: 'Wisteria Romanesque Stone Arch',
+    x: 0.0,
+    z: -93.5,
+    y: 8.0,
+    span: 6.2,
+    height: 5.8,
+  },
+};
+
+// All trees verified for >3.8m clearance from arena fence (r=19.5 around (68,-4)),
+// >4.5m clearance from all roads/stairs, and zero overlap with rocks, buildings, or shrine lookback vista.
+export const TREES = [
+  { id: 'wisteria_arena_n', kind: 'wisteria', x: 75.0, z: -26.2, scale: 1.32, label: 'Arena North Wisteria' },
+  { id: 'wisteria_arena_e', kind: 'wisteria', x: 92.2, z: -4.0,  scale: 1.38, label: 'Arena East Wisteria' },
+  { id: 'wisteria_arena_s', kind: 'wisteria', x: 75.0, z: 18.2,  scale: 1.32, label: 'Arena South Wisteria' },
+  { id: 'wisteria_shrine',  kind: 'wisteria', x: 10.6, z: -90.8, scale: 1.22, hasPlanter: true, label: 'Shrine Guardian Wisteria' },
+  { id: 'sakura_mill',      kind: 'sakura',   x: -37.5, z: -34.5, scale: 1.22, label: 'Millstream Sakura' },
+  { id: 'sakura_shrine_w',  kind: 'sakura',   x: -10.6, z: -90.8, scale: 1.22, hasPlanter: true, label: 'Shrine West Sakura' },
+
+  { kind: 'oak', x: -28, z: 32, scale: 1.15 },
+  { kind: 'oak', x: -14, z: 48, scale: 1.05 },
+  { kind: 'oak', x: 16, z: 46, scale: 1.10 },
+  { kind: 'oak', x: 34, z: 30, scale: 1.18 },
+  { kind: 'oak', x: 40, z: -24, scale: 1.02 },
+  { kind: 'oak', x: -64, z: -38, scale: 1.18 },
+  { kind: 'oak', x: -24, z: -56, scale: 1.10 },
+  { kind: 'oak', x: 32, z: -52, scale: 1.08 },
+  { kind: 'oak', x: 54, z: 24, scale: 1.16 },
+  { kind: 'oak', x: 96, z: 14, scale: 1.20 },
+  { kind: 'oak', x: -94, z: -18, scale: 1.25 },
+  { kind: 'oak', x: -92, z: 24, scale: 1.18 },
+  { kind: 'oak', x: -56, z: 48, scale: 1.14 },
+  { kind: 'oak', x: -16, z: 82, scale: 1.20 },
+  { kind: 'oak', x: 18, z: 80, scale: 1.18 },
+];
+
+export function roadDistanceAt(x, z) {
+  let bestDistSq = Infinity;
+  let bestRoad = null;
+  let bestT = 0;
+
+  // Analytical O(1) distance for village_ring (r = 10.5m)
+  if (Math.abs(x) < 14.0 && Math.abs(z) < 14.0) {
+    const r = Math.hypot(x, z);
+    const dRing = Math.abs(r - RING_RADIUS);
+    bestDistSq = dRing * dRing;
+    bestRoad = RING_ROAD_OBJ;
+    bestT = (Math.atan2(z, x) + Math.PI) / (Math.PI * 2);
+  }
+
+  for (let r = 0; r < PRECOMPUTED_ROADS.length; r++) {
+    const pr = PRECOMPUTED_ROADS[r];
+    if (x < pr.minX || x > pr.maxX || z < pr.minZ || z > pr.maxZ) continue;
+    const segs = pr.segs;
+    for (let i = 0; i < segs.length; i++) {
+      const s = segs[i];
+      const t = clamp(((x - s.ax) * s.dx + (z - s.az) * s.dz) * s.invLen2, 0, 1);
+      const px = s.ax + s.dx * t;
+      const pz = s.az + s.dz * t;
+      const ddx = x - px;
+      const ddz = z - pz;
+      const dSq = ddx * ddx + ddz * ddz;
+      if (dSq < bestDistSq) {
+        bestDistSq = dSq;
+        bestRoad = pr.road;
+        bestT = (s.idx + t) / pr.segCount;
+      }
+    }
+  }
+  return { dist: Math.sqrt(bestDistSq), road: bestRoad, progress: bestT };
+}
+
+export function streamCenterX(z) {
+  // Terminates at x = -51.6 at z = -21.5 (squarely into the waterfall rocks & flume intake, well west of the watermill roof)
+  return -51.6 + Math.sin((z + 21.5) * 0.12) * 1.6 + (z + 21.5) * 0.06;
+}
+
+export function terrainHeightAt(x, z) {
+  const distFromOrigin = Math.hypot(x, z);
+
+  // Outer valley basin rise & mountain ridge cradle beyond r = 88m
+  let rimLift = 0.0;
+  if (distFromOrigin > 88.0) {
+    const angle = Math.atan2(z, x);
+    const ridgeWave =
+      distFromOrigin > 130.0
+        ? 0.65 +
+          0.22 * Math.sin(angle * 5 + 0.6) +
+          0.18 * Math.cos(angle * 7 - 0.4) +
+          0.15 * (fbm2(x * 0.012, z * 0.012, 91) - 0.5)
+        : 0.65;
+    rimLift =
+      smoothstep(88, 155, distFromOrigin) * 8.5 +
+      smoothstep(130, 285, distFromOrigin) * 34.0 * ridgeWave;
+  }
+
+  // Keep south approach valley corridor gently open
+  const southGap =
+    z > 20 ? (1.0 - smoothstep(14, 42, Math.abs(x))) * smoothstep(20, 130, z) : 0.0;
+
+  // Inside the flat Hamlet terrace (r <= 28m), skip 3-octave fbm2 undulation
+  const dHamlet = distFromOrigin;
+  const wHamlet = 1.0 - smoothstep(ZONES.hamlet.innerR, ZONES.hamlet.outerR, dHamlet);
+  const undulation =
+    wHamlet > 0.999 ? 0.0 : (fbm2(x * 0.018, z * 0.018, 42) - 0.5) * 2.4;
+  let h = (undulation + rimLift) * (1.0 - southGap * 0.65);
+
+  // Northern Shrine ridge terrace (centered on x = 0.0, z = -86.0, y = 8.0)
+  if (z < -16.0 && Math.abs(x) < 75.0) {
+    const northFactor =
+      smoothstep(-16, -72, z) * smoothstep(75, 24, Math.abs(x));
+    h = lerp(h, ZONES.shrine.y, northFactor);
+  }
+
+  // Northwest headwaters shelf (y = +5.4m) feeding the waterfall at (-51.4, -20.8)
+  if (x < -16 && z < -8) {
+    const nwFactor = smoothstep(-20, -46, x) * smoothstep(-12, -30, z);
+    h = lerp(h, 5.4, nwFactor);
+    const sx = streamCenterX(z);
+    const streamAxisDist = Math.abs(x - sx);
+    if (z >= -68 && z <= -21.2 && streamAxisDist < 4.2) {
+      const channelDepth = (1.0 - smoothstep(1.4, 3.8, streamAxisDist)) * 1.15;
+      h -= channelDepth;
+    }
+  }
+
+  // East foothills behind the Arena
+  if (x > 92.0) {
+    h += smoothstep(92, 135, x) * 7.5;
+  }
+
+  // Zone A: Central Hamlet flat terrace (y = 0.0)
+  if (wHamlet > 0) {
+    h = lerp(h, ZONES.hamlet.y, wHamlet);
+  }
+
+  // Zone C: East Wisteria Combat Ring flat terrace (y = 0.6)
+  if (x > 35.0 && x < 101.0 && z > -36.0 && z < 28.0) {
+    const dArena = Math.hypot(x - ZONES.arena.x, z - ZONES.arena.z);
+    const wArena = 1.0 - smoothstep(ZONES.arena.innerR, ZONES.arena.outerR, dArena);
+    h = lerp(h, ZONES.arena.y, wArena);
+  }
+
+  // Zone D: Northern Shrine Overlook flat terrace (y = 8.0)
+  if (z < -56.0 && Math.abs(x) < 32.0) {
+    const dShrine = Math.hypot(x - ZONES.shrine.x, z - ZONES.shrine.z);
+    const wShrine = 1.0 - smoothstep(ZONES.shrine.innerR, ZONES.shrine.outerR, dShrine);
+    h = lerp(h, ZONES.shrine.y, wShrine);
+  }
+
+  // Linearly graded ramp along x = 0.0 from z = -15.0 (y = 0.0) to z = -71.5 (y = 8.0)
+  if (z <= -13.0 && z >= -73.0 && Math.abs(x) < 18.0) {
+    const rampT = clamp((-15.0 - z) / (71.5 - 15.0), 0, 1);
+    const rampY = lerp(0.0, ZONES.shrine.y, rampT);
+    const pathLat = 1.0 - smoothstep(2.6, 15.0, Math.abs(x));
+    h = lerp(h, rampY, pathLat);
+  }
+
+  // Building plinth pads
+  if (x > -56 && x < 30 && z > -30 && z < 28) {
+    for (let i = 0; i < BUILDINGS.length; i++) {
+      const b = BUILDINGS[i];
+      if (Math.abs(x - b.x) > 10 || Math.abs(z - b.z) > 10) continue;
+      const lx = (x - b.x) * b.cosNeg - (z - b.z) * b.sinNeg;
+      const lz = (x - b.x) * b.sinNeg + (z - b.z) * b.cosNeg;
+      if (b.id === 'watermill' && lx < -b.w * 0.45) continue;
+      const frontExt = b.id === 'watermill' && lz > 0 ? 3.4 : 1.5;
+      const dx = Math.max(0, Math.abs(lx) - b.w * 0.54);
+      const dz = Math.max(0, Math.abs(lz - frontExt * 0.5) - (b.d * 0.54 + frontExt * 0.5));
+      const padDist = Math.hypot(dx, dz);
+      const feather = b.id === 'watermill' ? 3.5 : 3.2;
+      const padMask = 1.0 - smoothstep(0.0, feather, padDist);
+      if (padMask > 0) {
+        h = lerp(h, b.y, padMask);
+      }
+    }
+  }
+
+  // Zone B: Millpond Lake Basin (center: (-62, 6), rx: 28, rz: 36, bedY: -3.0)
+  const mp = ZONES.millpond;
+  if (x < -26.0 && z > -34.0 && z < 46.0) {
+    const dxPond = (x - mp.x) / mp.rx;
+    const dzPond = (z - mp.z) / mp.rz;
+    const dPond = Math.hypot(dxPond, dzPond);
+    // Keep the full oval lake while protecting the NW stream shelf directly behind the waterfall cliff (x > -56.0, z < -21.2)
+    const shelfGuard = x > -56.5 && z < -20.8 ? smoothstep(-22.8, -20.8, z) : 1.0;
+    const wPond = (1.0 - smoothstep(0.68, 1.06, dPond)) * shelfGuard;
+    if (wPond > 0) h = lerp(h, mp.bedY, wPond);
+
+    // Waterfall plunge pool at (-51.4, -20.8)
+    const wf = LANDMARKS.waterfall;
+    const dPlunge = Math.hypot(x - (wf.x + 0.6), z - (wf.z + 1.8));
+    if (dPlunge < 6.0) {
+      const wPlunge = 1.0 - smoothstep(3.2, 5.8, dPlunge);
+      h = lerp(h, mp.bedY, wPlunge);
+    }
+
+    // Carve dedicated Waterwheel Tailrace Channel in Watermill local coordinates
+    if (x < -34 && x > -60 && z < -2 && z > -30) {
+      const b = millBuilding;
+      const lx = (x - b.x) * b.cosNeg - (z - b.z) * b.sinNeg;
+      const lz = (x - b.x) * b.sinNeg + (z - b.z) * b.cosNeg;
+      if (lx < -b.w * 0.48 && lx > -b.w * 0.5 - 4.2 && lz > -6.5 && lz < 18.0) {
+        const cx = -b.w * 0.5 - 1.15;
+        const dxChan = Math.abs(lx - cx);
+        const dzChan = lz < -3.5 ? -3.5 - lz : lz > 13.5 ? lz - 13.5 : 0;
+        const wChan =
+          (1.0 - smoothstep(1.25, 2.45, dxChan)) *
+          (1.0 - smoothstep(0.0, 3.2, dzChan));
+        const wallGuard = smoothstep(-b.w * 0.5 - 0.02, -b.w * 0.5 - 0.32, lx);
+        h = lerp(h, mp.bedY, wChan * wallGuard);
+      }
+      if (
+        lx <= -b.w * 0.5 + 0.45 &&
+        lx >= -b.w * 0.5 - 3.6 &&
+        lz >= -5.2 &&
+        lz <= 15.5
+      ) {
+        h = mp.bedY;
+      }
+    }
+
+    // Flush shore grading under the Stone Pier Abutment & Landward Approach (x = -35.5 .. -30.5, z = 8.5)
+    if (x > -39.0 && x < -26.0 && z > 2.5 && z < 14.5) {
+      const dLat = Math.abs(z - LANDMARKS.pier.z);
+      const wLat = 1.0 - smoothstep(2.1, 4.8, dLat);
+      const wLon = smoothstep(-37.2, -34.8, x) * (1.0 - smoothstep(-31.2, -27.5, x));
+      const targetY = lerp(LANDMARKS.pier.y - 0.08, LANDMARKS.pier.y + 0.11, smoothstep(-35.5, -31.8, x));
+      h = lerp(h, targetY, wLat * wLon);
+    }
+  }
+
+  return h;
+}
+
+export function terrainNormalAt(x, z, eps = 0.45) {
+  const hL = terrainHeightAt(x - eps, z);
+  const hR = terrainHeightAt(x + eps, z);
+  const hD = terrainHeightAt(x, z - eps);
+  const hU = terrainHeightAt(x, z + eps);
+  const nx = hL - hR;
+  const ny = 2.0 * eps;
+  const nz = hD - hU;
+  const invLen = 1.0 / Math.hypot(nx, ny, nz);
+  return [nx * invLen, ny * invLen, nz * invLen];
+}
+
+export function walkableHeightAt(x, z) {
+  const pier = LANDMARKS.pier;
+  if (
+    x >= pier.xEnd - 0.3 &&
+    x <= pier.xStart + 3.8 &&
+    Math.abs(z - pier.z) <= pier.width * 0.55
+  ) {
+    return pier.y;
+  }
+  const gh = terrainHeightAt(x, z);
+  return Math.max(gh, ZONES.millpond.waterY - 0.15);
+}
+
+export const heightAt = walkableHeightAt;
+
+/**
+ * Evaluates terrain height + surface weights + foliage exclusion mask + contact AO at `(x, z)`.
+ */
+export function sampleWorld(x, z) {
+  const h = terrainHeightAt(x, z);
+  const mp = ZONES.millpond;
+  const wf = LANDMARKS.waterfall;
+
+  let dirtWeight = 0.0;
+  let cobbleWeight = 0.0;
+  let sandWeight = 0.0;
+  let minBuildingDist = 10.0;
+
+  if (x < -28.0 && z > -32.0 && z < 46.0 && h >= -1.6 && h <= -0.2) {
+    const dPond = Math.hypot((x - mp.x) / mp.rx, (z - mp.z) / mp.rz);
+    const dPlunge = Math.hypot(x - wf.x, z - wf.z) / 14.0;
+    const nearShore = 1.0 - smoothstep(0.95, 1.18, Math.min(dPond, dPlunge));
+    if (nearShore > 0) {
+      sandWeight =
+        nearShore *
+        smoothstep(-0.22, -0.45, h) *
+        (1.0 - smoothstep(-1.18, -1.55, h));
+    }
+  }
+
+  if (Math.abs(x) < 108 && Math.abs(z) < 108) {
+    // Continuous paved Village Well Plaza & Commons Ring (r = 0 .. 12.6m) — zero grass moat!
+    if (Math.abs(x) < 13.5 && Math.abs(z) < 13.5) {
+      const rOrig = Math.hypot(x, z);
+      if (rOrig < 12.8) {
+        cobbleWeight = Math.max(cobbleWeight, smoothstep(12.8, 12.0, rOrig));
+      }
+    }
+
+    const rd = roadDistanceAt(x, z);
+    if (rd.road) {
+      const hw = rd.road.width * 0.5;
+      if (rd.dist < hw + 0.55) {
+        const edgeJitter = (hash2(Math.floor(x * 1.5), Math.floor(z * 1.5), 33) - 0.5) * 0.14;
+        const dEdge = rd.dist - (hw + edgeJitter);
+        const wRoad = 1.0 - smoothstep(-0.32, 0.18, dEdge);
+        if (wRoad > 0) {
+          if (rd.road.surface === 'cobble' || rd.road.surface === 'stone_steps') {
+            cobbleWeight = Math.max(cobbleWeight, wRoad);
+          } else {
+            dirtWeight = Math.max(dirtWeight, wRoad);
+          }
+        }
+      }
+    }
+
+    if (x > -52 && x < 26 && z > -26 && z < 24) {
+      for (let i = 0; i < BUILDINGS.length; i++) {
+        const b = BUILDINGS[i];
+        if (Math.abs(x - b.x) > 8.5 || Math.abs(z - b.z) > 8.5) continue;
+        const lx = (x - b.x) * b.cosNeg - (z - b.z) * b.sinNeg;
+        const lz = (x - b.x) * b.sinNeg + (z - b.z) * b.cosNeg;
+        if (b.id === 'watermill' && lx < -b.w * 0.45) continue;
+
+        const frontExt = 1.85;
+        const sideExt = b.awning === 'forge_shed' && lx > 0 ? 2.8 : 0.55;
+        const halfW = b.w * 0.5 + (lx > 0 ? sideExt : 0.55);
+        const centerX = lx > 0 && b.awning === 'forge_shed' ? 1.1 : 0.0;
+        const dx = Math.max(0, Math.abs(lx - centerX) - halfW);
+        const dz = Math.max(
+          0,
+          Math.abs(lz - frontExt * 0.5) - (b.d * 0.5 + frontExt * 0.5)
+        );
+        const dApron = Math.hypot(dx, dz);
+        if (dApron < minBuildingDist) minBuildingDist = dApron;
+
+        const wApron = 1.0 - smoothstep(0.65, 1.45, dApron);
+        if (wApron > 0) cobbleWeight = Math.max(cobbleWeight, wApron);
+
+        const dDoor = Math.hypot(x - b.doorX, z - b.doorZ);
+        const wDoor = 1.0 - smoothstep(2.2, 3.0, dDoor);
+        if (wDoor > 0) cobbleWeight = Math.max(cobbleWeight, wDoor);
+      }
+    }
+
+    if (x > 47.0 && x < 89.0 && z > -25.0 && z < 17.0) {
+      const dArena = Math.hypot(x - ZONES.arena.x, z - ZONES.arena.z);
+      if (dArena < 20.0) {
+        const wArenaOuter = 1.0 - smoothstep(18.5, 19.2, dArena);
+        const wArenaInner = 1.0 - smoothstep(16.7, 17.3, dArena);
+        const wRingCurb = clamp(wArenaOuter - wArenaInner, 0, 1);
+        cobbleWeight = Math.max(cobbleWeight, wRingCurb);
+        dirtWeight = Math.max(dirtWeight, wArenaInner);
+      }
+    }
+
+    if (z < -70.0 && Math.abs(x) < 16.0) {
+      const dShrine = Math.hypot(x - ZONES.shrine.x, z - ZONES.shrine.z);
+      if (dShrine < 15.2) {
+        const wShrine = 1.0 - smoothstep(14.1, 14.6, dShrine);
+        cobbleWeight = Math.max(cobbleWeight, wShrine);
+      }
+    }
+  }
+
+  let foliageMask = 1.0;
+  if (minBuildingDist < 1.6) foliageMask = 0.0;
+  else if (dirtWeight > 0.12 || cobbleWeight > 0.12 || sandWeight > 0.22) foliageMask = 0.0;
+  else if (h < mp.waterY + 0.35) foliageMask = 0.0;
+  else if (x > 46.0 && Math.hypot(x - ZONES.arena.x, z - ZONES.arena.z) < ZONES.arena.fenceR + 1.2) foliageMask = 0.0;
+  else if (z < -69.0 && Math.hypot(x - ZONES.shrine.x, z - ZONES.shrine.z) < ZONES.shrine.platformR + 1.5) foliageMask = 0.0;
+  else if (z <= -13.5 && z >= -73.0 && Math.abs(x) <= 3.4) foliageMask = 0.0;
+
+  const bAo = minBuildingDist < 1.5 ? smoothstep(0.0, 1.5, minBuildingDist) : 1.0;
+  const wAo = Math.abs(x) < 3.0 && Math.abs(z) < 3.0 ? smoothstep(1.2, 2.5, Math.hypot(x, z)) : 1.0;
+  const ao = clamp(0.52 + 0.48 * bAo * wAo, 0.45, 1.0);
+  const colorVar = 0.5 + 0.25 * Math.sin(x * 0.08 + z * 0.06) + 0.25 * Math.cos(x * 0.05 - z * 0.09);
+
+  return {
+    y: h,
+    walkY: Math.max(h, mp.waterY - 0.15),
+    roadWeight: clamp(dirtWeight, 0, 1),
+    cobbleWeight: clamp(cobbleWeight, 0, 1),
+    sandWeight: clamp(sandWeight, 0, 1),
+    foliageMask,
+    ao,
+    colorVar,
+  };
 }
 
 /**
- * Generates the deterministic 512x512 RGBA DataTexture `uWorldMask` covering `[-160..+160]m`:
- * - R: road / surface blend weight (0 = meadow, 0.5 = packed dirt/arena, 1.0 = cobblestone/flagstone)
- * - G: warm sandy/pebbled shoreline weight (`#d8c89e`) + cliff rock encoding
- * - B: exact foliage exclusion mask (`0.0` excluded, `1.0` meadow)
- * - A: contact ambient occlusion (`0.0..1.0`)
+ * Generates the fast 512x512 RGBA DataTexture `uWorldMask` covering `[-140..+140]m` in < 20ms:
+ * - `R`: Cobblestone / dressed stone weight (`0.0..1.0` linear — zero dirt halo discontinuity!)
+ * - `G`: Dirt lane / arena earth weight (`0.0..0.5`) or sandy shoreline (`0.5..1.0`)
+ * - `B`: Foliage exclusion mask (`0.0` on buildings/roads/plaza/arena/shrine/water, `1.0` on open meadow)
+ * - `A`: Contact ambient occlusion (`0.0..1.0`)
  */
 export function createWorldMaskTexture(size = 512) {
+  const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const data = new Uint8Array(size * size * 4);
-  const span = INNER_EXTENT * 2; // 320m (-160..+160)
+  const span = INNER_EXTENT * 2; // 280m (-140..+140)
+  const mp = ZONES.millpond;
+  const wf = LANDMARKS.waterfall;
 
-  for (let iz = 0; iz < size; iz++) {
+  // Fill baseline open meadow (R=0, G=0, B=255, A=255) using 32-bit Uint32Array view (< 0.3ms!)
+  const u32 = new Uint32Array(data.buffer);
+  u32.fill(0xffff0000);
+
+  const izMin = Math.max(0, Math.floor(((-106 / span) + 0.5) * size));
+  const izMax = Math.min(size - 1, Math.ceil(((106 / span) + 0.5) * size));
+  const ixMin = Math.max(0, Math.floor(((-92 / span) + 0.5) * size));
+  const ixMax = Math.min(size - 1, Math.ceil(((90 / span) + 0.5) * size));
+
+  for (let iz = izMin; iz <= izMax; iz++) {
     const wz = ((iz + 0.5) / size - 0.5) * span;
-    for (let ix = 0; ix < size; ix++) {
+    const inPondZ = wz > -32.0 && wz < 44.0;
+    const inBldgZ = wz > -25.0 && wz < 23.0;
+    const inArenaZ = wz > -24.5 && wz < 16.5;
+    const inShrineZ = wz < -70.0 && wz > -102.0;
+    const inStairZ = wz <= -13.5 && wz >= -73.0;
+    const inRingZ = Math.abs(wz) < 13.5;
+
+    // Filter active road segments for this Z row once per row!
+    const activeSegs = [];
+    for (let r = 0; r < PRECOMPUTED_ROADS.length; r++) {
+      const pr = PRECOMPUTED_ROADS[r];
+      if (wz < pr.minZ || wz > pr.maxZ) continue;
+      const hw = pr.road.width * 0.5;
+      const isCobble = pr.road.surface === 'cobble' || pr.road.surface === 'stone_steps';
+      for (let i = 0; i < pr.segs.length; i++) {
+        const s = pr.segs[i];
+        if (wz >= s.minZ && wz <= s.maxZ) {
+          activeSegs.push({ s, hw, isCobble });
+        }
+      }
+    }
+
+    for (let ix = ixMin; ix <= ixMax; ix++) {
       const wx = ((ix + 0.5) / size - 0.5) * span;
-      const s = sampleWorld(wx, wz);
 
-      // Encode R: 0..127 = dirt road weight, 128..255 = cobblestone weight
-      let rVal = 0;
-      if (s.cobbleWeight > 0.02) {
-        rVal = Math.round(128 + s.cobbleWeight * 127);
-      } else {
-        rVal = Math.round(s.roadWeight * 120);
+      const inPondX = inPondZ && wx < -30.0 && wx > -92.0;
+      const inBldgX = inBldgZ && wx > -52.0 && wx < 25.0;
+      const inArenaX = inArenaZ && wx > 46.0 && wx < 90.0;
+      const inShrineX = inShrineZ && Math.abs(wx) < 16.5;
+      const inRoadX = activeSegs.length > 0 && wx > -52.0 && wx < 52.0;
+
+      if (!inPondX && !inBldgX && !inArenaX && !inShrineX && !inRoadX && !(inRingZ && Math.abs(wx) < 13.5)) {
+        continue;
       }
 
-      // Encode G: 0..127 = sand shoreline weight, 128..255 = cliff rock weight
-      let gVal = 0;
-      if (s.rockWeight > 0.1) {
-        gVal = Math.round(128 + s.rockWeight * 127);
-      } else {
-        gVal = Math.round(s.sandWeight * 124);
+      let dirtWeight = 0.0;
+      let cobbleWeight = 0.0;
+      let sandWeight = 0.0;
+      let minBuildingDist = 10.0;
+      let isUnderwater = false;
+
+      if (inPondX) {
+        const dxP = (wx - mp.x) / mp.rx;
+        const dzP = (wz - mp.z) / mp.rz;
+        const dPond = Math.hypot(dxP, dzP);
+        const dPlunge = Math.hypot(wx - (wf.x + 0.6), wz - (wf.z + 1.8)) / 5.5;
+        const dWater = Math.min(dPond, dPlunge);
+        if (dWater < 0.96) {
+          isUnderwater = true;
+        } else if (dWater <= 1.12 && !(wx > -56.0 && wz < -20.0)) {
+          sandWeight = 1.0 - (dWater - 0.96) / 0.16;
+        }
       }
 
-      const bVal = Math.round(s.foliageMask * 255);
-      const aVal = Math.round(s.ao * 255);
+      // Continuous paved Hamlet Well Plaza & Commons Ring (r = 0..12.8m) — zero grass moat!
+      if (inRingZ && Math.abs(wx) < 13.5) {
+        const rOrig = Math.hypot(wx, wz);
+        if (rOrig < 12.8) {
+          cobbleWeight = Math.max(cobbleWeight, smoothstep(12.8, 12.0, rOrig));
+        }
+      }
+
+      for (let i = 0; i < activeSegs.length; i++) {
+        const { s, hw, isCobble } = activeSegs[i];
+        if (wx < s.minX || wx > s.maxX) continue;
+        const t = clamp(((wx - s.ax) * s.dx + (wz - s.az) * s.dz) * s.invLen2, 0, 1);
+        const ddx = wx - (s.ax + s.dx * t);
+        const ddz = wz - (s.az + s.dz * t);
+        const dSq = ddx * ddx + ddz * ddz;
+        if (dSq < (hw + 0.45) * (hw + 0.45)) {
+          const d = Math.sqrt(dSq);
+          const w = smoothstep(hw + 0.35, hw - 0.25, d);
+          if (isCobble) {
+            cobbleWeight = Math.max(cobbleWeight, w);
+          } else {
+            dirtWeight = Math.max(dirtWeight, w);
+          }
+        }
+      }
+
+      if (inBldgX) {
+        for (let i = 0; i < BUILDINGS.length; i++) {
+          const b = BUILDINGS[i];
+          if (Math.abs(wx - b.x) > 8.5 || Math.abs(wz - b.z) > 8.5) continue;
+          const lx = (wx - b.x) * b.cosNeg - (wz - b.z) * b.sinNeg;
+          const lz = (wx - b.x) * b.sinNeg + (wz - b.z) * b.cosNeg;
+          if (b.id === 'watermill' && lx < -b.w * 0.45) continue;
+
+          const frontExt = 1.85;
+          const sideExt = b.awning === 'forge_shed' && lx > 0 ? 2.8 : 0.55;
+          const halfW = b.w * 0.5 + (lx > 0 ? sideExt : 0.55);
+          const centerX = lx > 0 && b.awning === 'forge_shed' ? 1.1 : 0.0;
+          const dx = Math.max(0, Math.abs(lx - centerX) - halfW);
+          const dz = Math.max(
+            0,
+            Math.abs(lz - frontExt * 0.5) - (b.d * 0.5 + frontExt * 0.5)
+          );
+          const dApron = Math.hypot(dx, dz);
+          if (dApron < minBuildingDist) minBuildingDist = dApron;
+
+          const wApron = 1.0 - smoothstep(0.65, 1.45, dApron);
+          if (wApron > 0) cobbleWeight = Math.max(cobbleWeight, wApron);
+
+          const dDoor = Math.hypot(wx - b.doorX, wz - b.doorZ);
+          const wDoor = 1.0 - smoothstep(2.2, 3.0, dDoor);
+          if (wDoor > 0) cobbleWeight = Math.max(cobbleWeight, wDoor);
+        }
+      }
+
+      if (inArenaX) {
+        const dArena = Math.hypot(wx - ZONES.arena.x, wz - ZONES.arena.z);
+        if (dArena < 20.0) {
+          const wArenaOuter = 1.0 - smoothstep(18.5, 19.2, dArena);
+          const wArenaInner = 1.0 - smoothstep(16.7, 17.3, dArena);
+          cobbleWeight = Math.max(cobbleWeight, clamp(wArenaOuter - wArenaInner, 0, 1));
+          dirtWeight = Math.max(dirtWeight, wArenaInner);
+        }
+      }
+
+      if (inShrineX) {
+        const dShrine = Math.hypot(wx - ZONES.shrine.x, wz - ZONES.shrine.z);
+        if (dShrine < 14.9) {
+          cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(14.0, 14.5, dShrine));
+        }
+      }
+
+      let foliageMask = 1.0;
+      if (isUnderwater || minBuildingDist < 1.6) foliageMask = 0.0;
+      else if (dirtWeight > 0.12 || cobbleWeight > 0.12 || sandWeight > 0.22) foliageMask = 0.0;
+      else if (inArenaX && Math.hypot(wx - ZONES.arena.x, wz - ZONES.arena.z) < ZONES.arena.fenceR + 1.2) foliageMask = 0.0;
+      else if (inShrineX && Math.hypot(wx - ZONES.shrine.x, wz - ZONES.shrine.z) < ZONES.shrine.platformR + 1.5) foliageMask = 0.0;
+      else if (inStairZ && Math.abs(wx) <= 3.4) foliageMask = 0.0;
+
+      const bAo = minBuildingDist < 1.5 ? smoothstep(0.0, 1.5, minBuildingDist) : 1.0;
+      const ao = clamp(0.52 + 0.48 * bAo, 0.45, 1.0);
+
+      const rByte = Math.round(clamp(cobbleWeight, 0, 1) * 255);
+      const gByte = dirtWeight > 0.01 ? Math.round(clamp(dirtWeight, 0, 1) * 127) : 0;
 
       const idx = (iz * size + ix) * 4;
-      data[idx] = rVal;
-      data[idx + 1] = gVal;
-      data[idx + 2] = bVal;
-      data[idx + 3] = aVal;
+      data[idx] = rByte;
+      data[idx + 1] = gByte;
+      data[idx + 2] = Math.round(foliageMask * 255);
+      data[idx + 3] = Math.round(ao * 255);
     }
   }
 
@@ -735,6 +1006,10 @@ export function createWorldMaskTexture(size = 512) {
   tex.wrapT = THREE.ClampToEdgeWrapping;
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
   tex.needsUpdate = true;
+
+  const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  tex.userData.buildTimeMs = Number((t1 - t0).toFixed(2));
   return tex;
 }

@@ -28,6 +28,24 @@ function makeRng(seed) {
 }
 
 function makeCanvas(w, h) {
+  if (typeof document === 'undefined') {
+    const dummyGrad = { addColorStop() {} };
+    const ctx = new Proxy(
+      {},
+      {
+        get(_t, prop) {
+          if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
+            return () => dummyGrad;
+          }
+          return () => {};
+        },
+        set() {
+          return true;
+        },
+      },
+    );
+    return { canvas: { width: w, height: h, isHeadlessMock: true }, ctx };
+  }
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -484,7 +502,9 @@ export function createTextures(renderer) {
   const anisotropy = renderer?.capabilities?.getMaxAnisotropy?.() ?? 1;
 
   const toTexture = (canvas) => {
-    const texture = new THREE.CanvasTexture(canvas);
+    const texture = canvas?.isHeadlessMock
+      ? new THREE.DataTexture(new Uint8Array(16).fill(255), 2, 2, THREE.RGBAFormat)
+      : new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;

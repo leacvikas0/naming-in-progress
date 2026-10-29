@@ -9,6 +9,7 @@
     "index": "node scripts/index-library.mjs",
     "inspect": "node scripts/inspect-rig.mjs",
     "setup": "node scripts/fetch-library.mjs && node scripts/index-library.mjs && node scripts/inspect-rig.mjs",
+    "blockout": "node world/tools/serve.mjs --open",
     "view": "npx --yes serve . -p 4173 --no-clipboard",
     "ui": "node game/ui/build-ui.mjs",
     "music": "node game/audio/build-music.mjs",

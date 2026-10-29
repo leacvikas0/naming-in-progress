@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:," />
+  <title>Haru-machi · Botanical &amp; Toroidal Meadow Pack</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/node_modules/three/build/three.module.js",
+        "three/addons/": "/node_modules/three/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #dcebf7;
+      color: #0f172a;
+      user-select: none;
+    }
+    #canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+    #hud-top {
+      position: fixed;
+      top: 14px;
+      left: 16px;
+      right: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+      z-index: 20;
+    }
+    .card {
+      pointer-events: auto;
+      background: rgba(15, 23, 42, 0.84);
+      color: #f8fafc;
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 10px;
+      padding: 9px 14px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+    }
+    .title { font-size: 14px; font-weight: 700; }
+    .sub { font-size: 11px; color: #cbd5e1; margin-top: 2px; }
+    #stats-pill {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      color: #86efac;
+    }
+    #hud-bottom {
+      position: fixed;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 6px;
+      z-index: 20;
+    }
+    button {
+      background: rgba(255, 255, 255, 0.12);
+      color: #f1f5f9;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 7px;
+      padding: 6px 11px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.active {
+      background: #f59e0b;
+      color: #111827;
+      border-color: #fbbf24;
+    }
+    #overlay-labels {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 15;
+    }
+    .vp-badge {
+      position: absolute;
+      background: rgba(15, 23, 42, 0.78);
+      color: #f8fafc;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 6px;
+      padding: 4px 9px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .vp-badge span {
+      color: #86efac;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      margin-left: 6px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="overlay-labels"></div>
+
+  <div id="hud-top">
+    <div class="card">
+      <div class="title" id="mode-title">Haru-machi · Botanical &amp; Toroidal Meadow Studio</div>
+      <div class="sub">3-Tone Gouache Cel Shader · Zero Textures · 1 Toroidal Grass + 5 Static Flower InstancedMeshes (6 Draw Calls)</div>
+    </div>
+    <div class="card">
+      <div id="stats-pill">Initializing...</div>
+    </div>
+  </div>
+
+  <div id="hud-bottom" class="card">
+    <button data-mode="species-sheet">Species Sheet</button>
+    <button data-mode="meadow-drift">Meadow Drift</button>
+    <button data-mode="grassTuft">grassTuft</button>
+    <button data-mode="bellflower">bellflower</button>
+    <button data-mode="daisy">daisy</button>
+    <button data-mode="lupine">lupine</button>
+    <button data-mode="cosmos">cosmos</button>
+    <button data-mode="toonShrub">toonShrub</button>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import {
+      SPECIES_SPECS,
+      createBotanicalPack,
+      createToroidalMeadow,
+      createMeadowDriftDemo,
+    } from './index.js';
+
+    const canvas = document.getElementById('canvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.autoClear = false;
+
+    const pack = createBotanicalPack();
+    const speciesOrder = ['grassTuft', 'bellflower', 'daisy', 'lupine', 'cosmos', 'toonShrub'];
+
+    // Build individual studio stage scenes (each with grounded turf plinth disc)
+    const studioStages = {};
+    for (const key of speciesOrder) {
+      const sc = new THREE.Scene();
+      const mesh = pack.createMesh(key);
+      sc.add(mesh);
+
+      const box = pack.geometries[key].boundingBox;
+      const h = box.max.y - box.min.y;
+      const r = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * 0.68;
+
+      const discGeo = new THREE.CylinderGeometry(r * 1.35, r * 1.45, 0.024, 24);
+      discGeo.translate(0, -0.012, 0);
+      const discMat = new THREE.MeshBasicMaterial({ color: 0x3b7a34 });
+      const disc = new THREE.Mesh(discGeo, discMat);
+      sc.add(disc);
+
+      const ringGeo = new THREE.RingGeometry(r * 1.33, r * 1.46, 24);
+      ringGeo.rotateX(-Math.PI / 2);
+      ringGeo.translate(0, 0.001, 0);
+      const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x67b346, side: THREE.DoubleSide }));
+      sc.add(ring);
+
+      studioStages[key] = { scene: sc, mesh, centerY: h * 0.48, radius: Math.max(h * 0.74, r * 1.16) };
+    }
+
+    // Build Meadow Drift showcase scene
+    const meadowScene = new THREE.Scene();
+    meadowScene.background = new THREE.Color('#cbe5fa');
+    meadowScene.fog = new THREE.FogExp2('#cbe5fa', 0.014);
+    const hemi = new THREE.HemisphereLight(0xf6fbff, 0x4b7d38, 1.05);
+    const sun = new THREE.DirectionalLight(0xfff5d6, 1.15);
+    sun.position.set(18, 28, 12);
+    meadowScene.add(hemi, sun);
+
+    const driftDemo = createMeadowDriftDemo(meadowScene, { profile: 'demo' });
+
+    // Also instantiate production tablet & desktop toroidal meadows offscreen to verify exact profile contracts
+    const tabletMeadow = createToroidalMeadow({ profile: 'tablet' });
+    const desktopMeadow = createToroidalMeadow({ profile: 'desktop' });
+
+    const cam = new THREE.PerspectiveCamera(38, 1, 0.05, 250);
+    let currentMode = 'meadow-drift';
+    let fpsSmoothed = 144;
+    let lastFrameTime = performance.now();
+    let lastRenderCalls = 6;
+    let lastRenderTris = 0;
+
+    const overlay = document.getElementById('overlay-labels');
+    const titleEl = document.getElementById('mode-title');
+    const statsEl = document.getElementById('stats-pill');
+
+    function updateLabels(mode) {
+      overlay.innerHTML = '';
+      document.querySelectorAll('#hud-bottom button').forEach((b) => {
+        b.classList.toggle('active', b.dataset.mode === mode);
+      });
+
+      if (speciesOrder.includes(mode)) {
+        const st = pack.stats[mode];
+        titleEl.textContent = `${st.name} (${mode}) · Multi-Angle Studio Inspection`;
+        overlay.innerHTML = `
+          <div class="vp-badge" style="left:20px; top:76px;">3/4 Hero Turntable <span>${st.triangles} / ${st.budget} tris</span></div>
+          <div class="vp-badge" style="left:63%; top:76px;">Front Elevation (y=0 Grounded)</div>
+          <div class="vp-badge" style="left:63%; top:52%;">Top-Down Radial Silhouette</div>
+        `;
+      } else if (mode === 'species-sheet') {
+        titleEl.textContent = 'Botanical Pack · All 6 Vertex-Colored Species Sheet';
+        const cols = 3, rows = 2;
+        speciesOrder.forEach((key, idx) => {
+          const c = idx % cols, r = Math.floor(idx / cols);
+          const st = pack.stats[key];
+          const badge = document.createElement('div');
+          badge.className = 'vp-badge';
+          badge.style.left = `${(c * 100) / cols + 1.5}%`;
+          badge.style.top = `${r === 0 ? 74 : window.innerHeight * 0.5 + 12}px`;
+          badge.innerHTML = `${key} · ${st.name} <span>${st.triangles}/${st.budget} tris</span>`;
+          overlay.appendChild(badge);
+        });
+      } else {
+        titleEl.textContent = 'Toroidal GPU Meadow Drift · 1 Toroidal Grass + 5 Static Wildflower Batches (6 Draw Calls)';
+        overlay.innerHTML = `
+          <div class="vp-badge" style="left:20px; top:76px;">uWorldMask.b &lt; 0.5 Winding Path Exclusion <span>${driftDemo.meadow.drawCalls} Meadow Draw Calls</span></div>
+        `;
+      }
+    }
+
+    function renderViewport(scene, x, y, w, h, eye, target, bgHex = 0xe8f1f8, fov = 36) {
+      renderer.setViewport(x, y, w, h);
+      renderer.setScissor(x, y, w, h);
+      renderer.setScissorTest(true);
+      renderer.setClearColor(bgHex, 1);
+      renderer.clear();
+      cam.fov = fov;
+      cam.aspect = w / Math.max(1, h);
+      cam.position.fromArray(eye);
+      cam.lookAt(target[0], target[1], target[2]);
+      cam.updateProjectionMatrix();
+      renderer.render(scene, cam);
+    }
+
+    function renderFrame(timeSec = 0.8) {
+      const W = window.innerWidth, H = window.innerHeight;
+      pack.update(timeSec);
+      driftDemo.update(timeSec, new THREE.Vector3(0, 0, 0));
+
+      if (speciesOrder.includes(currentMode)) {
+        const st = studioStages[currentMode];
+        const R = st.radius;
+        const cy = st.centerY;
+        const leftW = Math.floor(W * 0.61);
+        const rightW = W - leftW;
+        const halfH = Math.floor(H * 0.5);
+
+        // 1. Main 3/4 Hero View
+        renderViewport(
+          st.scene, 0, 0, leftW, H,
+          [R * 2.15, cy + R * 1.15, R * 2.38],
+          [0, cy * 0.96, 0],
+          0xe7f0f8, 35
+        );
+        // 2. Top-Right: Front Elevation (with generous headroom above tallest tips)
+        renderViewport(
+          st.scene, leftW, halfH, rightW, H - halfH,
+          [0, cy * 1.04, R * 3.55],
+          [0, cy * 1.02, 0],
+          0xdfe9f3, 35
+        );
+        // 3. Bottom-Right: Top-Down View
+        renderViewport(
+          st.scene, leftW, 0, rightW, halfH,
+          [0.01, R * 3.20, 0.08],
+          [0, 0, 0],
+          0xd8e4f0, 34
+        );
+        lastRenderCalls = 1;
+        lastRenderTris = pack.stats[currentMode].triangles;
+      } else if (currentMode === 'species-sheet') {
+        const cols = 3, rows = 2;
+        const cellW = Math.floor(W / cols), cellH = Math.floor(H / rows);
+        let sumTris = 0;
+        speciesOrder.forEach((key, idx) => {
+          const c = idx % cols, r = Math.floor(idx / cols);
+          const vx = c * cellW;
+          const vy = (rows - 1 - r) * cellH;
+          const st = studioStages[key];
+          const R = st.radius, cy = st.centerY;
+          renderViewport(
+            st.scene, vx, vy, cellW, cellH,
+            [R * 2.15, cy + R * 1.16, R * 2.38],
+            [0, cy * 1.02, 0],
+            (c + r) % 2 === 0 ? 0xe7f0f8 : 0xdfe9f3,
+            35
+          );
+          sumTris += pack.stats[key].triangles;
+        });
+        lastRenderCalls = 6;
+        lastRenderTris = sumTris;
+      } else {
+        renderer.setViewport(0, 0, W, H);
+        renderer.setScissor(0, 0, W, H);
+        renderer.setScissorTest(true);
+        renderer.clear();
+        cam.fov = 44;
+        cam.aspect = W / H;
+        cam.position.set(1.8, 2.25, 13.5);
+        cam.lookAt(-0.4, 0.55, -6.0);
+        cam.updateProjectionMatrix();
+        renderer.render(meadowScene, cam);
+        lastRenderCalls = driftDemo.meadow.drawCalls; // 6 meadow InstancedMesh draw calls
+        lastRenderTris = renderer.info.render.triangles;
+      }
+
+      statsEl.textContent = `Mode: ${currentMode} · Meadow Draw Calls: ${driftDemo.meadow.drawCalls} · Active Tris: ${lastRenderTris.toLocaleString()} · FPS: ${Math.round(fpsSmoothed)}`;
+    }
+
+    function setMode(mode) {
+      currentMode = mode;
+      updateLabels(mode);
+      renderFrame(0.8);
+    }
+
+    document.querySelectorAll('#hud-bottom button').forEach((btn) => {
+      btn.addEventListener('click', () => setMode(btn.dataset.mode));
+    });
+
+    window.addEventListener('resize', () => {
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      updateLabels(currentMode);
+      renderFrame(0.8);
+    });
+
+    function animate(now) {
+      const dt = Math.max(1, now - lastFrameTime);
+      lastFrameTime = now;
+      const instFps = Math.min(144, 1000 / dt);
+      fpsSmoothed = fpsSmoothed * 0.9 + instFps * 0.1;
+      renderFrame(now * 0.001);
+      requestAnimationFrame(animate);
+    }
+
+    setMode('meadow-drift');
+    requestAnimationFrame(animate);
+
+    window.__FLOWERS_PREVIEW__ = {
+      setMode(mode, fixedTime = 0.85) {
+        currentMode = mode;
+        updateLabels(mode);
+        renderFrame(fixedTime);
+      },
+      getReport() {
+        return {
+          species: pack.stats,
+          meadowDrawCalls: driftDemo.meadow.drawCalls,
+          demoInstanceCounts: driftDemo.meadow.instanceCounts,
+          profiles: {
+            tablet: {
+              drawCalls: tabletMeadow.drawCalls,
+              grassRadius: 42,
+              instanceCounts: tabletMeadow.instanceCounts,
+            },
+            desktop: {
+              drawCalls: desktopMeadow.drawCalls,
+              grassRadius: 56,
+              instanceCounts: desktopMeadow.instanceCounts,
+            },
+          },
+          fps: Math.round(fpsSmoothed),
+        };
+      },
+    };
+  </script>
+</body>
+</html>

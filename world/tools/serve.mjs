@@ -20,7 +20,7 @@ const MIME = {
 
 const server = http.createServer((req, res) => {
   const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
-  let filePath = path.join(repoRoot, urlPath === '/' ? 'world/blockout.html' : urlPath);
+  let filePath = path.join(repoRoot, urlPath === '/' ? 'world/index.html' : urlPath);
   if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
     filePath = path.join(filePath, 'index.html');
   }
@@ -34,6 +34,12 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(filePath).pipe(res);
 });
 
+import { exec } from 'node:child_process';
+
 server.listen(port, '127.0.0.1', () => {
-  console.log(`Haru-machi 3D Blockout server listening on http://127.0.0.1:${port}/world/blockout.html`);
+  const url = `http://127.0.0.1:${port}/world/index.html`;
+  console.log(`Haru-machi 3D World server listening on ${url}`);
+  if (process.argv.includes('--open')) {
+    exec(`start "" "${url}"`);
+  }
 });

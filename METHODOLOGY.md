@@ -15,8 +15,9 @@
 ### 2. Stage Gate 1: Low-Poly 3D Blockout & Truly Blind Critique Loop
 - **Blockout First:** Whenever building or expanding a 3D world, first create a fast, low-poly Three.js blockout to map out the terrain, scale, and where everything goes.
 - **Walk the Scenery Like a Real Player:** Walk through the blockout from player eye-level across all angles. Does it make sense from every angle? Is the overall mapping logical?
-- **Truly Blind Independent Critics (Scored Out of 10):**
-  - Have an independent subagent visually critique the rendered views and score both the **overall work** and **specific parts out of 10**.
+- **Truly Blind Independent Critics (Scored Out of 10 via `judging-3d-scenes`):**
+  - Every critic subagent MUST load and follow [`judging-3d-scenes/SKILL.md`](file:///C:/Users/silen/.gemini/antigravity-acp/t3-home/config/skills/judging-3d-scenes/SKILL.md) (and [`references/examples.md`](file:///C:/Users/silen/.gemini/antigravity-acp/t3-home/config/skills/judging-3d-scenes/references/examples.md)).
+  - Have an independent subagent visually critique the rendered views and score both the **overall work** and **specific parts out of 10** (`Structure`, `Function`, `Intent`, `Finish` — where a Blocker caps its dimension at `4`, a Major caps at `6`, and **Overall is the lowest evaluated required dimension, never an average**).
   - **Never reuse the same critic agent** that gave the previous score—spawn a brand-new agent each time.
   - **Never prime or bias the critic:** Do not send the previous critic's report to the new critic, do not tell it *"hey, I found these flaws and fixed them, please rate me,"* and do not let code comments steer its score. Give it **nothing** except the rendered images and instructions to critically judge what it sees.
 - **User Browser Sign-Off:** Once the blockout passes, open the 3D Three.js build in the browser so Vikas can inspect and approve it before moving on to asset production.
