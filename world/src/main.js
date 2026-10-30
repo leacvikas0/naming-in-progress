@@ -448,6 +448,14 @@ export function applyTimeOfDay(modeOrT) {
     emMat.color.setRGB(hdrBoost, hdrBoost * 0.96, hdrBoost * 0.90);
   }
 
+  // 6. Sync Stage 4 Frost Lance VFX Lighting & Twilight Bloom Boost
+  if (coopSystem?.frostLance) {
+    coopSystem.frostLance.setLighting({
+      sunDir: skyState.activeLightDir,
+      daylight: skyState.daylight,
+    });
+  }
+
   syncTodHudControls();
   return skyState;
 }
@@ -615,6 +623,7 @@ let activeViewId = 'plaza';
 let elapsed = 0;
 const _meadowFocus = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
+const _camShake = new THREE.Vector3();
 
 function updateMeadowFocus(simTime) {
   camera.getWorldDirection(_camDir);
@@ -638,22 +647,32 @@ function updateMeadowFocus(simTime) {
 }
 
 function updateCamera() {
+  if (coopSystem?.frostLance) {
+    coopSystem.frostLance.getCameraShakeOffset(_camShake);
+  } else {
+    _camShake.set(0, 0, 0);
+  }
+
   if (camState.mode === 'player') {
     const h = 1.55 + Math.sin(camState.pitch) * camState.dist;
     const flat = Math.cos(camState.pitch) * camState.dist;
     camera.position.set(
-      player.x - Math.sin(camState.yaw) * flat,
-      player.y + h,
-      player.z - Math.cos(camState.yaw) * flat
+      player.x - Math.sin(camState.yaw) * flat + _camShake.x,
+      player.y + h + _camShake.y,
+      player.z - Math.cos(camState.yaw) * flat + _camShake.z
     );
     camera.lookAt(
-      player.x + Math.sin(camState.yaw) * 6.0,
-      player.y + 1.85,
-      player.z + Math.cos(camState.yaw) * 6.0
+      player.x + Math.sin(camState.yaw) * 6.0 + _camShake.x * 0.6,
+      player.y + 1.85 + _camShake.y * 0.6,
+      player.z + Math.cos(camState.yaw) * 6.0 + _camShake.z * 0.6
     );
   } else {
-    camera.position.copy(camState.vistaPos);
-    camera.lookAt(camState.vistaTarget);
+    camera.position.copy(camState.vistaPos).add(_camShake);
+    camera.lookAt(
+      camState.vistaTarget.x + _camShake.x * 0.5,
+      camState.vistaTarget.y + _camShake.y * 0.5,
+      camState.vistaTarget.z + _camShake.z * 0.5
+    );
   }
   camera.updateMatrixWorld();
 }
@@ -1053,6 +1072,8 @@ function animate() {
       camYaw: camState.yaw,
       camera,
     });
+  } else if (coopSystem?.frostLance?.active) {
+    coopSystem.frostLance.update(dt);
   }
 
   terrainKit.update(
@@ -1093,6 +1114,7 @@ window.__WORLD__ = {
   village,
   meadow,
   coopSystem,
+  frostLance: coopSystem.frostLance,
   touchHud,
   player,
   VIEWS,

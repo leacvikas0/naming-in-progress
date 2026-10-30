@@ -8,6 +8,7 @@
 
 import * as THREE from 'three';
 import { createCharactersKit } from '../assets/characters/index.js';
+import { createFrostLanceSystem } from '../assets/vfx/index.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -153,6 +154,14 @@ export async function createCoopPlayerSystem({
   arenaEnemiesGroup.add(skelWarrior.group);
   arenaEnemiesGroup.add(skelMage.group);
 
+  // Stage 4 Frost Lance VFX System (<= 6 draw calls when active, 0 when idle)
+  const frostLance = createFrostLanceSystem({
+    scene,
+    getGroundHeight: walkableHeightAt,
+  });
+  frostLance.registerEnemyTargets([skelWarrior, skelMage]);
+  let frostCastCounter = 0;
+
   // State for Player 1 (Active Leader) and Player 2 (Co-Op Wingman Partner)
   const heroStates = {
     Knight: {
@@ -197,6 +206,35 @@ export async function createCoopPlayerSystem({
 
   let activeHeroId = 'Knight';
   let partnerHeroId = 'Mage';
+
+  function launchMageFrostLance() {
+    const mageSt = heroStates.Mage;
+    const leaderSt = heroStates[activeHeroId];
+
+    // Aim toward East Arena Skeleton_Warrior if within 22m, otherwise along active hero / Mage facing yaw
+    let aimYaw = activeHeroId === 'Mage' ? mageSt.yaw : leaderSt.yaw;
+    const dxSkel = skelWarrior.group.position.x - mageSt.x;
+    const dzSkel = skelWarrior.group.position.z - mageSt.z;
+    const distSkel = Math.hypot(dxSkel, dzSkel);
+    if (distSkel > 1.5 && distSkel < 22.0) {
+      aimYaw = Math.atan2(dxSkel, dzSkel);
+      mageSt.yaw = aimYaw;
+      applyTransform(mageSt);
+    }
+
+    const dirX = Math.sin(aimYaw);
+    const dirZ = Math.cos(aimYaw);
+    const ox = mageSt.x + dirX * 0.95;
+    const oz = mageSt.z + dirZ * 0.95;
+    const oy = walkableHeightAt(ox, oz);
+
+    frostCastCounter++;
+    frostLance.cast(
+      { x: ox, y: oy, z: oz },
+      { x: dirX, y: 0, z: dirZ },
+      { range: 14.5, seed: 1.0 + (frostCastCounter % 7) * 0.31 }
+    );
+  }
 
   // Shared `player` telemetry object mutated in-place for compatibility with `main.js` camera & stats
   const player = {
@@ -291,6 +329,7 @@ export async function createCoopPlayerSystem({
         const mageClips = ['cast_shoot', 'combo1', 'cast_spell'];
         const clip = mageClips[leader.comboIndex];
         startOneShotAction(leader, clip, 0.56, { timeScale: 1.25, fade: 0.08 });
+        launchMageFrostLance();
       } else {
         const knightClips = ['combo1', 'combo2', 'combo3'];
         const clip = knightClips[leader.comboIndex];
@@ -301,6 +340,9 @@ export async function createCoopPlayerSystem({
       if (leader.comboIndex === 2 && !partner.actionState) {
         const supportClip = partner.id === 'Mage' ? 'cast_shoot' : 'combo1';
         startOneShotAction(partner, supportClip, 0.55, { timeScale: 1.2, fade: 0.1 });
+        if (partner.id === 'Mage') {
+          launchMageFrostLance();
+        }
       }
       return;
     }
@@ -309,6 +351,9 @@ export async function createCoopPlayerSystem({
       leader.praying = false;
       const clip = leader.id === 'Mage' ? 'burst_aoe' : 'charged';
       startOneShotAction(leader, clip, 0.78, { timeScale: 1.15, fade: 0.1 });
+      if (leader.id === 'Mage') {
+        launchMageFrostLance();
+      }
       return;
     }
 
@@ -316,9 +361,10 @@ export async function createCoopPlayerSystem({
       leader.praying = false;
       const leaderClip = leader.id === 'Mage' ? 'cast_spell' : 'pray_channel';
       startOneShotAction(leader, leaderClip, 0.72, { timeScale: 1.15, fade: 0.1 });
-      // Partner reacts with synchronized romantic synergy cast/cheer
+      // Partner reacts with synchronized romantic synergy cast/cheer + Frost Lance eruption!
       const partnerClip = partner.id === 'Mage' ? 'cast_shoot' : 'cheer';
       startOneShotAction(partner, partnerClip, 0.68, { timeScale: 1.15, fade: 0.1 });
+      launchMageFrostLance();
       return;
     }
 
@@ -326,6 +372,7 @@ export async function createCoopPlayerSystem({
       leader.praying = false;
       startOneShotAction(leader, 'burst_aoe', 0.95, { timeScale: 1.05, fade: 0.12 });
       startOneShotAction(partner, 'burst_aoe', 0.95, { timeScale: 1.05, fade: 0.12 });
+      launchMageFrostLance();
       return;
     }
 
@@ -631,8 +678,9 @@ export async function createCoopPlayerSystem({
     applyTransform(partner);
     partner.char.update(dt);
 
-    // 4. Update East Arena Skeleton Guardians
+    // 4. Update East Arena Skeleton Guardians & Active Frost Lance VFX
     updateArenaSkeletons(dt, camera);
+    frostLance.update(dt);
   }
 
   /**
@@ -702,6 +750,7 @@ export async function createCoopPlayerSystem({
       arenaEnemiesGroup.visible = shotId === 'day-arena-wisteria';
     }
 
+    frostLance.clear();
     rootGroup.updateMatrixWorld(true);
     syncSharedPlayerFromLeader();
   }
@@ -715,6 +764,8 @@ export async function createCoopPlayerSystem({
     mage: mageChar,
     skeletonWarrior: skelWarrior,
     skeletonMage: skelMage,
+    frostLance,
+    launchMageFrostLance,
     heroStates,
     player,
     triggerAction,
