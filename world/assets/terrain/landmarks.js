@@ -88,22 +88,23 @@ function buildWellPlaza(colliders) {
 
   const rPlaza = LANDMARKS.well.plazaRadius; // 6.4m
 
-  // Outer dressed stone plaza disc & inner concentric stone ring
-  const plazaDisc = addPart(
+  // Outer dressed stone plaza curb ring & inner concentric stone ring
+  // (Leaving the interior open so terrainMat procedural cobblestones & directional shadows show through!)
+  const plazaCurbRing = addPart(
     group,
-    new THREE.CylinderGeometry(rPlaza, rPlaza + 0.2, 0.08, 24),
+    new THREE.RingGeometry(rPlaza - 0.38, rPlaza + 0.16, 32).rotateX(-Math.PI / 2),
     PALETTE.stone,
     { outline: false }
   );
-  plazaDisc.position.y = 0.02;
+  plazaCurbRing.position.y = 0.016;
 
   const innerRing = addPart(
     group,
-    new THREE.CylinderGeometry(3.2, 3.25, 0.09, 18),
+    new THREE.RingGeometry(2.85, 3.22, 24).rotateX(-Math.PI / 2),
     PALETTE.stoneWarm,
     { outline: false }
   );
-  innerRing.position.y = 0.028;
+  innerRing.position.y = 0.018;
 
   // Coursed stone well base + overhanging stone lip + deep water disc
   const wellStep = addPart(
@@ -233,41 +234,58 @@ function buildWoodenPier() {
   const group = new THREE.Group();
   group.name = 'woodenPier';
   const pier = LANDMARKS.pier;
-  const len = Math.abs(pier.xEnd - pier.xStart); // 16.5m (-35.5 -> -52.0)
-  const cx = (pier.xStart + pier.xEnd) * 0.5;
+  const shoreX = pier.xStart + 1.85; // -33.65 (squarely on the dry cobblestone bank)
+  const len = Math.abs(pier.xEnd - shoreX); // 18.35m (-33.65 -> -52.0)
+  const cx = (shoreX + pier.xEnd) * 0.5;
 
-  // Solid stone pier abutment / masonry landing at the shore end (x = [-35.5, -31.7], z = 8.5)
-  // Top face sits at pier.y + 0.12 (-0.23m), 100% flush with the top of the wooden pier deck!
-  const abutW = 3.8;
-  const abutH = 2.8;
-  const abutment = addPart(
+  // Compact warm stone foundation sill tucked under the shore end of the pier (x = [-34.6, -32.9])
+  const sillW = 1.65;
+  const sillH = 1.45;
+  const sill = addPart(
     group,
-    new THREE.BoxGeometry(abutW, abutH, pier.width + 0.9),
-    PALETTE.stone,
-    { outline: true }
-  );
-  abutment.position.set(pier.xStart + abutW * 0.5, pier.y + 0.12 - abutH * 0.5, pier.z);
-
-  // Landward approach step transitioning smoothly to the West Mill Road
-  const roadStep = addPart(
-    group,
-    new THREE.BoxGeometry(0.95, 1.8, pier.width + 0.5),
+    new THREE.BoxGeometry(sillW, sillH, pier.width + 0.24),
     PALETTE.stoneWarm,
-    { outline: true }
+    { outline: false }
   );
-  roadStep.position.set(pier.xStart + abutW + 0.42, pier.y + 0.24 - 0.9, pier.z);
+  sill.position.set(shoreX + 0.15, pier.y + 0.08 - sillH * 0.5, pier.z);
 
-  for (const sz of [-(pier.width * 0.5 + 0.25), pier.width * 0.5 + 0.25]) {
+  // Warm dressed-stone threshold step where the cobblestone lane steps onto the timber deck
+  const stepBeam = addPart(
+    group,
+    new THREE.BoxGeometry(0.62, 0.22, pier.width + 0.16),
+    PALETTE.dirtRoad,
+    { outline: false }
+  );
+  stepBeam.position.set(shoreX + 0.30, pier.y + 0.02, pier.z);
+
+  // Low stone-and-timber cheek curbs & entrance bollards flanking the shore entry
+  for (const sz of [-(pier.width * 0.5 + 0.16), pier.width * 0.5 + 0.16]) {
     const curb = addPart(
       group,
-      new THREE.BoxGeometry(abutW - 0.1, 0.38, 0.42),
+      new THREE.BoxGeometry(1.55, 0.26, 0.32),
       PALETTE.stoneDark,
       { outline: false }
     );
-    curb.position.set(pier.xStart + abutW * 0.5, pier.y + 0.31, pier.z + sz);
+    curb.position.set(shoreX - 0.15, pier.y + 0.18, pier.z + sz);
+
+    const timberCap = addPart(
+      group,
+      new THREE.BoxGeometry(1.62, 0.08, 0.36),
+      PALETTE.timberDark,
+      { outline: false }
+    );
+    timberCap.position.set(shoreX - 0.15, pier.y + 0.34, pier.z + sz);
+
+    const shorePost = addPart(
+      group,
+      new THREE.CylinderGeometry(0.16, 0.17, 0.54, 6),
+      PALETTE.doorWood,
+      { outline: false }
+    );
+    shorePost.position.set(shoreX + 0.42, pier.y + 0.44, pier.z + sz);
   }
 
-  // Wooden pier deck extending cleanly from xStart (-35.5) to xEnd (-52.0) flush with abutment top
+  // Wooden pier deck extending cleanly from the dry cobblestone shore (shoreX) to xEnd (-52.0)
   const deck = addPart(
     group,
     new THREE.BoxGeometry(len, 0.24, pier.width),
@@ -276,8 +294,19 @@ function buildWoodenPier() {
   );
   deck.position.set(cx, pier.y, pier.z);
 
+  // Side timber stringer rails along the deck edges
+  for (const sz of [-pier.width * 0.47, pier.width * 0.47]) {
+    const edgeBeam = addPart(
+      group,
+      new THREE.BoxGeometry(len - 0.1, 0.08, 0.16),
+      PALETTE.timberDark,
+      { outline: false }
+    );
+    edgeBeam.position.set(cx, pier.y + 0.14, pier.z + sz);
+  }
+
   // Timber pilings & mooring bollards
-  for (let x = pier.xEnd + 0.8; x <= pier.xStart - 0.6; x += 3.1) {
+  for (let x = pier.xEnd + 0.8; x <= shoreX - 1.2; x += 3.1) {
     for (const sz of [-pier.width * 0.44, pier.width * 0.44]) {
       const piling = addPart(
         group,
@@ -314,21 +343,28 @@ function buildWoodenPier() {
   );
   dockLantern.position.set(pier.xEnd + 0.8, pier.y + 1.88, pier.z - pier.width * 0.44);
 
-  // Moored wooden boat next to the pier on the southern bay side in full view
+  // Sculpted wooden rowboat with tapered bow/stern, raised gunwale rim & thwarts
   const boatGroup = new THREE.Group();
-  boatGroup.position.set(pier.xEnd + 5.8, ZONES.millpond.waterY + 0.16, pier.z + 2.65);
+  boatGroup.position.set(pier.xEnd + 5.8, ZONES.millpond.waterY + 0.14, pier.z + 2.65);
   boatGroup.rotation.y = 0.14;
 
-  addPart(
+  const hullGeo = new THREE.CylinderGeometry(0.88, 0.68, 3.8, 6, 1, false);
+  hullGeo.rotateZ(Math.PI * 0.5);
+  hullGeo.scale(1.0, 0.42, 0.88);
+  addPart(boatGroup, hullGeo, PALETTE.doorWood, { outline: true });
+
+  const innerFloor = addPart(
     boatGroup,
-    new THREE.BoxGeometry(3.6, 0.56, 1.55),
-    PALETTE.doorWood,
-    { outline: true }
+    new THREE.BoxGeometry(2.65, 0.08, 1.12),
+    PALETTE.timberDark,
+    { outline: false }
   );
+  innerFloor.position.y = 0.16;
+
   for (const bx of [-0.85, 0.0, 0.85]) {
     const bench = addPart(
       boatGroup,
-      new THREE.BoxGeometry(0.32, 0.10, 1.32),
+      new THREE.BoxGeometry(0.32, 0.10, 1.28),
       PALETTE.timberLight,
       { outline: false }
     );
@@ -497,35 +533,44 @@ function buildShrineOverlook(colliders) {
   const shY = ZONES.shrine.y; // 8.0
   const platR = ZONES.shrine.platformR || 14.5;
 
-  // Circular Shrine Overlook Platform Curb & Inner Medallion Rings
-  const platformCurb = addPart(
+  // Circular Shrine Overlook Retaining Wall & Perimeter Curb Ring
+  // (Open interior exposes terrainMat procedural Shrine flagstones and directional shadows!)
+  const retainingWall = addPart(
     group,
-    new THREE.CylinderGeometry(platR, platR + 0.4, 0.28, 28),
-    PALETTE.stone,
-    { outline: false }
-  );
-  platformCurb.position.set(shX, shY + 0.04, shZ);
-
-  const innerRing = addPart(
-    group,
-    new THREE.CylinderGeometry(7.8, 7.8, 0.29, 24),
+    new THREE.CylinderGeometry(platR + 0.08, platR + 0.48, 0.56, 36, 1, true),
     PALETTE.stoneDark,
     { outline: false }
   );
-  innerRing.position.set(shX, shY + 0.05, shZ);
+  retainingWall.position.set(shX, shY - 0.27, shZ);
+
+  const platformCurbRing = addPart(
+    group,
+    new THREE.RingGeometry(platR - 0.42, platR + 0.12, 36).rotateX(-Math.PI / 2),
+    PALETTE.stone,
+    { outline: false }
+  );
+  platformCurbRing.position.set(shX, shY + 0.014, shZ);
+
+  const innerRing = addPart(
+    group,
+    new THREE.RingGeometry(5.65, 6.25, 28).rotateX(-Math.PI / 2),
+    PALETTE.stoneDark,
+    { outline: false }
+  );
+  innerRing.position.set(shX, shY + 0.015, shZ);
 
   const goldRing = addPart(
     group,
-    new THREE.CylinderGeometry(5.8, 5.8, 0.295, 20),
+    new THREE.CircleGeometry(5.68, 24).rotateX(-Math.PI / 2),
     PALETTE.shrineStone,
     { outline: false }
   );
-  goldRing.position.set(shX, shY + 0.055, shZ);
+  goldRing.position.set(shX, shY + 0.016, shZ);
 
-  // 8-Petal Inlaid Medallion at (0.0, 8.0, -86.0)
+  // 8-Petal Inlaid Medallion flush at (0.0, 8.02, -86.0)
   for (let p = 0; p < 8; p++) {
     const a = (p / 8) * Math.PI * 2;
-    const diamondGeo = new THREE.CylinderGeometry(0.95, 0.95, 0.30, 4);
+    const diamondGeo = new THREE.CylinderGeometry(0.95, 0.95, 0.03, 4);
     diamondGeo.scale(1.0, 1.0, 2.5);
     const petal = addPart(
       group,
@@ -533,17 +578,17 @@ function buildShrineOverlook(colliders) {
       p % 2 === 0 ? PALETTE.shrineAccent : PALETTE.shrineGold,
       { outline: false }
     );
-    petal.position.set(shX + Math.sin(a) * 3.6, shY + 0.06, shZ + Math.cos(a) * 3.6);
+    petal.position.set(shX + Math.sin(a) * 3.6, shY + 0.012, shZ + Math.cos(a) * 3.6);
     petal.rotation.y = a;
   }
 
   const centerHub = addPart(
     group,
-    new THREE.CylinderGeometry(1.5, 1.5, 0.32, 12),
+    new THREE.CylinderGeometry(1.5, 1.5, 0.04, 12),
     PALETTE.stone,
     { outline: false }
   );
-  centerHub.position.set(shX, shY + 0.068, shZ);
+  centerHub.position.set(shX, shY + 0.016, shZ);
 
   // Detailed Romanesque Stone Shrine Arch at (0.0, -93.5, y: 8.0, span: 6.2, height: 5.8)
   const arch = LANDMARKS.shrineArch;

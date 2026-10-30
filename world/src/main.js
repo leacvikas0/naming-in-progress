@@ -16,6 +16,7 @@ import {
   walkableHeightAt,
   terrainHeightAt,
   sampleWorld,
+  buildTreeShadowUniformArray,
   createTerrainAndLandmarks,
 } from '../assets/terrain/index.js';
 import { createHousesKit } from '../assets/houses/index.js';
@@ -142,6 +143,8 @@ function populateValleyWildflowerDrifts(meadowInstance) {
     { x: -31.0, z: 15.0, r: 7.0 },
     { x: -29.5, z: -11.5, r: 8.0 },
     { x: -36.5, z: -28.0, r: 8.0 },
+    { x: -82.0, z: -12.0, r: 8.5 },
+    { x: -86.0, z: 12.0, r: 8.5 },
     // Zone C: East Wisteria Combat Ring & Approach Way
     { x: 32.0, z: 3.5, r: 8.0 },
     { x: 42.0, z: -9.5, r: 8.0 },
@@ -150,6 +153,8 @@ function populateValleyWildflowerDrifts(meadowInstance) {
     { x: 68.0, z: 19.5, r: 8.5 },
     { x: 91.0, z: -11.0, r: 8.0 },
     { x: 89.5, z: 7.0, r: 8.0 },
+    { x: 98.0, z: -20.0, r: 8.5 },
+    { x: 98.0, z: 15.0, r: 8.5 },
     // Zone D: North Shrine Staircase Hillsides & Overlook Perimeter
     { x: -9.0, z: -42.0, r: 8.5 },
     { x: 9.0, z: -42.0, r: 8.5 },
@@ -157,6 +162,8 @@ function populateValleyWildflowerDrifts(meadowInstance) {
     { x: 10.5, z: -60.0, r: 8.5 },
     { x: -19.5, z: -82.0, r: 7.5 },
     { x: 19.5, z: -82.0, r: 7.5 },
+    { x: -14.0, z: -96.0, r: 7.5 },
+    { x: 14.0, z: -96.0, r: 7.5 },
   ];
 
   const dummy = new THREE.Object3D();
@@ -168,8 +175,8 @@ function populateValleyWildflowerDrifts(meadowInstance) {
 
     // Expand fade radius so wildflowers stay visible across long valley sightlines
     if (imesh.material?.uniforms) {
-      imesh.material.uniforms.uFadeStart.value = 78.0;
-      imesh.material.uniforms.uFadeEnd.value = 118.0;
+      imesh.material.uniforms.uFadeStart.value = 92.0;
+      imesh.material.uniforms.uFadeEnd.value = 136.0;
     }
 
     let placed = 0;
@@ -204,6 +211,7 @@ function populateValleyWildflowerDrifts(meadowInstance) {
 }
 
 let meadow = null;
+const treeShadowData = buildTreeShadowUniformArray();
 function buildMeadowForProfile(profileName) {
   if (meadow) {
     scene.remove(meadow.group);
@@ -214,6 +222,8 @@ function buildMeadowForProfile(profileName) {
     worldMaskTexture: terrainKit.worldMaskTex,
     sampleHeight: terrainHeightAt,
     worldExtent: INNER_EXTENT,
+    treeShadows: treeShadowData.treeShadowVecs,
+    treeCount: treeShadowData.treeCount,
   });
   populateValleyWildflowerDrifts(meadow);
   scene.add(meadow.group);
@@ -517,14 +527,15 @@ function updateMeadowFocus(elapsed) {
   const fz = _camDir.z / flatLen;
 
   if (camState.mode === 'player') {
-    _meadowFocus.set(player.x + fx * 10.0, player.y, player.z + fz * 10.0);
+    _meadowFocus.set(player.x + fx * 16.0, player.y, player.z + fz * 16.0);
   } else if (camera.position.y > 60) {
     _meadowFocus.set(0, 0, 0);
   } else {
+    const fwdOffset = 28.0 + Math.max(0, camera.position.y - 5.0) * 1.55;
     _meadowFocus.set(
-      clamp(camera.position.x + fx * 18.0, -110, 110),
+      clamp(camera.position.x + fx * fwdOffset, -96, 96),
       0,
-      clamp(camera.position.z + fz * 18.0, -110, 110)
+      clamp(camera.position.z + fz * fwdOffset, -96, 96)
     );
   }
   meadow.update(elapsed, _meadowFocus);

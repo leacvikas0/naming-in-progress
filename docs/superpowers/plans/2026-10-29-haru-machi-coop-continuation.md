@@ -36,9 +36,9 @@
 - Surrounds the playable valley with a **scenic outer valley basin and distant mountain ridge ring** (`R = 160m..420m`).
 - **Toroidal Boundary Teleport:** When a player crosses the outer playable boundary (`r > PLAY_BOUNDARY_RADIUS`), they smoothly wrap/teleport to the opposite side of the playable valley (`(x, z) -> (-x * 0.92, -z * 0.92)` on the matching road/meadow elevation) with a brief petal-breeze transition.
 
-- [ ] **Step 1: Update `world/src/blockout/geography.js` and `scene-builder.js` with expanded outer distances, mountain vista ring, `v5` critic fixes, and toroidal boundary wrap**
-- [ ] **Step 2: Render `world/shots/v6/` and dispatch a fresh, truly blind Image-Only Critic Subagent (`research`) to score `v6` out of 10**
-- [ ] **Step 3: Open `http://127.0.0.1:4173/world/blockout.html` in browser for user sign-off and commit (`feat(map): expand valley distances, add mountain horizon and toroidal wrap`)**
+- [x] **Step 1: Update `world/src/blockout/geography.js` and `scene-builder.js` with expanded outer distances, mountain vista ring, `v5` critic fixes, and toroidal boundary wrap**
+- [x] **Step 2: Render `world/shots/v6/` and dispatch a fresh, truly blind Image-Only Critic Subagent (`research`) to score `v6` out of 10**
+- [x] **Step 3: Open `http://127.0.0.1:4173/world/blockout.html` in browser for user sign-off and commit (`feat(map): expand valley distances, add mountain horizon and toroidal wrap`)**
 
 ---
 
@@ -53,10 +53,10 @@
 **What This Stage Locks:**
 - Completes Pass 1 and Pass 2 (blind Critic-Fixer) for all three environment asset modules (`houses`, `flowers`, `terrain`), then assembles them into the live playable world (`world/index.html`) hitting `< 48` draw calls and `< 380k` triangles on the Xiaomi Pad 7 profile.
 
-- [ ] **Step 1: Dispatch 3 parallel Pass 1 Builder Subagents (`self`) to complete `houses`, `flowers`, and `terrain` and render `shots/pass1/`**
-- [ ] **Step 2: Dispatch 3 fresh, blind Pass 2 Critic-Fixer Subagents (`self`) to inspect `shots/pass1/*.png` before reading code, write `CRITIQUE-AND-SCOPE.md` + `verify.mjs`, fix all defects, and render `shots/pass2/`**
-- [ ] **Step 3: Lead agent visual sign-off (`view_file` on `shots/pass2/*.png`) + atomic git commit per asset module**
-- [ ] **Step 4: Assemble `world/index.html` combining the verified Terrain, Houses, and Toroidal Flower Meadow, run a fresh blind World Critic Gate, and commit (`feat(world): assemble verified stage 2 environment`)**
+- [x] **Step 1: Dispatch 3 parallel Pass 1 Builder Subagents (`self`) to complete `houses`, `flowers`, and `terrain` and render `shots/pass1/`**
+- [x] **Step 2: Dispatch 3 fresh, blind Pass 2 Critic-Fixer Subagents (`self`) to inspect `shots/pass1/*.png` before reading code, write `CRITIQUE-AND-SCOPE.md` + `verify.mjs`, fix all defects, and render `shots/pass2/`**
+- [x] **Step 3: Lead agent visual sign-off (`view_file` on `shots/pass2/*.png`) + atomic git commit per asset module**
+- [x] **Step 4: Assemble `world/index.html` combining the verified Terrain, Houses, and Toroidal Flower Meadow, run a fresh blind World Critic Gate, and commit (`feat(world): assemble verified stage 2 environment`)**
 
 ---
 

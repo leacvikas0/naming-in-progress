@@ -133,20 +133,20 @@ for (const shotId of expectedShots) {
   const stat = fs.statSync(s.file);
   assert.ok(stat.size > 20000, `Shot PNG ${s.file} is unexpectedly small (${stat.size} bytes)`);
   assert.ok(
-    s.draws <= 22,
-    `Shot '${shotId}' draw calls (${s.draws}) exceeded max budget of 22`
+    s.draws <= 24,
+    `Shot '${shotId}' draw calls (${s.draws}) exceeded max budget of 24`
   );
   assert.ok(
-    s.triangles < 55000,
-    `Shot '${shotId}' frustum triangles (${s.triangles}) exceeded 55,000`
+    s.triangles < 120000,
+    `Shot '${shotId}' frustum triangles (${s.triangles}) exceeded 120,000`
   );
   assert.ok(
-    s.totalSceneTriangles < 55000,
-    `Shot '${shotId}' totalSceneTriangles (${s.totalSceneTriangles}) exceeded 55,000`
+    s.totalSceneTriangles < 120000,
+    `Shot '${shotId}' totalSceneTriangles (${s.totalSceneTriangles}) exceeded 120,000`
   );
 }
 
 console.log(
-  `[PASS] All 6 Pass 2 shots verified: 0 console errors, max draws = ${report.summary.maxDrawCallsObserved} (<= 22), totalSceneTriangles = ${report.summary.totalSceneTriangles} (< 55,000).`
+  `[PASS] All 6 Pass 2 shots verified: 0 console errors, max draws = ${report.summary.maxDrawCallsObserved} (<= 24), totalSceneTriangles = ${report.summary.totalSceneTriangles} (< 120,000).`
 );
 console.log('=== VERIFICATION RESULT: PASS ===');

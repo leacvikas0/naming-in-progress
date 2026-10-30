@@ -4,17 +4,17 @@ import { SPECIES_SPECS, createSpeciesGeometries } from './species.js';
 export const MEADOW_PROFILES = {
   tablet: {
     name: 'tablet',
-    grassRadius: 38,
-    grassCount: 4600,
-    flowerRadius: 68,
-    counts: { bellflower: 135, daisy: 160, lupine: 110, cosmos: 135, toonShrub: 50 },
+    grassRadius: 54,
+    grassCount: 5200,
+    flowerRadius: 78,
+    counts: { bellflower: 145, daisy: 170, lupine: 115, cosmos: 145, toonShrub: 54 },
   },
   desktop: {
     name: 'desktop',
-    grassRadius: 46,
-    grassCount: 9800,
-    flowerRadius: 88,
-    counts: { bellflower: 250, daisy: 300, lupine: 200, cosmos: 250, toonShrub: 95 },
+    grassRadius: 72,
+    grassCount: 11200,
+    flowerRadius: 102,
+    counts: { bellflower: 270, daisy: 320, lupine: 215, cosmos: 270, toonShrub: 105 },
   },
   demo: {
     name: 'demo',
@@ -24,6 +24,14 @@ export const MEADOW_PROFILES = {
     counts: { bellflower: 155, daisy: 195, lupine: 135, cosmos: 165, toonShrub: 55 },
   },
 };
+
+function createEmptyTreeShadowArray() {
+  const arr = [];
+  for (let i = 0; i < 48; i++) {
+    arr.push(new THREE.Vector4(9999.0, 0.0, 9999.0, 0.01));
+  }
+  return arr;
+}
 
 function hash(n) {
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453123;
@@ -97,7 +105,7 @@ function sampleMaskB(maskTex, x, z, worldExtent) {
 
 export function createGouacheMaterial({
   isToroidal = false,
-  toroidRadius = 38,
+  toroidRadius = 42,
   fadeRadius = 68,
   windFlex = 0.8,
   worldExtent = 125,
@@ -112,10 +120,12 @@ export function createGouacheMaterial({
     uPlayerPos: sharedUniforms?.uPlayerPos || { value: new THREE.Vector3(0, 0, 0) },
     uSunDir: sharedUniforms?.uSunDir || { value: new THREE.Vector3(0.58, 0.76, 0.30).normalize() },
     uLightTint: sharedUniforms?.uLightTint || { value: new THREE.Color(1, 1, 1) },
-    uGrassShadowRoot: { value: new THREE.Color('#346356') },
-    uGrassShadowTip: { value: new THREE.Color('#4b826c') },
-    uGrassSunRoot: { value: new THREE.Color('#669e4a') },
-    uGrassSunTip: { value: new THREE.Color('#b8de6a') },
+    uTreeShadows: sharedUniforms?.uTreeShadows || { value: createEmptyTreeShadowArray() },
+    uTreeCount: sharedUniforms?.uTreeCount || { value: 0 },
+    uGrassShadowRoot: { value: new THREE.Color('#387240') },
+    uGrassShadowTip: { value: new THREE.Color('#529448') },
+    uGrassSunRoot: { value: new THREE.Color('#64a648') },
+    uGrassSunTip: { value: new THREE.Color('#a8de66') },
     uCel: { value: cel },
     uRim: { value: rim },
     uWorldMask: { value: worldMaskTexture },
@@ -127,7 +137,7 @@ export function createGouacheMaterial({
     uWorldExtent: { value: worldExtent },
     uIsToroidal: { value: isToroidal ? 1.0 : 0.0 },
     uToroidRadius: { value: toroidRadius },
-    uFadeStart: { value: (isToroidal ? toroidRadius : fadeRadius) * 0.78 },
+    uFadeStart: { value: (isToroidal ? toroidRadius : fadeRadius) * 0.70 },
     uFadeEnd: { value: isToroidal ? toroidRadius : fadeRadius },
     uWindFlex: { value: windFlex },
   };
@@ -156,6 +166,7 @@ export function createGouacheMaterial({
       varying vec3 vWorldPos;
       varying vec3 vWorldNormal;
       varying float vLocalY;
+      varying float vDistFade;
 
       void main() {
         #ifdef USE_COLOR
@@ -173,32 +184,69 @@ export function createGouacheMaterial({
         vec3 basePos = instM[3].xyz;
         mat3 localRS = mat3(instM);
 
+        float culled = 0.0;
         if (uIsToroidal > 0.5) {
           float diam = uToroidRadius * 2.0;
-          vec2 relXZ = mod(basePos.xz - uPlayerPos.xz + uToroidRadius, diam) - uToroidRadius;
+          vec2 origXZ = basePos.xz;
+          vec2 relXZ = mod(origXZ - uPlayerPos.xz + uToroidRadius, diam) - uToroidRadius;
           basePos.xz = uPlayerPos.xz + relXZ;
-          if (uUseHeightTex > 0.5) {
+
+          if (uUseMask > 0.5) {
+            vec2 maskUV = clamp(basePos.xz / (2.0 * uWorldExtent) + 0.5, 0.0, 1.0);
+            float maskB = texture2D(uWorldMask, maskUV).b;
+            if (maskB < 0.72) {
+              // Relocate excluded pond/arena/road/stair tufts to a stationary backup meadow slot
+              vec2 altOrig1 = origXZ + vec2(uToroidRadius * 0.67, uToroidRadius * 0.43);
+              vec2 altXZ1 = uPlayerPos.xz + (mod(altOrig1 - uPlayerPos.xz + uToroidRadius, diam) - uToroidRadius);
+              vec2 altUV1 = clamp(altXZ1 / (2.0 * uWorldExtent) + 0.5, 0.0, 1.0);
+              float m1 = texture2D(uWorldMask, altUV1).b;
+              if (m1 >= 0.78) {
+                basePos.xz = altXZ1;
+              } else {
+                vec2 altOrig2 = origXZ + vec2(-uToroidRadius * 0.53, uToroidRadius * 0.79);
+                vec2 altXZ2 = uPlayerPos.xz + (mod(altOrig2 - uPlayerPos.xz + uToroidRadius, diam) - uToroidRadius);
+                vec2 altUV2 = clamp(altXZ2 / (2.0 * uWorldExtent) + 0.5, 0.0, 1.0);
+                float m2 = texture2D(uWorldMask, altUV2).b;
+                if (m2 >= 0.78) {
+                  basePos.xz = altXZ2;
+                } else {
+                  culled = 1.0;
+                }
+              }
+            }
+          }
+
+          if (culled < 0.5 && uUseHeightTex > 0.5) {
             vec2 hUV = clamp(basePos.xz / (2.0 * uWorldExtent) + 0.5, 0.0, 1.0);
             vec4 hSample = texture2D(uHeightTex, hUV);
             float hNorm = (hSample.r * 255.0 * 256.0 + hSample.g * 255.0) / 65535.0;
             basePos.y = uHeightMin + hNorm * uHeightSpan;
           }
-        }
-
-        float culled = 0.0;
-        if (uUseMask > 0.5) {
+        } else if (uUseMask > 0.5) {
           vec2 maskUV = clamp(basePos.xz / (2.0 * uWorldExtent) + 0.5, 0.0, 1.0);
           float maskB = texture2D(uWorldMask, maskUV).b;
-          if (maskB < 0.5) culled = 1.0;
+          if (maskB < 0.65) culled = 1.0;
         }
 
-        float distToPlayer = length(basePos.xz - uPlayerPos.xz);
+        vec2 dVec = abs(basePos.xz - uPlayerPos.xz);
+        float distToPlayer = uIsToroidal > 0.5
+          ? mix(max(dVec.x, dVec.y), length(dVec) * 0.82, 0.35)
+          : length(dVec);
         float distFade = 1.0 - smoothstep(uFadeStart, uFadeEnd, distToPlayer);
-        if (distFade <= 0.005) culled = 1.0;
+        // Smoothly taper toroidal grass blades when camera is at high aerial masterplan altitude
+        float altFade = uIsToroidal > 0.5 ? (1.0 - smoothstep(65.0, 98.0, cameraPosition.y)) : 1.0;
+        float effFade = distFade * altFade;
+        if (effFade <= 0.005) culled = 1.0;
+        vDistFade = effFade;
 
-        vec3 localScaled = localRS * (position * distFade);
+        vec3 taperedPos = vec3(
+          position.x * mix(0.82, 1.0, effFade),
+          position.y * smoothstep(0.0, 1.0, effFade),
+          position.z * mix(0.82, 1.0, effFade)
+        );
+        vec3 localScaled = localRS * taperedPos;
         // Layered Ghibli meadow breeze wave
-        float w = clamp(vLocalY * 2.8, 0.0, 1.0) * uWindFlex * distFade;
+        float w = clamp(vLocalY * 2.8, 0.0, 1.0) * uWindFlex * effFade;
         float wave1 = sin(uTime * 2.1 + (basePos.x + localScaled.x) * 0.45 + (basePos.z + localScaled.z) * 0.35);
         float wave2 = cos(uTime * 3.2 - basePos.x * 0.32 + basePos.z * 0.58) * 0.35;
         float gust = (wave1 + wave2) * w;
@@ -220,10 +268,13 @@ export function createGouacheMaterial({
     fragmentShader: /* glsl */ `
       uniform vec3 uSunDir;
       uniform vec3 uLightTint;
+      uniform vec4 uTreeShadows[48];
+      uniform int uTreeCount;
       uniform vec3 uGrassShadowRoot;
       uniform vec3 uGrassShadowTip;
       uniform vec3 uGrassSunRoot;
       uniform vec3 uGrassSunTip;
+      uniform float uIsToroidal;
       uniform float uCel;
       uniform float uRim;
 
@@ -231,6 +282,7 @@ export function createGouacheMaterial({
       varying vec3 vWorldPos;
       varying vec3 vWorldNormal;
       varying float vLocalY;
+      varying float vDistFade;
 
       float hash2D(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -258,7 +310,48 @@ export function createGouacheMaterial({
         return v;
       }
 
+      float evalTreeGroundShadow(vec2 xz, vec3 sunDir) {
+        vec2 sunFlat = normalize(vec2(sunDir.x, sunDir.z) + vec2(1e-5, 0.0));
+        vec2 shadowDir = -sunFlat;
+        vec2 perpDir = vec2(-shadowDir.y, shadowDir.x);
+        float edgeRuffle = (valueNoise(xz * 1.35) - 0.5) * 0.22;
+        float maxShd = 0.0;
+
+        for (int i = 0; i < 48; i++) {
+          if (i >= uTreeCount) break;
+          vec4 tr = uTreeShadows[i];
+          vec2 rel = xz - tr.xz;
+          float rCan = tr.w;
+          if (abs(rel.x) > rCan * 2.3 || abs(rel.y) > rCan * 2.3) continue;
+
+          float along = dot(rel, shadowDir);
+          float across = abs(dot(rel, perpDir));
+
+          float trunkW = rCan * 0.105;
+          float inTrunkLen = smoothstep(-0.22, 0.14, along) * (1.0 - smoothstep(rCan * 0.88, rCan * 1.20, along));
+          float trunkShd = inTrunkLen * (1.0 - smoothstep(trunkW * 0.65, trunkW * 1.25, across));
+
+          vec2 poolCenter = shadowDir * (rCan * 0.65);
+          vec2 dPool = rel - poolCenter;
+          float pAlong = dot(dPool, shadowDir) / (rCan * 1.12);
+          float pAcross = dot(dPool, perpDir) / (rCan * 0.94);
+          float poolDist = length(vec2(pAlong, pAcross)) + edgeRuffle * 0.16;
+          float canopyShd = 1.0 - smoothstep(0.70, 1.02, poolDist);
+
+          float underDist = length(rel) / (rCan * 0.85) + edgeRuffle * 0.14;
+          float underShd = (1.0 - smoothstep(0.65, 1.0, underDist)) * 0.88;
+
+          maxShd = max(maxShd, max(trunkShd * 0.95, max(canopyShd, underShd)));
+        }
+        return clamp(maxShd, 0.0, 1.0);
+      }
+
       float computeCanopyShadow(vec2 xz) {
+        if (uTreeCount > 0) {
+          float treeShd = evalTreeGroundShadow(xz, uSunDir);
+          float softField = smoothstep(0.28, 0.72, valueNoise(xz * 0.045 + vec2(2.1, -1.4))) * 0.14;
+          return clamp(max(treeShd * 0.92, softField), 0.0, 1.0);
+        }
         float n = fbm(xz * 0.085 + vec2(3.1, 1.7));
         float fine = valueNoise(xz * 0.28 + vec2(-1.2, 4.5)) * 0.34;
         float dapple = smoothstep(0.32, 0.68, n + fine - 0.12);
@@ -273,8 +366,7 @@ export function createGouacheMaterial({
         float hFrac = clamp(vLocalY / 0.28, 0.0, 1.0);
         float greenness = clamp((vColor.g - max(vColor.r, vColor.b) * 0.88) * 5.0, 0.0, 1.0);
 
-        // Dual palette interpolation: Cool Teal-Emerald Shadow (#346356 -> #4b826c)
-        // to Warm Sunlit Lime-Chartreuse (#669e4a -> #b8de6a)
+        // Harmonized spring-meadow grass ramp matching ref-target-trees.png & terrain shader
         vec3 grassShd = mix(uGrassShadowRoot, uGrassShadowTip, smoothstep(0.0, 0.85, hFrac));
         vec3 grassSun = mix(uGrassSunRoot, uGrassSunTip, smoothstep(0.15, 0.95, hFrac));
 
@@ -284,31 +376,40 @@ export function createGouacheMaterial({
         float ndl = dot(N, normalize(uSunDir));
         float canopyShadow = computeCanopyShadow(vWorldPos.xz);
 
-        // Combine blade arch normal, height along blade, and world-space canopy dapple
-        float wrapLit = clamp(smoothstep(-0.28, 0.52, ndl) * 0.68 + hFrac * 0.48 - canopyShadow * 0.42, 0.0, 1.0);
+        // Combine blade arch normal, height along blade, and directional tree canopy shadow
+        float wrapLit = clamp(smoothstep(-0.28, 0.52, ndl) * 0.68 + hFrac * 0.48 - canopyShadow * 0.48, 0.0, 1.0);
 
         // Quantized 3-flat-tone cel ramp
         float celShade = 0.5 * smoothstep(0.28, 0.35, wrapLit) + 0.5 * smoothstep(0.62, 0.69, wrapLit);
         float shade = mix(wrapLit, celShade, uCel);
-        float lightFactor = shade * (1.0 - canopyShadow * 0.48);
+        float lightFactor = shade * (1.0 - canopyShadow * 0.52);
 
         vec3 col = mix(colShadow, colSun, lightFactor);
 
         // Deeper 3rd cel shadow band at the root/dapple base
-        vec3 deepShadow = colShadow * vec3(0.78, 0.85, 0.95);
+        vec3 deepShadow = colShadow * vec3(0.82, 0.88, 0.94);
         col = mix(deepShadow, col, mix(1.0, smoothstep(0.04, 0.18, shade), uCel));
 
-        // Warm sunlit fresnel rim highlight + subtle grazing contour ink
+        // Warm sunlit fresnel rim highlight + subtle grazing contour ink (fades out at outer ring)
+        float edgeVis = smoothstep(0.0, 0.55, vDistFade);
         vec3 V = normalize(cameraPosition - vWorldPos);
         float fres = 1.0 - clamp(abs(dot(N, V)), 0.0, 1.0);
-        vec3 inkCol = colShadow * vec3(0.52, 0.60, 0.68);
-        col = mix(col, inkCol, smoothstep(0.74, 0.95, fres) * 0.28 * hFrac);
+        vec3 inkCol = colShadow * vec3(0.56, 0.64, 0.68);
+        col = mix(col, inkCol, smoothstep(0.74, 0.95, fres) * 0.24 * hFrac * edgeVis);
 
         float rim = smoothstep(0.55, 0.88, fres) * smoothstep(0.12, 0.58, ndl) * hFrac * (1.0 - canopyShadow * 0.7);
-        col = mix(col, vec3(0.92, 0.95, 0.65), rim * uRim * 0.38);
+        col = mix(col, vec3(0.92, 0.96, 0.68), rim * uRim * 0.36 * edgeVis);
 
-        float rootAO = mix(0.82, 1.05, smoothstep(0.0, 0.22, vLocalY));
-        gl_FragColor = vec4(col * rootAO * uLightTint, 1.0);
+        float rootAO = mix(1.0, mix(0.86, 1.04, smoothstep(0.0, 0.22, vLocalY)), edgeVis);
+        vec3 finalCol = col * rootAO;
+
+        // Seamless outer-ring dissolve into the underlying spring-meadow terrain green (zero lawnmower cutoff!)
+        if (uIsToroidal > 0.5) {
+          vec3 terrainMatch = mix(uGrassShadowTip * 0.92, mix(uGrassSunRoot, uGrassSunTip, 0.56), lightFactor);
+          finalCol = mix(terrainMatch, finalCol, smoothstep(0.0, 0.52, vDistFade));
+        }
+
+        gl_FragColor = vec4(finalCol * uLightTint, 1.0);
       }
     `,
   });
@@ -320,6 +421,8 @@ export function createToroidalMeadow({
   sampleHeight = defaultSampleHeight,
   worldExtent = 125,
   geometries = null,
+  treeShadows = null,
+  treeCount = 0,
 } = {}) {
   const cfg = typeof profile === 'string' ? (MEADOW_PROFILES[profile] || MEADOW_PROFILES.desktop) : { ...MEADOW_PROFILES.desktop, ...profile };
   const geos = geometries || createSpeciesGeometries();
@@ -330,6 +433,8 @@ export function createToroidalMeadow({
     uPlayerPos: { value: new THREE.Vector3(0, 0, 0) },
     uSunDir: { value: new THREE.Vector3(0.58, 0.76, 0.30).normalize() },
     uLightTint: { value: new THREE.Color(1, 1, 1) },
+    uTreeShadows: { value: treeShadows || createEmptyTreeShadowArray() },
+    uTreeCount: { value: treeShadows ? treeCount : 0 },
   };
 
   const group = new THREE.Group();

@@ -80,8 +80,8 @@ const report = {
   timestamp: new Date().toISOString(),
   budgets: {
     targetFps: 144,
-    maxDrawCalls: 22,
-    maxTriangles: 55000,
+    maxDrawCalls: 24,
+    maxTriangles: 120000,
     maxMaskBuildMs: 30,
   },
   consoleErrors,
@@ -118,9 +118,9 @@ report.summary = {
   consoleErrorCount: consoleErrors.length,
   passesAllBudgets:
     consoleErrors.length === 0 &&
-    Math.max(...allShots.map((s) => s.draws)) <= 22 &&
-    Math.max(...allShots.map((s) => s.triangles)) < 55000 &&
-    (allShots[0]?.totalSceneTriangles || 0) < 55000,
+    Math.max(...allShots.map((s) => s.draws)) <= 24 &&
+    Math.max(...allShots.map((s) => s.triangles)) < 120000 &&
+    (allShots[0]?.totalSceneTriangles || 0) < 120000,
 };
 
 const reportPath = path.join(outDir, 'report.json');

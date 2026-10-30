@@ -378,7 +378,7 @@ const PRECOMPUTED_ROADS = ROADS.slice(1).map((road) => {
   let maxZ = -Infinity;
   const segs = [];
   const pts = road.points;
-  const segPad = road.width * 0.5 + 0.5;
+  const segPad = road.width * 0.5 + 1.65;
   for (let i = 0; i < pts.length - 1; i++) {
     const ax = pts[i][0];
     const az = pts[i][1];
@@ -404,7 +404,7 @@ const PRECOMPUTED_ROADS = ROADS.slice(1).map((road) => {
     minZ = Math.min(minZ, az, bz);
     maxZ = Math.max(maxZ, az, bz);
   }
-  const pad = road.width * 0.5 + 1.5;
+  const pad = road.width * 0.5 + 2.0;
   return {
     road,
     segs,
@@ -451,31 +451,85 @@ export const LANDMARKS = {
   },
 };
 
-// All trees verified for >3.8m clearance from arena fence (r=19.5 around (68,-4)),
-// >4.5m clearance from all roads/stairs, and zero overlap with rocks, buildings, or shrine lookback vista.
+// All 48 trees verified for >= 5.0m clearance from arena fence (r=19.5 around (68,-4)),
+// >= 4.5m clearance from all roads/stairs, and zero overlap with rocks, buildings, or shrine lookback vista.
+// Arranged in natural 2-to-4 tree woodland groves with mixed scales (0.88..1.40) and canopy variants (0..2).
 export const TREES = [
-  { id: 'wisteria_arena_n', kind: 'wisteria', x: 75.0, z: -26.2, scale: 1.32, label: 'Arena North Wisteria' },
-  { id: 'wisteria_arena_e', kind: 'wisteria', x: 92.2, z: -4.0,  scale: 1.38, label: 'Arena East Wisteria' },
-  { id: 'wisteria_arena_s', kind: 'wisteria', x: 75.0, z: 18.2,  scale: 1.32, label: 'Arena South Wisteria' },
-  { id: 'wisteria_shrine',  kind: 'wisteria', x: 10.6, z: -90.8, scale: 1.22, hasPlanter: true, label: 'Shrine Guardian Wisteria' },
-  { id: 'sakura_mill',      kind: 'sakura',   x: -37.5, z: -34.5, scale: 1.22, label: 'Millstream Sakura' },
-  { id: 'sakura_shrine_w',  kind: 'sakura',   x: -10.6, z: -90.8, scale: 1.22, hasPlanter: true, label: 'Shrine West Sakura' },
+  // Shrine Planter Guardians (2 Hero Trees in Raised Stone Planters)
+  { id: 'wisteria_shrine',  kind: 'wisteria', variant: 0, x: 10.6,  z: -90.8, scale: 1.22, hasPlanter: true, label: 'Shrine Guardian Wisteria' },
+  { id: 'sakura_shrine_w',  kind: 'sakura',   variant: 0, x: -10.6, z: -90.8, scale: 1.22, hasPlanter: true, label: 'Shrine West Sakura' },
 
-  { kind: 'oak', x: -28, z: 32, scale: 1.15 },
-  { kind: 'oak', x: -14, z: 48, scale: 1.05 },
-  { kind: 'oak', x: 16, z: 46, scale: 1.10 },
-  { kind: 'oak', x: 34, z: 30, scale: 1.18 },
-  { kind: 'oak', x: 40, z: -24, scale: 1.02 },
-  { kind: 'oak', x: -64, z: -38, scale: 1.18 },
-  { kind: 'oak', x: -24, z: -56, scale: 1.10 },
-  { kind: 'oak', x: 32, z: -52, scale: 1.08 },
-  { kind: 'oak', x: 54, z: 24, scale: 1.16 },
-  { kind: 'oak', x: 96, z: 14, scale: 1.20 },
-  { kind: 'oak', x: -94, z: -18, scale: 1.25 },
-  { kind: 'oak', x: -92, z: 24, scale: 1.18 },
-  { kind: 'oak', x: -56, z: 48, scale: 1.14 },
-  { kind: 'oak', x: -16, z: 82, scale: 1.20 },
-  { kind: 'oak', x: 18, z: 80, scale: 1.18 },
+  // Grove 1: Arena North Wisteria Grove (3 trees, >= 5.0m outside fenceR = 19.5)
+  { id: 'wisteria_arena_n', kind: 'wisteria', variant: 0, x: 75.0,  z: -27.5, scale: 1.35, label: 'Arena North Wisteria' },
+  { kind: 'wisteria', variant: 1, x: 64.5,  z: -28.8, scale: 1.04 },
+  { kind: 'sakura',   variant: 2, x: 83.5,  z: -24.2, scale: 1.16 },
+
+  // Grove 2: Arena East Wisteria Grove (4 trees, >= 5.0m outside fenceR = 19.5)
+  { id: 'wisteria_arena_e', kind: 'wisteria', variant: 0, x: 92.8,  z: -4.0,  scale: 1.40, label: 'Arena East Wisteria' },
+  { kind: 'wisteria', variant: 1, x: 91.2,  z: -13.2, scale: 1.12 },
+  { kind: 'sakura',   variant: 0, x: 91.5,  z: 6.2,   scale: 1.15 },
+  { kind: 'oak',      variant: 2, x: 99.5,  z: -0.5,  scale: 0.98 },
+
+  // Grove 3: Arena South Wisteria Grove (3 trees, >= 5.0m outside fenceR = 19.5)
+  { id: 'wisteria_arena_s', kind: 'wisteria', variant: 0, x: 75.0,  z: 19.5,  scale: 1.32, label: 'Arena South Wisteria' },
+  { kind: 'wisteria', variant: 2, x: 64.0,  z: 20.8,  scale: 1.02 },
+  { kind: 'oak',      variant: 1, x: 84.0,  z: 16.2,  scale: 1.14 },
+
+  // Grove 4: Millstream Sakura & Waterfall Hillside Grove (3 trees)
+  { id: 'sakura_mill',      kind: 'sakura',   variant: 0, x: -37.5, z: -34.5, scale: 1.28, label: 'Millstream Sakura' },
+  { kind: 'sakura',   variant: 1, x: -30.2, z: -29.8, scale: 1.06 },
+  { kind: 'oak',      variant: 2, x: -43.8, z: -39.5, scale: 1.14 },
+
+  // Grove 5: NW Staircase & Mill Overlook Hillside Grove (3 trees)
+  { kind: 'oak',      variant: 0, x: -22.5, z: -38.0, scale: 1.18 },
+  { kind: 'sakura',   variant: 1, x: -16.8, z: -45.5, scale: 0.96 },
+  { kind: 'oak',      variant: 2, x: -27.5, z: -52.0, scale: 1.12 },
+
+  // Grove 6: NE Staircase & Arena Foothill Grove (3 trees)
+  { kind: 'oak',      variant: 0, x: 23.5,  z: -36.0, scale: 1.20 },
+  { kind: 'sakura',   variant: 2, x: 17.5,  z: -44.5, scale: 0.95 },
+  { kind: 'oak',      variant: 1, x: 29.0,  z: -51.0, scale: 1.14 },
+
+  // Grove 7: East-Northeast Meadow Grove (3 trees)
+  { kind: 'oak',      variant: 0, x: 43.0,  z: -24.5, scale: 1.16 },
+  { kind: 'sakura',   variant: 1, x: 50.5,  z: -31.0, scale: 1.02 },
+  { kind: 'oak',      variant: 2, x: 38.5,  z: -33.0, scale: 0.90 },
+
+  // Grove 8: East-Southeast Meadow Grove (3 trees)
+  { kind: 'oak',      variant: 1, x: 35.5,  z: 22.5,  scale: 1.22 },
+  { kind: 'sakura',   variant: 0, x: 43.5,  z: 27.5,  scale: 1.05 },
+  { kind: 'oak',      variant: 2, x: 51.5,  z: 21.5,  scale: 0.92 },
+
+  // Grove 9: South-West Hamlet Approach Woodland Grove (4 trees)
+  { kind: 'oak',      variant: 0, x: -26.0, z: 31.0,  scale: 1.24 },
+  { kind: 'sakura',   variant: 1, x: -18.5, z: 36.5,  scale: 1.04 },
+  { kind: 'oak',      variant: 2, x: -14.5, z: 47.5,  scale: 1.15 },
+  { kind: 'oak',      variant: 0, x: -23.5, z: 53.0,  scale: 0.94 },
+
+  // Grove 10: South-East Hamlet Approach Woodland Grove (4 trees)
+  { kind: 'oak',      variant: 0, x: 25.0,  z: 30.0,  scale: 1.20 },
+  { kind: 'sakura',   variant: 2, x: 17.5,  z: 37.5,  scale: 1.02 },
+  { kind: 'oak',      variant: 1, x: 15.5,  z: 48.0,  scale: 1.16 },
+  { kind: 'oak',      variant: 0, x: 24.5,  z: 54.5,  scale: 0.92 },
+
+  // Grove 11: Far South Valley Entrance Groves (4 trees)
+  { kind: 'oak',      variant: 1, x: -16.5, z: 78.0,  scale: 1.22 },
+  { kind: 'sakura',   variant: 0, x: -24.5, z: 84.5,  scale: 1.05 },
+  { kind: 'oak',      variant: 0, x: 18.0,  z: 76.5,  scale: 1.20 },
+  { kind: 'sakura',   variant: 2, x: 26.0,  z: 83.0,  scale: 1.02 },
+
+  // Grove 12: West Lakeshore & Millpond Ridge Groves (5 trees)
+  { kind: 'oak',      variant: 0, x: -94.0, z: -16.0, scale: 1.28 },
+  { kind: 'sakura',   variant: 1, x: -96.5, z: -6.5,  scale: 1.08 },
+  { kind: 'oak',      variant: 1, x: -92.0, z: 22.0,  scale: 1.22 },
+  { kind: 'sakura',   variant: 2, x: -95.5, z: 6.5,   scale: 1.20 },
+  { kind: 'wisteria', variant: 0, x: -84.0, z: -26.5, scale: 1.18 },
+
+  // Grove 13: North Shrine Overlook & East Foothill Slope Groves (4 trees)
+  { kind: 'sakura',   variant: 0, x: -22.0, z: -86.5, scale: 1.14 },
+  { kind: 'wisteria', variant: 1, x: 22.0,  z: -86.5, scale: 1.16 },
+  { kind: 'sakura',   variant: 0, x: 106.0, z: -16.5, scale: 1.24 },
+  { kind: 'wisteria', variant: 1, x: 108.0, z: 8.5,   scale: 1.18 },
 ];
 
 export function roadDistanceAt(x, z) {
@@ -716,6 +770,7 @@ export function sampleWorld(x, z) {
   let cobbleWeight = 0.0;
   let sandWeight = 0.0;
   let minBuildingDist = 10.0;
+  let roadFoliageClear = false;
 
   if (x < -28.0 && z > -32.0 && z < 46.0 && h >= -1.6 && h <= -0.2) {
     const dPond = Math.hypot((x - mp.x) / mp.rx, (z - mp.z) / mp.rz);
@@ -731,8 +786,9 @@ export function sampleWorld(x, z) {
 
   if (Math.abs(x) < 108 && Math.abs(z) < 108) {
     // Continuous paved Village Well Plaza & Commons Ring (r = 0 .. 12.6m) — zero grass moat!
-    if (Math.abs(x) < 13.5 && Math.abs(z) < 13.5) {
+    if (Math.abs(x) < 14.5 && Math.abs(z) < 14.5) {
       const rOrig = Math.hypot(x, z);
+      if (rOrig < 13.8) roadFoliageClear = true;
       if (rOrig < 12.8) {
         cobbleWeight = Math.max(cobbleWeight, smoothstep(12.8, 12.0, rOrig));
       }
@@ -741,6 +797,7 @@ export function sampleWorld(x, z) {
     const rd = roadDistanceAt(x, z);
     if (rd.road) {
       const hw = rd.road.width * 0.5;
+      if (rd.dist < hw + 1.35) roadFoliageClear = true;
       if (rd.dist < hw + 0.55) {
         const edgeJitter = (hash2(Math.floor(x * 1.5), Math.floor(z * 1.5), 33) - 0.5) * 0.14;
         const dEdge = rd.dist - (hw + edgeJitter);
@@ -779,12 +836,13 @@ export function sampleWorld(x, z) {
         if (wApron > 0) cobbleWeight = Math.max(cobbleWeight, wApron);
 
         const dDoor = Math.hypot(x - b.doorX, z - b.doorZ);
+        if (dDoor < 3.6) roadFoliageClear = true;
         const wDoor = 1.0 - smoothstep(2.2, 3.0, dDoor);
         if (wDoor > 0) cobbleWeight = Math.max(cobbleWeight, wDoor);
       }
     }
 
-    if (x > 47.0 && x < 89.0 && z > -25.0 && z < 17.0) {
+    if (x > 46.0 && x < 90.0 && z > -26.0 && z < 18.0) {
       const dArena = Math.hypot(x - ZONES.arena.x, z - ZONES.arena.z);
       if (dArena < 20.0) {
         const wArenaOuter = 1.0 - smoothstep(18.5, 19.2, dArena);
@@ -795,7 +853,7 @@ export function sampleWorld(x, z) {
       }
     }
 
-    if (z < -70.0 && Math.abs(x) < 16.0) {
+    if (z < -69.0 && Math.abs(x) < 17.5) {
       const dShrine = Math.hypot(x - ZONES.shrine.x, z - ZONES.shrine.z);
       if (dShrine < 15.2) {
         const wShrine = 1.0 - smoothstep(14.1, 14.6, dShrine);
@@ -805,12 +863,12 @@ export function sampleWorld(x, z) {
   }
 
   let foliageMask = 1.0;
-  if (minBuildingDist < 1.6) foliageMask = 0.0;
-  else if (dirtWeight > 0.12 || cobbleWeight > 0.12 || sandWeight > 0.22) foliageMask = 0.0;
+  if (minBuildingDist < 2.25 || roadFoliageClear) foliageMask = 0.0;
+  else if (dirtWeight > 0.06 || cobbleWeight > 0.06 || sandWeight > 0.16) foliageMask = 0.0;
   else if (h < mp.waterY + 0.35) foliageMask = 0.0;
-  else if (x > 46.0 && Math.hypot(x - ZONES.arena.x, z - ZONES.arena.z) < ZONES.arena.fenceR + 1.2) foliageMask = 0.0;
-  else if (z < -69.0 && Math.hypot(x - ZONES.shrine.x, z - ZONES.shrine.z) < ZONES.shrine.platformR + 1.5) foliageMask = 0.0;
-  else if (z <= -13.5 && z >= -73.0 && Math.abs(x) <= 3.4) foliageMask = 0.0;
+  else if (x > 45.0 && Math.hypot(x - ZONES.arena.x, z - ZONES.arena.z) < ZONES.arena.fenceR + 1.85) foliageMask = 0.0;
+  else if (z < -68.0 && Math.hypot(x - ZONES.shrine.x, z - ZONES.shrine.z) < ZONES.shrine.platformR + 2.2) foliageMask = 0.0;
+  else if (z <= -13.0 && z >= -73.5 && Math.abs(x) <= 4.75) foliageMask = 0.0;
 
   const bAo = minBuildingDist < 1.5 ? smoothstep(0.0, 1.5, minBuildingDist) : 1.0;
   const wAo = Math.abs(x) < 3.0 && Math.abs(z) < 3.0 ? smoothstep(1.2, 2.5, Math.hypot(x, z)) : 1.0;
@@ -850,16 +908,16 @@ export function createWorldMaskTexture(size = 512) {
   const izMin = Math.max(0, Math.floor(((-106 / span) + 0.5) * size));
   const izMax = Math.min(size - 1, Math.ceil(((106 / span) + 0.5) * size));
   const ixMin = Math.max(0, Math.floor(((-92 / span) + 0.5) * size));
-  const ixMax = Math.min(size - 1, Math.ceil(((90 / span) + 0.5) * size));
+  const ixMax = Math.min(size - 1, Math.ceil(((92 / span) + 0.5) * size));
 
   for (let iz = izMin; iz <= izMax; iz++) {
     const wz = ((iz + 0.5) / size - 0.5) * span;
     const inPondZ = wz > -32.0 && wz < 44.0;
-    const inBldgZ = wz > -25.0 && wz < 23.0;
-    const inArenaZ = wz > -24.5 && wz < 16.5;
-    const inShrineZ = wz < -70.0 && wz > -102.0;
-    const inStairZ = wz <= -13.5 && wz >= -73.0;
-    const inRingZ = Math.abs(wz) < 13.5;
+    const inBldgZ = wz > -26.0 && wz < 24.0;
+    const inArenaZ = wz > -26.0 && wz < 18.0;
+    const inShrineZ = wz < -68.0 && wz > -104.0;
+    const inStairZ = wz <= -13.0 && wz >= -73.5;
+    const inRingZ = Math.abs(wz) < 14.5;
 
     // Filter active road segments for this Z row once per row!
     const activeSegs = [];
@@ -879,13 +937,13 @@ export function createWorldMaskTexture(size = 512) {
     for (let ix = ixMin; ix <= ixMax; ix++) {
       const wx = ((ix + 0.5) / size - 0.5) * span;
 
-      const inPondX = inPondZ && wx < -30.0 && wx > -92.0;
-      const inBldgX = inBldgZ && wx > -52.0 && wx < 25.0;
-      const inArenaX = inArenaZ && wx > 46.0 && wx < 90.0;
-      const inShrineX = inShrineZ && Math.abs(wx) < 16.5;
+      const inPondX = inPondZ && wx < -28.0 && wx > -92.0;
+      const inBldgX = inBldgZ && wx > -53.0 && wx < 26.0;
+      const inArenaX = inArenaZ && wx > 45.0 && wx < 91.0;
+      const inShrineX = inShrineZ && Math.abs(wx) < 17.5;
       const inRoadX = activeSegs.length > 0 && wx > -52.0 && wx < 52.0;
 
-      if (!inPondX && !inBldgX && !inArenaX && !inShrineX && !inRoadX && !(inRingZ && Math.abs(wx) < 13.5)) {
+      if (!inPondX && !inBldgX && !inArenaX && !inShrineX && !inRoadX && !(inRingZ && Math.abs(wx) < 14.5)) {
         continue;
       }
 
@@ -894,6 +952,7 @@ export function createWorldMaskTexture(size = 512) {
       let sandWeight = 0.0;
       let minBuildingDist = 10.0;
       let isUnderwater = false;
+      let roadFoliageClear = false;
 
       if (inPondX) {
         const dxP = (wx - mp.x) / mp.rx;
@@ -909,8 +968,9 @@ export function createWorldMaskTexture(size = 512) {
       }
 
       // Continuous paved Hamlet Well Plaza & Commons Ring (r = 0..12.8m) — zero grass moat!
-      if (inRingZ && Math.abs(wx) < 13.5) {
+      if (inRingZ && Math.abs(wx) < 14.5) {
         const rOrig = Math.hypot(wx, wz);
+        if (rOrig < 13.8) roadFoliageClear = true;
         if (rOrig < 12.8) {
           cobbleWeight = Math.max(cobbleWeight, smoothstep(12.8, 12.0, rOrig));
         }
@@ -923,13 +983,16 @@ export function createWorldMaskTexture(size = 512) {
         const ddx = wx - (s.ax + s.dx * t);
         const ddz = wz - (s.az + s.dz * t);
         const dSq = ddx * ddx + ddz * ddz;
-        if (dSq < (hw + 0.45) * (hw + 0.45)) {
-          const d = Math.sqrt(dSq);
-          const w = smoothstep(hw + 0.35, hw - 0.25, d);
-          if (isCobble) {
-            cobbleWeight = Math.max(cobbleWeight, w);
-          } else {
-            dirtWeight = Math.max(dirtWeight, w);
+        if (dSq < (hw + 1.35) * (hw + 1.35)) {
+          roadFoliageClear = true;
+          if (dSq < (hw + 0.45) * (hw + 0.45)) {
+            const d = Math.sqrt(dSq);
+            const w = smoothstep(hw + 0.35, hw - 0.25, d);
+            if (isCobble) {
+              cobbleWeight = Math.max(cobbleWeight, w);
+            } else {
+              dirtWeight = Math.max(dirtWeight, w);
+            }
           }
         }
       }
@@ -958,6 +1021,7 @@ export function createWorldMaskTexture(size = 512) {
           if (wApron > 0) cobbleWeight = Math.max(cobbleWeight, wApron);
 
           const dDoor = Math.hypot(wx - b.doorX, wz - b.doorZ);
+          if (dDoor < 3.6) roadFoliageClear = true;
           const wDoor = 1.0 - smoothstep(2.2, 3.0, dDoor);
           if (wDoor > 0) cobbleWeight = Math.max(cobbleWeight, wDoor);
         }
@@ -981,11 +1045,11 @@ export function createWorldMaskTexture(size = 512) {
       }
 
       let foliageMask = 1.0;
-      if (isUnderwater || minBuildingDist < 1.6) foliageMask = 0.0;
-      else if (dirtWeight > 0.12 || cobbleWeight > 0.12 || sandWeight > 0.22) foliageMask = 0.0;
-      else if (inArenaX && Math.hypot(wx - ZONES.arena.x, wz - ZONES.arena.z) < ZONES.arena.fenceR + 1.2) foliageMask = 0.0;
-      else if (inShrineX && Math.hypot(wx - ZONES.shrine.x, wz - ZONES.shrine.z) < ZONES.shrine.platformR + 1.5) foliageMask = 0.0;
-      else if (inStairZ && Math.abs(wx) <= 3.4) foliageMask = 0.0;
+      if (isUnderwater || minBuildingDist < 2.25 || roadFoliageClear) foliageMask = 0.0;
+      else if (dirtWeight > 0.06 || cobbleWeight > 0.06 || sandWeight > 0.16) foliageMask = 0.0;
+      else if (inArenaX && Math.hypot(wx - ZONES.arena.x, wz - ZONES.arena.z) < ZONES.arena.fenceR + 1.85) foliageMask = 0.0;
+      else if (inShrineX && Math.hypot(wx - ZONES.shrine.x, wz - ZONES.shrine.z) < ZONES.shrine.platformR + 2.2) foliageMask = 0.0;
+      else if (inStairZ && Math.abs(wx) <= 4.75) foliageMask = 0.0;
 
       const bAo = minBuildingDist < 1.5 ? smoothstep(0.0, 1.5, minBuildingDist) : 1.0;
       const ao = clamp(0.52 + 0.48 * bAo, 0.45, 1.0);

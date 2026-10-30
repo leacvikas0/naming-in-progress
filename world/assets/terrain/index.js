@@ -28,6 +28,7 @@ import {
   makeToonGradient,
   makeOutlineMaterial,
   batchVertexColorGroup,
+  buildTreeShadowUniformArray,
   buildTerrainAndWater,
 } from './terrain-water.js';
 import { buildLandmarks } from './landmarks.js';
@@ -60,6 +61,7 @@ export {
   makeToonGradient,
   makeOutlineMaterial,
   batchVertexColorGroup,
+  buildTreeShadowUniformArray,
   buildTerrainAndWater,
   buildLandmarks,
   buildBotanicalTrees,

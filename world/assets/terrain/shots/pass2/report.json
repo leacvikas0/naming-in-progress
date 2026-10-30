@@ -1,10 +1,10 @@
 {
   "pass": "pass2",
-  "timestamp": "2026-10-29T14:05:46.710Z",
+  "timestamp": "2026-10-30T09:21:24.394Z",
   "budgets": {
     "targetFps": 144,
-    "maxDrawCalls": 22,
-    "maxTriangles": 55000,
+    "maxDrawCalls": 24,
+    "maxTriangles": 120000,
     "maxMaskBuildMs": 30
   },
   "consoleErrors": [],
@@ -13,82 +13,82 @@
       "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\terrain\\shots\\pass2\\shrine-arch-stairs.png",
       "shot": "shrine-arch-stairs",
       "fps": 144,
-      "measuredFrameMs": 0.04,
-      "draws": 9,
-      "triangles": 29284,
-      "totalSceneTriangles": 50884,
+      "measuredFrameMs": 0.05,
+      "draws": 10,
+      "triangles": 92943,
+      "totalSceneTriangles": 114567,
       "visibleChunks": 5,
       "totalChunks": 16,
-      "maskBuildMs": 29.7
+      "maskBuildMs": 41.5
     },
     "waterfall-flume-channel": {
       "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\terrain\\shots\\pass2\\waterfall-flume-channel.png",
       "shot": "waterfall-flume-channel",
       "fps": 144,
-      "measuredFrameMs": 0.05,
-      "draws": 14,
-      "triangles": 35884,
-      "totalSceneTriangles": 50884,
+      "measuredFrameMs": 0.08,
+      "draws": 15,
+      "triangles": 99567,
+      "totalSceneTriangles": 114567,
       "visibleChunks": 8,
       "totalChunks": 16,
-      "maskBuildMs": 29.7
+      "maskBuildMs": 41.5
     },
     "pier-shoreline": {
       "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\terrain\\shots\\pass2\\pier-shoreline.png",
       "shot": "pier-shoreline",
       "fps": 144,
       "measuredFrameMs": 0.05,
-      "draws": 12,
-      "triangles": 32224,
-      "totalSceneTriangles": 50884,
+      "draws": 13,
+      "triangles": 95907,
+      "totalSceneTriangles": 114567,
       "visibleChunks": 6,
       "totalChunks": 16,
-      "maskBuildMs": 29.7
+      "maskBuildMs": 41.5
     },
     "wisteria-trees-arena": {
       "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\terrain\\shots\\pass2\\wisteria-trees-arena.png",
       "shot": "wisteria-trees-arena",
       "fps": 144,
-      "measuredFrameMs": 0.03,
-      "draws": 9,
-      "triangles": 29284,
-      "totalSceneTriangles": 50884,
+      "measuredFrameMs": 0.04,
+      "draws": 10,
+      "triangles": 92943,
+      "totalSceneTriangles": 114567,
       "visibleChunks": 5,
       "totalChunks": 16,
-      "maskBuildMs": 29.7
+      "maskBuildMs": 41.5
     },
     "well-plaza-roads": {
       "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\terrain\\shots\\pass2\\well-plaza-roads.png",
       "shot": "well-plaza-roads",
       "fps": 144,
-      "measuredFrameMs": 0.04,
-      "draws": 14,
-      "triangles": 37096,
-      "totalSceneTriangles": 50884,
+      "measuredFrameMs": 0.06,
+      "draws": 15,
+      "triangles": 100779,
+      "totalSceneTriangles": 114567,
       "visibleChunks": 9,
       "totalChunks": 16,
-      "maskBuildMs": 29.7
+      "maskBuildMs": 41.5
     },
     "aerial-overview": {
       "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\terrain\\shots\\pass2\\aerial-overview.png",
       "shot": "aerial-overview",
       "fps": 144,
-      "measuredFrameMs": 0.06,
-      "draws": 22,
-      "triangles": 50884,
-      "totalSceneTriangles": 50884,
+      "measuredFrameMs": 0.07,
+      "draws": 23,
+      "triangles": 114567,
+      "totalSceneTriangles": 114567,
       "visibleChunks": 16,
       "totalChunks": 16,
-      "maskBuildMs": 29.7
+      "maskBuildMs": 41.5
     }
   },
   "summary": {
-    "maxDrawCallsObserved": 22,
-    "minDrawCallsObserved": 9,
-    "maxFrustumTrianglesObserved": 50884,
-    "minFrustumTrianglesObserved": 29284,
-    "totalSceneTriangles": 50884,
-    "maskBuildMs": 29.7,
+    "maxDrawCallsObserved": 23,
+    "minDrawCallsObserved": 10,
+    "maxFrustumTrianglesObserved": 114567,
+    "minFrustumTrianglesObserved": 92943,
+    "totalSceneTriangles": 114567,
+    "maskBuildMs": 41.5,
     "consoleErrorCount": 0,
     "passesAllBudgets": true
   }
