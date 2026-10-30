@@ -72,9 +72,9 @@
 - Wires **100% native diverse skeletal `AnimationClip`s** (`Rig_Medium_MovementBasic.glb`, `Rig_Medium_CombatMelee.glb`, `Rig_Medium_CombatRanged.glb`, `Rig_Medium_Special.glb`, `Rig_Medium_General.glb`) with smooth cross-fading (`idle`, `run`, `sprint`, `dash`, `jump`, `combo1..4`, `charged`, `skill`, `pray_channel`, `burst`, `hit`, `downed`, `revive`) and weapon bone sockets (`handSlot.r`, `handSlot.l`).
 - Wires Desktop (`WASD` + Mouse Look) and Xiaomi Pad 7 (`3:2` Genshin floating thumbstick + touch-look + thumb-arc buttons) locomotion in the live world.
 
-- [ ] **Step 1: Dispatch Pass 1 Character & Native Motion Specialist Subagent (`self`) to build `world/assets/characters/` and render `shots/pass1/`**
-- [ ] **Step 2: Dispatch fresh Pass 2 Character Critic-Fixer Subagent (`self`) to blind-audit `shots/pass1/`, write `CRITIQUE-AND-SCOPE.md` + `verify.mjs`, fix any skinning/clip/socket issues, and render `shots/pass2/`**
-- [ ] **Step 3: Wire playable cel-shaded hero locomotion + Pad 7 touch controls into `world/index.html` and commit (`feat(characters): add cel-shaded kaykit heroes with native skeletal motion`)**
+- [x] **Step 1: Dispatch Pass 1 Character & Native Motion Specialist Subagent (`self`) to build `world/assets/characters/` and render `shots/pass1/`**
+- [x] **Step 2: Dispatch fresh Pass 2 Character Critic-Fixer Subagent (`self`) to blind-audit `shots/pass1/`, write `CRITIQUE-AND-SCOPE.md` + `verify.mjs`, fix any skinning/clip/socket issues, and render `shots/pass2/`**
+- [x] **Step 3: Wire playable cel-shaded hero locomotion + Pad 7 touch controls into `world/index.html` and commit (`feat(characters): add cel-shaded kaykit heroes with native skeletal motion`)**
 
 ---
 

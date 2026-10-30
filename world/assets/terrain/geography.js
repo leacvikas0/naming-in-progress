@@ -750,7 +750,7 @@ export function walkableHeightAt(x, z) {
     x <= pier.xStart + 3.8 &&
     Math.abs(z - pier.z) <= pier.width * 0.55
   ) {
-    return pier.y;
+    return pier.y + 0.12;
   }
   const gh = terrainHeightAt(x, z);
   return Math.max(gh, ZONES.millpond.waterY - 0.15);

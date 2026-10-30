@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KayKit Cel-Shaded Characters & Native Skeletal Motion — Preview</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #b8dff5;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        color: #231729;
+      }
+      #scene { display: block; width: 100%; height: 100%; }
+      .hud {
+        position: fixed;
+        top: 18px;
+        left: 22px;
+        background: rgba(252, 247, 238, 0.90);
+        border: 1px solid rgba(45, 28, 52, 0.18);
+        border-radius: 12px;
+        padding: 12px 16px;
+        pointer-events: none;
+        box-shadow: 0 4px 16px rgba(29, 20, 34, 0.12);
+      }
+      .hud h1 {
+        margin: 0 0 4px;
+        font-size: 16px;
+        font-weight: 700;
+      }
+      .hud p {
+        margin: 0;
+        font-size: 12px;
+        color: #543d5e;
+      }
+      .dock {
+        position: fixed;
+        bottom: 18px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 6px;
+        background: rgba(252, 247, 238, 0.88);
+        padding: 6px;
+        border-radius: 999px;
+        border: 1px solid rgba(45, 28, 52, 0.18);
+      }
+      .dock button {
+        border: 0;
+        background: transparent;
+        color: #2d1c36;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 7px 12px;
+        border-radius: 999px;
+        cursor: pointer;
+      }
+      .dock button.active {
+        background: #2d1c36;
+        color: #fdf6e9;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../../../node_modules/three/build/three.module.js",
+          "three/addons/": "../../../node_modules/three/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div class="hud" id="hud">
+      <h1 id="title">KayKit Cel-Shaded Characters & Native Skeletal Motion</h1>
+      <p id="stats">Loading characters, weapons & 95 native Rig_Medium clips...</p>
+    </div>
+    <div class="dock" id="dock">
+      <button data-shot="hero-duo-knight-mage" class="active">1. Hero Duo (Knight & Mage)</button>
+      <button data-shot="adventurer-lineup">2. Adventurer Lineup (5)</button>
+      <button data-shot="skeleton-enemies">3. Skeleton Enemies (4)</button>
+      <button data-shot="action-poses-sheet">4. Action Poses Sheet</button>
+      <button data-shot="back-and-silhouette">5. Back & Silhouette (3rd-Person)</button>
+    </div>
+
+    <script type="module">
+      import * as THREE from 'three';
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+      import {
+        createCharactersKit,
+        getSharedCharacterToonGradient,
+        OUTLINE_INK_HEX,
+      } from './index.js';
+
+      const canvas = document.getElementById('scene');
+      const titleEl = document.getElementById('title');
+      const statsEl = document.getElementById('stats');
+
+      const renderer = new THREE.WebGLRenderer({
+        canvas,
+        antialias: true,
+        preserveDrawingBuffer: true,
+        powerPreference: 'high-performance',
+      });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.06;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xc2e4f8);
+      scene.fog = new THREE.Fog(0xd8eef9, 32, 95);
+
+      const camera = new THREE.PerspectiveCamera(34, window.innerWidth / window.innerHeight, 0.1, 200);
+      const controls = new OrbitControls(camera, canvas);
+      controls.enableDamping = true;
+
+      // Sunlit anime lighting setup
+      const hemi = new THREE.HemisphereLight(0xf0f8ff, 0x869e60, 1.25);
+      scene.add(hemi);
+
+      const sun = new THREE.DirectionalLight(0xfff4dc, 2.35);
+      sun.position.set(10, 18, 14);
+      sun.castShadow = true;
+      sun.shadow.mapSize.set(2048, 2048);
+      sun.shadow.camera.left = -12;
+      sun.shadow.camera.right = 12;
+      sun.shadow.camera.top = 10;
+      sun.shadow.camera.bottom = -10;
+      sun.shadow.camera.near = 1;
+      sun.shadow.camera.far = 48;
+      sun.shadow.bias = -0.0005;
+      sun.shadow.normalBias = 0.02;
+      scene.add(sun);
+
+      const fill = new THREE.DirectionalLight(0xcbe2ff, 0.9);
+      fill.position.set(-12, 8, -10);
+      scene.add(fill);
+
+      // Sunlit Meadow Plinth Stage (hidden during pure-asset telemetry pass)
+      const stageGroup = new THREE.Group();
+      stageGroup.name = 'meadowStagePlinth';
+      scene.add(stageGroup);
+
+      const gradientMap = getSharedCharacterToonGradient();
+      const meadowFloorMat = new THREE.MeshToonMaterial({ color: 0x88be60, gradientMap });
+      const plinthTopMat = new THREE.MeshToonMaterial({ color: 0x99cc6c, gradientMap });
+      const plinthStoneMat = new THREE.MeshToonMaterial({ color: 0xe6dec8, gradientMap });
+      const plinthRimMat = new THREE.MeshToonMaterial({ color: 0xc9bfa6, gradientMap });
+
+      const outerMeadow = new THREE.Mesh(new THREE.CylinderGeometry(36, 36, 0.2, 48), meadowFloorMat);
+      outerMeadow.position.y = -0.26;
+      outerMeadow.receiveShadow = true;
+      stageGroup.add(outerMeadow);
+
+      const stoneBase = new THREE.Mesh(new THREE.CylinderGeometry(7.35, 7.65, 0.26, 48), plinthStoneMat);
+      stoneBase.position.y = -0.17;
+      stoneBase.receiveShadow = true;
+      stageGroup.add(stoneBase);
+
+      const stoneRim = new THREE.Mesh(new THREE.CylinderGeometry(7.0, 7.15, 0.08, 48), plinthRimMat);
+      stoneRim.position.y = -0.055;
+      stoneRim.receiveShadow = true;
+      stageGroup.add(stoneRim);
+
+      const turfCap = new THREE.Mesh(new THREE.CylinderGeometry(6.8, 6.9, 0.05, 48), plinthTopMat);
+      turfCap.position.y = -0.025;
+      turfCap.receiveShadow = true;
+      stageGroup.add(turfCap);
+
+      // Subtle petal & wildflower tufts around the outer rim of the meadow plinth
+      const flowerColors = [0xfff2b2, 0xf7b9d4, 0xc7bdf2, 0xffffff];
+      const petalGeo = new THREE.DodecahedronGeometry(0.08, 0);
+      for (let i = 0; i < 36; i++) {
+        const ang = (i / 36) * Math.PI * 2 + (i % 3) * 0.08;
+        const rad = 5.6 + (i % 5) * 0.24;
+        const fMat = new THREE.MeshToonMaterial({
+          color: flowerColors[i % flowerColors.length],
+          gradientMap,
+        });
+        const tuft = new THREE.Mesh(petalGeo, fMat);
+        tuft.position.set(Math.cos(ang) * rad, 0.04, Math.sin(ang) * rad);
+        tuft.scale.set(1.2, 0.65, 1.2);
+        stageGroup.add(tuft);
+      }
+
+      const contentHolder = new THREE.Group();
+      contentHolder.name = 'charactersContentHolder';
+      scene.add(contentHolder);
+
+      const kit = createCharactersKit();
+
+      const SHOT_DEFS = {
+        'hero-duo-knight-mage': {
+          label: '1. Hero Duo — Knight (Sword + Badge Shield) & Mage (Staff + Open Spellbook)',
+          skyBg: 0xc2e4f8,
+          pos: [0.0, 1.90, 5.55],
+          target: [0.0, 1.02, 0.0],
+          fov: 33,
+          actors: [
+            {
+              id: 'Knight',
+              pos: [-0.88, 0, 0.10],
+              rotY: 0.36,
+              clip: 'Idle_Combat',
+              time: 0.35,
+            },
+            {
+              id: 'Mage',
+              pos: [0.88, 0, -0.06],
+              rotY: -0.32,
+              clip: 'cast_spell',
+              time: 0.52,
+            },
+          ],
+        },
+        'adventurer-lineup': {
+          label: '2. All 5 KayKit Adventurers — Distinct Native Animations & Equipped Weapons',
+          skyBg: 0xc2e4f8,
+          pos: [0.0, 2.45, 12.1],
+          target: [0.0, 1.0, 0.0],
+          fov: 35,
+          actors: [
+            {
+              id: 'Knight',
+              pos: [-3.75, 0, 0.2],
+              rotY: 0.46,
+              clip: 'idle',
+              time: 0.35,
+            },
+            {
+              id: 'Mage',
+              pos: [-1.88, 0, -0.1],
+              rotY: 0.14,
+              clip: 'cast_spell',
+              time: 0.55,
+            },
+            {
+              id: 'Barbarian',
+              pos: [0.0, 0, 0.15],
+              rotY: 0.22,
+              clip: 'combo1',
+              time: 0.28,
+            },
+            {
+              id: 'Rogue',
+              pos: [1.88, 0, -0.1],
+              rotY: -0.18,
+              clip: 'dash',
+              time: 0.20,
+            },
+            {
+              id: 'Rogue_Hooded',
+              pos: [3.75, 0, 0.2],
+              rotY: -0.32,
+              clip: 'cheer',
+              time: 0.42,
+            },
+          ],
+        },
+        'skeleton-enemies': {
+          label: '3. All 4 KayKit Skeleton Enemies — Native Combat, Taunt & Ground-Spawn Clips',
+          skyBg: 0xb6d4ee,
+          pos: [0.0, 2.20, 9.8],
+          target: [0.0, 0.98, 0.0],
+          fov: 34,
+          actors: [
+            {
+              id: 'Skeleton_Warrior',
+              pos: [-2.75, 0, 0.15],
+              rotY: 0.36,
+              clip: 'combo2',
+              time: 0.42,
+            },
+            {
+              id: 'Skeleton_Mage',
+              pos: [-0.90, 0, -0.1],
+              rotY: -0.20,
+              clip: 'burst_aoe',
+              time: 3.20,
+            },
+            {
+              id: 'Skeleton_Rogue',
+              pos: [0.92, 0, -0.1],
+              rotY: -0.18,
+              clip: 'taunt',
+              time: 0.65,
+            },
+            {
+              id: 'Skeleton_Minion',
+              pos: [2.75, 0, 0.15],
+              rotY: -0.32,
+              clip: 'spawn',
+              time: 0.54,
+            },
+          ],
+        },
+        'action-poses-sheet': {
+          label: '4. Action Poses Sheet — combo1 (0.35s), charged (0.56s), pray_channel (0.60s), sprint (0.52s)',
+          skyBg: 0xc2e4f8,
+          pos: [0.0, 2.30, 10.85],
+          target: [0.0, 1.02, 0.0],
+          fov: 34,
+          actors: [
+            {
+              id: 'Knight',
+              pos: [-2.65, 0, 0.15],
+              rotY: 0.52,
+              clip: 'combo1',
+              time: 0.35,
+            },
+            {
+              id: 'Knight',
+              pos: [-0.88, 0, -0.1],
+              rotY: 0.36,
+              clip: 'charged',
+              time: 0.56,
+            },
+            {
+              id: 'Mage',
+              pos: [0.95, 0, -0.1],
+              rotY: -0.18,
+              clip: 'pray_channel',
+              time: 0.60,
+            },
+            {
+              id: 'Mage',
+              pos: [2.85, 0, 0.15],
+              rotY: -0.34,
+              clip: 'sprint',
+              time: 0.52,
+            },
+          ],
+        },
+        'back-and-silhouette': {
+          label: '5. Rear & 3/4 Back Gameplay Camera — Cape, Helmet, Hat & Shield Silhouette Integrity',
+          skyBg: 0xc2e4f8,
+          // Positioned behind the Knight & Mage looking forward (+Z), matching ref-target-trees.png
+          pos: [-0.15, 2.15, -4.85],
+          target: [0.0, 1.05, 0.5],
+          fov: 34,
+          actors: [
+            {
+              id: 'Knight',
+              pos: [-0.88, 0, 0.0],
+              rotY: 0.18,
+              clip: 'walk',
+              time: 0.30,
+            },
+            {
+              id: 'Mage',
+              pos: [0.88, 0, 0.15],
+              rotY: -0.35,
+              clip: 'cast_spell',
+              time: 0.50,
+            },
+          ],
+        },
+      };
+
+      // Pre-build each shot's actor group so shot switching is synchronous and deterministic
+      const prebuiltShots = new Map();
+      let activeActors = [];
+
+      async function preloadAllShots() {
+        for (const [shotName, def] of Object.entries(SHOT_DEFS)) {
+          const shotGroup = new THREE.Group();
+          shotGroup.name = `shot-${shotName}`;
+          const actors = [];
+
+          for (const aSpec of def.actors) {
+            const charInst = await kit.createCharacter(aSpec.id, {
+              position: aSpec.pos,
+              rotY: aSpec.rotY,
+              initialClip: aSpec.clip,
+              initialTime: aSpec.time,
+            });
+            const poseInfo = charInst.poseAt(aSpec.clip, aSpec.time);
+            shotGroup.add(charInst.group);
+            actors.push({
+              ...aSpec,
+              instance: charInst,
+              poseInfo,
+            });
+          }
+
+          prebuiltShots.set(shotName, { def, shotGroup, actors });
+        }
+      }
+
+      function inspectActiveActors(actors) {
+        let skinnedMeshes = 0;
+        let outlineMeshes = 0;
+        let attachedWeapons = 0;
+        const actorSummaries = [];
+
+        for (const entry of actors) {
+          const inst = entry.instance;
+          let charSkinned = 0;
+          let charOutlines = 0;
+          inst.group.traverse((obj) => {
+            if (obj.isSkinnedMesh && !obj.userData?.isOutline) charSkinned++;
+            if (obj.userData?.isOutline) charOutlines++;
+          });
+          const rWep = inst.equippedWeapons['handSlot.r']?.name || null;
+          const lWep = inst.equippedWeapons['handSlot.l']?.name || null;
+          if (rWep) attachedWeapons++;
+          if (lWep) attachedWeapons++;
+
+          skinnedMeshes += charSkinned;
+          outlineMeshes += charOutlines;
+
+          actorSummaries.push({
+            id: inst.id,
+            faction: inst.faction,
+            clipKey: entry.clip,
+            clipName: entry.poseInfo.clipName,
+            sampledTime: entry.poseInfo.sampledTime,
+            duration: entry.poseInfo.duration,
+            weapons: {
+              'handSlot.r': rWep,
+              'handSlot.l': lWep,
+            },
+            skinnedMeshes: charSkinned,
+            outlineMeshes: charOutlines,
+          });
+        }
+
+        return {
+          actorCount: actors.length,
+          skinnedMeshes,
+          outlineMeshes,
+          attachedWeapons,
+          actors: actorSummaries,
+        };
+      }
+
+      function setShot(shotName, { hideUI = false } = {}) {
+        const entry = prebuiltShots.get(shotName) || prebuiltShots.get('hero-duo-knight-mage');
+        const { def, shotGroup, actors } = entry;
+
+        document.getElementById('hud').style.display = hideUI ? 'none' : 'block';
+        document.getElementById('dock').style.display = hideUI ? 'none' : 'flex';
+
+        for (const btn of document.querySelectorAll('#dock button')) {
+          btn.classList.toggle('active', btn.dataset.shot === shotName);
+        }
+
+        while (contentHolder.children.length > 0) {
+          contentHolder.remove(contentHolder.children[0]);
+        }
+
+        // Re-lock exact deterministic skeletal keyframe poses for every actor in the shot
+        for (const a of actors) {
+          a.poseInfo = a.instance.poseAt(a.clip, a.time);
+        }
+
+        contentHolder.add(shotGroup);
+        activeActors = actors;
+
+        scene.background.setHex(def.skyBg);
+        camera.fov = def.fov || 34;
+        camera.updateProjectionMatrix();
+        camera.position.set(...def.pos);
+        controls.target.set(...def.target);
+        controls.update();
+        scene.updateMatrixWorld(true);
+
+        // 1. Render character-only pass to measure exact character + weapon + outline draw calls & triangles
+        stageGroup.visible = false;
+        renderer.render(scene, camera);
+        const assetCalls = renderer.info.render.calls;
+        const assetTriangles = renderer.info.render.triangles;
+
+        // 2. Render full scene with sunlit meadow plinth
+        stageGroup.visible = true;
+        renderer.render(scene, camera);
+        const sceneCalls = renderer.info.render.calls;
+        const sceneTriangles = renderer.info.render.triangles;
+
+        const actorMeta = inspectActiveActors(actors);
+
+        titleEl.textContent = def.label;
+        statsEl.textContent = `Characters: ${actorMeta.actorCount} | Asset Draws: ${assetCalls} | Asset Tris: ${assetTriangles.toLocaleString()} | Outlines: ${actorMeta.outlineMeshes}`;
+
+        return {
+          shot: shotName,
+          drawCalls: assetCalls,
+          triangles: assetTriangles,
+          sceneDrawCalls: sceneCalls,
+          sceneTriangles,
+          ...actorMeta,
+        };
+      }
+
+      for (const btn of document.querySelectorAll('#dock button')) {
+        btn.addEventListener('click', () => setShot(btn.dataset.shot));
+      }
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      await preloadAllShots();
+      const initialStats = setShot('hero-duo-knight-mage');
+
+      renderer.setAnimationLoop(() => {
+        controls.update();
+        renderer.render(scene, camera);
+      });
+
+      window.__charactersPreview = {
+        setShot,
+        kit,
+        scene,
+        camera,
+        renderer,
+        prebuiltShots,
+        initialStats,
+      };
+      window.__ready = true;
+    </script>
+  </body>
+</html>

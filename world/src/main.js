@@ -1,9 +1,10 @@
 // ============================================================================
 // world/src/main.js
 //
-// Stage 2 Assembled World: Terrain, Water & Landmarks + Tudor Village Houses +
+// Stage 3 Assembled World: Terrain, Water & Landmarks + Tudor Village Houses +
 // Toroidal Gouache Meadow + Stylized Time-of-Day Sky (Sun, Moon & Stars) +
-// 4x MSAA HDR Post-Processing (Restrained Bloom & ACES Split-Tone Grade).
+// Stage 3 Cel-Shaded Co-Op Heroes (Knight & Mage) + East Arena Skeletons +
+// Xiaomi Pad 7 (3:2) Genshin-Style Touch HUD + 4x MSAA HDR Post-Processing.
 // ============================================================================
 
 import * as THREE from 'three';
@@ -23,6 +24,8 @@ import { createHousesKit } from '../assets/houses/index.js';
 import { createToroidalMeadow, MEADOW_PROFILES } from '../assets/flowers/index.js';
 import { createTimeOfDaySky, TOD_PRESETS } from './sky-tod.js';
 import { createWorldPost } from './post.js';
+import { createCoopPlayerSystem } from './player-controller.js';
+import { createTouchHud } from './touch-hud.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -49,6 +52,7 @@ const PROFILES = {
     dpr: Math.min(window.devicePixelRatio || 1, 2.0),
     aaSamples: 4,
     meadowProfile: 'desktop',
+    maxGrassTufts: 10400,
   },
   tablet: {
     id: 'tablet',
@@ -56,6 +60,7 @@ const PROFILES = {
     dpr: Math.min(window.devicePixelRatio || 1, 1.5),
     aaSamples: 2,
     meadowProfile: 'tablet',
+    maxGrassTufts: 4500,
   },
 };
 
@@ -217,14 +222,19 @@ function buildMeadowForProfile(profileName) {
     scene.remove(meadow.group);
     meadow.dispose();
   }
+  const cfg = PROFILES[profileName] || PROFILES.desktop;
   meadow = createToroidalMeadow({
-    profile: PROFILES[profileName]?.meadowProfile || 'desktop',
+    profile: cfg.meadowProfile || 'desktop',
     worldMaskTexture: terrainKit.worldMaskTex,
     sampleHeight: terrainHeightAt,
     worldExtent: INNER_EXTENT,
     treeShadows: treeShadowData.treeShadowVecs,
     treeCount: treeShadowData.treeCount,
   });
+  if (meadow.grassMesh && cfg.maxGrassTufts) {
+    meadow.grassMesh.count = Math.min(meadow.grassMesh.count, cfg.maxGrassTufts);
+    meadow.instanceCounts.grassTuft = meadow.grassMesh.count;
+  }
   populateValleyWildflowerDrifts(meadow);
   scene.add(meadow.group);
 }
@@ -232,52 +242,137 @@ function buildMeadowForProfile(profileName) {
 buildMeadowForProfile(activeProfile);
 
 /* ------------------------------------------------------------------------- */
-/* 5. Playable Explorer Character Proxy & Locomotion                         */
+/* 5. Collision Resolution & Toroidal Boundary Wrap                          */
 /* ------------------------------------------------------------------------- */
 
-function createExplorerCharacter() {
-  const g = new THREE.Group();
-  g.name = 'playerExplorer';
-  const gradientMap = housesKit.mats.gradientMap;
+function resolveCollisions(px, pz, radius) {
+  let x = px;
+  let z = pz;
+  let wrapped = false;
 
-  const tunicMat = new THREE.MeshToonMaterial({ color: 0xd95b26, gradientMap });
-  const cloakMat = new THREE.MeshToonMaterial({ color: 0x2b4c7e, gradientMap });
-  const skinMat = new THREE.MeshToonMaterial({ color: 0xf6d4b0, gradientMap });
+  if (Math.hypot(x, z) > PLAY_BOUNDARY_RADIUS) {
+    const angle = Math.atan2(z, x) + Math.PI;
+    const wrapR = PLAY_BOUNDARY_RADIUS - 6;
+    x = Math.cos(angle) * wrapR;
+    z = Math.sin(angle) * wrapR;
+    wrapped = true;
+  }
 
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.34, 1.28, 12), tunicMat);
-  body.position.y = 0.64;
-  g.add(body);
+  for (const c of terrainKit.colliders) {
+    if (c.type === 'circle') {
+      const dx = x - c.x;
+      const dz = z - c.z;
+      const minD = c.r + radius;
+      const d = Math.hypot(dx, dz);
+      if (d < minD && d > 1e-5) {
+        x += (dx / d) * (minD - d);
+        z += (dz / d) * (minD - d);
+      }
+    } else if (c.type === 'obb') {
+      const hx = c.hx ?? c.halfW ?? 4.0;
+      const hz = c.hz ?? c.halfD ?? 4.0;
+      const cos = Math.cos(-c.rotY);
+      const sin = Math.sin(-c.rotY);
+      const lx = (x - c.x) * cos - (z - c.z) * sin;
+      const lz = (x - c.x) * sin + (z - c.z) * cos;
+      const cx = clamp(lx, -hx, hx);
+      const cz = clamp(lz, -hz, hz);
+      const dx = lx - cx;
+      const dz = lz - cz;
+      const d = Math.hypot(dx, dz);
+      if (d < radius) {
+        let nx = 0;
+        let nz = 0;
+        if (d > 1e-5) {
+          nx = dx / d;
+          nz = dz / d;
+        } else {
+          const penX = hx - Math.abs(lx);
+          const penZ = hz - Math.abs(lz);
+          if (penX < penZ) nx = lx >= 0 ? 1 : -1;
+          else nz = lz >= 0 ? 1 : -1;
+        }
+        const push = radius - d;
+        const lxNew = lx + nx * push;
+        const lzNew = lz + nz * push;
+        const wCos = Math.cos(c.rotY);
+        const wSin = Math.sin(c.rotY);
+        x = c.x + lxNew * wCos - lzNew * wSin;
+        z = c.z + lxNew * wSin + lzNew * wCos;
+      }
+    }
+  }
 
-  const cloak = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.38, 0.92, 12), cloakMat);
-  cloak.position.set(0, 0.78, -0.03);
-  g.add(cloak);
-
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 10), skinMat);
-  head.position.y = 1.54;
-  g.add(head);
-
-  return g;
+  return { x, z, wrapped };
 }
 
-const playerGroup = createExplorerCharacter();
-scene.add(playerGroup);
+/* ------------------------------------------------------------------------- */
+/* 6. Stage 3 Co-Op Heroes (Knight + Mage) & Xiaomi Pad 7 Touch HUD          */
+/* ------------------------------------------------------------------------- */
 
-const player = {
-  x: 2.8,
-  z: 14.5,
-  y: walkableHeightAt(2.8, 14.5),
-  vy: 0,
-  yaw: Math.PI + 0.15,
-  speed: 7.5,
-  sprintMult: 1.55,
-  radius: 0.48,
-  grounded: true,
-};
-playerGroup.position.set(player.x, player.y, player.z);
-playerGroup.rotation.y = player.yaw;
+const hudSwapHeroBtn = document.getElementById('hud-swap-hero-btn');
+
+const coopSystem = await createCoopPlayerSystem({
+  scene,
+  walkableHeightAt,
+  resolveCollisions,
+  arenaZone: ZONES.arena,
+  initialPos: { x: 2.8, z: 14.5, yaw: Math.PI + 0.15 },
+  onHeroSwapped: (newHeroId) => {
+    touchHud.setActiveHeroDisplay(newHeroId);
+    if (hudSwapHeroBtn) {
+      hudSwapHeroBtn.textContent =
+        newHeroId === 'Knight' ? '🛡️ Knight · 🔄 Tab' : '✨ Mage · 🔄 Tab';
+    }
+  },
+});
+
+const player = coopSystem.player;
+
+const touchHud = createTouchHud({
+  hudRoot: document.getElementById('hud'),
+  onCameraOrbit: (dx, dy) => {
+    if (camState.mode === 'player') {
+      camState.yaw -= dx * 0.0055;
+      camState.pitch = clamp(camState.pitch + dy * 0.0045, 0.04, 1.15);
+    } else {
+      const offset = camState.vistaPos.clone().sub(camState.vistaTarget);
+      const sph = new THREE.Spherical().setFromVector3(offset);
+      sph.theta -= dx * 0.0055;
+      sph.phi = clamp(sph.phi - dy * 0.0045, 0.08, Math.PI * 0.47);
+      offset.setFromSpherical(sph);
+      camState.vistaPos.copy(camState.vistaTarget).add(offset);
+    }
+  },
+  onAction: (actionType) => {
+    if (camState.mode === 'vista') {
+      camState.mode = 'player';
+      updateViewButtons();
+    }
+    coopSystem.triggerAction(actionType);
+  },
+  onPrayStateChange: (holding) => {
+    if (camState.mode === 'vista') {
+      camState.mode = 'player';
+      updateViewButtons();
+    }
+    coopSystem.setPraying(holding);
+  },
+  onSwapHero: () => {
+    coopSystem.swapActiveHero();
+  },
+});
+
+if (hudSwapHeroBtn) {
+  hudSwapHeroBtn.addEventListener('click', () => {
+    coopSystem.swapActiveHero();
+  });
+}
+
+touchHud.setProfileMode(activeProfile);
 
 /* ------------------------------------------------------------------------- */
-/* 6. Post-Processing Pipeline (4x MSAA + Bloom + Time-of-Day Grade)         */
+/* 7. Post-Processing Pipeline (4x MSAA + Bloom + Time-of-Day Grade)         */
 /* ------------------------------------------------------------------------- */
 
 const post = createWorldPost({
@@ -291,7 +386,7 @@ const post = createWorldPost({
 });
 
 /* ------------------------------------------------------------------------- */
-/* 7. Full World Time-of-Day Material Synchronization                        */
+/* 8. Full World Time-of-Day Material Synchronization                        */
 /* ------------------------------------------------------------------------- */
 
 const _dayWindowCol = new THREE.Color(0xffffff); // Shows painted sky-blue glass texture
@@ -358,7 +453,7 @@ export function applyTimeOfDay(modeOrT) {
 }
 
 /* ------------------------------------------------------------------------- */
-/* 8. Camera Views (1-8) & Automated Verification Shots                      */
+/* 9. Camera Views (1-8) & Automated Verification Shots                      */
 /* ------------------------------------------------------------------------- */
 
 export const VIEWS = {
@@ -440,7 +535,7 @@ export const WORLD_SHOTS = {
     pos: [5.2, 3.8, 23.2],
     target: [-3.2, 5.8, -16.0],
     fov: 52,
-    playerPos: [1.5, 11.5, Math.PI + 0.2],
+    playerPos: [1.4, 11.5, 0.52],
   },
   'day-mill-pier': {
     id: 'day-mill-pier',
@@ -449,7 +544,7 @@ export const WORLD_SHOTS = {
     pos: [-27.5, 5.8, 19.5],
     target: [-46.8, 2.2, -13.5],
     fov: 52,
-    playerPos: [-38.5, 8.5, Math.PI + 0.4],
+    playerPos: [-38.2, 8.9, -2.25],
   },
   'day-arena-wisteria': {
     id: 'day-arena-wisteria',
@@ -458,7 +553,7 @@ export const WORLD_SHOTS = {
     pos: [37.5, 4.4, 6.8],
     target: [70.5, 4.2, -5.0],
     fov: 52,
-    playerPos: [46.0, -3.5, 1.55],
+    playerPos: [47.2, -1.8, 1.85],
   },
   'day-shrine-arch': {
     id: 'day-shrine-arch',
@@ -467,7 +562,7 @@ export const WORLD_SHOTS = {
     pos: [3.8, 10.4, -63.5],
     target: [-1.2, 12.4, -93.0],
     fov: 52,
-    playerPos: [0.0, -76.5, Math.PI],
+    playerPos: [-0.7, -76.2, 2.88],
   },
   'evening-sunset-vista': {
     id: 'evening-sunset-vista',
@@ -476,7 +571,7 @@ export const WORLD_SHOTS = {
     pos: [2.2, 15.6, -71.5],
     target: [-11.5, 7.2, 14.0],
     fov: 54,
-    playerPos: [0.0, -68.0, 0.0],
+    playerPos: [-0.6, -61.5, -0.18],
   },
   'night-moon-shrine': {
     id: 'night-moon-shrine',
@@ -485,7 +580,7 @@ export const WORLD_SHOTS = {
     pos: [3.6, 10.3, -64.0],
     target: [-1.4, 12.6, -93.5],
     fov: 52,
-    playerPos: [0.0, -76.5, Math.PI],
+    playerPos: [-0.7, -76.2, 2.85],
   },
   'night-plaza-lanterns': {
     id: 'night-plaza-lanterns',
@@ -494,7 +589,7 @@ export const WORLD_SHOTS = {
     pos: [6.8, 3.6, 16.8],
     target: [-7.5, 5.2, -15.5],
     fov: 52,
-    playerPos: [1.8, 8.5, Math.PI + 0.3],
+    playerPos: [1.6, 8.5, 0.55],
   },
   'aerial-masterplan': {
     id: 'aerial-masterplan',
@@ -517,10 +612,11 @@ const camState = {
 };
 
 let activeViewId = 'plaza';
+let elapsed = 0;
 const _meadowFocus = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
 
-function updateMeadowFocus(elapsed) {
+function updateMeadowFocus(simTime) {
   camera.getWorldDirection(_camDir);
   const flatLen = Math.hypot(_camDir.x, _camDir.z) || 1;
   const fx = _camDir.x / flatLen;
@@ -538,7 +634,7 @@ function updateMeadowFocus(elapsed) {
       clamp(camera.position.z + fz * fwdOffset, -96, 96)
     );
   }
-  meadow.update(elapsed, _meadowFocus);
+  meadow.update(simTime, _meadowFocus);
 }
 
 function updateCamera() {
@@ -567,26 +663,29 @@ export function setView(id) {
   activeViewId = v.id;
   if (v.mode === 'player') {
     camState.mode = 'player';
-    player.x = v.px;
-    player.z = v.pz;
-    player.y = walkableHeightAt(player.x, player.z);
-    player.vy = 0;
-    player.yaw = v.yaw;
     camState.yaw = v.yaw;
     camState.pitch = v.pitch;
     camState.dist = v.dist;
     camera.fov = 50;
     camera.updateProjectionMatrix();
-    playerGroup.position.set(player.x, player.y, player.z);
-    playerGroup.rotation.y = player.yaw;
+    coopSystem.teleportLeaderAndPartner(v.px, v.pz, v.yaw);
   } else {
     camState.mode = 'vista';
     camState.vistaPos.set(...v.pos);
     camState.vistaTarget.set(...v.target);
     camera.fov = v.fov || 50;
     camera.updateProjectionMatrix();
+    if (v.id === 'arena') {
+      coopSystem.poseForShot('day-arena-wisteria', null, camera);
+    }
   }
   updateCamera();
+  // Ensure East Arena Skeletons visibility matches the updated camera position
+  const arenaDistSq = camera.position.distanceToSquared(
+    new THREE.Vector3(ZONES.arena.x, ZONES.arena.y || 0.6, ZONES.arena.z)
+  );
+  coopSystem.arenaEnemiesGroup.visible = arenaDistSq <= 92 * 92;
+
   updateMeadowFocus(elapsed);
   sky.update(elapsed);
   post.render(0.016);
@@ -599,22 +698,16 @@ export function setShot(shotId) {
   autoCycleTod = false;
   applyTimeOfDay(s.tod);
 
-  if (s.playerPos) {
-    player.x = s.playerPos[0];
-    player.z = s.playerPos[1];
-    player.y = walkableHeightAt(player.x, player.z);
-    player.yaw = s.playerPos[2] || Math.PI;
-    playerGroup.position.set(player.x, player.y, player.z);
-    playerGroup.rotation.y = player.yaw;
-  }
-
   camState.mode = 'vista';
   camState.vistaPos.set(...s.pos);
   camState.vistaTarget.set(...s.target);
   camera.fov = s.fov || 52;
   camera.updateProjectionMatrix();
-
   updateCamera();
+
+  // Deterministically position and pose the Knight, Mage, and East Arena Skeletons
+  coopSystem.poseForShot(shotId, s.playerPos, camera);
+
   terrainKit.update(
     0.016,
     1.25,
@@ -638,6 +731,7 @@ export function setProfile(profileName) {
   renderer.setSize(window.innerWidth, window.innerHeight);
   post.setSize(window.innerWidth, window.innerHeight);
   buildMeadowForProfile(activeProfile);
+  touchHud.setProfileMode(activeProfile);
   applyTimeOfDay(currentTodT);
   updateMeadowFocus(elapsed);
   post.render(0.016);
@@ -646,139 +740,7 @@ export function setProfile(profileName) {
 }
 
 /* ------------------------------------------------------------------------- */
-/* 9. Collision Resolution, Toroidal Wrap & Player Walk (WASD + Shift + Space)*/
-/* ------------------------------------------------------------------------- */
-
-function resolveCollisions(px, pz, radius) {
-  let x = px;
-  let z = pz;
-  let wrapped = false;
-
-  if (Math.hypot(x, z) > PLAY_BOUNDARY_RADIUS) {
-    const angle = Math.atan2(z, x) + Math.PI;
-    const wrapR = PLAY_BOUNDARY_RADIUS - 6;
-    x = Math.cos(angle) * wrapR;
-    z = Math.sin(angle) * wrapR;
-    wrapped = true;
-  }
-
-  for (const c of terrainKit.colliders) {
-    if (c.type === 'circle') {
-      const dx = x - c.x;
-      const dz = z - c.z;
-      const minD = c.r + radius;
-      const d = Math.hypot(dx, dz);
-      if (d < minD && d > 1e-5) {
-        x += (dx / d) * (minD - d);
-        z += (dz / d) * (minD - d);
-      }
-    } else if (c.type === 'obb') {
-      const hx = c.hx ?? c.halfW ?? 4.0;
-      const hz = c.hz ?? c.halfD ?? 4.0;
-      const cos = Math.cos(-c.rotY);
-      const sin = Math.sin(-c.rotY);
-      const lx = (x - c.x) * cos - (z - c.z) * sin;
-      const lz = (x - c.x) * sin + (z - c.z) * cos;
-      const cx = clamp(lx, -hx, hx);
-      const cz = clamp(lz, -hz, hz);
-      const dx = lx - cx;
-      const dz = lz - cz;
-      const d = Math.hypot(dx, dz);
-      if (d < radius) {
-        let nx = 0;
-        let nz = 0;
-        if (d > 1e-5) {
-          nx = dx / d;
-          nz = dz / d;
-        } else {
-          const penX = hx - Math.abs(lx);
-          const penZ = hz - Math.abs(lz);
-          if (penX < penZ) nx = lx >= 0 ? 1 : -1;
-          else nz = lz >= 0 ? 1 : -1;
-        }
-        const push = radius - d;
-        const lxNew = lx + nx * push;
-        const lzNew = lz + nz * push;
-        const wCos = Math.cos(c.rotY);
-        const wSin = Math.sin(c.rotY);
-        x = c.x + lxNew * wCos - lzNew * wSin;
-        z = c.z + lxNew * wSin + lzNew * wCos;
-      }
-    }
-  }
-
-  return { x, z, wrapped };
-}
-
-const keys = new Set();
-let pointerDragging = false;
-let lastMouseX = 0;
-let lastMouseY = 0;
-
-function updatePlayer(dt) {
-  let fwd = 0;
-  let right = 0;
-  if (keys.has('w') || keys.has('arrowup')) fwd += 1;
-  if (keys.has('s') || keys.has('arrowdown')) fwd -= 1;
-  if (keys.has('d') || keys.has('arrowright')) right += 1;
-  if (keys.has('a') || keys.has('arrowleft')) right -= 1;
-
-  let didWrap = false;
-  const mag = Math.hypot(fwd, right);
-  if (mag > 1e-4) {
-    fwd /= mag;
-    right /= mag;
-    const fx = Math.sin(camState.yaw);
-    const fz = Math.cos(camState.yaw);
-    const rx = -fz;
-    const rz = fx;
-    const moveX = fx * fwd + rx * right;
-    const moveZ = fz * fwd + rz * right;
-    const spd = player.speed * (keys.has('shift') ? player.sprintMult : 1);
-
-    const next = resolveCollisions(
-      player.x + moveX * spd * dt,
-      player.z + moveZ * spd * dt,
-      player.radius
-    );
-    player.x = next.x;
-    player.z = next.z;
-    didWrap = next.wrapped;
-
-    const targetYaw = Math.atan2(moveX, moveZ);
-    let diff = (targetYaw - player.yaw) % (Math.PI * 2);
-    if (diff > Math.PI) diff -= Math.PI * 2;
-    if (diff < -Math.PI) diff += Math.PI * 2;
-    player.yaw += diff * Math.min(1, 14 * dt);
-  }
-
-  const floorY = walkableHeightAt(player.x, player.z);
-  if (didWrap) {
-    player.y = floorY;
-    player.vy = 0;
-    player.grounded = true;
-  } else if (keys.has(' ') && player.grounded) {
-    player.vy = 7.2;
-    player.grounded = false;
-  }
-  if (!player.grounded) {
-    player.vy -= 19 * dt;
-    player.y += player.vy * dt;
-    if (player.y <= floorY) {
-      player.y = floorY;
-      player.vy = 0;
-      player.grounded = true;
-    }
-  } else {
-    player.y = floorY;
-  }
-
-  playerGroup.position.set(player.x, player.y, player.z);
-  playerGroup.rotation.y = player.yaw;
-}
-
-/* ------------------------------------------------------------------------- */
-/* 10. HUD Controls & Throttled Telemetry (<= 1 DOM Update per 500ms)         */
+/* 10. HUD Controls, Keyboard/Mouse Input & Throttled Telemetry              */
 /* ------------------------------------------------------------------------- */
 
 const hudEl = document.getElementById('hud');
@@ -868,9 +830,21 @@ function toggleHud(visible) {
   hudEl.style.display = visible ? 'block' : 'none';
 }
 
+const keys = new Set();
+let pointerDragging = false;
+let lastMouseX = 0;
+let lastMouseY = 0;
+
 window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
+  if (k === 'tab') {
+    e.preventDefault();
+    coopSystem.swapActiveHero();
+    return;
+  }
+  const wasPressed = keys.has(k);
   keys.add(k);
+
   if (k === '1') setView('entry');
   else if (k === '2') setView('plaza');
   else if (k === '3') setView('mill');
@@ -887,6 +861,28 @@ window.addEventListener('keydown', (e) => {
   } else if (k === 'p') {
     autoCycleTod = !autoCycleTod;
     syncTodHudControls();
+  } else if (!wasPressed && (k === 'j' || k === 'f')) {
+    if (camState.mode === 'vista') camState.mode = 'player';
+    coopSystem.triggerAction('attack');
+  } else if (!wasPressed && k === 'k') {
+    if (camState.mode === 'vista') camState.mode = 'player';
+    coopSystem.triggerAction('charged');
+  } else if (!wasPressed && k === 'l') {
+    if (camState.mode === 'vista') camState.mode = 'player';
+    coopSystem.triggerAction('dash');
+  } else if (!wasPressed && k === 'e') {
+    if (camState.mode === 'vista') camState.mode = 'player';
+    coopSystem.triggerAction('skill');
+  } else if (!wasPressed && k === 'q') {
+    if (camState.mode === 'vista') camState.mode = 'player';
+    coopSystem.triggerAction('burst');
+  } else if (!wasPressed && k === 'c') {
+    if (camState.mode === 'vista') camState.mode = 'player';
+    coopSystem.triggerAction('cheer');
+  } else if (!wasPressed && k === 'v') {
+    if (camState.mode === 'vista') camState.mode = 'player';
+    touchHud.setPrayerBannerVisible(true);
+    coopSystem.setPraying(true);
   } else if (['w', 'a', 's', 'd', ' '].includes(k) && camState.mode === 'vista') {
     camState.mode = 'player';
     updateViewButtons();
@@ -894,14 +890,28 @@ window.addEventListener('keydown', (e) => {
 });
 
 window.addEventListener('keyup', (e) => {
-  keys.delete(e.key.toLowerCase());
+  const k = e.key.toLowerCase();
+  keys.delete(k);
+  if (k === 'v') {
+    touchHud.setPrayerBannerVisible(false);
+    coopSystem.setPraying(false);
+  }
 });
 
 canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 2) {
+    // Right-click quick dash
+    e.preventDefault();
+    if (camState.mode === 'vista') camState.mode = 'player';
+    coopSystem.triggerAction('dash');
+    return;
+  }
   pointerDragging = true;
   lastMouseX = e.clientX;
   lastMouseY = e.clientY;
 });
+
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 window.addEventListener('mouseup', () => {
   pointerDragging = false;
@@ -953,7 +963,6 @@ window.addEventListener('resize', () => {
 /* ------------------------------------------------------------------------- */
 
 const clock = new THREE.Clock();
-let elapsed = 0;
 let frames = 0;
 let telemetryTimer = 0;
 let measuredFps = 144;
@@ -982,6 +991,8 @@ function getSceneStats() {
     composerDraws: totalCalls,
     triangles: sceneTris,
     bloomStrength: Number(post.params.bloomStrength.toFixed(2)),
+    activeHero: player.activeHeroId,
+    partnerHero: player.partnerHeroId,
     playerPos: {
       x: Number(player.x.toFixed(1)),
       y: Number(player.y.toFixed(1)),
@@ -1036,7 +1047,12 @@ function animate() {
   }
 
   if (camState.mode === 'player') {
-    updatePlayer(dt);
+    coopSystem.update(dt, {
+      keys,
+      joyState: touchHud.joyState,
+      camYaw: camState.yaw,
+      camera,
+    });
   }
 
   terrainKit.update(
@@ -1064,7 +1080,9 @@ function animate() {
 
 animate();
 
+window.__WORLD_READY__ = true;
 window.__WORLD__ = {
+  ready: true,
   scene,
   camera,
   renderer,
@@ -1074,6 +1092,8 @@ window.__WORLD__ = {
   housesKit,
   village,
   meadow,
+  coopSystem,
+  touchHud,
   player,
   VIEWS,
   WORLD_SHOTS,

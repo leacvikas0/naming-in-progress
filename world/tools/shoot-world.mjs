@@ -73,9 +73,13 @@ page.on('console', (msg) => {
 page.on('pageerror', (err) => consoleErrors.push(err.message || String(err)));
 
 await page.goto(url, { waitUntil: 'networkidle' });
-await page.waitForFunction(() => Boolean(window.__WORLD__), null, {
-  timeout: 30000,
-});
+await page.waitForFunction(
+  () => Boolean(window.__WORLD__ && window.__WORLD__.ready && window.__WORLD_READY__),
+  null,
+  {
+    timeout: 30000,
+  }
+);
 await page.waitForTimeout(300);
 
 const shotIds = [
