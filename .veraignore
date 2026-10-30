@@ -1,0 +1,13 @@
+# Active Haru-machi code corpus; archived prototypes must not be indexed.
+/_archive/
+/node_modules/
+/library/
+/catalog/
+/.worktrees/
+/.kilo/
+/.kilocode/
+/skills/
+/.vera/
+**/shots/
+# Root README describes the archived game; consult SOUL/METHODOLOGY instead.
+/README.md
