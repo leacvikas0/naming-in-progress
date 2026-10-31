@@ -1005,6 +1005,7 @@ export async function createCharacter(idOrName, options = {}) {
   const toonOpts = {
     role: spec.role,
     outlineThickness: options.outlineThickness ?? CHARACTER_OUTLINE_THICKNESS,
+    cellOverrides: options.cellOverrides || null,
   };
 
   // Capture bind-pose skinned parts & rigid accessories before attaching weapons or posing

@@ -1028,7 +1028,7 @@ export function rebuildUnifiedCharacterSkin(modelRoot, sockets = {}, options = {
     slotNode.updateMatrixWorld(true);
 
     slotNode.traverse((obj) => {
-      if (!obj.isMesh || obj.userData?.isOutline) return;
+      if (!obj.isMesh || obj.userData?.isOutline || obj.userData?.isVfx) return;
       // Hide individual weapon mesh so only the unified SkinnedMesh renders
       obj.visible = false;
 

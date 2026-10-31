@@ -58,14 +58,16 @@ What we have discussed and locked so far for the gameplay & powers (with room to
 ## 4. What Is Locked vs. What Is Still Open
 
 - **LOCKED:**
-  - Target devices (`RX 6700` Desktop + `Xiaomi Pad 7` Tablet with *Genshin*-style touch controls).
+  - Target devices & Long-Distance Setup: **Vikas in Pachgaon, Haryana** (`RX 6700` Desktop PC with Genshin `PointerLock` mouse-look controls) + **his wife at OP Jindal, Sonipat** (`Xiaomi Pad 7` Tablet with *Genshin*-style floating joystick, gentle camera auto-follow, and smart `75°` cone soft-lock) connected via **Cloudflare Workers + `CoopRoomDO`**.
+  - **Universal "Zero Glass" Visual Weight Rule:** Nothing in the game—especially spells, ice crystals, meteors, lightning, and sword slashes—may look like transparent glass or washed-out alpha fog. All spells and weapon effects must use hardware-opaque (`transparent: false`) cel-shaded geometry or hard-cutout ukiyo-e ribbons with real physical weight.
+  - **The 4 Signature Spells & *Demon Slayer* Sword Breathing Synergy:**
+    - Her Mage casts 4 high-craft spells (**`1: Frost Lance`**, **`2: Shatterlance`**, **`3: Cinder Fall`**, **`4: Storm Lance`**).
+    - Instead of copying generic Genshin element charts, her spells automatically surge across their **Golden Soul Tether** to ignite his Knight's sword with 3 *Demon Slayer*-style Breathing Styles (**`Glacial Tide`**, **`Hinokami Sunfire`**, **`Thunderclap Wisteria`**) and prime enemies for 3 physical combo detonations (**`Shatterblow`**, **`Solar Flare`**, **`Thunderchain`**).
   - Hard ban on `C:\Users\silen\Downloads\world 1` code (visual mood reference only) and hard ban on Kenney/KayKit environment prop kits.
   - Diffusion images (`gpt-image`) used strictly for mood/color reference, never geometry to copy.
   - 5-stage build sequence (Map $\rightarrow$ Assets $\rightarrow$ Characters/Motion $\rightarrow$ Cinematic VFX $\rightarrow$ Mechanics/Login/Voice).
   - Expanded valley distances outside town + scenic mountain horizon + toroidal boundary wrap teleport.
   - 2-Pass Parallel Subagent Asset Methodology & Truly Blind `/10` Critics (`METHODOLOGY.md`).
   - Strict Git & Worktree Discipline (`GIT-DISCIPLINE.md`).
-- **STILL OPEN FOR DESIGN DISCUSSION (When Ready):**
-  - Final hero roster lock (exact weapon/element pairings beyond the Knight + Mage core duo).
-  - Exact boss roster and between-wave town activities.
-  - Artorious's specific prompt pools and voice synthesis tuning.
+- **DEFERRED TO TOMORROW (With Vikas Live):**
+  - **Artorious, God of Love (Gemini Live Voice Judge):** Prompt engineering, voice synthesis tuning, and live microphone invocation rules (to be built interactively with Vikas once the core combat, spells, enemies, and Cloudflare Co-Op loop are verified).

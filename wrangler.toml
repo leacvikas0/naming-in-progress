@@ -1,0 +1,15 @@
+name = "haru-machi-coop"
+main = "worker/index.js"
+compatibility_date = "2026-10-01"
+
+[assets]
+directory = "."
+binding = "ASSETS"
+
+[[durable_objects.bindings]]
+name = "COOP_ROOMS"
+class_name = "CoopRoomDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["CoopRoomDO"]
