@@ -207,25 +207,21 @@ export async function createCoopPlayerSystem({
   let activeHeroId = 'Knight';
   let partnerHeroId = 'Mage';
 
-  function launchMageFrostLance() {
-    const mageSt = heroStates.Mage;
-    const leaderSt = heroStates[activeHeroId];
-
-    // Aim toward East Arena Skeleton_Warrior if within 22m, otherwise along active hero / Mage facing yaw
-    let aimYaw = activeHeroId === 'Mage' ? mageSt.yaw : leaderSt.yaw;
-    const dxSkel = skelWarrior.group.position.x - mageSt.x;
-    const dzSkel = skelWarrior.group.position.z - mageSt.z;
+  function launchMageFrostLance(casterState = heroStates[activeHeroId]) {
+    let aimYaw = casterState.yaw;
+    const dxSkel = skelWarrior.group.position.x - casterState.x;
+    const dzSkel = skelWarrior.group.position.z - casterState.z;
     const distSkel = Math.hypot(dxSkel, dzSkel);
     if (distSkel > 1.5 && distSkel < 22.0) {
       aimYaw = Math.atan2(dxSkel, dzSkel);
-      mageSt.yaw = aimYaw;
-      applyTransform(mageSt);
+      casterState.yaw = aimYaw;
+      applyTransform(casterState);
     }
 
     const dirX = Math.sin(aimYaw);
     const dirZ = Math.cos(aimYaw);
-    const ox = mageSt.x + dirX * 0.95;
-    const oz = mageSt.z + dirZ * 0.95;
+    const ox = casterState.x + dirX * 0.95;
+    const oz = casterState.z + dirZ * 0.95;
     const oy = walkableHeightAt(ox, oz);
 
     frostCastCounter++;
@@ -271,7 +267,7 @@ export async function createCoopPlayerSystem({
   }
 
   function playHeroLocomotionClip(st, nextLoco) {
-    if (st.actionState || st.praying) return;
+    if (st.actionState) return;
     if (st.locomotionState === nextLoco && st.char.anim.currentKey === nextLoco) return;
     st.locomotionState = nextLoco;
     const isOnce = nextLoco === 'jump_start' || nextLoco === 'jump_land';
@@ -298,7 +294,7 @@ export async function createCoopPlayerSystem({
     const partner = heroStates[partnerHeroId];
 
     if (actionType === 'jump') {
-      if (leader.grounded && !leader.praying) {
+      if (leader.grounded) {
         leader.vy = 7.4;
         leader.grounded = false;
         leader.actionState = null;
@@ -308,16 +304,7 @@ export async function createCoopPlayerSystem({
       return;
     }
 
-    if (actionType === 'dash') {
-      leader.praying = false;
-      leader.dashDirX = Math.sin(leader.yaw);
-      leader.dashDirZ = Math.cos(leader.yaw);
-      startOneShotAction(leader, 'dash', 0.42, { timeScale: 1.35, fade: 0.06 });
-      return;
-    }
-
     if (actionType === 'attack') {
-      leader.praying = false;
       if (leader.comboResetTimer > 0) {
         leader.comboIndex = (leader.comboIndex + 1) % 3;
       } else {
@@ -325,82 +312,26 @@ export async function createCoopPlayerSystem({
       }
       leader.comboResetTimer = 1.15;
 
-      if (leader.id === 'Mage') {
-        const mageClips = ['cast_shoot', 'combo1', 'cast_spell'];
-        const clip = mageClips[leader.comboIndex];
-        startOneShotAction(leader, clip, 0.56, { timeScale: 1.25, fade: 0.08 });
-        launchMageFrostLance();
-      } else {
-        const knightClips = ['combo1', 'combo2', 'combo3'];
-        const clip = knightClips[leader.comboIndex];
-        startOneShotAction(leader, clip, 0.54, { timeScale: 1.28, fade: 0.08 });
+      const clips =
+        leader.id === 'Mage'
+          ? ['combo1', 'cast_shoot', 'cast_spell']
+          : ['combo1', 'combo2', 'combo3'];
+      const clip = clips[leader.comboIndex];
+      startOneShotAction(leader, clip, 0.54, { timeScale: 1.26, fade: 0.08 });
+      return;
+    }
+
+    if (actionType === 'cast' || actionType === 'charged' || actionType === 'skill') {
+      const castClip = leader.id === 'Mage' ? 'cast_spell' : 'cast_shoot';
+      startOneShotAction(leader, castClip, 0.64, { timeScale: 1.2, fade: 0.08 });
+      if (partner.id === 'Mage' && !partner.actionState) {
+        startOneShotAction(partner, 'cast_spell', 0.64, { timeScale: 1.2, fade: 0.08 });
       }
-
-      // Co-op wingman support strike on 3rd combo finisher
-      if (leader.comboIndex === 2 && !partner.actionState) {
-        const supportClip = partner.id === 'Mage' ? 'cast_shoot' : 'combo1';
-        startOneShotAction(partner, supportClip, 0.55, { timeScale: 1.2, fade: 0.1 });
-        if (partner.id === 'Mage') {
-          launchMageFrostLance();
-        }
-      }
-      return;
-    }
-
-    if (actionType === 'charged') {
-      leader.praying = false;
-      const clip = leader.id === 'Mage' ? 'burst_aoe' : 'charged';
-      startOneShotAction(leader, clip, 0.78, { timeScale: 1.15, fade: 0.1 });
-      if (leader.id === 'Mage') {
-        launchMageFrostLance();
-      }
-      return;
-    }
-
-    if (actionType === 'skill') {
-      leader.praying = false;
-      const leaderClip = leader.id === 'Mage' ? 'cast_spell' : 'pray_channel';
-      startOneShotAction(leader, leaderClip, 0.72, { timeScale: 1.15, fade: 0.1 });
-      // Partner reacts with synchronized romantic synergy cast/cheer + Frost Lance eruption!
-      const partnerClip = partner.id === 'Mage' ? 'cast_shoot' : 'cheer';
-      startOneShotAction(partner, partnerClip, 0.68, { timeScale: 1.15, fade: 0.1 });
-      launchMageFrostLance();
-      return;
-    }
-
-    if (actionType === 'burst') {
-      leader.praying = false;
-      startOneShotAction(leader, 'burst_aoe', 0.95, { timeScale: 1.05, fade: 0.12 });
-      startOneShotAction(partner, 'burst_aoe', 0.95, { timeScale: 1.05, fade: 0.12 });
-      launchMageFrostLance();
-      return;
-    }
-
-    if (actionType === 'cheer') {
-      leader.praying = false;
-      startOneShotAction(leader, 'cheer', 0.9, { timeScale: 1.0, fade: 0.12 });
-      startOneShotAction(partner, 'wave', 0.9, { timeScale: 1.0, fade: 0.12 });
+      launchMageFrostLance(leader);
     }
   }
 
-  function setPraying(isHoldingPray) {
-    const leader = heroStates[activeHeroId];
-    const partner = heroStates[partnerHeroId];
-    if (isHoldingPray) {
-      if (!leader.praying) {
-        leader.praying = true;
-        leader.actionState = null;
-        leader.actionTimer = 0;
-        leader.char.play('pray_channel', { loop: true, fade: 0.15, timeScale: 0.85, force: true });
-        partner.char.play('cast_spell', { loop: true, fade: 0.15, timeScale: 0.9, force: true });
-      }
-    } else if (leader.praying) {
-      leader.praying = false;
-      // Miracle release!
-      startOneShotAction(leader, 'burst_aoe', 0.85, { timeScale: 1.15, fade: 0.1 });
-      startOneShotAction(partner, 'cheer', 0.85, { timeScale: 1.1, fade: 0.1 });
-    }
-  }
+  function setPraying() {}
 
   function swapActiveHero() {
     const prevLeader = heroStates[activeHeroId];

@@ -311,6 +311,7 @@ function resolveCollisions(px, pz, radius) {
 /* ------------------------------------------------------------------------- */
 
 const hudSwapHeroBtn = document.getElementById('hud-swap-hero-btn');
+const hudHeroName = document.getElementById('hud-hero-name');
 
 const coopSystem = await createCoopPlayerSystem({
   scene,
@@ -319,10 +320,8 @@ const coopSystem = await createCoopPlayerSystem({
   arenaZone: ZONES.arena,
   initialPos: { x: 2.8, z: 14.5, yaw: Math.PI + 0.15 },
   onHeroSwapped: (newHeroId) => {
-    touchHud.setActiveHeroDisplay(newHeroId);
-    if (hudSwapHeroBtn) {
-      hudSwapHeroBtn.textContent =
-        newHeroId === 'Knight' ? '🛡️ Knight · 🔄 Tab' : '✨ Mage · 🔄 Tab';
+    if (hudHeroName) {
+      hudHeroName.textContent = newHeroId;
     }
   },
 });
@@ -350,16 +349,6 @@ const touchHud = createTouchHud({
       updateViewButtons();
     }
     coopSystem.triggerAction(actionType);
-  },
-  onPrayStateChange: (holding) => {
-    if (camState.mode === 'vista') {
-      camState.mode = 'player';
-      updateViewButtons();
-    }
-    coopSystem.setPraying(holding);
-  },
-  onSwapHero: () => {
-    coopSystem.swapActiveHero();
   },
 });
 
@@ -764,19 +753,18 @@ export function setProfile(profileName) {
 
 const hudEl = document.getElementById('hud');
 const statsEl = document.getElementById('stats-readout');
-const viewBar = document.getElementById('view-buttons');
-const todSlider = document.getElementById('tod-slider');
-const todClockLabel = document.getElementById('tod-clock-label');
-const todPlayBtn = document.getElementById('tod-play-btn');
+const viewSelect = document.getElementById('view-select');
 
-if (viewBar) {
+if (viewSelect) {
   Object.values(VIEWS).forEach((v) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.dataset.view = v.id;
-    btn.textContent = v.label;
-    btn.addEventListener('click', () => setView(v.id));
-    viewBar.appendChild(btn);
+    const opt = document.createElement('option');
+    opt.value = v.id;
+    opt.textContent = v.label;
+    viewSelect.appendChild(opt);
+  });
+  viewSelect.addEventListener('change', (e) => {
+    setView(e.target.value);
+    viewSelect.blur();
   });
 }
 
@@ -793,39 +781,7 @@ document.querySelectorAll('[data-profile]').forEach((btn) => {
   });
 });
 
-if (todSlider) {
-  todSlider.addEventListener('input', (e) => {
-    autoCycleTod = false;
-    const val = parseFloat(e.target.value);
-    applyTimeOfDay(val);
-  });
-}
-
-if (todPlayBtn) {
-  todPlayBtn.addEventListener('click', () => {
-    autoCycleTod = !autoCycleTod;
-    syncTodHudControls();
-  });
-}
-
-function formatClockFromT(t) {
-  const totalMinutes = Math.round((((t % 1) + 1) % 1) * 24 * 60) % (24 * 60);
-  const hh = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
-  const mm = String(totalMinutes % 60).padStart(2, '0');
-  return `${hh}:${mm}`;
-}
-
 function syncTodHudControls() {
-  if (todSlider && document.activeElement !== todSlider) {
-    todSlider.value = currentTodT.toFixed(3);
-  }
-  if (todClockLabel) {
-    todClockLabel.textContent = `${formatClockFromT(currentTodT)} (${sky.state.mode.toUpperCase()})`;
-  }
-  if (todPlayBtn) {
-    todPlayBtn.classList.toggle('active', autoCycleTod);
-    todPlayBtn.textContent = autoCycleTod ? '⏸ Pause (P)' : '▶ Cycle (P)';
-  }
   for (const btn of document.querySelectorAll('[data-tod]')) {
     btn.classList.toggle('active', btn.dataset.tod === sky.state.mode);
   }
@@ -838,9 +794,8 @@ function syncProfileButtons() {
 }
 
 function updateViewButtons() {
-  if (!viewBar) return;
-  for (const btn of viewBar.querySelectorAll('button')) {
-    btn.classList.toggle('active', btn.dataset.view === activeViewId);
+  if (viewSelect && viewSelect.value !== activeViewId) {
+    viewSelect.value = activeViewId;
   }
 }
 
@@ -851,8 +806,11 @@ function toggleHud(visible) {
 
 const keys = new Set();
 let pointerDragging = false;
+let pointerDownX = 0;
+let pointerDownY = 0;
 let lastMouseX = 0;
 let lastMouseY = 0;
+let pointerDragDist = 0;
 
 window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
@@ -880,28 +838,11 @@ window.addEventListener('keydown', (e) => {
   } else if (k === 'p') {
     autoCycleTod = !autoCycleTod;
     syncTodHudControls();
-  } else if (!wasPressed && (k === 'j' || k === 'f')) {
-    if (camState.mode === 'vista') camState.mode = 'player';
-    coopSystem.triggerAction('attack');
+  } else if (!wasPressed && k === 'h') {
+    toggleHud(hudEl && hudEl.style.display === 'none');
   } else if (!wasPressed && k === 'k') {
     if (camState.mode === 'vista') camState.mode = 'player';
-    coopSystem.triggerAction('charged');
-  } else if (!wasPressed && k === 'l') {
-    if (camState.mode === 'vista') camState.mode = 'player';
-    coopSystem.triggerAction('dash');
-  } else if (!wasPressed && k === 'e') {
-    if (camState.mode === 'vista') camState.mode = 'player';
-    coopSystem.triggerAction('skill');
-  } else if (!wasPressed && k === 'q') {
-    if (camState.mode === 'vista') camState.mode = 'player';
-    coopSystem.triggerAction('burst');
-  } else if (!wasPressed && k === 'c') {
-    if (camState.mode === 'vista') camState.mode = 'player';
-    coopSystem.triggerAction('cheer');
-  } else if (!wasPressed && k === 'v') {
-    if (camState.mode === 'vista') camState.mode = 'player';
-    touchHud.setPrayerBannerVisible(true);
-    coopSystem.setPraying(true);
+    coopSystem.triggerAction('cast');
   } else if (['w', 'a', 's', 'd', ' '].includes(k) && camState.mode === 'vista') {
     camState.mode = 'player';
     updateViewButtons();
@@ -911,29 +852,27 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   const k = e.key.toLowerCase();
   keys.delete(k);
-  if (k === 'v') {
-    touchHud.setPrayerBannerVisible(false);
-    coopSystem.setPraying(false);
-  }
 });
 
 canvas.addEventListener('mousedown', (e) => {
-  if (e.button === 2) {
-    // Right-click quick dash
-    e.preventDefault();
-    if (camState.mode === 'vista') camState.mode = 'player';
-    coopSystem.triggerAction('dash');
-    return;
-  }
+  if (e.button !== 0) return;
   pointerDragging = true;
+  pointerDownX = e.clientX;
+  pointerDownY = e.clientY;
   lastMouseX = e.clientX;
   lastMouseY = e.clientY;
+  pointerDragDist = 0;
 });
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-window.addEventListener('mouseup', () => {
+window.addEventListener('mouseup', (e) => {
+  if (!pointerDragging) return;
   pointerDragging = false;
+  if (e.button === 0 && pointerDragDist < 6 && e.target === canvas) {
+    if (camState.mode === 'vista') camState.mode = 'player';
+    coopSystem.triggerAction('attack');
+  }
 });
 
 window.addEventListener('mousemove', (e) => {
@@ -942,6 +881,7 @@ window.addEventListener('mousemove', (e) => {
   const dy = e.clientY - lastMouseY;
   lastMouseX = e.clientX;
   lastMouseY = e.clientY;
+  pointerDragDist = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
 
   if (camState.mode === 'player') {
     camState.yaw -= dx * 0.0055;
@@ -1043,11 +983,10 @@ function measurePerformance(iterations = 24) {
   return { avgFrameMs, measuredFps };
 }
 
-function refreshTelemetryReadout() {
+function refreshTelemetryReadout(drawsOverride = null) {
   if (!statsEl) return;
-  const info = renderer.info.render;
-  const sceneDraws = Math.max(1, info.calls);
-  statsEl.textContent = `${measuredFps} FPS · ${sceneDraws} draws · ${(info.triangles / 1000).toFixed(1)}k tris · ${sky.state.mode.toUpperCase()} (${formatClockFromT(currentTodT)}) · ${PROFILES[activeProfile].label}`;
+  const sceneDraws = drawsOverride ?? getSceneStats().draws;
+  statsEl.textContent = `${measuredFps} FPS · ${sceneDraws} draws`;
 }
 
 applyTimeOfDay('day');
@@ -1088,14 +1027,22 @@ function animate() {
   updateCamera();
   updateMeadowFocus(elapsed);
   sky.update(elapsed);
+
+  const sampleDrawsThisFrame = telemetryTimer >= 0.5;
+  if (sampleDrawsThisFrame) {
+    renderer.info.autoReset = false;
+    renderer.info.reset();
+  }
   post.render(dt);
 
   // Strict >= 500ms throttle on DOM telemetry updates (zero per-frame DOM mutations!)
-  if (telemetryTimer >= 0.5) {
+  if (sampleDrawsThisFrame) {
+    const sceneDraws = Math.max(1, renderer.info.render.calls - 11);
+    renderer.info.autoReset = true;
     measuredFps = Math.min(144, Math.round(frames / telemetryTimer));
     frames = 0;
     telemetryTimer = 0;
-    refreshTelemetryReadout();
+    refreshTelemetryReadout(sceneDraws);
   }
 }
 
