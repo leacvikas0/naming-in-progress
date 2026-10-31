@@ -66,119 +66,167 @@ function signedHash(n) {
 /* Default Frost Lance Configuration                                         */
 /* ------------------------------------------------------------------------- */
 
+export const FROST_LANCE_STYLE_PRESETS = Object.freeze({
+  v1: {
+    name: 'v1-luminous-glacial-cerulean',
+    label: 'V1: Luminous Glacial Cerulean & Frost Veins (Exact Attached Reference Match)',
+    colorDeep: '#26659c', // exact luminous mid-deep glacial cerulean from attached image.png
+    colorMid: '#4f8ec2',
+    colorIce: '#7fd0ff', // crisp glacier sky-blue
+    colorRim: '#f4feff', // chalky frost-white Fresnel & basal rime
+    colorCore: '#5292c4', // permanent subsurface glacial cerulean inner light
+    colorInk: '#153a5c',
+    colorScarDeep: '#427ba6',
+    colorScarMid: '#72b0db',
+    colorScarVein: '#f2faff',
+    colorMistCrest: '#f4feff',
+    colorMistShadow: '#72b0db',
+    depthTint: 0.96,
+    frostLine: 0.56,
+    veins: 0.54,
+    fracture: 0.72,
+    facetSharp: 0.80,
+  },
+  v2: {
+    name: 'v2-fierce-glacier-monolith',
+    label: 'V2: Fierce Glacial Cerulean (Deeper Core Bite & Razor Fracture Cracks)',
+    colorDeep: '#1d548a', // slightly deeper, scarier cerulean core bite
+    colorMid: '#4482b8',
+    colorIce: '#78ccff', // crisp alpine glacier blue
+    colorRim: '#f6feff', // razor frost-white ridges, cracks & rime
+    colorCore: '#4888bd',
+    colorInk: '#102f4d',
+    colorScarDeep: '#3b719c',
+    colorScarMid: '#6aa8d6',
+    colorScarVein: '#f4fbff',
+    colorMistCrest: '#f6feff',
+    colorMistShadow: '#6aa8d6',
+    depthTint: 1.12,
+    frostLine: 0.54,
+    veins: 0.52,
+    fracture: 0.82,
+    facetSharp: 0.88,
+  },
+  v3: {
+    name: 'v3-subzero-cryo-cerulean',
+    label: 'V3: Sub-Zero Cryo-Cerulean (Charged Cold Cyan-Blue Inner Faults)',
+    colorDeep: '#1f5a91', // rich sub-zero glacial cerulean
+    colorMid: '#3f8cc4',
+    colorIce: '#74ceff', // luminous cryo-sky body
+    colorRim: '#f7ffff', // bright frost-white rime & crack highlights
+    colorCore: '#3ea4d9', // cold charged cyan-cerulean subsurface core
+    colorInk: '#113354',
+    colorScarDeep: '#39739e',
+    colorScarMid: '#64addb',
+    colorScarVein: '#f5fcff',
+    colorMistCrest: '#f7ffff',
+    colorMistShadow: '#64addb',
+    depthTint: 1.05,
+    frostLine: 0.62,
+    veins: 0.58,
+    fracture: 0.84,
+    facetSharp: 0.85,
+  },
+});
+
 export const FROST_LANCE_DEFAULTS = Object.freeze({
-  // Cast & 4-Beat Choreography Timing
+  // Cast & 4-Beat Choreography Timing (matching original ice.js)
   range: 14.5, // metres
   speed: 26.0, // fracture front speed, m/s
-  windupTime: 0.11, // Beat 1: cast wind-up & muzzle cryo-sigil (0.00s..0.11s)
-  holdAfterImpact: 2.12, // Beat 3: standing glacier duration before Beat 4 withdrawal
+  windupTime: 0.11, // Beat 1: cast wind-up
+  holdAfterImpact: 2.12, // Beat 3: standing glacier duration before withdrawal
   shatterShakeTime: 0.28, // pre-sink shudder duration
-  sinkTime: 1.12, // Beat 4: sink & dissolve withdrawal duration (ends at ~4.2s)
+  sinkTime: 1.05, // Beat 4: sink withdrawal duration
 
-  // Footprint Progression (Narrow at Caster -> Wide V-Canyon Wall at Apex)
-  widthNear: 0.58, // half-width at caster's feet, metres
-  width: 2.55, // half-width at far end, metres
-  widthCurve: 0.82,
-  spikeCount: 168, // 56 per variant: bold, chiseled glacier blades
-  clumping: 1.25,
-  scatter: 0.28,
-  frontBias: 0.86,
+  // Footprint Progression (matching original ice.js + wider, more intimidating far end)
+  widthNear: 0.56, // half-width at caster's feet, metres
+  width: 3.40, // widened half-width at far end, metres
+  widthCurve: 0.74, // flares powerfully into the impact zone
+  spikeCount: 168,
+  clumping: 1.32,
+  scatter: 0.55,
+  frontBias: 0.85,
 
-  // Silhouette & Continuous Accelerating Height Ramp (0.58m -> 2.95m wall -> 3.65m Apex Crown)
-  heightNear: 0.58, // ankle/shin-high at caster's feet, metres
-  height: 2.95, // main wall blade height entering apex, metres
-  heightCurve: 1.22, // smooth continuous ramp (no flat knee-high fence!)
-  heightJitter: 0.22,
-  crown: 0.38,
-  peak: 1.24, // apex crown multiplier (2.95 * 1.24 -> ~3.65m bold cathedral spires that fit 100% in frame)
-  peakWidth: 0.42, // broad pre-apex swell so mid-trail flows seamlessly into crown
-  rubble: 0.25, // fraction of outer basal splinter shards
-  rubbleScale: 0.38,
+  // Silhouette (heavier, more intimidating glacial monolith wall & crown)
+  heightNear: 0.56, // spike height at caster, metres
+  height: 3.32, // towering glacier height at far end, metres
+  heightCurve: 1.50,
+  heightJitter: 0.52,
+  crown: 0.50,
+  peak: 1.44, // extra height swell at impact point (~4.7m towering monoliths)
+  peakWidth: 0.32,
+  rubble: 0.40, // 40% chunky ankle-height glacier blocks filling the bed
+  rubbleScale: 0.34,
 
-  // Sculpted 6-Faceted Broad-Shouldered Anime Glacier Blade Geometry
-  radius: 0.64, // bold broadsword-like base radius so facets read crisply
-  radiusJitter: 0.28,
-  taper: 0.46, // broad faceted chisel shoulder tapering to sharp apex point (never needle-thin!)
-  facets: 6, // 6-faceted hexagonal/bladed prism for high-contrast adjacent faces
-  roughness: 0.18,
-  bend: 0.52, // organic forward/outward blade sweep from base to tip
-  bladeAspect: 0.62, // bladed cross-section flattening
-  lean: 0.42, // radians leaning away from caster
-  leanJitter: 0.32,
+  // Individual Crystal (matching original ice.js + ProceduralGeometry.js!)
+  radius: 0.47, // heavy, imposing glacial column radius
+  radiusJitter: 0.85, // wide organic variety of thick & medium glacier columns
+  taper: 0.69, // exact original ice.js taper (0.69 = blocky, heavy glacier columns, NEVER spiky!)
+  facets: 7, // exact original ice.js 7-sided prism
+  roughness: 0.09, // exact original ice.js surface roughness
+  bend: 0.66, // exact original ice.js organic curve from base to tip
+  bladeAspect: 1.0, // circular cross-section like original (never flat glass knives!)
+  lean: 0.44, // aggressive forward/outward glacial upheaval lean
+  leanJitter: 1.18,
   twist: 1.0,
 
-  // Spring-Overshoot Eruption Dynamics
-  riseTime: 0.16, // seconds from buried to full height
-  riseOvershoot: 0.26, // +26% violent elastic spring overshoot
-  riseStagger: 0.042,
-  settle: 0.44,
-  birthFade: 0.40, // HDR birth flash duration
+  // Eruption Dynamics (matching original ice.js)
+  riseTime: 0.17,
+  riseOvershoot: 0.26,
+  riseStagger: 0.07,
+  settle: 0.55,
+  birthFade: 0.45,
 
-  // Cel-Refraction Palette ("Dark Before Bright" High-Contrast Glacier Palette)
-  colorDeep: '#072247', // deep abyssal glacier sapphire core
-  colorMid: '#155896', // rich cobalt-cerulean mid-refraction
-  colorIce: '#4cd4ff', // luminous glacial cyan-aqua facet body
-  colorRim: '#f0fcff', // crisp diamond-white specular & rime
-  colorInk: '#061529', // dark cobalt anime silhouette edge
-  colorScarDeep: '#081d38', // abyssal glacier-cobalt ground fissure trench
-  colorScarMid: '#184b7c', // frozen cobalt-teal sub-crust
-  colorScarVein: '#5ee4ff', // glowing electric-cyan fracture fault veins
-  colorMistCrest: '#ebfbff', // lit top of rolling glacier mist
-  colorMistShadow: '#42b8e8', // saturated icy cyan mist body
-  shockRadius: 6.8, // apex frost-wave shock ring radius, metres
+  // Default V1 Luminous Glacial Cerulean Palette
+  stylePreset: 'v1',
+  ...FROST_LANCE_STYLE_PRESETS.v1,
+  shockRadius: 6.8,
 });
 
 /* ------------------------------------------------------------------------- */
-/* 1. Procedural 6-Faceted Chiseled Anime Glacier Blade Geometry             */
-/*    Includes a buried basal root (`y = -0.26..0.0`) so tilted or           */
-/*    overshooting crystals NEVER expose a flat bottom or float above ground.*/
+/* 1. Procedural 7-Sided Blocky Glacier Crystal Geometry                     */
+/*    Direct port of Spellbook's `createCrystalGeometry` (`taper = 0.69`,    */
+/*    `sides = 7`, `roughness = 0.09`, `bend = 0.66`) + buried root `-0.45`. */
 /* ------------------------------------------------------------------------- */
 
-const RING_HEIGHTS = [-0.55, 0.0, 0.22, 0.50, 0.76, 0.90];
+const RING_HEIGHTS = [-0.45, 0.0, 0.22, 0.50, 0.75, 0.92];
 
 function profileRadius(t, taper) {
   if (t < 0) {
-    // Deep sub-surface root extends to y = -0.55 so even wide, steeply tilted short
-    // rubble shards remain 100% buried below the ground plane!
-    return 0.75 + 0.25 * (1.0 + t / 0.55);
+    return 0.85 + 0.15 * (1.0 + t / 0.45);
   }
-  return taper + (1 - taper) * Math.pow(1 - t, 1.12);
+  return taper + (1 - taper) * Math.pow(1 - t, 1.15);
 }
 
 export function createGlacierCrystalGeometry({
   seed = 1,
-  sides = 6,
-  taper = 0.26,
-  roughness = 0.18,
-  bend = 0.44,
-  bladeAspect = 0.58,
+  sides = 7,
+  taper = 0.69,
+  roughness = 0.09,
+  bend = 0.66,
 } = {}) {
-  const facets = Math.max(5, Math.round(sides));
-  const tipRadius = clamp(taper, 0.08, 0.85);
+  const facets = Math.max(3, Math.round(sides));
+  const tipRadius = Math.min(0.9, Math.max(0.01, taper));
 
   const bendAngle = hash11(seed * 1.77) * TAU;
   const bendX = Math.cos(bendAngle);
   const bendZ = Math.sin(bendAngle);
-  const perpX = -bendZ;
-  const perpZ = bendX;
 
-  const axisOffset = (t) => (t <= 0 ? 0 : bend * 0.42 * Math.pow(t, 1.55));
+  const axisOffset = (t) => (t <= 0 ? 0 : bend * 0.5 * Math.pow(t, 1.6));
 
   const angles = [];
   for (let i = 0; i < facets; i++) {
-    const jitter = (hash11(seed * 3.13 + i * 7.7) - 0.5) * (TAU / facets) * 0.34 * roughness * 2.0;
+    const jitter = (hash11(seed * 3.13 + i * 7.7) - 0.5) * (TAU / facets) * 0.55 * roughness * 3.0;
     angles.push((i / facets) * TAU + jitter);
   }
 
   const rings = RING_HEIGHTS.map((t, ringIndex) => {
     const baseR = profileRadius(t, tipRadius) * 0.5;
     const drift = axisOffset(t);
+    // Height wobble keeps the shoulder lines from stacking into clean bands (exact original!)
     const y =
       t +
-      (hash11(seed * 5.9 + ringIndex * 2.3) - 0.5) *
-        0.035 *
-        roughness *
-        (t > 0.05 && t < 0.85 ? 1 : 0);
+      (hash11(seed * 5.9 + ringIndex * 2.3) - 0.5) * 0.06 * roughness * (t > 0 ? 1 : 0);
 
     return angles.map((angle, i) => {
       const tPos = Math.max(0, t);
@@ -186,22 +234,19 @@ export function createGlacierCrystalGeometry({
         1 +
         (hash11(seed * 11.1 + ringIndex * 13.7 + i * 3.9) - 0.5) *
           roughness *
-          0.95 *
-          (0.30 + 0.70 * tPos);
-      const r = Math.max(0.01, baseR * wobble);
-      const ca = Math.cos(angle) * r;
-      const sa = Math.sin(angle) * r * bladeAspect;
-      const lx = ca * bendX + sa * perpX + bendX * drift;
-      const lz = ca * bendZ + sa * perpZ + bendZ * drift;
-      return [lx, y, lz];
+          1.3 *
+          (0.35 + 0.65 * tPos);
+      const r = Math.max(0.002, baseR * wobble);
+      return [Math.cos(angle) * r + bendX * drift, y, Math.sin(angle) * r + bendZ * drift];
     });
   });
 
+  // The apex is offset a little off-axis so the tip reads as chipped rather than a cone vertex
   const apexDrift = axisOffset(1.0);
   const apex = [
-    bendX * apexDrift + (hash11(seed * 17.3) - 0.5) * 0.04 * roughness,
+    bendX * apexDrift + (hash11(seed * 17.3) - 0.5) * 0.09 * roughness,
     1.0,
-    bendZ * apexDrift + (hash11(seed * 19.7) - 0.5) * 0.04 * roughness,
+    bendZ * apexDrift + (hash11(seed * 19.7) - 0.5) * 0.09 * roughness,
   ];
   const floorCentre = [0, RING_HEIGHTS[0], 0];
 
@@ -213,10 +258,6 @@ export function createGlacierCrystalGeometry({
     facetUvs.push(uvA[0], uvA[1], uvA[2], uvB[0], uvB[1], uvB[2], uvC[0], uvC[1], uvC[2]);
   };
 
-  // Constant per-facet tonal offset (all 3 vertices of a triangle get the EXACT
-  // same `fTone` in `aFacetUv.z` so it NEVER interpolates across integer bands!).
-  const facetTones = [-0.22, 0.18, -0.10, 0.24, -0.18, 0.12, -0.14, 0.20];
-
   for (let ring = 0; ring < rings.length - 1; ring++) {
     const lower = rings[ring];
     const upper = rings[ring + 1];
@@ -225,23 +266,8 @@ export function createGlacierCrystalGeometry({
 
     for (let i = 0; i < facets; i++) {
       const j = (i + 1) % facets;
-      const fTone = facetTones[i % facetTones.length];
-      pushTri(
-        lower[i],
-        lower[j],
-        upper[i],
-        [0.0, v0, fTone],
-        [1.0, v0, fTone],
-        [0.0, v1, fTone]
-      );
-      pushTri(
-        lower[j],
-        upper[j],
-        upper[i],
-        [1.0, v0, fTone],
-        [1.0, v1, fTone],
-        [0.0, v1, fTone]
-      );
+      pushTri(lower[i], upper[i], lower[j], [0.0, v0, 0.0], [0.0, v1, 0.0], [1.0, v0, 0.0]);
+      pushTri(lower[j], upper[i], upper[j], [1.0, v0, 0.0], [0.0, v1, 0.0], [1.0, v1, 0.0]);
     }
   }
 
@@ -250,55 +276,38 @@ export function createGlacierCrystalGeometry({
   const vTop = RING_HEIGHTS[rings.length - 1];
   for (let i = 0; i < facets; i++) {
     const j = (i + 1) % facets;
-    // Tip chisel facets get a constant +0.16 specular lift across the entire triangle
-    const fToneTip = facetTones[i % facetTones.length] + 0.16;
-    pushTri(
-      top[i],
-      top[j],
-      apex,
-      [0.0, vTop, fToneTip],
-      [1.0, vTop, fToneTip],
-      [0.5, 1.0, fToneTip]
-    );
-    pushTri(
-      floorCentre,
-      base[j],
-      base[i],
-      [0.5, 0.0, -0.2],
-      [1.0, 0.0, -0.2],
-      [0.0, 0.0, -0.2]
-    );
+    pushTri(top[i], apex, top[j], [0.0, vTop, 0.0], [0.5, 1.0, 0.0], [1.0, vTop, 0.0]);
+    pushTri(floorCentre, base[i], base[j], [0.5, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
   }
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('aFacetUv', new THREE.Float32BufferAttribute(facetUvs, 3));
+  // Non-indexed + per-triangle vertex normals: gives every hewn plane its true 3D normal!
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
 }
 
 /**
- * Chunky diamond-octahedral ice splinter geometry for flying shards & apex burst
- * (centered around origin so shards tumble naturally like shattered glacier glass).
+ * Chunky glacier ice chip geometry for breach shards & impact burst
  */
 function createDebrisCrystalGeometry() {
   const geo = createGlacierCrystalGeometry({
-    seed: 19.4,
-    sides: 6,
-    taper: 0.58,
-    roughness: 0.34,
-    bend: 0.08,
-    bladeAspect: 0.78,
+    seed: 5 * 2.7 + 41,
+    sides: 5,
+    taper: 0.45,
+    roughness: 0.45,
+    bend: 0.25,
   });
-  geo.translate(0, -0.32, 0);
-  geo.scale(1.15, 0.62, 1.05);
+  geo.translate(0, -0.35, 0);
+  geo.scale(1.15, 0.65, 1.05);
   geo.computeBoundingSphere();
   return geo;
 }
 
 /* ------------------------------------------------------------------------- */
-/* 2. Custom Shaders (All Driven by Pre-Baked 128x128 RGBA NoiseAtlas)       */
+/* 2. Custom Shaders (Authentic Spellbook IceMaterial & 3D Frost Relief)     */
 /* ------------------------------------------------------------------------- */
 
 function createGroundDecalMaterial(noiseAtlas, sharedUniforms, corridorUniforms) {
@@ -372,11 +381,16 @@ function createGroundDecalMaterial(noiseAtlas, sharedUniforms, corridorUniforms)
       varying vec4 vMeta;
       varying vec3 vWorldPos;
 
-      // Sample multi-scale snow & frost crust height in world space (like reference GroundDecals.js)
-      float sampleFrostCrustHeight(vec2 wPos) {
-        vec4 n1 = texture2D(uNoiseAtlas, wPos * 0.14);
-        vec4 n2 = texture2D(uNoiseAtlas, wPos * 0.37 + vec2(0.31, 0.57));
-        return n1.b * 0.55 + n1.g * 0.30 + n2.r * 0.15;
+      // Exact port of Spellbook GroundDecals.js snowDepth(q) using NoiseAtlas:
+      // 3 scales: banked FBM drifts + shouldered Voronoi slabs + fine grain
+      float snowDepthAt(vec2 q) {
+        vec4 nDrift = texture2D(uNoiseAtlas, q * 0.085);
+        vec4 nSlabs = texture2D(uNoiseAtlas, q * 0.24 + vec2(0.37, 0.61));
+        vec4 nGrain = texture2D(uNoiseAtlas, q * 0.72 + vec2(0.19, 0.83));
+        float drift = nDrift.b;
+        float slabs = smoothstep(0.15, 0.75, nSlabs.g) * 0.30 + nSlabs.r * 0.14;
+        float grain = nGrain.a * 0.15;
+        return drift * 0.60 + slabs + grain;
       }
 
       void main() {
@@ -388,11 +402,11 @@ function createGroundDecalMaterial(noiseAtlas, sharedUniforms, corridorUniforms)
 
         vec2 p = (vUv - 0.5) * 2.0;
         float r = length(p);
-        if (r > 1.0) discard;
+        if (kind > 0.5 && r > 1.0) discard;
 
         vec2 wPos = vWorldPos.xz;
-        vec4 nWorld = texture2D(uNoiseAtlas, wPos * 0.18);
-        vec4 nDetail = texture2D(uNoiseAtlas, wPos * 0.42 + vec2(0.23, 0.67));
+        vec4 nWorld = texture2D(uNoiseAtlas, wPos * 0.09);
+        vec4 nDetail = texture2D(uNoiseAtlas, wPos * 0.22 + vec2(0.31, 0.57));
         vec4 nLocal = texture2D(uNoiseAtlas, vUv * 1.15 + vec2(seed * 0.53, seed * 0.29));
 
         vec3 col = vec3(0.0);
@@ -400,171 +414,102 @@ function createGroundDecalMaterial(noiseAtlas, sharedUniforms, corridorUniforms)
 
         if (kind < 0.5) {
           // =================================================================
-          // KIND 0: SEAMLESS WORLD-SPACE GLACIER CORRIDOR & APEX BASIN
-          // Evaluated 100% in world space so there are ZERO concentric bullseye
-          // rings or scalloped seams!
+          // KIND 0: SPELLBOOK 3D HEIGHT-FIELD FROST & RIME SHEET (DECAL == 6)
+          // Differentiated height field (snowDepthAt) lit by key light so it
+          // banks and catches light like real packed rime, breaking into natural
+          // grains at the rim with ZERO printed cartoon outline!
           // =================================================================
           vec2 rel = wPos - uCastOrigin.xz;
           float alongM = dot(rel, uCastDir.xz);
           float latM = dot(rel, uCastSide.xz);
 
           float frontM = uTravelFront * uCastLength;
-          float frontWarp = (nWorld.b - 0.5) * 0.85 + (nDetail.g - 0.5) * 0.40;
+          float frontWarp = (nWorld.b - 0.5) * 0.75;
           if (alongM > frontM + 1.15 + frontWarp || alongM < -1.15) discard;
 
           float s = clamp(alongM / max(1.0, uCastLength), 0.0, 1.0);
-          float corridorHalfW = mix(uWidthNear, uWidthFar, pow(s, uWidthCurve)) * 1.42;
+          float corridorHalfW = mix(uWidthNear, uWidthFar, pow(s, uWidthCurve)) * 1.32;
 
-          // Apex impact basin expansion around the end of the corridor
           vec2 apexCenter = uCastOrigin.xz + uCastDir.xz * uCastLength;
           float apexDist = length(wPos - apexCenter);
-          float apexRadius = uWidthFar * 1.72 * smoothstep(0.50, 0.72, uTravelFront);
+          float apexRadius = uWidthFar * 1.55 * smoothstep(0.45, 0.70, uTravelFront);
 
-          // Organic domain-warped normalized distance from the glacial spine/basin
-          float edgeNoise = (nWorld.b - 0.5) * 0.34 + (nDetail.g - 0.5) * 0.20 + (nDetail.r - 0.5) * 0.10;
           float dCorridor = abs(latM) / max(0.45, corridorHalfW);
-          float backCap = max(0.0, (-alongM - 0.35) / 1.05);
-          float frontCap = max(0.0, (alongM - frontM) / 1.15);
+          float backCap = max(0.0, (-alongM - 0.35) / 1.10);
+          float frontCap = max(0.0, (alongM - frontM) / 1.20);
           float dLine = sqrt(dCorridor * dCorridor + backCap * backCap + frontCap * frontCap);
           float dBasin = apexRadius > 0.1 ? (apexDist / apexRadius) : 99.0;
+          float d = min(dLine, dBasin);
 
-          float dNorm = min(dLine, dBasin) + edgeNoise * 0.30;
-          if (dNorm > 1.0) discard;
+          // Ragged FBM lobe reach (never a smooth disc or hard-edged sticker!)
+          vec2 warp = (vec2(nWorld.b, nDetail.b) - 0.5) * 0.45;
+          float lobes = (texture2D(uNoiseAtlas, wPos * 0.11 + warp * 0.25).b - 0.5) * 2.0;
+          float reach = d * (1.0 - lobes * 0.34);
+          float cover = smoothstep(1.0, 0.56, reach);
+          if (cover < 0.004) discard;
 
-          // 3D Snow/Rime Relief Normal via finite differences on NoiseAtlas
-          float eps = 0.16;
-          float hC = sampleFrostCrustHeight(wPos);
-          float hX = sampleFrostCrustHeight(wPos + vec2(eps, 0.0));
-          float hZ = sampleFrostCrustHeight(wPos + vec2(0.0, eps));
-          vec3 snowN = normalize(vec3((hC - hX) / eps * 0.35, 1.0, (hC - hZ) / eps * 0.35));
-          float snowLambert = clamp(dot(snowN, normalize(uSunDir)), 0.0, 1.0);
-          float snowShade = 0.54 + 0.46 * pow(snowLambert, 0.80);
+          // 3D height-field forward differences (e = 0.16m) for real surface relief
+          float e = 0.16;
+          float h  = snowDepthAt(wPos);
+          float hx = snowDepthAt(wPos + vec2(e, 0.0));
+          float hy = snowDepthAt(wPos + vec2(0.0, e));
+          vec3 nrm = normalize(vec3((h - hx) / e * 0.34, 1.0, (h - hy) / e * 0.34));
 
-          // 3 Zones from center to outer edge:
-          // 1) Inner Abyssal Glacial Chasm Trench (dNorm < 0.42)
-          // 2) Mid Frozen Cobalt-Cyan Ice Slab & Branching Voronoi Fault Veins (0.28 .. 0.62)
-          // 3) Wide Outer Crystalline Snow-Rime Bed (0.42 .. 1.00) -> surrounds all outer rubble spikes!
-          float trenchMask = 1.0 - smoothstep(0.16, 0.44, dNorm);
-          float slabMask = smoothstep(0.12, 0.32, dNorm) * (1.0 - smoothstep(0.50, 0.72, dNorm));
-          float rimeBankMask = smoothstep(0.32, 0.56, dNorm) * (1.0 - smoothstep(0.80, 1.00, dNorm));
+          vec3 lightDir = normalize(vec3(uSunDir.x, max(0.35, uSunDir.y), uSunDir.z));
+          float lambert = clamp(dot(nrm, lightDir), 0.0, 1.0);
+          // Snow/rime scatters deep: shadow goes cool glacial blue (uColorScarDeep), lit faces go uColorScarVein
+          float shade = 0.36 + 0.64 * pow(lambert, 0.80);
 
-          // Branching tectonic ice fault cracks inside the trench & slab
-          float crackPrimary = smoothstep(0.65, 0.90, nDetail.r);
-          float crackSecondary = smoothstep(0.70, 0.93, nWorld.r);
-          float veinMask = clamp(crackPrimary * 0.88 + crackSecondary * 0.68, 0.0, 1.0) *
-                           (1.0 - smoothstep(0.48, 0.76, dNorm));
+          // Thick in the middle, breaking into scattered grains at the rim (no printed outline!)
+          float lie = smoothstep(0.12, 0.54, cover * (0.34 + 0.78 * h));
 
-          // Clean bright snow-rime color shaded by 3D relief normal (never muddy grey!)
-          vec3 snowBase = mix(mix(uColorIce, uColorRim, 0.52), uColorRim, snowShade);
-          vec3 slabCol = mix(uColorScarMid, uColorIce, smoothstep(0.22, 0.75, hC));
-          vec3 trenchCol = mix(uColorInk, uColorScarDeep, smoothstep(0.15, 0.75, nWorld.g));
+          float fadeOut = 1.0 - smoothstep(0.72, 1.0, age);
+          alpha = lie * fadeOut * 0.94 * intensity;
+          col = mix(uColorScarDeep, uColorScarVein, shade) * mix(0.82, 1.0, uDaylight);
 
-          col = snowBase;
-          col = mix(col, slabCol, clamp(slabMask + trenchMask, 0.0, 1.0));
-          col = mix(col, trenchCol, trenchMask * 0.90);
-          col = mix(col, snowBase, rimeBankMask * (0.76 + 0.24 * hC));
-
-          // Glowing cyan tectonic fault lines inside the frozen chasm
-          float freshBoost = (1.0 - smoothstep(0.0, 0.55, age)) * 0.65 + 0.35;
-          vec3 veinHdr = mix(uColorScarVein, uColorRim, 0.45) * (1.40 + 0.85 * freshBoost * (0.5 + uGlowBoost));
-          col = mix(col, veinHdr, veinMask * 0.90);
-
-          // Crystalline pinpoint glints on the rime crust
-          float glint = smoothstep(0.83, 0.97, nDetail.a) * (rimeBankMask + slabMask * 0.5);
-          col += uColorRim * glint * (1.0 + 0.55 * uGlowBoost);
-
-          // Soft powdery grain falloff at the outer edge (like GroundDecals.js FROST)
-          float cover = smoothstep(1.00, 0.44, dNorm);
-          float powderEdge = smoothstep(0.10, 0.54, cover * (0.42 + 0.72 * hC));
-          float quadFeather = smoothstep(1.0, 0.82, max(abs(p.x), abs(p.y)));
-          float fadeOut = 1.0 - smoothstep(0.76, 1.0, age);
-          alpha = clamp(powderEdge * mix(0.88, 0.98, trenchMask + veinMask * 0.5), 0.0, 1.0) *
-                  quadFeather * fadeOut * intensity;
+          // Stepped crystal crust glints on the rime surface
+          float glintNoise = texture2D(uNoiseAtlas, wPos * 0.65 + vec2(floor(uTime * 7.0) * 0.17, 0.31)).a;
+          float glint = smoothstep(0.88, 0.99, glintNoise);
+          col += uColorRim * glint * pow(lambert, 2.0) * 0.45 * (1.0 - smoothstep(0.0, 0.7, age));
 
         } else if (kind < 1.5) {
           // =================================================================
-          // KIND 1: MUZZLE CRYO-FROST RING (Soft Circular Arcane Frost Halo)
+          // KIND 1: MUZZLE FROST SHOCK RING
           // =================================================================
-          float uExp = 1.0 - clamp(age / 0.14, 0.0, 1.0);
-          float expand = 1.0 - uExp * uExp * uExp * uExp;
-          float fadeOut = 1.0 - smoothstep(0.35, 1.0, age);
+          float uExp = 1.0 - clamp(age / 0.16, 0.0, 1.0);
+          float expand = 1.0 - uExp * uExp * uExp;
+          float fadeOut = 1.0 - smoothstep(0.30, 1.0, age);
           float qR = r / max(0.10, expand);
           if (qR > 1.0) discard;
 
-          float ang = atan(p.y, p.x) + uTime * 1.4;
-          float outerRing = smoothstep(0.045, 0.0, abs(qR - 0.82 + (nLocal.b - 0.5) * 0.05));
-          float innerRing = smoothstep(0.032, 0.0, abs(qR - 0.48));
-          float starSpokes = smoothstep(0.92, 0.995, cos(ang * 6.0)) * smoothstep(0.84, 0.20, qR);
-          float frostCrack = smoothstep(0.72, 0.94, nLocal.r) * smoothstep(0.82, 0.22, qR);
-
-          float runeMask = clamp(outerRing + innerRing * 0.85 + starSpokes * 0.85 + frostCrack * 0.65, 0.0, 1.0);
-          if (runeMask < 0.02) discard;
-
-          vec3 hdrRune = mix(uColorScarVein, uColorRim, 0.62) * (1.55 + 0.80 * uGlowBoost);
-          col = hdrRune;
-          alpha = runeMask * 0.88 * fadeOut * intensity;
+          float ring = smoothstep(0.08, 0.0, abs(qR - 0.82));
+          col = mix(uColorIce, uColorRim, ring);
+          alpha = ring * 0.75 * fadeOut * intensity;
 
         } else if (kind < 2.5) {
           // =================================================================
-          // KIND 2: JAGGED BRANCHING TECTONIC FISSURE SPEARHEAD
+          // KIND 2: TRAVELLING FRONT FROST CRACK
           // =================================================================
-          float fadeOut = 1.0 - smoothstep(0.62, 1.0, age);
-          float zigZag = (nWorld.r - 0.5) * 0.52 + (nDetail.g - 0.5) * 0.34;
+          float fadeOut = 1.0 - smoothstep(0.55, 1.0, age);
+          float zigZag = (nWorld.r - 0.5) * 0.42;
           float taperTip = smoothstep(0.95, -0.65, p.y);
           float warpedX = p.x * 1.45 - zigZag * (0.45 + 0.55 * abs(p.y));
-
-          float mainFault = smoothstep(0.090 * taperTip + 0.014, 0.0, abs(warpedX)) *
+          float mainFault = smoothstep(0.075 * taperTip + 0.012, 0.0, abs(warpedX)) *
                             smoothstep(0.95, 0.62, abs(p.y));
-          vec2 branchUv = vec2(warpedX * 1.8 + p.y * 0.85, p.y * 2.2 - abs(warpedX) * 1.2);
-          float branchSample = texture2D(uNoiseAtlas, branchUv * 0.55 + vec2(seed)).r;
-          float branches = smoothstep(0.70, 0.94, branchSample) *
-                           smoothstep(0.85, 0.15, abs(warpedX)) *
-                           smoothstep(0.92, 0.10, r);
-
-          float fissureMask = clamp(mainFault + branches * 0.88, 0.0, 1.0);
-          float darkTrench = smoothstep(0.22, 0.02, abs(warpedX)) * smoothstep(0.90, 0.15, r) * 0.68;
-
-          vec3 hdrCrack = mix(uColorScarVein, uColorRim, smoothstep(0.35, 0.85, mainFault)) *
-                          (1.60 + 0.85 * uGlowBoost);
-          col = mix(uColorScarDeep, hdrCrack, fissureMask);
-          alpha = clamp(darkTrench + fissureMask * 0.96, 0.0, 1.0) * fadeOut * intensity;
+          col = mix(uColorIce, uColorRim, mainFault);
+          alpha = mainFault * 0.80 * fadeOut * intensity;
 
         } else {
           // =================================================================
-          // KIND 3: CLEAN SONIC FROST-NOVA SHOCKWAVE & RADIAL ICE CRACKS
-          // (Like reference GroundDecals.js SHOCKWAVE + CRACK: clean expanding
-          // sonic frost ring + sharp radial fracture veins, zero cartoon zig-zag
-          // or dirty grey mud on the sand!)
+          // KIND 3: IMPACT SHOCKWAVE RING (Exact GroundDecals.js DECAL == 3)
           // =================================================================
-          float fadeOut = 1.0 - smoothstep(0.48, 1.0, age);
-          float front = mix(0.22, 0.94, pow(age, 0.50));
-
-          // Subtle organic ripple distortion (never a 10-pointed cartoon star!)
-          float rippleWarp = (nLocal.b - 0.5) * 0.045 + (nWorld.g - 0.5) * 0.035;
-          float d = (r + rippleWarp) / max(0.12, front);
-          if (d > 1.06 || d < 0.15) discard;
-
-          // Razor-crisp expanding outer shockwave ring + inner sonic frost ring
-          float outerRing = smoothstep(0.036, 0.0, abs(d - 0.94));
-          float innerRing = smoothstep(0.028, 0.0, abs(d - 0.66)) * 0.82;
-
-          // Branching tectonic radial frost fractures inside the shockwave radius
-          float radialCracks = smoothstep(0.71, 0.95, nDetail.r) *
-                               smoothstep(0.96, 0.52, d) * (1.0 - smoothstep(0.48, 0.20, d));
-          float fineVeins = smoothstep(0.76, 0.96, nWorld.r) *
-                            smoothstep(0.94, 0.64, d) * (1.0 - smoothstep(0.64, 0.35, d));
-
-          float crestMask = clamp(outerRing + innerRing + radialCracks * 0.85 + fineVeins * 0.65, 0.0, 1.0);
-          float softFrostGlow = smoothstep(0.96, 0.82, d) * (1.0 - smoothstep(0.82, 0.58, d)) * 0.28;
-
-          // Pure luminous glacial cyan to diamond white (never dark grey!)
-          vec3 hdrNova = mix(uColorIce, uColorRim, smoothstep(0.20, 0.82, outerRing + innerRing + radialCracks * 0.5)) *
-                         (1.65 + 0.85 * uGlowBoost);
-          col = hdrNova;
-          alpha = clamp(softFrostGlow + crestMask * 0.92, 0.0, 1.0) * fadeOut * intensity;
+          float radius = mix(0.08, 0.96, pow(age, 0.55));
+          float ring = smoothstep(0.055, 0.0, abs(r - radius));
+          alpha = ring * (1.0 - age) * 0.85 * intensity;
+          col = mix(uColorIce, uColorRim, ring) * (1.05 + 0.35 * uGlowBoost);
         }
 
-        if (alpha < 0.005) discard;
+        if (alpha < 0.004) discard;
         gl_FragColor = vec4(col, alpha);
       }
     `,
@@ -572,19 +517,15 @@ function createGroundDecalMaterial(noiseAtlas, sharedUniforms, corridorUniforms)
 }
 
 /**
- * Draw Calls 2..4 & 5 Shader: High-Contrast 4-Band Cel-Shaded Anime Glacier Blades
- * & 3D Diamond Ice Splinters.
- * - Uses screen-space geometric face derivatives (dFdx/dFdy) so every polygon
- *   facet is tack-sharp and adjacent faces have unmistakable tonal separation.
- * - Zero horizontal tip stripe artifacts.
+ * Draw Calls 2..4 & 5 Shader: Authentic Spellbook IceMaterial.js Shader
  */
 function createCelGlacierMaterial(noiseAtlas, sharedUniforms, corridorUniforms, { isDebris = false } = {}) {
   return new THREE.ShaderMaterial({
     name: isDebris ? 'FrostLanceDebrisCrystalMaterial' : 'FrostLanceBladeCrystalMaterial',
-    transparent: true,
+    transparent: false,
     depthWrite: true,
     depthTest: true,
-    side: THREE.DoubleSide,
+    side: THREE.FrontSide,
     blending: THREE.NormalBlending,
     uniforms: {
       uNoiseAtlas: { value: noiseAtlas },
@@ -593,12 +534,21 @@ function createCelGlacierMaterial(noiseAtlas, sharedUniforms, corridorUniforms, 
       uDaylight: sharedUniforms.uDaylight,
       uGlowBoost: sharedUniforms.uGlowBoost,
       uCastOrigin: corridorUniforms.uCastOrigin,
+      uColorCore: { value: new THREE.Color(FROST_LANCE_DEFAULTS.colorCore) },
       uColorDeep: { value: new THREE.Color(FROST_LANCE_DEFAULTS.colorDeep) },
       uColorMid: { value: new THREE.Color(FROST_LANCE_DEFAULTS.colorMid) },
       uColorIce: { value: new THREE.Color(FROST_LANCE_DEFAULTS.colorIce) },
       uColorRim: { value: new THREE.Color(FROST_LANCE_DEFAULTS.colorRim) },
       uColorInk: { value: new THREE.Color(FROST_LANCE_DEFAULTS.colorInk) },
       uColorScarVein: { value: new THREE.Color(FROST_LANCE_DEFAULTS.colorScarVein) },
+      uDensity: { value: FROST_LANCE_DEFAULTS.depthTint ?? 1.20 },
+      uFresnel: { value: 2.3 },
+      uFresnelPower: { value: 2.4 },
+      uTranslucency: { value: 1.5 },
+      uFacetSharp: { value: FROST_LANCE_DEFAULTS.facetSharp ?? 0.72 },
+      uFracture: { value: FROST_LANCE_DEFAULTS.fracture ?? 0.62 },
+      uVeins: { value: FROST_LANCE_DEFAULTS.veins ?? 0.52 },
+      uFrostLine: { value: FROST_LANCE_DEFAULTS.frostLine ?? 0.56 },
       uIsDebris: { value: isDebris ? 1.0 : 0.0 },
     },
     vertexShader: /* glsl */ `
@@ -609,13 +559,11 @@ function createCelGlacierMaterial(noiseAtlas, sharedUniforms, corridorUniforms, 
       varying vec3 vLocalPos;
       varying vec3 vWorldPos;
       varying vec3 vWorldNormal;
-      varying vec3 vFacetUv;
       varying float vSeed;
       varying float vBirth;
 
       void main() {
         vLocalPos = position;
-        vFacetUv = aFacetUv;
         vSeed = aSeed;
         vBirth = aBirth;
 
@@ -643,138 +591,102 @@ function createCelGlacierMaterial(noiseAtlas, sharedUniforms, corridorUniforms, 
       uniform float uDaylight;
       uniform float uGlowBoost;
       uniform vec3 uCastOrigin;
+      uniform vec3 uColorCore;
       uniform vec3 uColorDeep;
       uniform vec3 uColorMid;
       uniform vec3 uColorIce;
       uniform vec3 uColorRim;
       uniform vec3 uColorInk;
       uniform vec3 uColorScarVein;
+      uniform float uDensity;
+      uniform float uFresnel;
+      uniform float uFresnelPower;
+      uniform float uTranslucency;
+      uniform float uFacetSharp;
+      uniform float uFracture;
+      uniform float uVeins;
+      uniform float uFrostLine;
       uniform float uIsDebris;
 
       varying vec3 vLocalPos;
       varying vec3 vWorldPos;
       varying vec3 vWorldNormal;
-      varying vec3 vFacetUv;
       varying float vSeed;
       varying float vBirth;
 
       void main() {
-        float alphaFade = vBirth < 0.0 ? clamp(1.0 + vBirth, 0.0, 1.0) : 1.0;
         float birthFlash = max(0.0, vBirth);
-        if (alphaFade <= 0.01) discard;
 
-        // Enforce tack-sharp flat polygon facet normals via screen-space derivatives
+        // 1. Outward-pointing per-triangle normal; use horizontal prism azimuth (horizN, horizV)
+        //    for thickness & Fresnel so leaned spikes and close/low camera angles keep the
+        //    EXACT same deep core-to-rim color balance as far shots!
         vec3 N = normalize(vWorldNormal);
-        if (!gl_FrontFacing) N = -N;
-        vec3 flatN = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
-        if (dot(flatN, N) < 0.0) flatN = -flatN;
-        N = normalize(mix(N, flatN, 0.88));
-
         vec3 V = normalize(cameraPosition - vWorldPos);
-        vec3 L = normalize(uSunDir);
-        // Secondary cross-rim light direction so adjacent facets always separate in tone
-        vec3 sideL = normalize(vec3(-L.z, 0.35, L.x));
+        vec3 horizN = normalize(vec3(N.x, 0.0, N.z) + vec3(1e-5, 0.0, 0.0));
+        vec3 horizV = normalize(vec3(V.x, 0.0, V.z) + vec3(1e-5, 0.0, 0.0));
+        float ndv = clamp(dot(horizN, horizV), 0.0, 1.0);
 
-        float ndv = clamp(dot(N, V), 0.0, 1.0);
-        float ndl = dot(N, L) * 0.5 + 0.5;
-        float nds = dot(N, sideL) * 0.5 + 0.5;
-        float h = clamp(vLocalPos.y + uIsDebris * 0.38, 0.0, 1.0);
+        // 2. Thickness Tint & Fresnel (Exact IceMaterial.js lines 153-155):
+        //    Facing a facet head-on looks deep into the solid glacier block (darkening to uColorDeep);
+        //    grazing angles clip the pale edge (uColorIce -> uColorRim).
+        float thickness = clamp(pow(ndv, 0.85) * uDensity, 0.0, 1.0);
+        float fres = pow(1.0 - ndv, uFresnelPower) * uFresnel;
 
-        // Diagonal crystal cleavage UVs (sheared along crystal axis)
-        vec2 diagUv = vec2(
-          vFacetUv.x * 0.32 + h * 0.52 + vSeed * 0.23,
-          h * 0.62 - vFacetUv.x * 0.24 + vSeed * 0.41
-        );
-        vec4 nDiag = texture2D(uNoiseAtlas, diagUv);
-        vec4 nBase = texture2D(uNoiseAtlas, vec2(vFacetUv.x * 0.45 + vSeed * 0.17, h * 0.85));
+        // 3. World-Space Internal Fracture Planes (cracks) & Local-Space Milky Feather-Frost (veins)
+        vec3 fp = vWorldPos * 0.42 + vSeed * 0.73;
+        float r0 = texture2D(uNoiseAtlas, fp.xz + vec2(fp.y * 0.57, 0.19)).r;
+        float r1 = texture2D(uNoiseAtlas, fp.xy * 1.65 + vec2(0.41, fp.z * 0.63)).r;
+        float cracks = smoothstep(0.55, 0.96, 0.58 * r0 + 0.42 * r1);
 
-        // 1. Optical Thickness & 4-Band Anime Cel-Facet Shading:
-        //    - Looking head-on into a facet (ndv high) sees deep into the sapphire core (uColorDeep),
-        //      preventing center-screen whiteout in over-the-shoulder view!
-        //    - Constant per-facet vFacetUv.z (-0.22..+0.40) + ndl + nds separates every adjacent
-        //      polygon face into a distinct cel band (Deep Sapphire -> Cobalt-Cerulean -> Glacial Cyan -> Specular White).
-        float facetTone = vFacetUv.z; // constant across each triangle!
-        float facetLight = ndl * 0.58 + nds * 0.22 + (1.0 - ndv) * 0.28 + facetTone;
+        vec3 vp = vLocalPos * 0.95 + vSeed * 0.31;
+        float v0 = texture2D(uNoiseAtlas, vp.xy + vec2(vp.z * 0.47, 0.23)).b;
+        float v1 = texture2D(uNoiseAtlas, vp.yz * 1.90 + vec2(0.67, vp.x * 0.53)).b;
+        float veins = smoothstep(0.44, 0.90, 0.55 * v0 + 0.45 * v1);
 
-        float bandCerulean = smoothstep(0.34, 0.40, facetLight);
-        float bandCyan = smoothstep(0.58, 0.64, facetLight);
-        float bandSpecular = smoothstep(0.82, 0.88, facetLight);
+        vec3 body = mix(uColorIce, uColorDeep, thickness);
+        body = mix(body, uColorRim, veins * uVeins * 0.52);
+        body = mix(body, uColorRim, cracks * uFracture * 0.38);
 
-        // Deep internal thickness gradient (richer sapphire in lower/middle core, brighter near apex tip)
-        float coreThickness = clamp(ndv * 0.85 * (1.0 - smoothstep(0.65, 0.98, h) * 0.45), 0.0, 1.0);
-        vec3 deepCore = mix(uColorMid, uColorDeep, coreThickness);
+        // 4. Rime gathers where the crystal left the floor (Exact IceMaterial.js lines 166-168)
+        float hLocal = clamp(vLocalPos.y + uIsDebris * 0.35, 0.0, 1.0);
+        float rimeFbm = texture2D(uNoiseAtlas, vLocalPos.xy * 1.35 + vec2(vSeed * 0.29, vLocalPos.z * 1.35)).b;
+        float rime = smoothstep(0.52, 0.0, hLocal) * (0.5 + 0.5 * rimeFbm) * (1.0 - uIsDebris * 0.70);
+        body = mix(body, uColorRim, clamp(rime, 0.0, 1.0) * uFrostLine);
 
-        vec3 body = mix(uColorDeep * 0.88, deepCore, bandCerulean);
-        body = mix(body, uColorIce, bandCyan * (0.92 - coreThickness * 0.28));
-        body = mix(body, uColorRim, bandSpecular * 0.82);
+        // 5. Lift facets that point at the camera so the silhouette reads as a bundle of hewn planes
+        body *= mix(1.0, 0.62 + 0.82 * ndv, uFacetSharp);
 
-        // Smooth apex tip frost highlight (continuous smoothstep, ZERO horizontal stripes!)
-        float tipFrost = smoothstep(0.76, 0.99, h) * (0.55 + 0.45 * (1.0 - ndv));
-        body = mix(body, uColorRim, tipFrost * 0.72);
+        // 6. Even Sky-Probe + Key Sun Lighting (prevents downward-tilted ring planes from turning grey!)
+        vec3 L = normalize(vec3(uSunDir.x, max(0.45, uSunDir.y), uSunDir.z));
+        vec3 H = normalize(L + V);
+        float ndl = max(dot(N, L), 0.0);
+        float skyProbe = 0.74 + 0.28 * ndl;
+        vec3 diffuseLit = body * skyProbe * mix(0.80, 0.98, uDaylight);
 
-        // 2. Diagonal Internal Quartz Cleavage Planes & Fracture Veins
-        float cleavage = smoothstep(0.66, 0.90, nDiag.g);
-        float deepPocket = smoothstep(0.20, 0.50, nDiag.b) * (1.0 - bandSpecular);
-        float crackStreak = smoothstep(0.75, 0.94, nDiag.r) * smoothstep(0.12, 0.88, h);
+        // Subtle crisp planar specular reflection from the sun
+        float spec = pow(max(dot(N, H), 0.0), 48.0) * 0.20 * mix(0.5, 1.0, uDaylight);
 
-        body = mix(body, uColorDeep * 0.72, deepPocket * 0.42);
-        body = mix(body, uColorIce, cleavage * 0.34);
-        body = mix(body, uColorRim, crackStreak * 0.46);
+        // 7. Pinpoint Surface Glints & Reinhard-Rolled Subsurface/Rim Glow
+        //    (Birth flash accents cracks & rime rather than bleaching out the dark core in shot 03!)
+        float spNoise = texture2D(
+          uNoiseAtlas,
+          vWorldPos.xz * 0.75 + vec2(vWorldPos.y * 0.65, uTime * 0.06 + vSeed * 0.43)
+        ).a;
+        float sp = pow(clamp(spNoise, 0.0, 1.0), 11.0) * smoothstep(0.0, 0.7, fres + 0.3);
 
-        // 3. World-Space Ground-Hugging Basal Snow-Rime (computed from world height above ground
-        //    so tilted crystals NEVER show a diagonal/floating white band in mid-air!)
-        float worldAboveGround = max(0.0, vWorldPos.y - uCastOrigin.y);
-        float baseRime = smoothstep(0.36, 0.0, worldAboveGround) *
-                         (0.55 + 0.45 * nBase.b) * (1.0 - uIsDebris * 0.90);
-        body = mix(body, uColorRim, clamp(baseRime * 0.82, 0.0, 1.0));
+        float rimAmount = pow(1.0 - ndv, uFresnelPower);
+        vec3 glow = uColorRim * rimAmount * 0.85;
+        glow += uColorCore * (cracks * uFracture * 0.80 + veins * uVeins * 0.35) * uTranslucency;
+        // Permanent subsurface inner light (reproduces the exact luminous glacial cerulean of image.png at all timestamps!)
+        glow += uColorCore * 0.88;
+        glow += uColorRim * sp * 1.35;
+        glow += uColorRim * birthFlash * (cracks * 0.65 + rime * 0.45) * 0.45;
+        glow *= (0.34 + 0.55 * uGlowBoost);
+        glow /= (1.0 + glow * 0.35);
 
-        // 4. Razor-Sharp Vertical Crystalline Ridge Bevels (anti-aliased via fwidth, NO horizontal ring!)
-        float edgeDistU = min(vFacetUv.x, 1.0 - vFacetUv.x);
-        float fwU = max(fwidth(vFacetUv.x), 0.007);
-        float ridgeLine = (1.0 - smoothstep(fwU * 0.50, fwU * 1.85, edgeDistU)) *
-                          smoothstep(0.06, 0.24, worldAboveGround);
-        body = mix(body, uColorRim, ridgeLine * 0.86);
+        vec3 finalColor = diffuseLit + uColorRim * spec + glow;
 
-        // 5. Inner Electric-Cyan Fresnel + Crisp Dark Cobalt Anime Silhouette Ink Rim (#061529)
-        float innerCyanRim = smoothstep(0.46, 0.20, ndv) * (1.0 - smoothstep(0.20, 0.12, ndv));
-        float cobaltInkRim = 1.0 - smoothstep(0.14, 0.24, ndv);
-        body = mix(body, uColorScarVein, innerCyanRim * 0.74);
-
-        float inkWeight = cobaltInkRim * 0.94 * (1.0 - baseRime * 0.40);
-        body = mix(body, uColorInk, inkWeight);
-
-        // 6. Saturated Bioluminescent Cyan Emissive & Specular Glints
-        //    In evening/twilight (uGlowBoost high), boost facet contrast so adjacent faces
-        //    stay rich sapphire vs glowing cyan instead of chalky pastel!
-        vec2 glintUv = vWorldPos.xz * 1.45 + vec2(uTime * 0.18, vSeed * 0.41);
-        float glintSample = texture2D(uNoiseAtlas, glintUv).a;
-        float glint = smoothstep(0.84, 0.97, glintSample) * (0.35 + 0.65 * (1.0 - ndv));
-
-        float selectiveMask = clamp(
-          ridgeLine * 0.85 +
-          crackStreak * 0.78 +
-          innerCyanRim * 0.75 +
-          bandCyan * 0.38 +
-          smoothstep(0.82, 0.99, h) * 0.52,
-          0.0,
-          1.0
-        ) * (1.0 - cobaltInkRim * 0.92);
-
-        vec3 emissive = vec3(0.0);
-        emissive += uColorScarVein * selectiveMask * (0.20 + 0.92 * uGlowBoost);
-        emissive += uColorDeep * (1.0 - bandCyan) * uGlowBoost * 0.22 * (1.0 - cobaltInkRim);
-        // Birth flash energizes bevels, chisel tip, and cleavage streaks
-        emissive += mix(uColorScarVein, uColorRim, 0.48) * birthFlash * (0.16 + 1.20 * selectiveMask);
-        // Pinpoint surface diamond glints
-        emissive += uColorRim * glint * (1.10 + 0.75 * uGlowBoost);
-
-        // Soft Reinhard ceiling so bloom never blows out the crystal into a white blob
-        emissive /= (1.0 + emissive * 0.30);
-
-        vec3 finalColor = body * mix(0.74, 1.02, uDaylight) + emissive;
-        float finalAlpha = clamp((0.96 + 0.04 * (1.0 - ndv)) * alphaFade, 0.0, 1.0);
-
-        gl_FragColor = vec4(finalColor, finalAlpha);
+        gl_FragColor = vec4(finalColor, 1.0);
       }
     `,
   });
@@ -862,67 +774,49 @@ function createAtmosphereBillboardMaterial(noiseAtlas, sharedUniforms) {
 
         if (pType < 0.5) {
           // =================================================================
-          // PTYPE 0: GROUND-HUGGING COLD GLACIER VAPOR (Pure smooth FBM)
+          // PTYPE 0: ROLLING GROUND GLACIER FOG (Non-additive occluding mist)
           // =================================================================
-          vec2 nUv = vUv * 0.34 + vec2(seed * 0.43 + age * 0.09, seed * 0.71);
+          vec2 nUv = vUv * 0.38 + vec2(seed * 0.43 + age * 0.11, seed * 0.71);
           float b = texture2D(uNoiseAtlas, nUv).b;
 
-          float radialSoft = exp(-r * r * 3.0) * (1.0 - r * r);
-          float cloudShape = radialSoft * (0.55 + 0.45 * b);
-          float fadeIn = smoothstep(0.0, 0.16, age);
-          float fadeOut = 1.0 - smoothstep(0.54, 1.0, age);
+          float radialSoft = exp(-r * r * 2.8) * (1.0 - r * r);
+          float cloudShape = radialSoft * (0.50 + 0.50 * b);
+          float fadeIn = smoothstep(0.0, 0.14, age);
+          float fadeOut = 1.0 - smoothstep(0.55, 1.0, age);
 
-          float topLit = smoothstep(-0.35, 0.45, p.y + (b - 0.5) * 0.25);
-          col = mix(uColorMistShadow, uColorMistCrest, topLit) * (1.05 + 0.35 * uGlowBoost);
-          alpha = cloudShape * fadeIn * fadeOut * alphaScale;
+          float topLit = smoothstep(-0.40, 0.45, p.y + (b - 0.5) * 0.25);
+          col = mix(uColorMistShadow, uColorMistCrest, topLit) * (0.98 + 0.25 * uGlowBoost);
+          alpha = cloudShape * fadeIn * fadeOut * alphaScale * 1.35;
 
         } else if (pType < 1.5) {
           // =================================================================
-          // PTYPE 1: TWINKLING 4-POINT ANIME STAR DIAMOND GLINTS
+          // PTYPE 1: SOFT PINPOINT ICE GLITTER PLUME (Exact Spellbook ParticleShape.SOFT)
+          // Small, glowing ice motes drifting upward — zero big 2D star stickers!
           // =================================================================
-          float fadeIn = smoothstep(0.0, 0.08, age);
-          float fadeOut = 1.0 - smoothstep(0.58, 1.0, age);
-          float twinkle = 0.72 + 0.28 * sin(uTime * 19.0 + seed * 37.0);
+          float fadeIn = smoothstep(0.0, 0.06, age);
+          float fadeOut = 1.0 - smoothstep(0.62, 1.0, age);
+          float twinkle = 0.65 + 0.35 * sin(uTime * 16.0 + seed * 43.0);
 
-          vec2 ap = abs(p);
-          float rayH = exp(-ap.y * 17.0) * exp(-ap.x * 2.5);
-          float rayV = exp(-ap.x * 17.0) * exp(-ap.y * 2.5);
-          vec2 diag = abs(vec2(p.x + p.y, p.x - p.y)) * 0.70710678;
-          float rayD = (exp(-diag.y * 25.0) * exp(-diag.x * 5.2) +
-                        exp(-diag.x * 25.0) * exp(-diag.y * 5.2)) * 0.50;
-          float core = smoothstep(0.28, 0.0, r);
-          float starShape = clamp((rayH + rayV + rayD + core * 1.25) * twinkle, 0.0, 1.0);
+          float core = exp(-r * r * 14.0);
+          float halo = exp(-r * r * 3.8) * (1.0 - r * r) * 0.45;
+          float mote = clamp((core + halo) * twinkle, 0.0, 1.0);
 
-          float halo = smoothstep(0.68, 0.15, r) * 0.42;
-          alpha = clamp(max(starShape, halo * smoothstep(0.08, 0.35, starShape + halo)), 0.0, 1.0) *
-                  fadeIn * fadeOut * alphaScale;
-
-          vec3 hdrStar = mix(uColorIce, uColorRim, smoothstep(0.20, 0.70, starShape)) *
-                         (1.85 + 0.95 * uGlowBoost);
-          col = mix(uColorInk, hdrStar, smoothstep(0.14, 0.48, starShape));
+          col = mix(uColorIce, uColorRim, smoothstep(0.15, 0.65, core)) * (1.35 + 0.65 * uGlowBoost);
+          alpha = mote * fadeIn * fadeOut * alphaScale;
 
         } else {
           // =================================================================
-          // PTYPE 2: CRISP 8-POINT ANIME IMPACT STARBURST (Zero vertical bullseye circles!)
+          // PTYPE 2: IMPACT FREEZING VAPOUR SHELL / BURST
           // =================================================================
           float fadeOut = 1.0 - smoothstep(0.18, 1.0, age);
-          vec2 ap = abs(p);
-          vec2 diag = abs(vec2(p.x + p.y, p.x - p.y)) * 0.70710678;
-          float rays = exp(-ap.y * 22.0) * exp(-ap.x * 2.4) +
-                       exp(-ap.x * 22.0) * exp(-ap.y * 2.4) +
-                       (exp(-diag.y * 26.0) * exp(-diag.x * 3.2) +
-                        exp(-diag.x * 26.0) * exp(-diag.y * 3.2)) * 0.75;
-          float core = smoothstep(0.26, 0.0, r);
-          float starMask = clamp(rays + core * 1.15, 0.0, 1.0);
-          float halo = smoothstep(0.58, 0.08, r) * 0.32;
-
-          vec3 hdrBurst = mix(uColorIce, uColorRim, 0.68) * (1.85 + 0.85 * uGlowBoost);
-          col = mix(uColorInk, hdrBurst, smoothstep(0.12, 0.45, starMask));
-          alpha = clamp(max(starMask, halo * smoothstep(0.08, 0.35, starMask + halo)), 0.0, 1.0) *
-                  fadeOut * alphaScale;
+          vec2 nUv = vUv * 0.55 + vec2(seed * 0.37, age * 0.22);
+          float b = texture2D(uNoiseAtlas, nUv).b;
+          float shell = exp(-r * r * 3.2) * (1.0 - r * r) * (0.55 + 0.45 * b);
+          col = mix(uColorIce, uColorRim, 0.72) * (1.30 + 0.55 * uGlowBoost);
+          alpha = shell * fadeOut * alphaScale * 0.75;
         }
 
-        if (alpha < 0.005) discard;
+        if (alpha < 0.004) discard;
         gl_FragColor = vec4(col, alpha);
       }
     `,
@@ -1525,24 +1419,24 @@ export class FrostLanceSystem {
 
       p.pType = 0;
       p.spawnTime = arrival;
-      p.life = 1.90 + hash11(s + 4.3) * 1.10;
+      p.life = 2.10 + hash11(s + 4.3) * 1.10;
       p.along = u;
-      p.lateral = signedHash(s + 5.9) * (isApexMist ? 0.68 : 0.42);
-      p.offsetX = signedHash(s + 7.1) * 0.22;
-      p.offsetY = 0.16 + hash11(s + 8.7) * (isApexMist ? 0.48 : 0.24);
-      p.offsetZ = signedHash(s + 10.3) * 0.22;
-      p.vx = signedHash(s + 11.9) * 0.28;
-      p.vy = 0.08 + hash11(s + 13.1) * 0.14;
-      p.vz = signedHash(s + 14.7) * 0.28;
-      p.drag = 1.75;
-      const baseSz = lerp(0.95, 2.35, u) * (0.85 + 0.30 * hash11(s + 16.3));
+      p.lateral = signedHash(s + 5.9) * (isApexMist ? 0.72 : 0.48);
+      p.offsetX = signedHash(s + 7.1) * 0.25;
+      p.offsetY = 0.18 + hash11(s + 8.7) * (isApexMist ? 0.58 : 0.30);
+      p.offsetZ = signedHash(s + 10.3) * 0.25;
+      p.vx = signedHash(s + 11.9) * 0.32;
+      p.vy = 0.12 + hash11(s + 13.1) * 0.18;
+      p.vz = signedHash(s + 14.7) * 0.32;
+      p.drag = 1.85;
+      const baseSz = lerp(0.85, 1.85, u) * (0.85 + 0.30 * hash11(s + 16.3));
       p.startSize = baseSz * 0.55;
-      p.endSize = baseSz * 1.32;
-      p.alphaScale = isApexMist ? 0.48 + 0.16 * hash11(s + 17.9) : 0.38 + 0.14 * hash11(s + 17.9);
+      p.endSize = baseSz * 1.25;
+      p.alphaScale = isApexMist ? 0.24 + 0.10 * hash11(s + 17.9) : 0.18 + 0.08 * hash11(s + 17.9);
       p.seed = hash11(s + 19.1);
     }
 
-    // 4b. 110 Twinkling 4-Point Anime Star Diamond Glints (`pType = 1`)
+    // 4b. 110 Pinpoint Ice Glitter Motes (`pType = 1`, exact Spellbook ParticleShape.SOFT)
     for (let k = 0; k < 110 && pIdx < MAX_ATMOSPHERE_PARTICLES; k++, pIdx++) {
       const p = this.atmosphereRecords[pIdx];
       const s = castSeed * 97.1 + k * 23.7;
@@ -1563,33 +1457,31 @@ export class FrostLanceSystem {
 
       p.pType = 1;
       p.spawnTime = arrival;
-      p.life = isMuzzleStar ? 0.52 : 1.15 + hash11(s + 3.7) * 0.85;
+      p.life = isMuzzleStar ? 0.55 : 1.35 + hash11(s + 3.7) * 0.95;
       p.along = u;
-      p.lateral = signedHash(s + 5.1) * (isMuzzleStar ? 0.35 : 0.76);
+      p.lateral = signedHash(s + 5.1) * (isMuzzleStar ? 0.35 : 0.78);
       p.offsetX = signedHash(s + 6.7) * 0.30;
       p.offsetY = isMuzzleStar
         ? 0.62 + hash11(s + 8.3) * 0.70
-        : 0.22 + hash11(s + 8.3) * localEnvelopeH * (isApexStar ? 1.05 : 0.78);
+        : 0.22 + hash11(s + 8.3) * localEnvelopeH * (isApexStar ? 1.05 : 0.80);
       p.offsetZ = signedHash(s + 9.9) * 0.30;
       p.vx = signedHash(s + 11.3) * 0.95;
-      p.vy = 0.65 + hash11(s + 12.9) * (isApexStar ? 1.45 : 0.75);
+      p.vy = 0.75 + hash11(s + 12.9) * (isApexStar ? 1.55 : 0.85);
       p.vz = signedHash(s + 14.5) * 0.95;
-      p.drag = 1.25;
-      const starSz = (isMuzzleStar ? 0.42 : 0.30 + 0.28 * hash11(s + 16.1)) * lerp(0.82, 1.32, u);
-      p.startSize = starSz;
-      p.endSize = starSz * 0.40;
-      p.alphaScale = 0.94;
+      p.drag = 1.15;
+      const moteSz = (isMuzzleStar ? 0.18 : 0.11 + 0.12 * hash11(s + 16.1)) * lerp(0.85, 1.25, u);
+      p.startSize = moteSz;
+      p.endSize = moteSz * 0.45;
+      p.alphaScale = 0.88;
       p.seed = hash11(s + 17.7);
     }
 
-    // 4c. 1 Staff-Tip Arcane Cryo-Starburst (`pIdx = 206`) + 3 Apex Impact Halo Starbursts
-    //     (Placed slightly behind the target at `along = 1.03` so the flash frames the
-    //     Skeleton from behind rather than washing out in front of his face!)
+    // 4c. 1 Staff-Tip Vapour Burst (`pIdx = 206`) + 3 Apex Freezing Vapour Shells
     if (pIdx < MAX_ATMOSPHERE_PARTICLES) {
       const p = this.atmosphereRecords[pIdx++];
       p.pType = 2;
       p.spawnTime = 0.03;
-      p.life = 0.26;
+      p.life = 0.28;
       p.along = 0.0;
       p.lateral = 0;
       p.offsetX = 0.0;
@@ -1599,29 +1491,29 @@ export class FrostLanceSystem {
       p.vy = 0.1;
       p.vz = 0.4;
       p.drag = 1.5;
-      p.startSize = 0.98;
-      p.endSize = 1.60;
-      p.alphaScale = 0.95;
+      p.startSize = 0.85;
+      p.endSize = 1.45;
+      p.alphaScale = 0.75;
       p.seed = 0.33;
     }
 
     for (let b = 0; pIdx < MAX_ATMOSPHERE_PARTICLES; b++, pIdx++) {
       const p = this.atmosphereRecords[pIdx];
-      p.pType = 2;
-      p.spawnTime = 0.56 + b * 0.05;
-      p.life = 0.24; // Crisp impact flash at t = 0.56..0.80s (peaks in shot 03, gone by shot 05!)
-      p.along = 1.04;
-      p.lateral = (b - 1) * 0.16;
+      p.pType = 0;
+      p.spawnTime = 0.54 + b * 0.06;
+      p.life = 1.65;
+      p.along = 0.96;
+      p.lateral = (b - 1) * 0.35;
       p.offsetX = 0.0;
-      p.offsetY = 1.55 + b * 0.35;
-      p.offsetZ = 0.35;
-      p.vx = 0;
-      p.vy = 0.35;
+      p.offsetY = 0.28;
+      p.offsetZ = 0.0;
+      p.vx = (b - 1) * 0.35;
+      p.vy = 0.14;
       p.vz = 0;
       p.drag = 1.8;
-      p.startSize = 1.65 + b * 0.30;
-      p.endSize = 3.10 + b * 0.40;
-      p.alphaScale = 0.82 - b * 0.14;
+      p.startSize = 1.15;
+      p.endSize = 2.10;
+      p.alphaScale = 0.28;
       p.seed = 0.51 + b * 0.21;
     }
   }
@@ -1662,10 +1554,6 @@ export class FrostLanceSystem {
 
   _spikeWorldPosition(record, out) {
     if (record.tier === 'apexCrown') {
-      // Express directly in the spell's `(direction, side)` orthonormal basis:
-      // `angle = 0` -> straight downrange (`+direction`, behind target)
-      // `angle = -PI/2` -> left flank (`-side`)
-      // `angle = +PI/2` -> right flank (`+side`)
       const reach = this._halfWidth(1.0) * 1.18 * record.radial;
       const cx = this.origin.x + this.direction.x * this.castLength;
       const cz = this.origin.z + this.direction.z * this.castLength;
@@ -1699,7 +1587,7 @@ export class FrostLanceSystem {
       h *= record.heroBoost || 1.0;
     }
 
-    h *= 1.0 + record.heightJitter * c.heightJitter;
+    h *= 1.0 + record.heightJitter * c.heightJitter * 0.55;
     if (record.rubble) {
       h *= c.rubbleScale;
     }
@@ -1709,17 +1597,17 @@ export class FrostLanceSystem {
 
   _spikeRadius(record) {
     const c = this.config;
-    const grow = lerp(0.72, 1.25, Math.pow(saturate(record.along), 0.58));
+    const grow = lerp(0.75, 1.25, Math.pow(saturate(record.along), 0.58));
     const jitter = 1.0 + record.radiusJitter * c.radiusJitter * 0.45;
     const tierBoost =
       record.tier === 'apexCrown' && !record.rubble
-        ? 1.24
+        ? 1.32
         : record.tier === 'flankWall'
-          ? 1.08
+          ? 1.15
           : record.rubble
-            ? 1.28
-            : 0.92;
-    return Math.max(0.10, c.radius * grow * jitter * tierBoost);
+            ? 1.42
+            : 1.02;
+    return Math.max(0.14, c.radius * grow * jitter * tierBoost);
   }
 
   _spikeEmergence(record, timeSeconds) {
@@ -1733,7 +1621,7 @@ export class FrostLanceSystem {
     }
 
     const after = elapsed - riseTime;
-    const spring = Math.sin(after * 16.5) * Math.exp(-after / Math.max(0.06, c.settle));
+    const spring = Math.sin(after * 14.0) * Math.exp(-after / Math.max(0.06, c.settle));
     return 1.0 + c.riseOvershoot * spring;
   }
 
@@ -1795,6 +1683,46 @@ export class FrostLanceSystem {
   /* ----------------------------------------------------------------------- */
   /* Public API: Cast, Seek, Update, Lighting & Gameplay Hooks               */
   /* ----------------------------------------------------------------------- */
+
+  setStylePreset(presetKey = 'v1') {
+    const preset = FROST_LANCE_STYLE_PRESETS[presetKey] || FROST_LANCE_STYLE_PRESETS.v1;
+    this.config.stylePreset = presetKey;
+    Object.assign(this.config, preset);
+
+    for (const mat of [this.crystalMat, this.debrisMat]) {
+      if (!mat) continue;
+      mat.uniforms.uColorCore.value.set(preset.colorCore);
+      mat.uniforms.uColorDeep.value.set(preset.colorDeep);
+      mat.uniforms.uColorMid.value.set(preset.colorMid);
+      mat.uniforms.uColorIce.value.set(preset.colorIce);
+      mat.uniforms.uColorRim.value.set(preset.colorRim);
+      mat.uniforms.uColorInk.value.set(preset.colorInk);
+      mat.uniforms.uColorScarVein.value.set(preset.colorScarVein);
+      if (mat.uniforms.uDensity) mat.uniforms.uDensity.value = preset.depthTint ?? 1.20;
+      if (mat.uniforms.uFrostLine) mat.uniforms.uFrostLine.value = preset.frostLine ?? 0.56;
+      if (mat.uniforms.uVeins) mat.uniforms.uVeins.value = preset.veins ?? 0.52;
+      if (mat.uniforms.uFracture) mat.uniforms.uFracture.value = preset.fracture ?? 0.62;
+      if (mat.uniforms.uFacetSharp) mat.uniforms.uFacetSharp.value = preset.facetSharp ?? 0.72;
+    }
+
+    if (this.groundDecalMat) {
+      this.groundDecalMat.uniforms.uColorScarDeep.value.set(preset.colorScarDeep);
+      this.groundDecalMat.uniforms.uColorScarMid.value.set(preset.colorScarMid);
+      this.groundDecalMat.uniforms.uColorScarVein.value.set(preset.colorScarVein);
+      this.groundDecalMat.uniforms.uColorIce.value.set(preset.colorIce);
+      this.groundDecalMat.uniforms.uColorRim.value.set(preset.colorRim);
+      this.groundDecalMat.uniforms.uColorInk.value.set(preset.colorInk);
+    }
+
+    if (this.atmosphereMat) {
+      this.atmosphereMat.uniforms.uColorMistCrest.value.set(preset.colorMistCrest);
+      this.atmosphereMat.uniforms.uColorMistShadow.value.set(preset.colorMistShadow);
+      this.atmosphereMat.uniforms.uColorIce.value.set(preset.colorIce);
+      this.atmosphereMat.uniforms.uColorRim.value.set(preset.colorRim);
+      this.atmosphereMat.uniforms.uColorInk.value.set(preset.colorInk);
+    }
+    return this;
+  }
 
   cast(origin, direction, options = {}) {
     if (origin) {
@@ -1928,27 +1856,22 @@ export class FrostLanceSystem {
       slot++;
     };
 
-    // 1. Push 6 Butt-Joined World-Space Glacial Corridor Segments (`kind = 0`)
-    //    Because `decalGeo` has half-size 1 (`PlaneGeometry(2,2)`), setting `rZ = segHalfLen`
-    //    makes adjacent segments meet edge-to-edge without overlapping alpha seams!
+    // 1. Push 1 Single Full-Corridor World-Space Glacial Quad (`kind = 0`)
+    //    Covers the entire cast corridor + apex basin in a single quad with ZERO segment seams or notches!
     const scarFade = 1.0 - smoothstep(0.35, 1.0, retractU);
-    const segCount = this.scarPatchRecords.length;
-    const segHalfLen = (this.castLength / segCount) * 0.52;
+    if (scarFade > 0.001) {
+      const midDist = this.castLength * 0.52;
+      const cx = this.origin.x + this.direction.x * midDist;
+      const cz = this.origin.z + this.direction.z * midDist;
+      const cy = this.getGroundHeight(cx, cz) + 0.035;
+      const rX = c.width * 2.75;
+      const rZ = this.castLength * 0.88;
+      const segAge = clamp(timeSeconds / Math.max(0.2, this.totalDuration), 0.0, 0.999);
+      const castYaw = Math.atan2(this.direction.x, this.direction.z);
 
-    for (let i = 0; i < segCount; i++) {
-      const seg = this.scarPatchRecords[i];
-      if (timeSeconds < seg.spawnTime) continue;
-
-      const segElapsed = timeSeconds - seg.spawnTime;
-      const segLife = this.totalDuration - seg.spawnTime;
-      const segAge = clamp(segElapsed / Math.max(0.2, segLife), 0.0, 0.999);
-
-      const isLast = i === segCount - 1;
-      const rX = c.width * (isLast ? 2.15 : 1.85);
-      const rZ = isLast ? segHalfLen * 2.10 : segHalfLen * 1.06;
-
-      _dummy.position.set(seg.wx, seg.wy, seg.wz);
-      _dummy.quaternion.set(seg.qx, seg.qy, seg.qz, seg.qw);
+      _dummy.position.set(cx, cy, cz);
+      _spinQuat.setFromAxisAngle(UP, castYaw);
+      _dummy.quaternion.copy(this._originTiltQuat).multiply(_spinQuat);
       _dummy.scale.set(rX, 1, rZ);
       _dummy.updateMatrix();
 
@@ -1956,7 +1879,7 @@ export class FrostLanceSystem {
       const o = slot * 4;
       metaArr[o + 0] = segAge;
       metaArr[o + 1] = 0.0;
-      metaArr[o + 2] = seg.seed;
+      metaArr[o + 2] = 0.37;
       metaArr[o + 3] = scarFade;
       slot++;
     }
@@ -2079,7 +2002,7 @@ export class FrostLanceSystem {
       const leanAngle = clamp(
         baseLean * (1.0 + record.leanJitter * c.leanJitter * 0.38),
         0.08,
-        0.74
+        0.72
       );
 
       _axis.crossVectors(UP, _lean);

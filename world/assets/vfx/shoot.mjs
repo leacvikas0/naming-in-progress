@@ -116,6 +116,7 @@ async function main() {
 
     for (const shotName of shotList) {
       const stats = await page.evaluate((name) => {
+        window.__vfxPreview.frostLance.setStylePreset('v1');
         return window.__vfxPreview.setShot(name, { hideUI: true });
       }, shotName);
 
@@ -130,6 +131,24 @@ async function main() {
         ...stats,
         path: pngPath,
       };
+    }
+
+    // Also capture 3 real-3D color & shading variations (v1, v2, v3) on shots 04 and 03
+    const variantsDir = path.join(outDir, 'variants');
+    await fs.mkdir(variantsDir, { recursive: true });
+    for (const presetKey of ['v1', 'v2', 'v3']) {
+      for (const shotName of ['04-standing-glacier-field', '03-apex-crown-impact']) {
+        await page.evaluate(
+          ({ preset, shot }) => {
+            window.__vfxPreview.frostLance.setStylePreset(preset);
+            return window.__vfxPreview.setShot(shot, { hideUI: true });
+          },
+          { preset: presetKey, shot: shotName }
+        );
+        await page.waitForTimeout(60);
+        const varPngPath = path.join(variantsDir, `${presetKey}-${shotName}.png`);
+        await page.screenshot({ path: varPngPath });
+      }
     }
 
     // Also verify live world integration (`world/index.html`)
