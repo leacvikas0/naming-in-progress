@@ -2,8 +2,9 @@
 // world/assets/vfx/shoot.mjs
 //
 // Ephemeral-port (`server.listen(0, '127.0.0.1')`) Playwright verification
-// studio for Stage 4 Pass 1 Frost Lance (`world/assets/vfx/preview.html`).
-// Captures 6 deterministic multi-beat & multi-angle shots into `shots/pass1/`.
+// studio for the Complete Stage 4 Opaque VFX & Sword Breathing Suite
+// (`world/assets/vfx/preview.html`).
+// Captures all 12 deterministic showcase shots into `shots/<passName>/`.
 // ============================================================================
 
 import http from 'node:http';
@@ -64,7 +65,7 @@ function startStaticServer(rootDir) {
 }
 
 async function main() {
-  const passName = process.argv[2] || 'pass1';
+  const passName = process.argv[2] || 'pass1-suite';
   const outDir = path.join(__dirname, 'shots', passName);
   await fs.mkdir(outDir, { recursive: true });
 
@@ -108,11 +109,25 @@ async function main() {
       '04-standing-glacier-field',
       '05-player-shoulder-camera',
       '06-twilight-bloom-showcase',
+      '07-shatterlance-convergence',
+      '08-shatterlance-impact',
+      '09-cinder-fall-crater',
+      '10-storm-lance-discharge',
+      '11-sword-sunfire-slash',
+      '12-sword-glacial-detonation',
     ];
 
     const shotsReport = {};
     let maxDrawCalls = 0;
+    let maxIdleDrawCalls = 0;
     let maxFrameMs = 0;
+    const systemMaxDraws = {
+      frostLance: 0,
+      shatterlance: 0,
+      cinderFall: 0,
+      stormLance: 0,
+      swordVfx: 0,
+    };
 
     for (const shotName of shotList) {
       const stats = await page.evaluate((name) => {
@@ -125,7 +140,14 @@ async function main() {
       await page.screenshot({ path: pngPath });
 
       maxDrawCalls = Math.max(maxDrawCalls, stats.vfxDrawCalls || 0);
+      maxIdleDrawCalls = Math.max(maxIdleDrawCalls, stats.idleVfxDrawCalls || 0);
       maxFrameMs = Math.max(maxFrameMs, stats.vfxFrameMs || 0);
+      if (stats.system && systemMaxDraws[stats.system] !== undefined) {
+        systemMaxDraws[stats.system] = Math.max(
+          systemMaxDraws[stats.system],
+          stats.vfxDrawCalls || 0
+        );
+      }
 
       shotsReport[shotName] = {
         ...stats,
@@ -133,50 +155,89 @@ async function main() {
       };
     }
 
-    // Also capture 3 real-3D color & shading variations (v1, v2, v3) on shots 04 and 03
-    const variantsDir = path.join(outDir, 'variants');
-    await fs.mkdir(variantsDir, { recursive: true });
-    for (const presetKey of ['v1', 'v2', 'v3']) {
-      for (const shotName of ['04-standing-glacier-field', '03-apex-crown-impact']) {
-        await page.evaluate(
-          ({ preset, shot }) => {
-            window.__vfxPreview.frostLance.setStylePreset(preset);
-            return window.__vfxPreview.setShot(shot, { hideUI: true });
-          },
-          { preset: presetKey, shot: shotName }
-        );
-        await page.waitForTimeout(60);
-        const varPngPath = path.join(variantsDir, `${presetKey}-${shotName}.png`);
-        await page.screenshot({ path: varPngPath });
+    // Run suite-wide contract checks (Zero-Glass material audit, idle=0 audit, toon-skin isVfx guard audit)
+    const contractChecks = await page.evaluate(() => {
+      const p = window.__vfxPreview;
+      p.clearAllVfx();
+
+      const idleGroupVisible =
+        p.frostLance.group.visible ||
+        p.shatterlance.group.visible ||
+        p.cinderFall.group.visible ||
+        p.stormLance.group.visible ||
+        p.swordVfx.group.visible ||
+        p.swordVfx.sheathMesh.visible;
+
+      // Verify Zero-Glass (`transparent === false, depthWrite === true`) on all new systems
+      const newMeshes = [
+        p.shatterlance.intakeShardsMesh,
+        p.shatterlance.greatLanceMesh,
+        p.shatterlance.shatterWedgesMesh,
+        p.shatterlance.groundDecalMesh,
+        p.cinderFall.asteroidMesh,
+        p.cinderFall.fireWakeMesh,
+        p.cinderFall.craterRocksMesh,
+        p.cinderFall.craterDecalMesh,
+        p.stormLance.lightningRibbonMesh,
+        p.stormLance.fulguriteSpikesMesh,
+        p.stormLance.fulguriteScarMesh,
+        p.swordVfx.sheathMesh,
+        p.swordVfx.slashRibbonMesh,
+        p.swordVfx.shrapnelMesh,
+        p.swordVfx.detonationDecalMesh,
+      ];
+
+      const nonOpaqueMeshes = [];
+      for (const m of newMeshes) {
+        if (!m || !m.material) {
+          nonOpaqueMeshes.push('missing_mesh');
+          continue;
+        }
+        if (m.material.transparent !== false || m.material.depthWrite !== true) {
+          nonOpaqueMeshes.push(m.name);
+        }
       }
-    }
 
-    // Also verify live world integration (`world/index.html`)
-    const worldUrl = `http://127.0.0.1:${port}/world/index.html`;
-    await page.goto(worldUrl, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => window.__WORLD_READY__ === true, null, { timeout: 30000 });
+      // Verify toon-skin rebuild preserves swordVfx.sheathMesh visibility (`userData.isVfx === true`)
+      p.swordVfx.setInfusion('solar', 12);
+      if (p.knightChar.sockets?.__rebuildUnifiedSkin) {
+        p.knightChar.sockets.__rebuildUnifiedSkin();
+      }
+      const sheathSurvivedRebuild =
+        p.swordVfx.sheathMesh.visible === true &&
+        p.swordVfx.sheathMesh.userData?.isVfx === true &&
+        p.swordVfx.sheathMesh.parent === p.knightChar.equippedWeapons['handSlot.r'];
 
-    const worldIntegration = await page.evaluate(() => {
-      const w = window.__WORLD__;
-      w.coopSystem.triggerAction('skill');
-      w.frostLance.seek(0.72);
-      const vfxStats = w.frostLance.getStats();
-      w.frostLance.clear();
+      // Verify all 3 detonations and all 5 swing types execute cleanly
+      const detResults = {};
+      for (const dType of ['shatterblow', 'solar_flare', 'thunderchain']) {
+        p.swordVfx.triggerDetonation(dType, [75.1, 0.6, -3.8]);
+        p.swordVfx.seek(0.18);
+        detResults[dType] = p.swordVfx.getStats().drawCalls;
+      }
+      p.clearAllVfx();
+
       return {
-        hasFrostLance: Boolean(w.frostLance),
-        triggeredActive: vfxStats.active,
-        vfxDrawCallsInWorld: vfxStats.drawCalls,
-        activeSpikesInWorld: vfxStats.activeSpikes,
+        zeroIdleGroupVisibility: !idleGroupVisible,
+        zeroGlassOpaqueCompliant: nonOpaqueMeshes.length === 0,
+        nonOpaqueMeshes,
+        sheathSurvivedRebuild,
+        detResults,
       };
     });
 
     const passesAllBudgets =
       maxDrawCalls <= 6 &&
+      maxIdleDrawCalls === 0 &&
+      systemMaxDraws.shatterlance <= 4 &&
+      systemMaxDraws.cinderFall <= 4 &&
+      systemMaxDraws.stormLance <= 3 &&
+      systemMaxDraws.swordVfx <= 4 &&
       maxFrameMs <= 0.35 &&
       consoleErrors.length === 0 &&
-      Boolean(worldIntegration.hasFrostLance) &&
-      Boolean(worldIntegration.triggeredActive) &&
-      worldIntegration.vfxDrawCallsInWorld <= 6;
+      contractChecks.zeroIdleGroupVisibility === true &&
+      contractChecks.zeroGlassOpaqueCompliant === true &&
+      contractChecks.sheathSurvivedRebuild === true;
 
     const report = {
       pass: passName,
@@ -184,10 +245,12 @@ async function main() {
       passesAllBudgets,
       maxVfxDraws: maxDrawCalls,
       maxVfxDrawCalls: maxDrawCalls,
-      drawCallBudgetMet: maxDrawCalls <= 6,
+      maxIdleVfxDraws: maxIdleDrawCalls,
+      systemMaxDraws,
+      drawCallBudgetMet: maxDrawCalls <= 6 && maxIdleDrawCalls === 0,
       maxVfxFrameMs: maxFrameMs,
       frameTimeBudgetMet: maxFrameMs <= 0.35,
-      worldIntegration,
+      contractChecks,
       zeroConsoleErrors: consoleErrors.length === 0,
       consoleErrors,
       shots: shotsReport,

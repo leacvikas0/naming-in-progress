@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="data:," />
-    <title>Stage 4 VFX — Frost Lance (Haru-machi Wisteria Arena Studio)</title>
+    <title>Stage 4 VFX Suite — Spells &amp; Sword Breathing (Haru-machi Wisteria Arena Studio)</title>
     <style>
       * { box-sizing: border-box; }
       html, body {
@@ -72,28 +72,28 @@
       }
       .dock {
         position: fixed;
-        bottom: 16px;
+        bottom: 14px;
         left: 50%;
         transform: translateX(-50%);
         display: flex;
         flex-wrap: wrap;
         justify-content: center;
-        gap: 6px;
-        background: rgba(15, 23, 42, 0.86);
+        gap: 5px;
+        background: rgba(15, 23, 42, 0.88);
         backdrop-filter: blur(8px);
-        padding: 7px;
-        border-radius: 999px;
+        padding: 7px 10px;
+        border-radius: 20px;
         border: 1px solid rgba(255, 255, 255, 0.18);
         z-index: 10;
-        max-width: 96vw;
+        max-width: 98vw;
       }
       .dock button {
         border: 0;
         background: transparent;
         color: #e2e8f0;
-        font-size: 11px;
+        font-size: 10.5px;
         font-weight: 700;
-        padding: 7px 12px;
+        padding: 6px 10px;
         border-radius: 999px;
         cursor: pointer;
       }
@@ -116,8 +116,8 @@
 
     <div class="hud" id="hud">
       <div class="card">
-        <h1 id="title">Stage 4 VFX — Frost Lance (Haru-machi Wisteria Combat Ring)</h1>
-        <p id="stats">Loading characters, Wisteria Arena terrain &amp; 6-draw-call FrostLanceSystem...</p>
+        <h1 id="title">Stage 4 VFX Suite — Haru-machi Wisteria Combat Ring</h1>
+        <p id="stats">Loading characters, Wisteria Arena terrain &amp; Opaque VFX Suite...</p>
       </div>
       <div class="card controls">
         <button class="btn" id="play-btn">▶ Play Loop</button>
@@ -127,12 +127,18 @@
     </div>
 
     <div class="dock" id="dock">
-      <button data-shot="01-cast-launch">1. Cast Launch (0.18s)</button>
-      <button data-shot="02-mid-eruption-ramp">2. Mid Eruption Ramp (0.44s)</button>
-      <button data-shot="03-apex-crown-impact" class="active">3. Apex Crown Impact (0.72s)</button>
-      <button data-shot="04-standing-glacier-field">4. Standing Glacier Field (1.35s)</button>
-      <button data-shot="05-player-shoulder-camera">5. Player Shoulder Camera (0.85s)</button>
-      <button data-shot="06-twilight-bloom-showcase">6. Twilight Bloom Showcase (1.10s)</button>
+      <button data-shot="01-cast-launch">1. Frost Launch</button>
+      <button data-shot="02-mid-eruption-ramp">2. Frost Mid Ramp</button>
+      <button data-shot="03-apex-crown-impact" class="active">3. Frost Apex Impact</button>
+      <button data-shot="04-standing-glacier-field">4. Standing Glacier</button>
+      <button data-shot="05-player-shoulder-camera">5. Shoulder Camera</button>
+      <button data-shot="06-twilight-bloom-showcase">6. Twilight Showcase</button>
+      <button data-shot="07-shatterlance-convergence">7. Shatterlance Intake</button>
+      <button data-shot="08-shatterlance-impact">8. Shatterlance Impact</button>
+      <button data-shot="09-cinder-fall-crater">9. Cinder Fall Crater</button>
+      <button data-shot="10-storm-lance-discharge">10. Storm Lance</button>
+      <button data-shot="11-sword-sunfire-slash">11. Hinokami Slash</button>
+      <button data-shot="12-sword-glacial-detonation">12. Glacial Detonation</button>
     </div>
 
     <script type="module">
@@ -149,7 +155,13 @@
       import { createCharactersKit } from '../characters/index.js';
       import { createTimeOfDaySky } from '../../src/sky-tod.js';
       import { createWorldPost } from '../../src/post.js';
-      import { createFrostLanceSystem } from './index.js';
+      import {
+        createFrostLanceSystem,
+        createShatterlanceSystem,
+        createCinderFallSystem,
+        createStormLanceSystem,
+        createSwordVfxSystem,
+      } from './index.js';
 
       const canvas = document.getElementById('scene');
       const titleEl = document.getElementById('title');
@@ -214,11 +226,13 @@
       });
       stageGroup.add(meadow.group);
 
-      // 3. Stage 3 Cel-Shaded Characters inside East Wisteria Arena (center: x = 68, z = -4, y = 0.6)
-      // Cast Line: Mage at (59.8, 0.6, -4.0) casts Frost Lance from (60.8, 0.6, -4.0) along +X to (75.3, 0.6, -4.0)
+      // 3. Stage 3 Cel-Shaded Characters inside East Wisteria Arena
       const actorsGroup = new THREE.Group();
       actorsGroup.name = 'arenaCombatActors';
       scene.add(actorsGroup);
+
+      const DEFAULT_KNIGHT_POS = [59.1, walkableHeightAt(59.1, -2.05), -2.05];
+      const DEFAULT_KNIGHT_ROTY = Math.PI * 0.5 - 0.16;
 
       const charKit = createCharactersKit();
       const [mageChar, knightChar, skelWarrior, skelMage] = await Promise.all([
@@ -229,8 +243,8 @@
           initialTime: 0.30,
         }),
         charKit.createCharacter('Knight', {
-          position: [59.1, walkableHeightAt(59.1, -2.05), -2.05],
-          rotY: Math.PI * 0.5 - 0.16,
+          position: [...DEFAULT_KNIGHT_POS],
+          rotY: DEFAULT_KNIGHT_ROTY,
           initialClip: 'Idle_Combat',
           initialTime: 0.35,
         }),
@@ -250,18 +264,53 @@
 
       actorsGroup.add(mageChar.group, knightChar.group, skelWarrior.group, skelMage.group);
 
-      // 4. Instantiate FrostLanceSystem (<= 6 Draw Calls Total)
+      // 4. Instantiate All 5 Stage 4 VFX Systems
       const frostLance = createFrostLanceSystem({
         scene,
         getGroundHeight: walkableHeightAt,
       });
       frostLance.registerEnemyTargets([skelWarrior, skelMage]);
 
+      const shatterlance = createShatterlanceSystem({
+        scene,
+        getGroundHeight: walkableHeightAt,
+      });
+
+      const cinderFall = createCinderFallSystem({
+        scene,
+        getGroundHeight: walkableHeightAt,
+      });
+
+      const stormLance = createStormLanceSystem({
+        scene,
+        getGroundHeight: walkableHeightAt,
+      });
+
+      const swordVfx = createSwordVfxSystem({
+        scene,
+        getGroundHeight: walkableHeightAt,
+      });
+      swordVfx.attachToKnight(knightChar);
+
+      const allSystems = {
+        frostLance,
+        shatterlance,
+        cinderFall,
+        stormLance,
+        swordVfx,
+      };
+
       const CAST_ORIGIN = new THREE.Vector3(60.8, walkableHeightAt(60.8, -4.0), -4.0);
       const CAST_DIR = new THREE.Vector3(1.0, 0.0, 0.0);
-      frostLance.cast(CAST_ORIGIN, CAST_DIR, { range: 14.5, seed: 1.0 });
-
       const _meadowFocus = new THREE.Vector3(68.0, 0.6, -4.0);
+
+      function clearAllVfx() {
+        frostLance.clear();
+        shatterlance.clear();
+        cinderFall.clear();
+        stormLance.clear();
+        swordVfx.clear();
+      }
 
       function applyTimeOfDayMode(todMode, simTime = 1.0) {
         const skyState = sky.setTimeOfDay(todMode);
@@ -294,20 +343,26 @@
         meadow.update(simTime, _meadowFocus);
         sky.update(simTime);
 
-        frostLance.setLighting({
+        const lightingCfg = {
           sunDir: skyState.activeLightDir,
           daylight: skyState.daylight,
           glowBoost: todMode === 'evening' ? 0.96 : 0.28,
-        });
+        };
+        frostLance.setLighting(lightingCfg);
+        shatterlance.setLighting(lightingCfg);
+        cinderFall.setLighting(lightingCfg);
+        stormLance.setLighting(lightingCfg);
+        swordVfx.setLighting(lightingCfg);
       }
 
-      // 5. The 6 Deterministic Multi-Beat & Multi-Angle Verification Shots
+      // 5. The 12 Deterministic Multi-Beat & Multi-System Verification Shots
       const BASE_SKEL_W_Y = walkableHeightAt(75.15, -3.45);
       const BASE_SKEL_M_Y = walkableHeightAt(77.2, -5.65);
 
       const SHOT_DEFS = {
         '01-cast-launch': {
           id: '01-cast-launch',
+          system: 'frostLance',
           label: '1. Cast Launch (t = 0.18s) — Muzzle Cryo-Sigil, Staff Burst & First Overshoot Crystals',
           tod: 'day',
           time: 0.18,
@@ -323,6 +378,7 @@
         },
         '02-mid-eruption-ramp': {
           id: '02-mid-eruption-ramp',
+          system: 'frostLance',
           label: '2. Mid Eruption Ramp (t = 0.44s) — 8.5m Fracture Front, Dark Cobalt Scar & Exponential Ramp',
           tod: 'day',
           time: 0.44,
@@ -338,6 +394,7 @@
         },
         '03-apex-crown-impact': {
           id: '03-apex-crown-impact',
+          system: 'frostLance',
           label: '3. Apex Crown Impact (t = 0.72s) — 4.5m Glacier Crown, Dual Nova Ring & Impaled Skeleton',
           tod: 'day',
           time: 0.72,
@@ -353,6 +410,7 @@
         },
         '04-standing-glacier-field': {
           id: '04-standing-glacier-field',
+          system: 'frostLance',
           label: '4. Standing Glacier Field (t = 1.35s) — Full 14.5m Wall, Rolling Mist & 4-Point Diamond Stars',
           tod: 'day',
           time: 1.35,
@@ -368,6 +426,7 @@
         },
         '05-player-shoulder-camera': {
           id: '05-player-shoulder-camera',
+          system: 'frostLance',
           label: '5. Player Shoulder Camera (t = 0.85s) — 3rd-Person Co-Op View Down the Parted V-Canyon Lane',
           tod: 'day',
           time: 0.85,
@@ -383,6 +442,7 @@
         },
         '06-twilight-bloom-showcase': {
           id: '06-twilight-bloom-showcase',
+          system: 'frostLance',
           label: '6. Twilight Bloom Showcase (t = 1.10s) — Evening Mode Emissive Cores, Veins & Star Glints',
           tod: 'evening',
           time: 1.10,
@@ -396,11 +456,157 @@
             skelM: { clip: 'Idle_Combat', time: 0.45, dy: 0.0, pitch: 0.0 },
           },
         },
+        '07-shatterlance-convergence': {
+          id: '07-shatterlance-convergence',
+          system: 'shatterlance',
+          label: '7. Shatterlance Convergence (t = 0.46s) — 7-Fluted Great-Lance, Glowing Flute Seams & Intake Vortex',
+          tod: 'day',
+          time: 0.46,
+          pos: [65.2, 2.85, 1.85],
+          target: [62.8, 1.80, -4.0],
+          fov: 44,
+          poses: {
+            mage: { clip: 'cast_spell', time: 0.38 },
+            knight: { clip: 'Idle_Combat', time: 0.35 },
+            skelW: { clip: 'Idle_Combat', time: 0.40, dy: 0.0, pitch: 0.0 },
+            skelM: { clip: 'Idle_Combat', time: 0.55, dy: 0.0, pitch: 0.0 },
+          },
+        },
+        '08-shatterlance-impact': {
+          id: '08-shatterlance-impact',
+          system: 'shatterlance',
+          label: '8. Shatterlance Railgun Impact (t = 0.96s) — Piercing Great-Lance, Downrange Wedges & Star-Fissure',
+          tod: 'day',
+          time: 0.96,
+          pos: [71.8, 3.55, 3.85],
+          target: [75.3, 1.85, -3.85],
+          fov: 46,
+          poses: {
+            mage: { clip: 'cast_shoot', time: 0.52 },
+            knight: { clip: 'cheer', time: 0.42 },
+            skelW: { clip: 'hit_A', time: 0.26, dy: 0.24, pitch: -0.24 },
+            skelM: { clip: 'hit_B', time: 0.22, dy: 0.08, pitch: -0.12 },
+          },
+        },
+        '09-cinder-fall-crater': {
+          id: '09-cinder-fall-crater',
+          system: 'cinderFall',
+          label: '9. Cinder Fall Crater Impact (t = 0.76s) — Chiseled Basalt-Magma Asteroid, Fire-Tongue Wake & Rim Slabs',
+          tod: 'day',
+          time: 0.76,
+          pos: [71.2, 3.95, 4.45],
+          target: [74.8, 1.75, -4.0],
+          fov: 46,
+          poses: {
+            mage: { clip: 'cast_spell', time: 0.54 },
+            knight: { clip: 'Idle_Combat', time: 0.40 },
+            skelW: { clip: 'hit_A', time: 0.28, dy: 0.32, pitch: -0.25 },
+            skelM: { clip: 'hit_B', time: 0.24, dy: 0.14, pitch: -0.15 },
+          },
+        },
+        '10-storm-lance-discharge': {
+          id: '10-storm-lance-discharge',
+          system: 'stormLance',
+          label: '10. Storm Lance Discharge (t = 0.34s) — 16 Braided Lightning Ribbons, Chain Arc & Fulgurite Spikes',
+          tod: 'evening',
+          time: 0.34,
+          pos: [66.6, 4.35, 9.25],
+          target: [67.4, 1.65, -4.0],
+          fov: 50,
+          poses: {
+            mage: { clip: 'cast_shoot', time: 0.36 },
+            knight: { clip: 'Idle_Combat', time: 0.40 },
+            skelW: { clip: 'hit_A', time: 0.22, dy: 0.15, pitch: -0.18 },
+            skelM: { clip: 'hit_B', time: 0.20, dy: 0.10, pitch: -0.14 },
+          },
+        },
+        '11-sword-sunfire-slash': {
+          id: '11-sword-sunfire-slash',
+          system: 'swordVfx',
+          label: '11. Hinokami Sunfire Slash (t = 0.15s) — Opaque Flame Blade Sheath & Ukiyo-e Diagonal Slash Ribbon',
+          tod: 'day',
+          time: 0.15,
+          pos: [73.6, 2.95, 1.95],
+          target: [73.9, 1.45, -3.75],
+          fov: 43,
+          knightPos: [72.65, walkableHeightAt(72.65, -3.80), -3.80],
+          knightRotY: Math.PI * 0.5,
+          swordPose: {
+            infusion: 'solar',
+            swing: {
+              type: 'combo2',
+              style: 'solar',
+              origin: [72.85, walkableHeightAt(72.85, -3.80), -3.80],
+              yaw: Math.PI * 0.5,
+              age: 0.15,
+            },
+            detonation: null,
+          },
+          poses: {
+            mage: { clip: 'Idle_Combat', time: 0.40 },
+            knight: { clip: 'combo3', time: 0.36 },
+            skelW: { clip: 'hit_A', time: 0.18, dy: 0.10, pitch: -0.16 },
+            skelM: { clip: 'Idle_Combat', time: 0.45, dy: 0.0, pitch: 0.0 },
+          },
+        },
+        '12-sword-glacial-detonation': {
+          id: '12-sword-glacial-detonation',
+          system: 'swordVfx',
+          label: '12. Glacial Tide Shatterblow Detonation (t = 0.22s) — Combo3 Chop & 18-Wedge Crystal Burst',
+          tod: 'day',
+          time: 0.22,
+          pos: [73.6, 3.15, 2.25],
+          target: [74.5, 1.75, -3.80],
+          fov: 44,
+          knightPos: [72.75, walkableHeightAt(72.75, -3.80), -3.80],
+          knightRotY: Math.PI * 0.5,
+          swordPose: {
+            infusion: 'rime',
+            swing: {
+              type: 'combo3',
+              style: 'rime',
+              origin: [72.75, walkableHeightAt(72.75, -3.80), -3.80],
+              yaw: Math.PI * 0.5,
+              age: 0.20,
+            },
+            detonation: {
+              type: 'shatterblow',
+              pos: [75.10, walkableHeightAt(75.10, -3.80), -3.80],
+              age: 0.22,
+            },
+          },
+          poses: {
+            mage: { clip: 'cheer', time: 0.45 },
+            knight: { clip: 'combo3', time: 0.38 },
+            skelW: { clip: 'hit_A', time: 0.28, dy: 0.30, pitch: -0.26 },
+            skelM: { clip: 'hit_B', time: 0.22, dy: 0.08, pitch: -0.12 },
+          },
+        },
       };
 
       let playing = false;
+      let currentShotDef = SHOT_DEFS['03-apex-crown-impact'];
 
-      function seekCharactersAndVfx(timeSeconds, poses = null) {
+      function seekActiveSystem(def, timeSeconds) {
+        if (def.system === 'shatterlance') {
+          shatterlance.seek(timeSeconds);
+        } else if (def.system === 'cinderFall') {
+          cinderFall.seek(timeSeconds);
+        } else if (def.system === 'stormLance') {
+          stormLance.seek(timeSeconds);
+        } else if (def.system === 'swordVfx') {
+          swordVfx.seek(timeSeconds, def.swordPose);
+        } else {
+          frostLance.seek(timeSeconds);
+        }
+      }
+
+      function seekCharactersAndVfx(timeSeconds, poses = null, def = currentShotDef) {
+        const kPos = def?.knightPos || DEFAULT_KNIGHT_POS;
+        const kRotY = def?.knightRotY ?? DEFAULT_KNIGHT_ROTY;
+        knightChar.group.position.set(kPos[0], kPos[1], kPos[2]);
+        knightChar.group.rotation.y = kRotY;
+
         if (poses) {
           mageChar.poseAt(poses.mage.clip, poses.mage.time);
           knightChar.poseAt(poses.knight.clip, poses.knight.time);
@@ -421,13 +627,14 @@
           skelMage.poseAt(hitActive ? 'hit_B' : 'Idle_Combat', hitActive ? timeSeconds - 0.56 : timeSeconds);
         }
 
-        frostLance.seek(timeSeconds);
+        seekActiveSystem(def, timeSeconds);
         scrubSlider.value = timeSeconds.toFixed(2);
         timeLabel.textContent = `t = ${timeSeconds.toFixed(2)}s`;
       }
 
       function setShot(shotName, { hideUI = false } = {}) {
         const def = SHOT_DEFS[shotName] || SHOT_DEFS['03-apex-crown-impact'];
+        currentShotDef = def;
         playing = false;
         playBtn.classList.remove('active');
         playBtn.textContent = '▶ Play Loop';
@@ -447,19 +654,51 @@
         controls.target.set(...def.target);
         controls.update();
 
-        seekCharactersAndVfx(def.time, def.poses);
-        scene.updateMatrixWorld(true);
-
-        // 1. Measure Pure FrostLance VFX Draw Calls, Triangles & Update+Render Frame Time
+        // 0. Clear all VFX and measure Idle VFX Draw Calls (must be 0!)
+        clearAllVfx();
         stageGroup.visible = false;
         actorsGroup.visible = false;
         sky.group.visible = false;
-
         renderer.info.autoReset = false;
+        renderer.info.reset();
+        renderer.render(scene, camera);
+        const idleVfxDrawCalls = renderer.info.render.calls;
+
+        // 1. Cast & Seek the Target System for this Shot
+        if (def.system === 'shatterlance') {
+          shatterlance.cast(CAST_ORIGIN, CAST_DIR, { range: 14.3, seed: 1.0 });
+        } else if (def.system === 'cinderFall') {
+          cinderFall.cast(CAST_ORIGIN, CAST_DIR, { range: 14.0, seed: 1.0 });
+        } else if (def.system === 'stormLance') {
+          stormLance.cast(CAST_ORIGIN, CAST_DIR, { range: 14.3, seed: 1.0 });
+        } else if (def.system === 'frostLance') {
+          frostLance.cast(CAST_ORIGIN, CAST_DIR, { range: 14.5, seed: 1.0 });
+        }
+
+        seekCharactersAndVfx(def.time, def.poses, def);
+        scene.updateMatrixWorld(true);
+
+        // 2. Measure Active VFX Draw Calls, Triangles & Update+Render Frame Time
+        stageGroup.visible = false;
+        sky.group.visible = false;
+        if (def.system === 'swordVfx') {
+          // Keep only Knight's handSlot.r sheathMesh visible inside actorsGroup during isolated VFX measurement
+          actorsGroup.visible = true;
+          mageChar.group.visible = false;
+          skelWarrior.group.visible = false;
+          skelMage.group.visible = false;
+          if (knightChar.toonStats?.skinMesh) knightChar.toonStats.skinMesh.visible = false;
+          if (knightChar.toonStats?.outlineMesh) knightChar.toonStats.outlineMesh.visible = false;
+        } else {
+          actorsGroup.visible = false;
+        }
+
+        // Warm-up render ensures one-time WebGL shader compilation is excluded from steady-state frame timing
+        renderer.render(scene, camera);
         renderer.info.reset();
         const t0 = performance.now();
         for (let iter = 0; iter < 20; iter++) {
-          frostLance.seek(def.time);
+          seekActiveSystem(def, def.time);
         }
         renderer.render(scene, camera);
         const t1 = performance.now();
@@ -468,20 +707,28 @@
         const vfxTriangles = renderer.info.render.triangles;
         renderer.info.autoReset = true;
 
-        // 2. Render Full Stage + Characters + Post-Processing (`UnrealBloomPass` + ACES Grade)
+        // Restore all character & stage visibility and render full frame with Post-Processing
+        mageChar.group.visible = true;
+        skelWarrior.group.visible = true;
+        skelMage.group.visible = true;
+        if (knightChar.toonStats?.skinMesh) knightChar.toonStats.skinMesh.visible = true;
+        if (knightChar.toonStats?.outlineMesh) knightChar.toonStats.outlineMesh.visible = true;
         stageGroup.visible = true;
         actorsGroup.visible = true;
         sky.group.visible = true;
         post.render(0.016);
 
-        const vfxStats = frostLance.getStats();
+        const activeSys = allSystems[def.system] || frostLance;
+        const vfxStats = activeSys.getStats();
         titleEl.textContent = def.label;
-        statsEl.textContent = `VFX Draws: ${vfxDrawCalls}/6 | VFX Tris: ${vfxTriangles.toLocaleString()} | Spikes: ${vfxStats.activeSpikes} | VFX Frame: ${vfxFrameMs} ms | NoiseAtlas: ${vfxStats.noiseAtlasGenMs} ms`;
+        statsEl.textContent = `System: ${def.system} | VFX Draws: ${vfxDrawCalls}/6 (Idle: ${idleVfxDrawCalls}) | VFX Tris: ${vfxTriangles.toLocaleString()} | VFX Frame: ${vfxFrameMs} ms`;
 
         return {
           shot: def.id,
+          system: def.system,
           tod: def.tod,
           timeSeconds: def.time,
+          idleVfxDrawCalls,
           vfxDrawCalls,
           vfxTriangles,
           vfxFrameMs,
@@ -504,7 +751,7 @@
         playBtn.classList.remove('active');
         playBtn.textContent = '▶ Play Loop';
         const t = parseFloat(e.target.value);
-        seekCharactersAndVfx(t, null);
+        seekCharactersAndVfx(t, null, currentShotDef);
         post.render(0.016);
       });
 
@@ -522,16 +769,24 @@
         const dt = Math.min(clock.getDelta(), 0.05);
         controls.update();
         if (playing) {
-          let nextT = frostLance.age + dt;
-          if (nextT > 4.05) nextT = 0.02;
-          seekCharactersAndVfx(nextT, null);
+          const activeSys = allSystems[currentShotDef.system] || frostLance;
+          let nextT = (activeSys.age || 0) + dt;
+          if (nextT > 3.8) nextT = 0.04;
+          seekCharactersAndVfx(nextT, null, currentShotDef);
         }
         post.render(dt);
       });
 
       window.__vfxPreview = {
         setShot,
+        clearAllVfx,
         frostLance,
+        shatterlance,
+        cinderFall,
+        stormLance,
+        swordVfx,
+        knightChar,
+        mageChar,
         scene,
         camera,
         renderer,
