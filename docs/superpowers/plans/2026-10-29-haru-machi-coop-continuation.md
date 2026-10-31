@@ -14,13 +14,19 @@
 
 ---
 
-## Current State Snapshot on Disk
+## Current State Snapshot on Disk (Updated 2026-10-31 — Ready for Stage 5 Game & App Design)
 
-- [x] **Workspace Cleaned & Archived:** Legacy prototype (`game/`, `meadow-kit/`, `viewer/`, old reports) moved cleanly to `_archive/legacy-game/` and `_archive/legacy-prototypes/`. VFX shader references preserved in `_archive/legacy-game/src/{ice-lance-vfx,glacial-crown-vfx,thunder-vfx}.js`.
-- [x] **Blockout `v5` Baseline:** Live at [`world/blockout.html`](file:///C:/Users/silen/projects/kilo-3d-kit/world/blockout.html) (`http://127.0.0.1:4173/world/blockout.html`).
-- [x] **Partial Stage 2 Pass 1 Code on Disk:**
-  - `world/assets/houses/`: [`textures.js`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/houses/textures.js), [`materials.js`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/houses/materials.js), [`parts.js`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/houses/parts.js) written.
-  - `world/assets/terrain/`: [`geography.js`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/terrain/geography.js), [`terrain-water.js`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/terrain/terrain-water.js), [`landmarks.js`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/terrain/landmarks.js), [`trees.js`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/terrain/trees.js) written.
+- [x] **Workspace Cleaned & Archived:** Legacy prototype (`game/`, `meadow-kit/`, `viewer/`, old reports) moved cleanly to `_archive/legacy-game/` and `_archive/legacy-prototypes/`.
+- [x] **Stage 1 & Stage 2 Complete (`8ec1469`):**
+  - Expanded toroidal valley (`playRadius = 140m`, outer vista basin & smooth-shaded distant mountain ridges `R = 160m..420m`), 2-pass verified Tudor Hamlet (`world/assets/houses/`), Toroidal GPU Meadow (`world/assets/flowers/`), and Terrain/Water/Landmarks/48-Tree Groves (`world/assets/terrain/`).
+  - Assembled world (`world/index.html`) verified in [`world/shots/assembled-v3/report.json`](file:///C:/Users/silen/projects/kilo-3d-kit/world/shots/assembled-v3/report.json) (`41` draw calls Desktop/Tablet, `583k` Desktop tris / `360k` Tablet tris, `0` console errors).
+- [x] **Stage 3 Complete (`959ff84`):**
+  - Playable KayKit Adventurers (`Knight`, `Mage`, `Barbarian`, `Rogue`, `Rogue_Hooded`) + Skeleton enemies (`Skeleton_Warrior`, `Skeleton_Mage`, `Skeleton_Minion`, `Skeleton_Rogue`) in [`world/assets/characters/`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/characters/index.js).
+  - Unified 2-draw-call skinning (`1` unified body+accessories+weapons `SkinnedMesh` + `1` inverted-hull outline `SkinnedMesh` per character = `4` draws total for the co-op duo) with all 95 native `Rig_Medium` skeletal animations, Desktop `WASD` + Mouse Look (`world/src/player-controller.js`), and Xiaomi Pad 7 `3:2` Genshin touch HUD (`world/src/touch-hud.js`). Verified at `42` total world draw calls (`world/shots/stage3-world/report.json`).
+- [x] **Stage 4 Complete (`ee6fed9`):**
+  - Engineered and locked the signature **Frost Lance** (`world/assets/vfx/frost-lance.js` + `world/assets/vfx/noise-atlas.js`) using the Spellbook's 7-sided blocky glacial column geometry (`taper = 0.69`), 100% hardware-opaque `IceMaterial` shading (`V1: Luminous Glacial Cerulean & Frost Veins`), 3D height-field `FROST` ground relief, rolling cold mist, and pinpoint glitter in **strictly `6` draw calls and `0.085–0.195 ms` GPU frame time** (`42 + 6 = 48` total draw calls in the live world, hitting the `<= 48` Xiaomi Pad 7 budget with `0` console errors).
+- [ ] **NEXT UP (Stage 5 — Game Design, App Architecture, Co-Op Loop & Live Voice Judgment):**
+  - Ready to begin in the next thread: designing and building the full co-op game loop, UI/app flow, Cloudflare Workers + `CoopRoomDO` room pairing, and the "Artorious, God of Love" Gemini Live voice-judged mechanics.
 
 ---
 
@@ -95,9 +101,9 @@
      - *Artorious's Divine Smite (`INSINCERE`):* Dark thundercloud snap + pink-gold lightning bolt + comical soot/flowerpot bonk impact.
      - *Call-and-Response Couples Supernova (`Q`):* Dual-elemental vortex cataclysm across the arena.
 
-- [ ] **Step 1: Dispatch Pass 1 Cinematic VFX Builder Subagent (`self`) to build `world/assets/vfx/` and capture multi-frame action sequences in `shots/pass1/`**
-- [ ] **Step 2: Dispatch fresh Pass 2 VFX Critic-Fixer Subagent (`self`) to blind-critique readability, color harmony, bloom balance, and Pad 7 frame time, fix issues, and verify `shots/pass2/`**
-- [ ] **Step 3: Lead agent visual sign-off and commit (`feat(vfx): add cinematic spell, halo, and divine miracle vfx engine`)**
+- [x] **Step 1: Dispatch Pass 1 Cinematic VFX Builder Subagent (`self`) to build `world/assets/vfx/` (`noise-atlas.js`, `frost-lance.js`) and capture multi-frame action sequences in `shots/pass1/`**
+- [x] **Step 2: Dispatch fresh Pass 2 VFX Critic-Fixer Subagent (`self`) to blind-critique readability, color harmony, bloom balance, and Pad 7 frame time, fix issues, and verify `shots/pass2/`**
+- [x] **Step 3: Calibrate and lock `V1` Luminous Glacial Cerulean `Frost Lance` (`transparent: false`, `6` draw calls, `0.085–0.195 ms` GPU time) with user sign-off and commit (`ee6fed9`)**
 
 ---
 

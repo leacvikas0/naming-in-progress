@@ -78,13 +78,26 @@ node world/assets/vfx/verify.mjs
 - [`shots/pass2/report.json`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/vfx/shots/pass2/report.json):
   - `passesAllBudgets`: `true`
   - `maxVfxDraws`: `6` (`<= 6`)
-  - `maxVfxFrameMs`: `0.185 ms` (`<= 0.35 ms`)
+  - `maxVfxFrameMs`: `0.195 ms` (`<= 0.35 ms`)
   - `consoleErrors`: `[]` (`0` errors)
   - `worldIntegration`: `hasFrostLance: true`, `triggeredActive: true`, `vfxDrawCallsInWorld: 6`, `activeSpikesInWorld: 168`
 - Verified Pass 2 Screenshots (`all > 40 KB`):
-  1. [`01-cast-launch.png`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/vfx/shots/pass2/01-cast-launch.png) (`1,192.1 KB`)
-  2. [`02-mid-eruption-ramp.png`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/vfx/shots/pass2/02-mid-eruption-ramp.png) (`1,026.7 KB`)
-  3. [`03-apex-crown-impact.png`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/vfx/shots/pass2/03-apex-crown-impact.png) (`1,567.2 KB`)
-  4. [`04-standing-glacier-field.png`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/vfx/shots/pass2/04-standing-glacier-field.png) (`1,364.3 KB`)
-  5. [`05-player-shoulder-camera.png`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/vfx/shots/pass2/05-player-shoulder-camera.png) (`1,220.4 KB`)
-  6. [`06-twilight-bloom-showcase.png`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/vfx/shots/pass2/06-twilight-bloom-showcase.png) (`1,304.4 KB`)
+  1. [`01-cast-launch.png`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/vfx/shots/pass2/01-cast-launch.png)
+  2. [`02-mid-eruption-ramp.png`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/vfx/shots/pass2/02-mid-eruption-ramp.png)
+  3. [`03-apex-crown-impact.png`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/vfx/shots/pass2/03-apex-crown-impact.png)
+  4. [`04-standing-glacier-field.png`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/vfx/shots/pass2/04-standing-glacier-field.png)
+  5. [`05-player-shoulder-camera.png`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/vfx/shots/pass2/05-player-shoulder-camera.png)
+  6. [`06-twilight-bloom-showcase.png`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets/vfx/shots/pass2/06-twilight-bloom-showcase.png)
+
+---
+
+## 5. Final User Calibration & Locked `V1` Glacial Architecture
+
+Following interactive visual review with Vikas, the crystal geometry and shading were calibrated and locked (`ee6fed9`):
+
+1. **Why Earlier Cel-Striped Shaders Read as "Glass" (And How It Was Solved):**
+   - Quantized vertical color stripes combined with `fwidth` white wireframe bevel lines and dark cartoon ink outlines caused the crystals to read like cut window glass rather than solid glacial ice, and tapering the tips (`taper < 0.55`) made them look spiky/comical.
+   - **Solution:** Ported the original Spellbook's blocky 7-sided glacial column geometry (`facets = 7`, `taper = 0.69`, `roughness = 0.09`, `bend = 0.66`, circular cross-section, counter-clockwise outward triangle winding) and `IceMaterial` optical formula:
+     - **100% Hardware-Opaque (`transparent: false`, `side: THREE.FrontSide`):** Eliminates any background sand or tree bleed-through.
+     - **Horizontal-Azimuth Optical Thickness (`dot(horizN, horizV)`):** Ensures leaned crown spikes and low close-up cameras (`03`) maintain the exact same core-to-rim color balance as far shots (`04`).
+     - **Permanent Subsurface Inner Light (`uColorCore * 0.88`):** Preserves the luminous glacial cerulean interior (`#26659c` $\rightarrow$ `#7fd0ff` $\rightarrow$ `#f4feff` in `V1`) across all timestamps, paired with world-space internal fracture planes (`cracks`), local-space milky feather-frost (`veins`), and basal rime climbing from the 3D height-field `FROST` ground sheet (`snowDepthAt`).
