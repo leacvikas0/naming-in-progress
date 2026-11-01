@@ -38,6 +38,9 @@ const SUITE_12_SHOTS = [
   '10-storm-lance-discharge.png',
   '11-sword-sunfire-slash.png',
   '12-sword-glacial-detonation.png',
+  '13-artorious-prayer-sanctuary.png',
+  '14-artorious-petty-smite.png',
+  '15-artorious-divine-miracle.png',
 ];
 
 const MIN_PNG_BYTES = 40 * 1024; // 40 KB
@@ -107,6 +110,11 @@ async function main() {
 
     if (!(sys.swordVfx <= 4)) failures.push(`swordVfx draws ${sys.swordVfx} > 4`);
     else checks.push(`swordVfx draws = ${sys.swordVfx} (<= 4)`);
+
+    if (sys.artoriousVfx !== undefined) {
+      if (!(sys.artoriousVfx <= 4)) failures.push(`artoriousVfx draws ${sys.artoriousVfx} > 4`);
+      else checks.push(`artoriousVfx draws = ${sys.artoriousVfx} (<= 4)`);
+    }
   }
 
   if (isSuite && report.contractChecks) {

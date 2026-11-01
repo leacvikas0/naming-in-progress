@@ -139,7 +139,10 @@
       <button data-shot="10-storm-lance-discharge">10. Storm Lance</button>
       <button data-shot="11-sword-sunfire-slash">11. Hinokami Slash</button>
       <button data-shot="12-sword-glacial-detonation">12. Glacial Detonation</button>
-      <button data-shot="13-mage-bolt-volley">13. Mage Bolt Volley</button>
+      <button data-shot="13-artorious-prayer-sanctuary">13. Prayer Sanctuary</button>
+      <button data-shot="14-artorious-petty-smite">14. Petty Smite</button>
+      <button data-shot="15-artorious-divine-miracle">15. Divine Miracle</button>
+      <button data-shot="16-mage-bolt-volley">16. Mage Bolt Volley</button>
     </div>
 
     <script type="module">
@@ -163,6 +166,7 @@
         createStormLanceSystem,
         createSwordVfxSystem,
         createMageBoltSystem,
+        createArtoriousVfxSystem,
       } from './index.js';
 
       const canvas = document.getElementById('scene');
@@ -233,13 +237,14 @@
       actorsGroup.name = 'arenaCombatActors';
       scene.add(actorsGroup);
 
+      const DEFAULT_MAGE_POS = [59.8, walkableHeightAt(59.8, -4.0), -4.0];
       const DEFAULT_KNIGHT_POS = [59.1, walkableHeightAt(59.1, -2.05), -2.05];
       const DEFAULT_KNIGHT_ROTY = Math.PI * 0.5 - 0.16;
 
       const charKit = createCharactersKit();
       const [mageChar, knightChar, skelWarrior, skelMage] = await Promise.all([
         charKit.createCharacter('Mage', {
-          position: [59.8, walkableHeightAt(59.8, -4.0), -4.0],
+          position: [...DEFAULT_MAGE_POS],
           rotY: Math.PI * 0.5,
           initialClip: 'cast_shoot',
           initialTime: 0.30,
@@ -266,7 +271,7 @@
 
       actorsGroup.add(mageChar.group, knightChar.group, skelWarrior.group, skelMage.group);
 
-      // 4. Instantiate All 6 Stage 4 VFX Systems (4 Spells + Live Bone-Tracked Sword VFX + Mage Bolts)
+      // 4. Instantiate All Stage 4 VFX Systems (4 Spells + Live Bone-Tracked Sword VFX + Mage Bolts + Artorious VFX)
       const frostLance = createFrostLanceSystem({
         scene,
         getGroundHeight: walkableHeightAt,
@@ -299,6 +304,11 @@
         getGroundHeight: walkableHeightAt,
       });
 
+      const artoriousVfx = createArtoriousVfxSystem({
+        scene,
+        getGroundHeight: walkableHeightAt,
+      });
+
       const allSystems = {
         frostLance,
         shatterlance,
@@ -306,6 +316,7 @@
         stormLance,
         swordVfx,
         mageBolt,
+        artoriousVfx,
       };
 
       const CAST_ORIGIN = new THREE.Vector3(60.8, walkableHeightAt(60.8, -4.0), -4.0);
@@ -319,6 +330,7 @@
         stormLance.clear();
         swordVfx.clear();
         mageBolt.clear();
+        artoriousVfx.clear();
       }
 
       function applyTimeOfDayMode(todMode, simTime = 1.0) {
@@ -363,9 +375,11 @@
         stormLance.setLighting(lightingCfg);
         swordVfx.setLighting(lightingCfg);
         mageBolt.setLighting(lightingCfg);
+        artoriousVfx.setLighting(lightingCfg);
       }
 
       // 5. The Deterministic Multi-Beat & Multi-System Verification Shots
+      const BASE_MAGE_Y = walkableHeightAt(59.8, -4.0);
       const BASE_SKEL_W_Y = walkableHeightAt(75.15, -3.45);
       const BASE_SKEL_M_Y = walkableHeightAt(77.2, -5.65);
 
@@ -596,10 +610,74 @@
             skelM: { clip: 'hit_B', time: 0.22, dy: 0.08, pitch: -0.12 },
           },
         },
-        '13-mage-bolt-volley': {
-          id: '13-mage-bolt-volley',
+        '13-artorious-prayer-sanctuary': {
+          id: '13-artorious-prayer-sanctuary',
+          system: 'artoriousVfx',
+          label: '13. Artorious Prayer Sanctuary (t = 0.65s) — 8 Orbiting Golden Astrolabe Obelisks, 12-Point Mandala & Helical Sky Columns',
+          tod: 'day',
+          time: 0.65,
+          pos: [65.2, 3.25, 1.65],
+          target: [59.8, 1.65, -3.25],
+          fov: 46,
+          artoriousOptions: {
+            mode: 'channel',
+            suspense: false,
+            origin: [...DEFAULT_MAGE_POS],
+            partnerPos: [...DEFAULT_KNIGHT_POS],
+          },
+          poses: {
+            mage: { clip: 'cast_spell', time: 0.48, dy: 0.0, pitch: 0.0 },
+            knight: { clip: 'cheer', time: 0.35 },
+            skelW: { clip: 'Idle_Combat', time: 0.40, dy: 0.0, pitch: 0.0 },
+            skelM: { clip: 'Idle_Combat', time: 0.55, dy: 0.0, pitch: 0.0 },
+          },
+        },
+        '14-artorious-petty-smite': {
+          id: '14-artorious-petty-smite',
+          system: 'artoriousVfx',
+          label: '14. Artorious Petty Smite (t = 0.22s) — 24Hz Rose-Crimson & Gold Thunder-Spear, 14 Fulgurite Fangs & Lichtenberg Scar',
+          tod: 'evening',
+          time: 0.22,
+          pos: [65.2, 3.35, 1.85],
+          target: [59.8, 1.80, -3.85],
+          fov: 47,
+          artoriousOptions: {
+            mode: 'smite',
+            origin: [...DEFAULT_MAGE_POS],
+            partnerPos: null,
+          },
+          poses: {
+            mage: { clip: 'hit_B', time: 0.24, dy: 0.14, pitch: -0.18 },
+            knight: { clip: 'hit_A', time: 0.18 },
+            skelW: { clip: 'Idle_Combat', time: 0.40, dy: 0.0, pitch: 0.0 },
+            skelM: { clip: 'Idle_Combat', time: 0.55, dy: 0.0, pitch: 0.0 },
+          },
+        },
+        '15-artorious-divine-miracle': {
+          id: '15-artorious-divine-miracle',
+          system: 'artoriousVfx',
+          label: '15. Artorious Divine Miracle (t = 0.68s) — 24-Spire Celestial Gold Cathedral Crown, Sky-Parting Columns & Sanctuary Mandala',
+          tod: 'evening',
+          time: 0.68,
+          pos: [67.2, 3.95, 3.15],
+          target: [59.5, 2.05, -3.10],
+          fov: 48,
+          artoriousOptions: {
+            mode: 'miracle',
+            origin: [...DEFAULT_MAGE_POS],
+            partnerPos: [...DEFAULT_KNIGHT_POS],
+          },
+          poses: {
+            mage: { clip: 'cast_spell', time: 0.56, dy: 0.0, pitch: 0.0 },
+            knight: { clip: 'cheer', time: 0.48 },
+            skelW: { clip: 'hit_A', time: 0.28, dy: 0.22, pitch: -0.20 },
+            skelM: { clip: 'hit_B', time: 0.24, dy: 0.12, pitch: -0.14 },
+          },
+        },
+        '16-mage-bolt-volley': {
+          id: '16-mage-bolt-volley',
           system: 'mageBolt',
-          label: '13. Mage 3-Bolt Converging Starlight Fan Volley (t = 0.26s) — Starlight Crystal Heads & Comet Wakes',
+          label: '16. Mage 3-Bolt Converging Starlight Fan Volley (t = 0.26s) — Starlight Crystal Heads & Comet Wakes',
           tod: 'day',
           time: 0.26,
           pos: [66.2, 3.45, 5.85],
@@ -634,6 +712,8 @@
           swordVfx.seek(timeSeconds, def.swordPose);
         } else if (def.system === 'mageBolt') {
           mageBolt.seek(timeSeconds, def.boltConfig);
+        } else if (def.system === 'artoriousVfx') {
+          artoriousVfx.seek(timeSeconds, def.artoriousOptions);
         } else {
           frostLance.seek(timeSeconds);
         }
@@ -645,6 +725,9 @@
         knightChar.group.position.set(kPos[0], kPos[1], kPos[2]);
         knightChar.group.rotation.y = kRotY;
 
+        mageChar.group.position.y = BASE_MAGE_Y + (poses?.mage?.dy || 0);
+        mageChar.group.rotation.z = poses?.mage?.pitch || 0;
+
         if (poses) {
           mageChar.poseAt(poses.mage.clip, poses.mage.time);
           knightChar.poseAt(poses.knight.clip, poses.knight.time);
@@ -654,6 +737,21 @@
           skelMage.group.position.y = BASE_SKEL_M_Y + (poses.skelM.dy || 0);
           skelMage.group.rotation.z = poses.skelM.pitch || 0;
           skelMage.poseAt(poses.skelM.clip, poses.skelM.time);
+        } else if (def.system === 'artoriousVfx') {
+          const mode = def.artoriousOptions?.mode || 'miracle';
+          if (mode === 'smite') {
+            const hitT = Math.max(0, timeSeconds - 0.05);
+            const hop = timeSeconds >= 0.05 && timeSeconds <= 0.52
+              ? Math.sin(((timeSeconds - 0.05) / 0.47) * Math.PI) * 0.14
+              : 0;
+            mageChar.group.position.y = BASE_MAGE_Y + hop;
+            mageChar.group.rotation.z = hop * 0.65;
+            mageChar.poseAt(timeSeconds < 0.05 ? 'cast_spell' : 'hit_B', timeSeconds < 0.05 ? timeSeconds : Math.min(0.68, hitT * 1.15));
+            knightChar.poseAt('block', timeSeconds * 0.8);
+          } else {
+            mageChar.poseAt('cast_spell', timeSeconds * 0.85);
+            knightChar.poseAt('cheer', timeSeconds * 0.90);
+          }
         } else {
           const hitActive = timeSeconds >= 0.58 && timeSeconds <= 1.45;
           mageChar.poseAt(timeSeconds < 0.55 ? 'cast_shoot' : 'cast_spell', timeSeconds);
@@ -666,6 +764,12 @@
         }
 
         seekActiveSystem(def, timeSeconds);
+        if (def.system === 'artoriousVfx' && !poses) {
+          const shk = artoriousVfx.getCameraShakeOffset();
+          camera.position.set(def.pos[0] + shk.x, def.pos[1] + shk.y, def.pos[2] + shk.z);
+          controls.target.set(def.target[0] + shk.x * 0.5, def.target[1] + shk.y * 0.5, def.target[2] + shk.z * 0.5);
+          controls.update();
+        }
         scrubSlider.value = timeSeconds.toFixed(2);
         timeLabel.textContent = `t = ${timeSeconds.toFixed(2)}s`;
       }
@@ -711,6 +815,18 @@
           stormLance.cast(CAST_ORIGIN, CAST_DIR, { range: 14.3, seed: 1.0 });
         } else if (def.system === 'mageBolt') {
           mageBolt.fireComboVolley(def.boltConfig);
+        } else if (def.system === 'artoriousVfx') {
+          const opts = def.artoriousOptions || {};
+          if (opts.mode === 'smite') {
+            artoriousVfx.triggerSmite(opts.origin);
+          } else if (opts.mode === 'channel') {
+            artoriousVfx.startChannel(opts.origin, opts.partnerPos);
+            artoriousVfx.setSuspense(Boolean(opts.suspense));
+          } else if (opts.mode === 'blessing') {
+            artoriousVfx.triggerBlessing(opts.origin, opts.partnerPos);
+          } else {
+            artoriousVfx.triggerMiracle(opts.origin, opts.partnerPos, opts.enemyCenter);
+          }
         } else if (def.system === 'frostLance') {
           frostLance.cast(CAST_ORIGIN, CAST_DIR, { range: 14.5, seed: 1.0 });
         }
@@ -829,6 +945,7 @@
         stormLance,
         swordVfx,
         mageBolt,
+        artoriousVfx,
         knightChar,
         mageChar,
         scene,

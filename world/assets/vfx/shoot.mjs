@@ -115,6 +115,9 @@ async function main() {
       '10-storm-lance-discharge',
       '11-sword-sunfire-slash',
       '12-sword-glacial-detonation',
+      '13-artorious-prayer-sanctuary',
+      '14-artorious-petty-smite',
+      '15-artorious-divine-miracle',
     ];
 
     const shotsReport = {};
@@ -127,6 +130,7 @@ async function main() {
       cinderFall: 0,
       stormLance: 0,
       swordVfx: 0,
+      artoriousVfx: 0,
     };
 
     for (const shotName of shotList) {
@@ -166,7 +170,8 @@ async function main() {
         p.cinderFall.group.visible ||
         p.stormLance.group.visible ||
         p.swordVfx.group.visible ||
-        p.swordVfx.sheathMesh.visible;
+        p.swordVfx.sheathMesh.visible ||
+        p.artoriousVfx.group.visible;
 
       // Verify Zero-Glass (`transparent === false, depthWrite === true`) on all new systems
       const newMeshes = [
@@ -185,6 +190,10 @@ async function main() {
         p.swordVfx.slashRibbonMesh,
         p.swordVfx.shrapnelMesh,
         p.swordVfx.detonationDecalMesh,
+        p.artoriousVfx.skyRibbonsMesh,
+        p.artoriousVfx.monolithsMesh,
+        p.artoriousVfx.prismsAndDebrisMesh,
+        p.artoriousVfx.groundSigilMesh,
       ];
 
       const nonOpaqueMeshes = [];
@@ -215,6 +224,26 @@ async function main() {
         p.swordVfx.seek(0.18);
         detResults[dType] = p.swordVfx.getStats().drawCalls;
       }
+
+      // Verify all Artorious modes (channel, suspense, smite, blessing, miracle)
+      const artoriousResults = {};
+      p.artoriousVfx.startChannel([59.8, 0.6, -4.0], [59.1, 0.6, -2.05]);
+      p.artoriousVfx.setSuspense(true);
+      p.artoriousVfx.seek(0.65);
+      artoriousResults.channel = p.artoriousVfx.getStats().drawCalls;
+
+      p.artoriousVfx.triggerSmite([59.8, 0.6, -4.0]);
+      p.artoriousVfx.seek(0.22);
+      artoriousResults.smite = p.artoriousVfx.getStats().drawCalls;
+
+      p.artoriousVfx.triggerBlessing([59.8, 0.6, -4.0], [59.1, 0.6, -2.05]);
+      p.artoriousVfx.seek(0.55);
+      artoriousResults.blessing = p.artoriousVfx.getStats().drawCalls;
+
+      p.artoriousVfx.triggerMiracle([59.8, 0.6, -4.0], [59.1, 0.6, -2.05]);
+      p.artoriousVfx.seek(0.68);
+      artoriousResults.miracle = p.artoriousVfx.getStats().drawCalls;
+
       p.clearAllVfx();
 
       return {
@@ -223,6 +252,7 @@ async function main() {
         nonOpaqueMeshes,
         sheathSurvivedRebuild,
         detResults,
+        artoriousResults,
       };
     });
 
@@ -233,6 +263,7 @@ async function main() {
       systemMaxDraws.cinderFall <= 4 &&
       systemMaxDraws.stormLance <= 3 &&
       systemMaxDraws.swordVfx <= 4 &&
+      systemMaxDraws.artoriousVfx <= 4 &&
       maxFrameMs <= 0.35 &&
       consoleErrors.length === 0 &&
       contractChecks.zeroIdleGroupVisibility === true &&

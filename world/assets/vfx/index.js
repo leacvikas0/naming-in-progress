@@ -57,6 +57,11 @@ import {
   createCometWakeRibbonGeometry,
   MAGE_BOLT_DEFAULTS,
 } from './mage-bolt.js';
+import {
+  ArtoriousVfxSystem,
+  createArtoriousVfxSystem,
+  ARTORIOUS_VFX_DEFAULTS,
+} from './artorious-vfx.js';
 
 export {
   createNoiseAtlas,
@@ -92,10 +97,13 @@ export {
   createStarlightCrystalGeometry,
   createCometWakeRibbonGeometry,
   MAGE_BOLT_DEFAULTS,
+  ArtoriousVfxSystem,
+  createArtoriousVfxSystem,
+  ARTORIOUS_VFX_DEFAULTS,
 };
 
 /**
- * Convenience factory for the complete Stage 4 VFX, Mage Bolts & Sword Breathing Kit.
+ * Convenience factory for the complete Stage 4 VFX, Mage Bolts, Sword Breathing & Artorious Kit.
  */
 export function createVfxKit({
   scene,
@@ -105,6 +113,7 @@ export function createVfxKit({
   cinderFallConfig = {},
   stormLanceConfig = {},
   mageBoltConfig = {},
+  artoriousConfig = {},
   onApexImpact = null,
 } = {}) {
   const noiseAtlas = getSharedNoiseAtlas();
@@ -142,8 +151,21 @@ export function createVfxKit({
     getGroundHeight,
     config: mageBoltConfig,
   });
+  const artoriousVfx = createArtoriousVfxSystem({
+    scene,
+    getGroundHeight,
+    config: artoriousConfig,
+  });
 
-  const allSystems = [frostLance, shatterlance, cinderFall, stormLance, swordVfx, mageBolt];
+  const allSystems = [
+    frostLance,
+    shatterlance,
+    cinderFall,
+    stormLance,
+    swordVfx,
+    mageBolt,
+    artoriousVfx,
+  ];
   const _tmpShake = new THREE.Vector3();
 
   return {
@@ -154,6 +176,7 @@ export function createVfxKit({
     stormLance,
     swordVfx,
     mageBolt,
+    artoriousVfx,
     castFrostLance: (origin, direction, options = {}) =>
       frostLance.cast(origin, direction, options),
     castShatterlance: (origin, direction, options = {}) =>
@@ -211,6 +234,7 @@ export function createVfxKit({
       stormLance: stormLance.getStats(),
       swordVfx: swordVfx.getStats(),
       mageBolt: mageBolt.getStats(),
+      artoriousVfx: artoriousVfx.getStats(),
     }),
     clear: () => {
       for (const sys of allSystems) sys.clear();

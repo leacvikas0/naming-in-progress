@@ -1,0 +1,136 @@
+{
+  "voice": "Charon",
+  "model": "gemini-3.8-flash-tts",
+  "clips": [
+    {
+      "id": "smite_silence",
+      "verdict": "SMITE",
+      "scoreRange": [
+        1,
+        2
+      ],
+      "whenToPick": "The microphone recording is silent, near-empty, just breathing/noise, or under 2 words.",
+      "style": "deep, deadpan, theatrical ancient god of love, dryly unimpressed and offended by silence",
+      "ttsInput": "<sigh> Silence? You summon the Ancient God of Love... <short pause> just to give me the silent treatment? Perish.",
+      "subtitle": "Silence? You summon the Ancient God of Love... just to give me the silent treatment? Perish.",
+      "audioUrl": "/world/assets/audio/artorious/smite_silence.wav"
+    },
+    {
+      "id": "smite_monotone",
+      "verdict": "SMITE",
+      "scoreRange": [
+        1,
+        4
+      ],
+      "whenToPick": "The speaker talks in a flat, bored, monotone, robotic, or low-energy voice with zero romantic feeling.",
+      "style": "deep, deadpan, theatrical ancient god of love, dryly sarcastic and unimpressed",
+      "ttsInput": "<sigh> Even my immortal patience has limits... <short pause> and your monotone begging just killed it. <chuckle> Eat lightning, mortal.",
+      "subtitle": "Even my immortal patience has limits... and your monotone begging just killed it. Eat lightning, mortal.",
+      "audioUrl": "/world/assets/audio/artorious/smite_monotone.wav"
+    },
+    {
+      "id": "smite_rushed",
+      "verdict": "SMITE",
+      "scoreRange": [
+        2,
+        4
+      ],
+      "whenToPick": "The speaker rushes through the words like a chore or grocery list without pausing or caring.",
+      "style": "deep, deadpan, impatient theatrical deity scolding a careless mortal",
+      "ttsInput": "Slow down! <short pause> You sound like you are reading a grocery list, not fighting for your beloved. <sigh> Pathetic.",
+      "subtitle": "Slow down! You sound like you are reading a grocery list, not fighting for your beloved. Pathetic.",
+      "audioUrl": "/world/assets/audio/artorious/smite_rushed.wav"
+    },
+    {
+      "id": "smite_cringe",
+      "verdict": "SMITE",
+      "scoreRange": [
+        2,
+        4
+      ],
+      "whenToPick": "The speaker stammers, hesitates awkwardly, mutters unconvincingly, or chickens out mid-sentence.",
+      "style": "deep, dryly amused, mocking ancient deity",
+      "ttsInput": "<chuckle> Did your courage just crack mid-prayer? <short pause> Come back when you actually mean it.",
+      "subtitle": "Did your courage just crack mid-prayer? Come back when you actually mean it.",
+      "audioUrl": "/world/assets/audio/artorious/smite_cringe.wav"
+    },
+    {
+      "id": "bless_sweet",
+      "verdict": "BLESSING",
+      "scoreRange": [
+        5,
+        7
+      ],
+      "whenToPick": "The speaker sounds warm, gentle, sweet, and genuinely affectionate toward their partner.",
+      "style": "deep, warm, dryly approving ancient deity, begrudgingly touched",
+      "ttsInput": "<breath> Hm. Surprisingly sweet. <short pause> Not quite Shakespeare, but your heart is in it. Take my blessing.",
+      "subtitle": "Hm. Surprisingly sweet. Not quite Shakespeare, but your heart is in it. Take my blessing.",
+      "audioUrl": "/world/assets/audio/artorious/bless_sweet.wav"
+    },
+    {
+      "id": "bless_chivalrous",
+      "verdict": "BLESSING",
+      "scoreRange": [
+        5,
+        7
+      ],
+      "whenToPick": "The speaker delivers a solid, steady, protective knightly or supportive vow with clear conviction.",
+      "style": "deep, noble, resonant ancient deity granting a royal ward",
+      "ttsInput": "Now that is a proper oath. <short pause> Stand tall, little lovers... my golden ward is yours.",
+      "subtitle": "Now that is a proper oath. Stand tall, little lovers—my golden ward is yours.",
+      "audioUrl": "/world/assets/audio/artorious/bless_chivalrous.wav"
+    },
+    {
+      "id": "bless_amused",
+      "verdict": "BLESSING",
+      "scoreRange": [
+        6,
+        8
+      ],
+      "whenToPick": "The speaker says something funny, witty, cheeky, or charmingly dramatic that makes the god laugh.",
+      "style": "deep, booming, genuinely entertained deity laughing with delight",
+      "ttsInput": "<laugh> Audacious! Absolutely shameless! <short pause> I respect the nerve. Go on, take my grace.",
+      "subtitle": "Audacious! Absolutely shameless! I respect the nerve. Go on, take my grace.",
+      "audioUrl": "/world/assets/audio/artorious/bless_amused.wav"
+    },
+    {
+      "id": "miracle_dramatic",
+      "verdict": "MIRACLE",
+      "scoreRange": [
+        8,
+        10
+      ],
+      "whenToPick": "The speaker goes full anime/theatrical passion with loud, dramatic, over-the-top commitment.",
+      "style": "deep, booming, theatrical deity blown away by dramatic devotion",
+      "ttsInput": "<breath> By the heavens... <short pause> such shameless, over-the-top devotion! Fine! Take my grace and obliterate them!",
+      "subtitle": "By the heavens... such shameless, over-the-top devotion! Fine! Take my grace and obliterate them!",
+      "audioUrl": "/world/assets/audio/artorious/miracle_dramatic.wav"
+    },
+    {
+      "id": "miracle_heartfelt",
+      "verdict": "MIRACLE",
+      "scoreRange": [
+        8,
+        10
+      ],
+      "whenToPick": "The speaker delivers a deeply sincere, emotional, loving, and heartfelt declaration to their partner.",
+      "style": "deep, resonant, emotionally moved ancient god of love speaking with awe",
+      "ttsInput": "<sigh> After ten thousand years... <short pause> mortals can still move this cold heart. The heavens part for you both!",
+      "subtitle": "After ten thousand years... mortals can still move this cold heart. The heavens part for you both!",
+      "audioUrl": "/world/assets/audio/artorious/miracle_heartfelt.wav"
+    },
+    {
+      "id": "miracle_desperate",
+      "verdict": "MIRACLE",
+      "scoreRange": [
+        8,
+        10
+      ],
+      "whenToPick": "The speaker pleads with intense urgency and fiery determination to save or protect their partner.",
+      "style": "deep, thunderous, heroic deity answering a desperate call to arms",
+      "ttsInput": "I hear the fire in your voice! <short pause> Neither death nor bone shall touch your beloved today. Rise and conquer!",
+      "subtitle": "I hear the fire in your voice! Neither death nor bone shall touch your beloved today. Rise and conquer!",
+      "audioUrl": "/world/assets/audio/artorious/miracle_desperate.wav"
+    }
+  ]
+}
