@@ -963,6 +963,8 @@ export class ArtoriousVfxSystem {
 
     this._shakeOffset = new THREE.Vector3();
     this._hitstopScale = 1.0;
+    this._originLevY = 0.0;
+    this._partnerLevY = 0.0;
 
     this._buildMeshes();
     this._seedRecords(1.0);
@@ -1253,6 +1255,16 @@ export class ArtoriousVfxSystem {
     return this._hitstopScale;
   }
 
+  /**
+   * Returns the vertical levitation offset (in meters) for the praying/blessed speaker
+   * (`role === 'origin'` or `'Mage'`) or partner (`role === 'partner'` or `'Knight'`).
+   */
+  getHeroLevitationOffset(role = 'origin') {
+    if (!this.active) return 0.0;
+    const isPartner = role === 'partner' || role === 'Knight' || role === 1;
+    return isPartner ? this._partnerLevY : this._originLevY;
+  }
+
   seek(timeSeconds, options = null) {
     if (options && typeof options === 'object') {
       if (options.mode) {
@@ -1313,35 +1325,59 @@ export class ArtoriousVfxSystem {
     const pz = this.hasPartner ? this.partnerPos.z : oz;
     const py = this.hasPartner ? this.partnerPos.y : oy;
 
-    // Frame the sanctuary around both partners when praying together
-    const cx = this.hasPartner ? (ox + px) * 0.5 : ox;
-    const cz = this.hasPartner ? (oz + pz) * 0.5 : oz;
+    const emerge = smoothstep(0.0, 0.32, t);
+    const orbitSpeed = this.suspense ? 3.4 : 1.55;
 
-    const emerge = smoothstep(0.0, 0.28, t);
-    const orbitSpeed = this.suspense ? 3.2 : 1.35;
+    // 0. Mid-Air Prayer Levitation: Speaker floats +0.68m (+0.84m in suspense) in the air with celestial sine hover!
+    const baseOriginLift = this.suspense ? 0.84 : 0.68;
+    const basePartnerLift = this.suspense ? 0.64 : 0.48;
+    this._originLevY =
+      (baseOriginLift + Math.sin(t * (this.suspense ? 5.2 : 2.8)) * 0.08) * emerge;
+    this._partnerLevY = this.hasPartner
+      ? (basePartnerLift + Math.sin(t * (this.suspense ? 5.2 : 2.8) + 0.9) * 0.07) * emerge
+      : 0.0;
 
-    // DC 1: Ascending Sun-Gold & Wisteria-Cyan Sanctuary Pillars (horseshoe around rear & flanks
-    //       `ang = 1.68 .. TAU - 0.42` so the front camera view of both heroes is 100% unobstructed!)
+    // DC 1: Focused Ascending Voice-to-Heaven Prayer Beacon (`skyRibbonsMesh`)
+    //       Instead of wide outer cathedral pillars (which belong to Miracle!), Praying channels an intimate
+    //       central Voice-to-Heaven Beacon rising directly from behind/above the speaker's raised hands/staff
+    //       straight into the clouds, wrapped by 2 ascending spiral voice-threads + 4 slender perimeter filaments!
     let rSlot = 0;
-    for (let i = 0; i < 8; i++) {
-      const spanU = i / 7;
-      const ang = lerp(1.68, TAU - 0.42, spanU) + Math.sin(t * 0.6 + i) * 0.04;
-      const rad = (this.hasPartner ? 2.75 : 2.25) + (i % 2) * 0.38;
-      const sx = cx + Math.cos(ang) * rad;
-      const sz = cz + Math.sin(ang) * rad;
-      const sy = this.getGroundHeight(sx, sz) + 0.08;
-      const topH = (12.5 + (i % 3) * 2.2) * emerge;
+    const beaconBaseY = oy + this._originLevY + 0.95;
+    const beaconTopY = oy + c.skyHeight * emerge;
 
-      const isAzure = i % 3 === 1 ? 2.0 : 0.0;
-      const isPrimaryPillar = i % 2 === 0;
-      const strandNorm = isPrimaryPillar ? 0.0 : 0.55;
-      const width = isPrimaryPillar ? 0.22 : 0.14;
-      const helixRad = isPrimaryPillar ? 0.0 : 0.10;
+    // Slot 0: Central White-Gold Voice-to-Heaven Prayer Beam (slightly behind head plane so face is 100% clear)
+    this.startPosAttr.setXYZ(rSlot, ox - 0.22, beaconBaseY, oz - 0.12);
+    this.endPosAttr.setXYZ(rSlot, ox - 0.22, beaconTopY, oz - 0.12);
+    this.ribbonMetaAttr.setXYZW(rSlot, 0.0, 1.3, this.suspense ? 0.24 : 0.19, emerge);
+    this.ribbonStyleAttr.setXYZW(rSlot, 0.0, 0.0, 0.0, 0.0);
+    rSlot++;
+
+    // Slots 1..2: 2 Intertwined Golden & Wisteria-Azure Voice-Helix Ribbons spiraling up the Prayer Beam
+    for (let k = 0; k < 2; k++) {
+      const strandNorm = k === 0 ? -0.68 : 0.68;
+      const styleId = k === 0 ? 0.0 : 2.0;
+      this.startPosAttr.setXYZ(rSlot, ox - 0.22, oy + this._originLevY + 0.20, oz - 0.12);
+      this.endPosAttr.setXYZ(rSlot, ox - 0.22, beaconTopY, oz - 0.12);
+      this.ribbonMetaAttr.setXYZW(rSlot, strandNorm, 5.1 + k * 3.7, 0.13, emerge);
+      this.ribbonStyleAttr.setXYZW(rSlot, styleId, 0.0, this.suspense ? 0.34 : 0.26, 0.0);
+      rSlot++;
+    }
+
+    // Slots 3..6: 4 Slender Perimeter Resonance Filaments around the rear/flanks of the floating speaker
+    for (let i = 0; i < 4; i++) {
+      const spanU = i / 3;
+      const ang = lerp(1.75, TAU - 0.48, spanU) + Math.sin(t * 0.9 + i) * 0.06;
+      const rad = 1.68 + (i % 2) * 0.22;
+      const sx = ox + Math.cos(ang) * rad;
+      const sz = oz + Math.sin(ang) * rad;
+      const sy = oy + this._originLevY + 0.10;
+      const topH = (9.5 + (i % 2) * 2.5) * emerge;
+      const isAzure = i % 2 === 1 ? 2.0 : 0.0;
 
       this.startPosAttr.setXYZ(rSlot, sx, sy, sz);
       this.endPosAttr.setXYZ(rSlot, sx, sy + topH, sz);
-      this.ribbonMetaAttr.setXYZW(rSlot, strandNorm, 1.1 + i * 1.7, width, emerge);
-      this.ribbonStyleAttr.setXYZW(rSlot, isAzure, 0.0, helixRad, 0.0);
+      this.ribbonMetaAttr.setXYZW(rSlot, 0.45, 14.3 + i * 2.1, 0.11, emerge);
+      this.ribbonStyleAttr.setXYZW(rSlot, isAzure, 0.0, 0.08, 0.0);
       rSlot++;
     }
 
@@ -1351,24 +1387,23 @@ export class ArtoriousVfxSystem {
     this.ribbonMetaAttr.needsUpdate = true;
     this.ribbonStyleAttr.needsUpdate = true;
 
-    // DC 2: 8 Floating Golden Runic Astrolabe Obelisks orbiting around the sanctuary
-    //       Stepped height: high waist-to-head levitation in the rear/flank apse, low knee-level
-    //       levitation in the front camera window so neither hero's face is ever blocked!
+    // DC 2: 6 Intimate Golden Runic Astrolabe Shards orbiting in a tight mid-air crown around the levitating speaker
     let mSlot = 0;
-    const orbitRadBase = this.hasPartner ? 2.55 : 2.10;
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 6; i++) {
       const rec = this.astrolabeRecords[i];
-      const ang = rec.baseAng + t * orbitSpeed;
+      const ang = (i / 6) * TAU + t * orbitSpeed;
       const normAng = ((ang % TAU) + TAU) % TAU;
       const frontFactor = Math.max(0.0, Math.cos(normAng - 0.62));
-      const rad = orbitRadBase + (rec.radius - 2.15);
-      const mx = cx + Math.cos(ang) * rad;
-      const mz = cz + Math.sin(ang) * rad;
-      const floatH = lerp(rec.baseHeight + 0.22, 0.55, Math.pow(frontFactor, 1.4));
+      const rad = 1.38 + (i % 2) * 0.16;
+      const mx = ox + Math.cos(ang) * rad;
+      const mz = oz + Math.sin(ang) * rad;
+      // Float around her levitating waist/shoulder height, dipping slightly in the front window so her face stays 100% clear
+      const relH = lerp(0.82, 0.18, Math.pow(frontFactor, 1.4));
       const my =
-        this.getGroundHeight(mx, mz) +
-        floatH +
-        Math.sin(t * 3.4 + i * 1.1) * 0.12;
+        oy +
+        this._originLevY +
+        relH +
+        Math.sin(t * 3.8 + i * 1.3) * 0.10;
 
       _dummy.position.set(mx, my, mz);
       _pos.set(
@@ -1377,36 +1412,36 @@ export class ArtoriousVfxSystem {
         Math.sin(ang) * Math.sin(rec.tilt)
       ).normalize();
       _dummy.quaternion.setFromUnitVectors(UP, _pos);
-      _dummy.rotateY(t * (this.suspense ? 4.2 : 1.8) + i);
+      _dummy.rotateY(t * (this.suspense ? 4.6 : 2.1) + i);
       _dummy.scale.set(
-        rec.scaleR * emerge,
-        rec.scaleY * emerge,
-        rec.scaleR * emerge
+        rec.scaleR * 0.78 * emerge,
+        rec.scaleY * 0.76 * emerge,
+        rec.scaleR * 0.78 * emerge
       );
       _dummy.updateMatrix();
       this.monolithsMesh.setMatrixAt(mSlot, _dummy.matrix);
-      this.monolithMetaAttr.setXYZW(mSlot, rec.seed, this.suspense ? 1.28 : 1.05, 0.0, 0.0);
+      this.monolithMetaAttr.setXYZW(mSlot, rec.seed, this.suspense ? 1.32 : 1.12, 0.0, 0.0);
       mSlot++;
     }
     this.monolithsMesh.count = mSlot;
     this.monolithsMesh.instanceMatrix.needsUpdate = true;
     this.monolithMetaAttr.needsUpdate = true;
 
-    // DC 3: 28 Ascending 3D Octahedral Starlight Prisms & Floating Golden Wisteria Petals
+    // DC 3: 22 Ascending Starlight Prisms & Golden Wisteria Petals rising around the levitating speaker
     let dSlot = 0;
-    for (let i = 0; i < 28; i++) {
+    for (let i = 0; i < 22; i++) {
       const rec = this.debrisRecords[i];
-      const swirlAng = rec.ang + t * (1.25 + (i % 3) * 0.35);
-      const rad = 1.85 + (rec.orbitRadius * 0.65);
-      const localH = ((rec.heightOffset + t * rec.climbSpeed) % 4.8) * emerge;
-      const dx = cx + Math.cos(swirlAng) * rad;
-      const dz = cz + Math.sin(swirlAng) * rad;
-      const dy = this.getGroundHeight(dx, dz) + 0.45 + localH;
+      const swirlAng = rec.ang + t * (1.55 + (i % 3) * 0.35);
+      const rad = 0.85 + (rec.orbitRadius * 0.42);
+      const localH = ((rec.heightOffset + t * rec.climbSpeed * 1.25) % 4.6) * emerge;
+      const dx = ox + Math.cos(swirlAng) * rad;
+      const dz = oz + Math.sin(swirlAng) * rad;
+      const dy = oy + this._originLevY * 0.5 + 0.25 + localH;
 
       _dummy.position.set(dx, dy, dz);
       _euler.set(t * rec.spinX * 0.5, swirlAng + t * rec.spinY * 0.5, t * rec.spinZ * 0.5);
       _dummy.quaternion.setFromEuler(_euler);
-      const sc = rec.size * 0.90 * emerge;
+      const sc = rec.size * 0.84 * emerge;
       if (rec.isPetal) {
         _dummy.scale.set(sc * 1.15, sc * 0.38, sc * 0.78);
       } else {
@@ -1414,33 +1449,41 @@ export class ArtoriousVfxSystem {
       }
       _dummy.updateMatrix();
       this.prismsAndDebrisMesh.setMatrixAt(dSlot, _dummy.matrix);
-      this.debrisMetaAttr.setXYZW(dSlot, rec.seed, 1.12, 0.0, rec.isPetal ? 1.0 : 0.0);
+      this.debrisMetaAttr.setXYZW(dSlot, rec.seed, 1.18, 0.0, rec.isPetal ? 1.0 : 0.0);
       dSlot++;
     }
     this.prismsAndDebrisMesh.count = dSlot;
     this.prismsAndDebrisMesh.instanceMatrix.needsUpdate = true;
     this.debrisMetaAttr.needsUpdate = true;
 
-    // DC 4: 12-Pointed Celestial Sun-Rose & Compass Rose Sanctuary Mandala
+    // DC 4: Ground Compass Sigil + Floating Mid-Air Levitation Halo Rings directly under their floating boots!
     let sSlot = 0;
+    // Slot 0: Ground Sanctuary Compass Mandala anchored on the dirt below
     _dummy.position.set(ox, oy + 0.042, oz);
     _dummy.quaternion.setFromAxisAngle(UP, 0.0);
-    _dummy.scale.set(c.channelSigilRadius, 1.0, c.channelSigilRadius);
+    _dummy.scale.set(3.25, 1.0, 3.25);
     _dummy.updateMatrix();
     this.groundSigilMesh.setMatrixAt(sSlot, _dummy.matrix);
-    this.sigilMetaAttr.setXYZW(sSlot, 0.0, emerge, 0.31, this.suspense ? 1.25 : 1.05);
+    this.sigilMetaAttr.setXYZW(sSlot, 0.0, emerge, 0.31, this.suspense ? 1.28 : 1.08);
+    sSlot++;
+
+    // Slot 1: Floating Mid-Air Prayer Halo Ring directly beneath the levitating speaker's boots!
+    _dummy.position.set(ox, oy + this._originLevY - 0.03, oz);
+    _dummy.quaternion.setFromAxisAngle(UP, -0.45);
+    _dummy.scale.set(1.65, 1.0, 1.65);
+    _dummy.updateMatrix();
+    this.groundSigilMesh.setMatrixAt(sSlot, _dummy.matrix);
+    this.sigilMetaAttr.setXYZW(sSlot, 0.0, emerge, 0.64, 1.26);
     sSlot++;
 
     if (this.hasPartner) {
-      const px = this.partnerPos.x;
-      const pz = this.partnerPos.z;
-      const py = this.partnerPos.y;
-      _dummy.position.set(px, py + 0.040, pz);
+      // Slot 2: Floating Mid-Air Partner Halo Ring beneath the levitating partner's boots!
+      _dummy.position.set(px, py + this._partnerLevY - 0.03, pz);
       _dummy.quaternion.setFromAxisAngle(UP, 0.52);
-      _dummy.scale.set(c.channelSigilRadius * 0.64, 1.0, c.channelSigilRadius * 0.64);
+      _dummy.scale.set(1.45, 1.0, 1.45);
       _dummy.updateMatrix();
       this.groundSigilMesh.setMatrixAt(sSlot, _dummy.matrix);
-      this.sigilMetaAttr.setXYZW(sSlot, 0.0, emerge, 0.77, 0.95);
+      this.sigilMetaAttr.setXYZW(sSlot, 0.0, emerge, 0.89, 1.12);
       sSlot++;
     }
     this.groundSigilMesh.count = sSlot;
@@ -1651,7 +1694,9 @@ export class ArtoriousVfxSystem {
     this.groundSigilMesh.instanceMatrix.needsUpdate = true;
     this.sigilMetaAttr.needsUpdate = true;
 
-    // Hitstop & Damped Camera Shake
+    // Hitstop, Levitation Snap-Drop & Damped Camera Shake
+    this._originLevY = 0.72 * Math.exp(-t * 24.0);
+    this._partnerLevY = 0.0;
     this._hitstopScale = Math.abs(t - c.smiteImpactTime) <= 0.035 ? 0.05 : 1.0;
     if (impactElapsed >= 0 && impactElapsed <= 0.48) {
       const env = Math.exp(-impactElapsed * 6.8) * 0.18;
@@ -1685,6 +1730,15 @@ export class ArtoriousVfxSystem {
 
     const skyReach = smoothstep(0.0, 0.22, t);
     const ribbonErode = smoothstep(0.15, 0.92, fadeU);
+
+    // 0. Divine Ascension Levitation: Raise both characters high into the air (+1.05m in Blessing, +1.28m in Miracle)
+    //    and float them smoothly back down as the blessing/miracle concludes!
+    const riseEnv = outQuint(Math.min(1.0, t / 0.28)) * (1.0 - smoothstep(0.22, 0.95, fadeU));
+    const peakLift = isFullMiracle ? 1.24 : 1.02;
+    this._originLevY = (peakLift + Math.sin(t * 3.2) * 0.08) * riseEnv;
+    this._partnerLevY = this.hasPartner
+      ? (peakLift * 0.94 + Math.sin(t * 3.2 + 0.75) * 0.08) * riseEnv
+      : 0.0;
 
     // DC 1: Ascending Celestial Sun-Gold & Wisteria-Cyan Sky-Parting God-Ray Pillars (`y = 0..18m`)
     //       Arranged in a grand cathedral apse horseshoe (`ang = 1.48 .. TAU - 0.20`) behind & flanking both partners
@@ -1820,7 +1874,7 @@ export class ArtoriousVfxSystem {
     this.prismsAndDebrisMesh.instanceMatrix.needsUpdate = true;
     this.debrisMetaAttr.needsUpdate = true;
 
-    // DC 4: 12-Pointed Celestial Sun-Rose & Compass Rose Sanctuary Mandala
+    // DC 4: Grand Ground Sanctuary Mandala + Twin Mid-Air Ascension Halo Platforms directly beneath their floating boots!
     let sSlot = 0;
     if (fadeU < 0.99) {
       const reach = smoothstep(0.0, 0.24, t);
@@ -1834,21 +1888,23 @@ export class ArtoriousVfxSystem {
       this.sigilMetaAttr.setXYZW(sSlot, fadeU, reach, 0.23, 1.28);
       sSlot++;
 
-      if (this.hasPartner) {
-        _dummy.position.set(ox, oy + 0.045, oz);
-        _dummy.quaternion.setFromAxisAngle(UP, 0.42);
-        _dummy.scale.set(2.35, 1.0, 2.35);
-        _dummy.updateMatrix();
-        this.groundSigilMesh.setMatrixAt(sSlot, _dummy.matrix);
-        this.sigilMetaAttr.setXYZW(sSlot, fadeU, reach, 0.61, 1.18);
-        sSlot++;
+      // Slot 1: Floating Mid-Air Ascension Halo Platform beneath the speaker's levitating boots!
+      _dummy.position.set(ox, oy + Math.max(0.05, this._originLevY - 0.03), oz);
+      _dummy.quaternion.setFromAxisAngle(UP, 0.42);
+      _dummy.scale.set(1.80, 1.0, 1.80);
+      _dummy.updateMatrix();
+      this.groundSigilMesh.setMatrixAt(sSlot, _dummy.matrix);
+      this.sigilMetaAttr.setXYZW(sSlot, fadeU, reach, 0.61, 1.26);
+      sSlot++;
 
-        _dummy.position.set(px, py + 0.045, pz);
+      if (this.hasPartner) {
+        // Slot 2: Floating Mid-Air Ascension Halo Platform beneath the partner's levitating boots!
+        _dummy.position.set(px, py + Math.max(0.05, this._partnerLevY - 0.03), pz);
         _dummy.quaternion.setFromAxisAngle(UP, -0.42);
-        _dummy.scale.set(2.35, 1.0, 2.35);
+        _dummy.scale.set(1.80, 1.0, 1.80);
         _dummy.updateMatrix();
         this.groundSigilMesh.setMatrixAt(sSlot, _dummy.matrix);
-        this.sigilMetaAttr.setXYZW(sSlot, fadeU, reach, 0.89, 1.18);
+        this.sigilMetaAttr.setXYZW(sSlot, fadeU, reach, 0.89, 1.26);
         sSlot++;
       }
     }
@@ -1916,6 +1972,8 @@ export class ArtoriousVfxSystem {
     this.isLooping = false;
     this.suspense = false;
     this.age = 0;
+    this._originLevY = 0.0;
+    this._partnerLevY = 0.0;
     this._shakeOffset.set(0, 0, 0);
     this._hitstopScale = 1.0;
     this.group.visible = false;

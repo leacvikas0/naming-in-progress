@@ -764,11 +764,17 @@
         }
 
         seekActiveSystem(def, timeSeconds);
-        if (def.system === 'artoriousVfx' && !poses) {
-          const shk = artoriousVfx.getCameraShakeOffset();
-          camera.position.set(def.pos[0] + shk.x, def.pos[1] + shk.y, def.pos[2] + shk.z);
-          controls.target.set(def.target[0] + shk.x * 0.5, def.target[1] + shk.y * 0.5, def.target[2] + shk.z * 0.5);
-          controls.update();
+        if (def.system === 'artoriousVfx') {
+          const mLev = artoriousVfx.getHeroLevitationOffset('origin');
+          const kLev = artoriousVfx.getHeroLevitationOffset('partner');
+          mageChar.group.position.y = BASE_MAGE_Y + mLev + (poses?.mage?.dy || 0);
+          knightChar.group.position.y = kPos[1] + kLev;
+          if (!poses) {
+            const shk = artoriousVfx.getCameraShakeOffset();
+            camera.position.set(def.pos[0] + shk.x, def.pos[1] + shk.y, def.pos[2] + shk.z);
+            controls.target.set(def.target[0] + shk.x * 0.5, def.target[1] + shk.y * 0.5, def.target[2] + shk.z * 0.5);
+            controls.update();
+          }
         }
         scrubSlider.value = timeSeconds.toFixed(2);
         timeLabel.textContent = `t = ${timeSeconds.toFixed(2)}s`;

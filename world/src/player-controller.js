@@ -939,7 +939,9 @@ export async function createCoopPlayerSystem({
   }
 
   function applyTransform(st) {
-    st.char.group.position.set(st.x, st.y, st.z);
+    const levRole = st.id === 'Mage' ? 'origin' : 'partner';
+    const levY = vfxKit?.artoriousVfx ? vfxKit.artoriousVfx.getHeroLevitationOffset(levRole) : 0.0;
+    st.char.group.position.set(st.x, st.y + levY, st.z);
     st.char.group.rotation.y = st.yaw;
   }
 
