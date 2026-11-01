@@ -1,11 +1,16 @@
 // ============================================================================
 // world/src/touch-hud.js
 //
-// Xiaomi Pad 7 (3:2 144Hz) Minimal Light Touch Controls:
-// - Left Floating Thumbstick with outer-ring Auto-Sprint
+// Xiaomi Pad 7 (3:2 144Hz) Genshin-Style Split Touch Controls:
+// - Left Floating Dynamic Thumbstick with outer-ring Auto-Sprint (>= 78%)
 // - Multi-touch independent Right-Side Camera Orbit zone
-// - Bottom-Right Clean 3-Button Cluster: Swing (Attack), Frost Lance (Cast K), Jump
-// - Mounted inside `#hud` so `toggleHud(false)` hides all UI cleanly for
+// - Bottom-Right 5-Button Ergonomic Thumb Arc (`right: 24px, bottom: 24px`):
+//     1. Primary `Attack` (`82px`, `data-action="attack"`, Tap = Combo, Hold >= 0.28s = Heavy Finisher)
+//     2. `Dash` (`58px`, `data-action="dash"`)
+//     3. `Skill E` (`62px`, `data-action="skill"`)
+//     4. `Jump` (`52px`, `data-action="jump"`)
+//     5. `Ult Q` (`62px`, `data-action="ultimate"`)
+// - Mounted 100% inside `#hud` so `toggleHud(false)` hides all UI cleanly for
 //   automated Playwright world verification screenshots.
 // ============================================================================
 
@@ -36,23 +41,23 @@ export function createTouchHud({
       position: absolute;
       left: 0;
       bottom: 0;
-      width: 44vw;
-      height: 68vh;
+      width: 34vw;
+      height: 62vh;
       pointer-events: auto;
       touch-action: none;
     }
     .joy-base {
       position: absolute;
-      left: 52px;
-      bottom: 52px;
-      width: 124px;
-      height: 124px;
+      left: 42px;
+      bottom: 42px;
+      width: 120px;
+      height: 120px;
       border-radius: 50%;
-      background: rgba(250, 248, 243, 0.56);
-      border: 1.5px solid rgba(28, 25, 23, 0.14);
+      background: rgba(250, 248, 243, 0.62);
+      border: 1.5px solid rgba(28, 25, 23, 0.16);
       box-shadow:
-        0 1px 2px rgba(28, 25, 23, 0.06),
-        0 8px 24px -4px rgba(28, 25, 23, 0.12);
+        0 1px 2px rgba(28, 25, 23, 0.08),
+        0 8px 24px -4px rgba(28, 25, 23, 0.14);
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
       display: flex;
@@ -60,38 +65,38 @@ export function createTouchHud({
       justify-content: center;
     }
     .joy-base.sprinting {
-      border-color: rgba(2, 132, 199, 0.55);
-      box-shadow: 0 0 20px rgba(2, 132, 199, 0.22);
+      border-color: rgba(2, 132, 199, 0.65);
+      box-shadow: 0 0 22px rgba(2, 132, 199, 0.28);
     }
     .joy-sprint-ring {
       position: absolute;
-      inset: -7px;
+      inset: -6px;
       border-radius: 50%;
-      border: 1px dashed rgba(28, 25, 23, 0.22);
+      border: 1px dashed rgba(28, 25, 23, 0.24);
       pointer-events: none;
     }
     .joy-puck {
-      width: 48px;
-      height: 48px;
+      width: 46px;
+      height: 46px;
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.92);
-      border: 1px solid rgba(28, 25, 23, 0.16);
-      box-shadow: 0 4px 12px rgba(28, 25, 23, 0.16);
+      background: rgba(255, 255, 255, 0.94);
+      border: 1.5px solid rgba(28, 25, 23, 0.18);
+      box-shadow: 0 4px 12px rgba(28, 25, 23, 0.18);
       transform: translate3d(0px, 0px, 0px);
       pointer-events: none;
     }
     .joy-base.sprinting .joy-puck {
       background: #e0f2fe;
-      border-color: #38bdf8;
+      border-color: #0284c7;
     }
     .joy-label {
       position: absolute;
       bottom: -22px;
-      font-size: 0.6875rem;
-      font-weight: 600;
+      font-size: 0.66rem;
+      font-weight: 700;
       letter-spacing: 0.04em;
-      color: rgba(28, 25, 23, 0.72);
-      background: rgba(250, 248, 243, 0.78);
+      color: rgba(28, 25, 23, 0.78);
+      background: rgba(250, 248, 243, 0.85);
       padding: 1px 8px;
       border-radius: 999px;
       pointer-events: none;
@@ -109,21 +114,21 @@ export function createTouchHud({
       touch-action: none;
     }
 
-    /* Bottom-Right Minimal Light Action Cluster */
+    /* Bottom-Right 5-Button Ergonomic Action Arc */
     #touch-action-cluster {
       position: absolute;
-      right: 32px;
-      bottom: 36px;
-      width: 190px;
-      height: 170px;
+      right: 24px;
+      bottom: 24px;
+      width: 196px;
+      height: 198px;
       pointer-events: none;
       z-index: 28;
     }
     .touch-action-btn {
       position: absolute;
       border-radius: 50%;
-      background: rgba(250, 248, 243, 0.84);
-      border: 1px solid rgba(28, 25, 23, 0.12);
+      background: rgba(250, 248, 243, 0.88);
+      border: 1.5px solid rgba(28, 25, 23, 0.16);
       color: #1c1917;
       display: flex;
       flex-direction: column;
@@ -133,60 +138,94 @@ export function createTouchHud({
       pointer-events: auto;
       touch-action: none;
       box-shadow:
-        0 1px 2px rgba(28, 25, 23, 0.08),
-        0 8px 20px -4px rgba(28, 25, 23, 0.14);
+        0 1px 2px rgba(28, 25, 23, 0.10),
+        0 8px 20px -4px rgba(28, 25, 23, 0.16);
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
       font-family: inherit;
     }
     .touch-action-btn .lbl {
-      font-size: 0.75rem;
-      font-weight: 600;
+      font-size: 0.72rem;
+      font-weight: 800;
       line-height: 1.1;
       color: #1c1917;
     }
     .touch-action-btn .sub {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 0.625rem;
-      font-weight: 600;
+      font-size: 0.58rem;
+      font-weight: 700;
       color: #57534e;
       margin-top: 2px;
     }
 
+    /* 1. Primary Attack (82px, Tap / Hold) */
     .touch-action-btn.btn-attack {
       right: 8px;
       bottom: 8px;
-      width: 78px;
-      height: 78px;
+      width: 82px;
+      height: 82px;
+      background: linear-gradient(145deg, #ffffff, #f5f5f4);
+      border: 2px solid #1c1917;
     }
-    .touch-action-btn.btn-cast {
-      right: 98px;
-      bottom: 20px;
-      width: 68px;
-      height: 68px;
-      background: rgba(224, 242, 254, 0.88);
-      border-color: rgba(56, 189, 248, 0.45);
+    .touch-action-btn.btn-attack .lbl {
+      font-size: 0.80rem;
     }
-    .touch-action-btn.btn-cast .lbl {
+
+    /* 2. Dash (58px, left of Attack) */
+    .touch-action-btn.btn-dash {
+      right: 108px;
+      bottom: 6px;
+      width: 58px;
+      height: 58px;
+    }
+
+    /* 3. Partner Skill E (62px, upper-left of Attack) */
+    .touch-action-btn.btn-skill {
+      right: 104px;
+      bottom: 76px;
+      width: 62px;
+      height: 62px;
+      background: rgba(224, 242, 254, 0.92);
+      border-color: rgba(2, 132, 199, 0.55);
+    }
+    .touch-action-btn.btn-skill .lbl {
       color: #0c4a6e;
     }
-    .touch-action-btn.btn-cast .sub {
+    .touch-action-btn.btn-skill .sub {
       color: #0284c7;
     }
+
+    /* 4. Couples Ultimate Q (62px, upper-mid of Arc) */
+    .touch-action-btn.btn-ultimate {
+      right: 54px;
+      bottom: 128px;
+      width: 62px;
+      height: 62px;
+      background: linear-gradient(135deg, #fef3c7, #fde68a);
+      border-color: rgba(217, 119, 6, 0.65);
+    }
+    .touch-action-btn.btn-ultimate .lbl {
+      color: #92400e;
+    }
+    .touch-action-btn.btn-ultimate .sub {
+      color: #b45309;
+    }
+
+    /* 5. Jump (52px, above-right of Attack) */
     .touch-action-btn.btn-jump {
-      right: 16px;
-      bottom: 98px;
-      width: 60px;
-      height: 60px;
+      right: 2px;
+      bottom: 102px;
+      width: 52px;
+      height: 52px;
     }
 
     @media (prefers-reduced-motion: no-preference) {
       .touch-action-btn {
-        transition: transform 140ms ease-out, background-color 140ms ease-out;
+        transition: transform 120ms ease-out, background-color 120ms ease-out;
       }
       .touch-action-btn:active,
       .touch-action-btn.pressed {
-        transform: scale(0.94);
+        transform: scale(0.93);
       }
     }
   `;
@@ -206,17 +245,25 @@ export function createTouchHud({
     <div id="touch-orbit-zone"></div>
 
     <div id="touch-action-cluster">
-      <button type="button" class="touch-action-btn btn-attack" data-action="attack" aria-label="Swing weapon">
-        <span class="lbl">Swing</span>
-        <span class="sub">Click</span>
+      <button type="button" class="touch-action-btn btn-attack" data-action="attack" aria-label="Attack or Hold Heavy Finisher">
+        <span class="lbl">Attack</span>
+        <span class="sub">Tap/Hold</span>
       </button>
-      <button type="button" class="touch-action-btn btn-cast" data-action="cast" aria-label="Cast Frost Lance">
-        <span class="lbl">Lance</span>
-        <span class="sub">K</span>
+      <button type="button" class="touch-action-btn btn-dash" data-action="dash" aria-label="Dash Dodge">
+        <span class="lbl">Dash</span>
+        <span class="sub">Evade</span>
+      </button>
+      <button type="button" class="touch-action-btn btn-skill" data-action="skill" aria-label="Partner Skill">
+        <span class="lbl">Skill</span>
+        <span class="sub">Ward</span>
+      </button>
+      <button type="button" class="touch-action-btn btn-ultimate" data-action="ultimate" aria-label="Couples Resonance Ultimate">
+        <span class="lbl">Ult</span>
+        <span class="sub">Burst</span>
       </button>
       <button type="button" class="touch-action-btn btn-jump" data-action="jump" aria-label="Jump">
         <span class="lbl">Jump</span>
-        <span class="sub">Space</span>
+        <span class="sub">Leap</span>
       </button>
     </div>
   `;
@@ -244,7 +291,7 @@ export function createTouchHud({
     sprinting: false,
   };
 
-  const MAX_JOY_RADIUS = 48;
+  const MAX_JOY_RADIUS = 46;
   const SPRINT_THRESHOLD = 0.78;
 
   function updateJoystickFromPoint(clientX, clientY) {
@@ -341,15 +388,34 @@ export function createTouchHud({
   orbitZone.addEventListener('pointerup', endOrbit);
   orbitZone.addEventListener('pointercancel', endOrbit);
 
-  // Action Buttons: Swing ('attack'), Lance ('cast'), Jump ('jump')
+  // Action Buttons: Attack (Tap = 'attack', Hold >= 0.28s = 'heavy'), Dash, Skill, Ultimate, Jump
+  let attackHoldTimer = null;
+
   layer.querySelectorAll('.touch-action-btn').forEach((btn) => {
     const action = btn.dataset.action;
     btn.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       btn.classList.add('pressed');
-      if (onAction) onAction(action);
+      if (action === 'attack') {
+        if (onAction) onAction('attack');
+        if (attackHoldTimer) clearTimeout(attackHoldTimer);
+        attackHoldTimer = setTimeout(() => {
+          attackHoldTimer = null;
+          if (btn.classList.contains('pressed') && onAction) {
+            onAction('heavy');
+          }
+        }, 280);
+      } else if (onAction) {
+        onAction(action);
+      }
     });
-    const releaseBtn = () => btn.classList.remove('pressed');
+    const releaseBtn = () => {
+      btn.classList.remove('pressed');
+      if (action === 'attack' && attackHoldTimer) {
+        clearTimeout(attackHoldTimer);
+        attackHoldTimer = null;
+      }
+    };
     btn.addEventListener('pointerup', releaseBtn);
     btn.addEventListener('pointercancel', releaseBtn);
   });
@@ -360,12 +426,35 @@ export function createTouchHud({
       ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0));
     const shouldShow = profileName === 'tablet' || isTouchCapable;
     layer.classList.toggle('visible', shouldShow);
+    if (hudRoot) {
+      hudRoot.classList.toggle('profile-tablet', shouldShow);
+    }
+  }
+
+  /**
+   * Deterministic visual state setter for Xiaomi Pad 7 screenshot verification.
+   */
+  function setDemoState({ joyX = 0, joyY = 0, sprinting = false, activeAction = null } = {}) {
+    const px = joyX * MAX_JOY_RADIUS;
+    const py = -joyY * MAX_JOY_RADIUS;
+    joyPuck.style.transform = `translate3d(${px.toFixed(1)}px, ${py.toFixed(1)}px, 0px)`;
+    joyBase.classList.toggle('sprinting', Boolean(sprinting));
+    if (joyLabel) {
+      joyLabel.textContent = sprinting ? 'Sprint' : 'Move';
+    }
+    layer.querySelectorAll('.touch-action-btn').forEach((btn) => {
+      btn.classList.toggle('pressed', btn.dataset.action === activeAction);
+    });
   }
 
   return {
     layer,
     joyState,
+    get isOrbitDragging() {
+      return orbitPointerId !== null;
+    },
     setProfileMode,
+    setDemoState,
     setActiveHeroDisplay: () => {},
     setPrayerBannerVisible: () => {},
     resetJoystick,

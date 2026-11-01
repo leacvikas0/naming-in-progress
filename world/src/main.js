@@ -1,10 +1,13 @@
 // ============================================================================
 // world/src/main.js
 //
-// Stage 3 Assembled World: Terrain, Water & Landmarks + Tudor Village Houses +
-// Toroidal Gouache Meadow + Stylized Time-of-Day Sky (Sun, Moon & Stars) +
-// Stage 3 Cel-Shaded Co-Op Heroes (Knight & Mage) + East Arena Skeletons +
-// Xiaomi Pad 7 (3:2) Genshin-Style Touch HUD + 4x MSAA HDR Post-Processing.
+// Stage 5 Assembled World & Live Co-Op Action RPG:
+// - Terrain, Water & Landmarks + Tudor Village Houses + Toroidal Gouache Meadow
+// - Stylized Time-of-Day Sky (Sun, Moon & Stars) + 4x MSAA HDR Post-Processing
+// - Stage 3–5 Co-Op Heroes (Knight & Mage), Pooled Skeleton Waves & Boss Sovereign
+// - Complete Stage 4 Opaque VFX & *Demon Slayer* Sword Breathing Suite
+// - Hybrid PointerLock + Drag-Orbit PC Controls & Xiaomi Pad 7 (3:2) Touch HUD
+// - Cloudflare / Local WebSocket 2-Player Co-Op Room Pairing (`?room=LOVE`)
 // ============================================================================
 
 import * as THREE from 'three';
@@ -13,7 +16,6 @@ import {
   INNER_EXTENT,
   ZONES,
   BUILDINGS,
-  LANDMARKS,
   walkableHeightAt,
   terrainHeightAt,
   sampleWorld,
@@ -24,10 +26,25 @@ import { createHousesKit } from '../assets/houses/index.js';
 import { createToroidalMeadow, MEADOW_PROFILES } from '../assets/flowers/index.js';
 import { createTimeOfDaySky, TOD_PRESETS } from './sky-tod.js';
 import { createWorldPost } from './post.js';
-import { createCoopPlayerSystem } from './player-controller.js';
+import {
+  createCoopPlayerSystem,
+  STAGE5_GAMEPLAY_SHOTS,
+} from './player-controller.js';
 import { createTouchHud } from './touch-hud.js';
+import {
+  BREATHING_STYLES,
+  SPELL_BY_SLOT,
+  ACT_DEFINITIONS,
+} from './combat/combat-balance.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+
+function shortestAngleDiff(target, current) {
+  let diff = (target - current) % (Math.PI * 2);
+  if (diff > Math.PI) diff -= Math.PI * 2;
+  if (diff < -Math.PI) diff += Math.PI * 2;
+  return diff;
+}
 
 function hash(n) {
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453123;
@@ -52,7 +69,7 @@ const PROFILES = {
     dpr: Math.min(window.devicePixelRatio || 1, 2.0),
     aaSamples: 4,
     meadowProfile: 'desktop',
-    maxGrassTufts: 10400,
+    maxGrassTufts: 8800,
   },
   tablet: {
     id: 'tablet',
@@ -102,7 +119,6 @@ const terrainKit = createTerrainAndLandmarks(renderer, {
 });
 scene.add(terrainKit.group);
 
-// Locate the landmark emissive material (pier lantern, arena gate lanterns, staircase lamps, shrine crystal)
 const landmarkEmissiveMats = [];
 terrainKit.landmarksGroup.traverse((obj) => {
   if (obj.isMesh && obj.name.endsWith('-emissive') && obj.material) {
@@ -131,8 +147,6 @@ for (const c of village.colliders) {
 /* ------------------------------------------------------------------------- */
 
 function populateValleyWildflowerDrifts(meadowInstance) {
-  // Curated colony centers across all 4 zones of the expanded valley:
-  // Hamlet Commons perimeter, West Millpond & Pier lane, East Wisteria Arena, and North Shrine hills
   const colonies = [
     // Zone A: Hamlet Well Plaza & Cottage Perimeter Meadows
     { x: -7.5, z: 16.5, r: 7.5 },
@@ -178,7 +192,6 @@ function populateValleyWildflowerDrifts(meadowInstance) {
     const imesh = meadowInstance.flowerMeshes[key];
     const targetCount = MEADOW_PROFILES[activeProfile]?.counts?.[key] || imesh.count || 200;
 
-    // Expand fade radius so wildflowers stay visible across long valley sightlines
     if (imesh.material?.uniforms) {
       imesh.material.uniforms.uFadeStart.value = 92.0;
       imesh.material.uniforms.uFadeEnd.value = 136.0;
@@ -307,11 +320,192 @@ function resolveCollisions(px, pz, radius) {
 }
 
 /* ------------------------------------------------------------------------- */
-/* 6. Stage 3 Co-Op Heroes (Knight + Mage) & Xiaomi Pad 7 Touch HUD          */
+/* 6. Stage 5 HUD DOM Elements & Reactive Updater                            */
 /* ------------------------------------------------------------------------- */
 
+const hudEl = document.getElementById('hud');
+const statsEl = document.getElementById('stats-readout');
+const viewSelect = document.getElementById('view-select');
 const hudSwapHeroBtn = document.getElementById('hud-swap-hero-btn');
 const hudHeroName = document.getElementById('hud-hero-name');
+
+const knightBarRow = document.getElementById('knight-bar-row');
+const mageBarRow = document.getElementById('mage-bar-row');
+const knightHpFill = document.getElementById('knight-hp-fill');
+const knightShieldFill = document.getElementById('knight-shield-fill');
+const knightHpText = document.getElementById('knight-hp-text');
+const mageHpFill = document.getElementById('mage-hp-fill');
+const mageShieldFill = document.getElementById('mage-shield-fill');
+const mageHpText = document.getElementById('mage-hp-text');
+const knightBreathingBadge = document.getElementById('knight-breathing-badge');
+
+const coopStatusDot = document.getElementById('coop-status-dot');
+const coopStatusLabel = document.getElementById('coop-status-label');
+const coopRoomBtn = document.getElementById('coop-room-btn');
+const coopRoomCodeEl = document.getElementById('coop-room-code');
+const coopShareBtn = document.getElementById('coop-share-btn');
+
+const actStageTag = document.getElementById('act-stage-tag');
+const actObjectiveText = document.getElementById('act-objective-text');
+const bossHudBar = document.getElementById('boss-hud-bar');
+const bossNameLabel = document.getElementById('boss-name-label');
+const bossAegisBadge = document.getElementById('boss-aegis-badge');
+const bossHpFill = document.getElementById('boss-hp-fill');
+
+const combatBanner = document.getElementById('combat-banner');
+const combatBannerTitle = document.getElementById('combat-banner-title');
+const combatBannerSub = document.getElementById('combat-banner-sub');
+
+const ultQBtn = document.getElementById('ult-q-btn');
+const resonancePctEl = document.getElementById('resonance-pct');
+const victoryModal = document.getElementById('victory-modal');
+const replayExpeditionBtn = document.getElementById('replay-expedition-btn');
+
+let bannerHideTimer = null;
+
+function showCombatBanner({ title = '', subtitle = '' } = {}, durationMs = 3600) {
+  if (!combatBanner) return;
+  if (combatBannerTitle) combatBannerTitle.textContent = title;
+  if (combatBannerSub) combatBannerSub.textContent = subtitle;
+  combatBanner.classList.add('visible');
+  if (bannerHideTimer) clearTimeout(bannerHideTimer);
+  if (durationMs > 0) {
+    bannerHideTimer = setTimeout(() => {
+      combatBanner.classList.remove('visible');
+    }, durationMs);
+  }
+}
+
+const BREATHING_ICON_MAP = {
+  none: '⚔️ Steel Wind',
+  rime: '❄️ Glacial Tide',
+  solar: '☀️ Hinokami Sunfire',
+  tempest: '⚡ Thunderclap Wisteria',
+};
+
+function updateCombatHud(snapshot) {
+  if (!snapshot) return;
+
+  // 1. Knight & Mage HP + Shield Bars
+  const k = snapshot.knight;
+  const m = snapshot.mage;
+  if (k) {
+    const kPct = clamp((k.hp / Math.max(1, k.maxHp)) * 100, 0, 100);
+    const kShieldPct = clamp((k.shield / Math.max(1, k.maxHp)) * 100, 0, 100);
+    if (knightHpFill) knightHpFill.style.width = `${kPct.toFixed(1)}%`;
+    if (knightShieldFill) knightShieldFill.style.width = `${kShieldPct.toFixed(1)}%`;
+    if (knightHpText) {
+      knightHpText.textContent = k.shield > 0 ? `${k.hp}+${k.shield}` : `${k.hp}/${k.maxHp}`;
+    }
+    if (knightBreathingBadge) {
+      const styleId = k.breathingStyle || 'none';
+      knightBreathingBadge.dataset.style = styleId;
+      const baseLabel = BREATHING_ICON_MAP[styleId] || BREATHING_ICON_MAP.none;
+      knightBreathingBadge.textContent =
+        styleId !== 'none' && k.breathingTimer > 0
+          ? `${baseLabel} · ${k.breathingTimer.toFixed(0)}s`
+          : baseLabel;
+    }
+  }
+
+  if (m) {
+    const mPct = clamp((m.hp / Math.max(1, m.maxHp)) * 100, 0, 100);
+    const mShieldPct = clamp((m.shield / Math.max(1, m.maxHp)) * 100, 0, 100);
+    if (mageHpFill) mageHpFill.style.width = `${mPct.toFixed(1)}%`;
+    if (mageShieldFill) mageShieldFill.style.width = `${mShieldPct.toFixed(1)}%`;
+    if (mageHpText) {
+      mageHpText.textContent = m.shield > 0 ? `${m.hp}+${m.shield}` : `${m.hp}/${m.maxHp}`;
+    }
+
+    // 2. 4-Spell Deck Cooldown Overlays
+    for (let slot = 1; slot <= 4; slot++) {
+      const spell = SPELL_BY_SLOT[slot];
+      const btn = document.querySelector(`.spell-slot-btn[data-spell-slot="${slot}"]`);
+      const cdEl = document.querySelector(`[data-cd-slot="${slot}"]`);
+      if (spell && btn && cdEl) {
+        const rem = m.spellCooldowns?.[spell.id] || 0;
+        const onCd = rem > 0.08;
+        btn.classList.toggle('on-cooldown', onCd);
+        cdEl.textContent = onCd ? `${rem.toFixed(1)}s` : '';
+      }
+    }
+  }
+
+  // 3. Heart Resonance & Q Ultimate Button
+  const resPct = clamp(snapshot.heartResonance ?? 0, 0, 100);
+  if (resonancePctEl) {
+    resonancePctEl.textContent = resPct >= 100 ? '100% READY!' : `${resPct}% Resonance`;
+  }
+  if (ultQBtn) {
+    ultQBtn.classList.toggle('ult-ready', resPct >= 100);
+  }
+
+  // 4. Act Objective Pill
+  if (actStageTag && actObjectiveText) {
+    const actId = snapshot.actId;
+    if (actId === 'act1_arena') {
+      actStageTag.textContent = 'Act I';
+      actObjectiveText.textContent = snapshot.actTriggered
+        ? `East Wisteria Clearing — Wave ${Math.max(1, snapshot.waveIndex + 1)}/${snapshot.waveCount}`
+        : 'East Wisteria Clearing — Follow Golden Petals East';
+    } else if (actId === 'interlude_pier') {
+      actStageTag.textContent = 'Interlude';
+      actObjectiveText.textContent = 'West Millpond Pier — Touch the Sanctuary Brazier';
+    } else if (actId === 'act2_plaza') {
+      actStageTag.textContent = 'Act II';
+      actObjectiveText.textContent = 'Twilight Hamlet Plaza — Defend the Well Ring Road';
+    } else if (actId === 'act3_shrine') {
+      actStageTag.textContent = 'Act III';
+      actObjectiveText.textContent = 'Starlit North Shrine — Vanquish The Hollow Sovereign';
+    } else if (actId === 'victory_dawn') {
+      actStageTag.textContent = 'Victory';
+      actObjectiveText.textContent = 'Dawn Over Haru-machi — Valley Restored';
+    }
+  }
+
+  // 5. Boss Bar
+  if (bossHudBar) {
+    if (snapshot.boss) {
+      bossHudBar.classList.add('visible');
+      if (bossNameLabel) bossNameLabel.textContent = snapshot.boss.name;
+      const bPct = clamp((snapshot.boss.hp / Math.max(1, snapshot.boss.maxHp)) * 100, 0, 100);
+      if (bossHpFill) bossHpFill.style.width = `${bPct.toFixed(1)}%`;
+      if (bossAegisBadge) {
+        bossAegisBadge.textContent =
+          snapshot.boss.aegisActive && snapshot.boss.aegisLayers > 0
+            ? `🛡️ Bone Aegis × ${snapshot.boss.aegisLayers}`
+            : `${snapshot.boss.hp} / ${snapshot.boss.maxHp} HP`;
+      }
+    } else {
+      bossHudBar.classList.remove('visible');
+    }
+  }
+
+  // 6. Victory Dawn Modal
+  if (victoryModal) {
+    victoryModal.classList.toggle('visible', snapshot.actId === 'victory_dawn');
+  }
+}
+
+function updateCoopPill(roomState) {
+  if (!roomState) return;
+  const linked = Boolean(roomState.peerConnected);
+  if (coopStatusDot) {
+    coopStatusDot.classList.toggle('linked', linked);
+  }
+  if (coopStatusLabel) {
+    coopStatusLabel.textContent = linked
+      ? `🟢 Co-Op Linked (${roomState.role})`
+      : '🤖 Wingman AI';
+  }
+  if (coopRoomCodeEl && roomState.room) {
+    coopRoomCodeEl.textContent = roomState.room;
+  }
+}
+
+/* ------------------------------------------------------------------------- */
+/* 7. Stage 3–5 Co-Op Player System & Xiaomi Pad 7 Touch HUD                 */
+/* ------------------------------------------------------------------------- */
 
 const coopSystem = await createCoopPlayerSystem({
   scene,
@@ -323,6 +517,20 @@ const coopSystem = await createCoopPlayerSystem({
     if (hudHeroName) {
       hudHeroName.textContent = newHeroId;
     }
+    if (knightBarRow) knightBarRow.classList.toggle('is-leader', newHeroId === 'Knight');
+    if (mageBarRow) mageBarRow.classList.toggle('is-leader', newHeroId === 'Mage');
+  },
+  onSkyTodChanged: (nextTod) => {
+    applyTimeOfDay(nextTod);
+  },
+  onHudStateChanged: (snapshot) => {
+    updateCombatHud(snapshot);
+  },
+  onBanner: (bannerObj) => {
+    showCombatBanner(bannerObj, 3800);
+  },
+  onCoopStateChanged: (roomState) => {
+    updateCoopPill(roomState);
   },
 });
 
@@ -358,10 +566,74 @@ if (hudSwapHeroBtn) {
   });
 }
 
+// Wire 4-Spell Deck Buttons (`1..4`) & `Q` Couples Ultimate Button
+document.querySelectorAll('.spell-slot-btn').forEach((btn) => {
+  const slot = Number(btn.dataset.spellSlot);
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (camState.mode === 'vista') {
+      camState.mode = 'player';
+      updateViewButtons();
+    }
+    coopSystem.triggerSpell(slot);
+  });
+});
+
+if (ultQBtn) {
+  ultQBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (camState.mode === 'vista') {
+      camState.mode = 'player';
+      updateViewButtons();
+    }
+    coopSystem.triggerAction('ultimate');
+  });
+}
+
+// Wire Co-Op Room Code Edit & Share Link Buttons
+if (coopRoomBtn) {
+  coopRoomBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const current = coopSystem.coopClient.getRoomCode();
+    const entered = window.prompt('Enter 4-letter Co-Op Room Code:', current);
+    if (entered) {
+      const norm = coopSystem.coopClient.setRoomCode(entered);
+      if (coopRoomCodeEl) coopRoomCodeEl.textContent = norm;
+    }
+  });
+}
+
+if (coopShareBtn) {
+  coopShareBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const shareUrl = coopSystem.coopClient.getShareUrl();
+    try {
+      await navigator.clipboard?.writeText(shareUrl);
+    } catch {
+      // ignore clipboard fallback
+    }
+    const prev = coopShareBtn.textContent;
+    coopShareBtn.textContent = 'Copied!';
+    setTimeout(() => {
+      coopShareBtn.textContent = prev;
+    }, 1500);
+  });
+}
+
+if (replayExpeditionBtn) {
+  replayExpeditionBtn.addEventListener('click', () => {
+    coopSystem.campaignLoop.resetCampaign();
+    coopSystem.teleportLeaderAndPartner(2.8, 14.5, Math.PI + 0.15);
+    updateCombatHud(coopSystem.campaignLoop.getStateSnapshot());
+  });
+}
+
 touchHud.setProfileMode(activeProfile);
+updateCombatHud(coopSystem.campaignLoop.getStateSnapshot());
+updateCoopPill(coopSystem.coopClient.getState());
 
 /* ------------------------------------------------------------------------- */
-/* 7. Post-Processing Pipeline (4x MSAA + Bloom + Time-of-Day Grade)         */
+/* 8. Post-Processing Pipeline (4x MSAA + Bloom + Time-of-Day Grade)         */
 /* ------------------------------------------------------------------------- */
 
 const post = createWorldPost({
@@ -375,10 +647,10 @@ const post = createWorldPost({
 });
 
 /* ------------------------------------------------------------------------- */
-/* 8. Full World Time-of-Day Material Synchronization                        */
+/* 9. Full World Time-of-Day Material Synchronization                        */
 /* ------------------------------------------------------------------------- */
 
-const _dayWindowCol = new THREE.Color(0xffffff); // Shows painted sky-blue glass texture
+const _dayWindowCol = new THREE.Color(0xffffff);
 const _nightWindowCol = new THREE.Color(0xffbe55);
 const _nightWindowEmissive = new THREE.Color(0xff9d2e);
 
@@ -425,7 +697,6 @@ export function applyTimeOfDay(modeOrT) {
     glassMat.emissiveIntensity = 1.38 * glow;
   }
 
-  // Boost unlit porch lanterns & forge embers into HDR at Evening/Night so UnrealBloomPass catches them
   const basicBucket = housesKit.mats.buckets?.solidBasic;
   if (basicBucket) {
     const hdrBoost = 1.0 + 0.68 * glow;
@@ -437,12 +708,17 @@ export function applyTimeOfDay(modeOrT) {
     emMat.color.setRGB(hdrBoost, hdrBoost * 0.96, hdrBoost * 0.90);
   }
 
-  // 6. Sync Stage 4 Frost Lance VFX Lighting & Twilight Bloom Boost
-  if (coopSystem?.frostLance) {
-    coopSystem.frostLance.setLighting({
+  // 6. Sync Complete Stage 4 Opaque VFX Suite & Combat Indicators Lighting
+  if (coopSystem?.vfxKit) {
+    coopSystem.vfxKit.setLighting({
       sunDir: skyState.activeLightDir,
       daylight: skyState.daylight,
     });
+  }
+  if (coopSystem?.campaignLoop?.crestAndTetherMesh?.material?.uniforms?.uSunDir) {
+    coopSystem.campaignLoop.crestAndTetherMesh.material.uniforms.uSunDir.value.copy(
+      skyState.activeLightDir
+    );
   }
 
   syncTodHudControls();
@@ -450,7 +726,7 @@ export function applyTimeOfDay(modeOrT) {
 }
 
 /* ------------------------------------------------------------------------- */
-/* 9. Camera Views (1-8) & Automated Verification Shots                      */
+/* 10. Camera Views (1-8) & Automated Verification Shots                     */
 /* ------------------------------------------------------------------------- */
 
 export const VIEWS = {
@@ -636,8 +912,8 @@ function updateMeadowFocus(simTime) {
 }
 
 function updateCamera() {
-  if (coopSystem?.frostLance) {
-    coopSystem.frostLance.getCameraShakeOffset(_camShake);
+  if (coopSystem?.vfxKit) {
+    coopSystem.vfxKit.getCameraShakeOffset(_camShake);
   } else {
     _camShake.set(0, 0, 0);
   }
@@ -688,12 +964,6 @@ export function setView(id) {
     }
   }
   updateCamera();
-  // Ensure East Arena Skeletons visibility matches the updated camera position
-  const arenaDistSq = camera.position.distanceToSquared(
-    new THREE.Vector3(ZONES.arena.x, ZONES.arena.y || 0.6, ZONES.arena.z)
-  );
-  coopSystem.arenaEnemiesGroup.visible = arenaDistSq <= 92 * 92;
-
   updateMeadowFocus(elapsed);
   sky.update(elapsed);
   post.render(0.016);
@@ -711,9 +981,12 @@ export function setShot(shotId) {
   camState.vistaTarget.set(...s.target);
   camera.fov = s.fov || 52;
   camera.updateProjectionMatrix();
+
+  // Clear camera shake before posing architectural shot
+  coopSystem.vfxKit.clear();
   updateCamera();
 
-  // Deterministically position and pose the Knight, Mage, and East Arena Skeletons
+  // Deterministically position and pose Knight, Mage, and East Arena Skeletons (0 VFX/Indicator draws)
   coopSystem.poseForShot(shotId, s.playerPos, camera);
 
   terrainKit.update(
@@ -729,6 +1002,76 @@ export function setShot(shotId) {
   sky.update(1.25);
   post.render(0.016);
   refreshTelemetryReadout();
+}
+
+export function setGameplayShot(gameplayShotId) {
+  const spec =
+    STAGE5_GAMEPLAY_SHOTS[gameplayShotId] ||
+    STAGE5_GAMEPLAY_SHOTS['01-desktop-act1-sunfire-slash'];
+
+  autoCycleTod = false;
+  if (spec.profile && spec.profile !== activeProfile) {
+    setProfile(spec.profile);
+  }
+  applyTimeOfDay(spec.tod || 'day');
+
+  camState.mode = 'vista';
+  camState.vistaPos.set(...spec.pos);
+  camState.vistaTarget.set(...spec.target);
+  camera.fov = spec.fov || 46;
+  camera.updateProjectionMatrix();
+
+  // Pose characters, pooled enemies, combat indicators, and Stage 4 VFX
+  coopSystem.poseForGameplayShot(gameplayShotId, camera);
+
+  // Zero out shake offset so framing is 100% deterministic
+  coopSystem.vfxKit.frostLance._shakeOffset?.set(0, 0, 0);
+  coopSystem.vfxKit.shatterlance._shakeOffset?.set(0, 0, 0);
+  coopSystem.vfxKit.cinderFall._shakeOffset?.set(0, 0, 0);
+  coopSystem.vfxKit.stormLance._shakeOffset?.set(0, 0, 0);
+  coopSystem.vfxKit.swordVfx._shakeOffset?.set(0, 0, 0);
+  updateCamera();
+
+  // Synchronize HUD state & Banner for the showcase shot
+  const snap = coopSystem.campaignLoop.getStateSnapshot();
+  snap.actId = spec.actId || snap.actId;
+  snap.heartResonance = spec.heartResonance ?? 75;
+  snap.boss = spec.bossHud || null;
+  updateCombatHud(snap);
+
+  if (spec.actStageTag && actStageTag) actStageTag.textContent = spec.actStageTag;
+  if (spec.objectiveText && actObjectiveText) actObjectiveText.textContent = spec.objectiveText;
+
+  document.querySelectorAll('.spell-slot-btn').forEach((btn) => {
+    btn.classList.toggle('active-cast', Number(btn.dataset.spellSlot) === spec.activeSpellSlot);
+  });
+
+  if (spec.touchDemo) {
+    touchHud.setDemoState(spec.touchDemo);
+  } else {
+    touchHud.setDemoState({ joyX: 0, joyY: 0, sprinting: false, activeAction: null });
+  }
+
+  if (spec.banner) {
+    showCombatBanner(spec.banner, 0);
+  } else if (combatBanner) {
+    combatBanner.classList.remove('visible');
+  }
+
+  terrainKit.update(
+    0.016,
+    1.25,
+    sky.activeLightDir,
+    sky.state.daylight,
+    sky.state.fogColor,
+    sky.state.worldTint
+  );
+  village.update(0.016);
+  updateMeadowFocus(1.25);
+  sky.update(1.25);
+  post.render(0.016);
+  refreshTelemetryReadout();
+  return spec;
 }
 
 export function setProfile(profileName) {
@@ -748,12 +1091,8 @@ export function setProfile(profileName) {
 }
 
 /* ------------------------------------------------------------------------- */
-/* 10. HUD Controls, Keyboard/Mouse Input & Throttled Telemetry              */
+/* 11. HUD Controls, Hybrid PointerLock + Drag-Orbit & Zero-Lag Input         */
 /* ------------------------------------------------------------------------- */
-
-const hudEl = document.getElementById('hud');
-const statsEl = document.getElementById('stats-readout');
-const viewSelect = document.getElementById('view-select');
 
 if (viewSelect) {
   Object.values(VIEWS).forEach((v) => {
@@ -806,11 +1145,23 @@ function toggleHud(visible) {
 
 const keys = new Set();
 let pointerDragging = false;
-let pointerDownX = 0;
-let pointerDownY = 0;
 let lastMouseX = 0;
 let lastMouseY = 0;
-let pointerDragDist = 0;
+let lmbHoldTimer = null;
+
+function applyCameraOrbitDelta(dx, dy) {
+  if (camState.mode === 'player') {
+    camState.yaw -= dx * 0.0048;
+    camState.pitch = clamp(camState.pitch + dy * 0.0042, 0.04, 1.15);
+  } else {
+    const offset = camState.vistaPos.clone().sub(camState.vistaTarget);
+    const sph = new THREE.Spherical().setFromVector3(offset);
+    sph.theta -= dx * 0.0052;
+    sph.phi = clamp(sph.phi - dy * 0.0042, 0.08, Math.PI * 0.47);
+    offset.setFromSpherical(sph);
+    camState.vistaPos.copy(camState.vistaTarget).add(offset);
+  }
+}
 
 window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
@@ -822,15 +1173,48 @@ window.addEventListener('keydown', (e) => {
   const wasPressed = keys.has(k);
   keys.add(k);
 
-  if (k === '1') setView('entry');
-  else if (k === '2') setView('plaza');
-  else if (k === '3') setView('mill');
-  else if (k === '4') setView('arena');
-  else if (k === '5') setView('shrine');
+  // Alt + 1..8 switches camera presets; bare 1..4 casts Spells 1..4!
+  if (e.altKey) {
+    if (k === '1') setView('entry');
+    else if (k === '2') setView('plaza');
+    else if (k === '3') setView('mill');
+    else if (k === '4') setView('arena');
+    else if (k === '5') setView('shrine');
+    else if (k === '6') setView('shrineLookback');
+    else if (k === '7') setView('aerial');
+    else if (k === '8') setView('topdown');
+    return;
+  }
+
+  if (!wasPressed && (k === '1' || k === '2' || k === '3' || k === '4')) {
+    if (camState.mode === 'vista') {
+      camState.mode = 'player';
+      updateViewButtons();
+    }
+    coopSystem.triggerSpell(Number(k));
+    return;
+  }
+
+  if (k === '5') setView('shrine');
   else if (k === '6') setView('shrineLookback');
   else if (k === '7') setView('aerial');
   else if (k === '8') setView('topdown');
-  else if (k === 't') {
+  else if (!wasPressed && k === 'e') {
+    if (camState.mode === 'vista') camState.mode = 'player';
+    coopSystem.triggerAction('skill');
+  } else if (!wasPressed && k === 'q') {
+    if (camState.mode === 'vista') camState.mode = 'player';
+    coopSystem.triggerAction('ultimate');
+  } else if (!wasPressed && k === 'f') {
+    if (camState.mode === 'vista') camState.mode = 'player';
+    coopSystem.triggerAction('heavy');
+  } else if (!wasPressed && k === 'k') {
+    if (camState.mode === 'vista') camState.mode = 'player';
+    coopSystem.triggerSpell(1);
+  } else if (!wasPressed && k === 'shift') {
+    if (camState.mode === 'vista') camState.mode = 'player';
+    coopSystem.triggerAction('dash');
+  } else if (k === 't') {
     autoCycleTod = false;
     const order = ['day', 'evening', 'night'];
     const nextIdx = (order.indexOf(sky.state.mode) + 1) % order.length;
@@ -840,9 +1224,6 @@ window.addEventListener('keydown', (e) => {
     syncTodHudControls();
   } else if (!wasPressed && k === 'h') {
     toggleHud(hudEl && hudEl.style.display === 'none');
-  } else if (!wasPressed && k === 'k') {
-    if (camState.mode === 'vista') camState.mode = 'player';
-    coopSystem.triggerAction('cast');
   } else if (['w', 'a', 's', 'd', ' '].includes(k) && camState.mode === 'vista') {
     camState.mode = 'player';
     updateViewButtons();
@@ -855,45 +1236,68 @@ window.addEventListener('keyup', (e) => {
 });
 
 canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 2) {
+    e.preventDefault();
+    if (camState.mode === 'vista') {
+      camState.mode = 'player';
+      updateViewButtons();
+    }
+    coopSystem.triggerAction('dash');
+    return;
+  }
+
   if (e.button !== 0) return;
+
+  // Request Genshin-style PointerLock inside try/catch (graceful fallback in headless browsers)
+  try {
+    if (document.pointerLockElement !== canvas) {
+      canvas.requestPointerLock?.();
+    }
+  } catch {
+    // ignore
+  }
+
   pointerDragging = true;
-  pointerDownX = e.clientX;
-  pointerDownY = e.clientY;
   lastMouseX = e.clientX;
   lastMouseY = e.clientY;
-  pointerDragDist = 0;
+
+  if (camState.mode === 'vista') {
+    camState.mode = 'player';
+    updateViewButtons();
+  }
+
+  // Zero-lag 0ms LMB attack + 0.28s Hold Heavy Finisher timer
+  coopSystem.triggerAction('attack');
+  if (lmbHoldTimer) clearTimeout(lmbHoldTimer);
+  lmbHoldTimer = setTimeout(() => {
+    lmbHoldTimer = null;
+    if (pointerDragging) {
+      coopSystem.triggerAction('heavy');
+    }
+  }, 280);
 });
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-window.addEventListener('mouseup', (e) => {
-  if (!pointerDragging) return;
+window.addEventListener('mouseup', () => {
   pointerDragging = false;
-  if (e.button === 0 && pointerDragDist < 6 && e.target === canvas) {
-    if (camState.mode === 'vista') camState.mode = 'player';
-    coopSystem.triggerAction('attack');
+  if (lmbHoldTimer) {
+    clearTimeout(lmbHoldTimer);
+    lmbHoldTimer = null;
   }
 });
 
 window.addEventListener('mousemove', (e) => {
+  if (document.pointerLockElement === canvas) {
+    applyCameraOrbitDelta(e.movementX || 0, e.movementY || 0);
+    return;
+  }
   if (!pointerDragging) return;
   const dx = e.clientX - lastMouseX;
   const dy = e.clientY - lastMouseY;
   lastMouseX = e.clientX;
   lastMouseY = e.clientY;
-  pointerDragDist = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
-
-  if (camState.mode === 'player') {
-    camState.yaw -= dx * 0.0055;
-    camState.pitch = clamp(camState.pitch + dy * 0.0045, 0.04, 1.15);
-  } else {
-    const offset = camState.vistaPos.clone().sub(camState.vistaTarget);
-    const sph = new THREE.Spherical().setFromVector3(offset);
-    sph.theta -= dx * 0.0055;
-    sph.phi = clamp(sph.phi - dy * 0.0045, 0.08, Math.PI * 0.47);
-    offset.setFromSpherical(sph);
-    camState.vistaPos.copy(camState.vistaTarget).add(offset);
-  }
+  applyCameraOrbitDelta(dx, dy);
 });
 
 canvas.addEventListener(
@@ -918,7 +1322,7 @@ window.addEventListener('resize', () => {
 });
 
 /* ------------------------------------------------------------------------- */
-/* 11. Main Loop, Performance Measurement & Telemetry API                     */
+/* 12. Main Loop, Performance Measurement & Telemetry API                     */
 /* ------------------------------------------------------------------------- */
 
 const clock = new THREE.Clock();
@@ -928,7 +1332,6 @@ let measuredFps = 144;
 let avgFrameMs = 2.4;
 
 function getSceneStats() {
-  // Measure pure scene draw calls & triangles on the main camera pass
   renderer.info.autoReset = false;
   renderer.info.reset();
   post.render(0.016);
@@ -936,7 +1339,6 @@ function getSceneStats() {
   const totalTris = renderer.info.render.triangles;
   renderer.info.autoReset = true;
 
-  // Subtract post-processing quad passes (bloom mip chain + grade quad = ~11 fullscreen quad calls)
   const sceneDraws = Math.max(1, totalCalls - 11);
   const sceneTris = Math.max(0, totalTris - 22);
 
@@ -1005,14 +1407,17 @@ function animate() {
   }
 
   if (camState.mode === 'player') {
+    // Gentle Tablet Camera Auto-Align when moving via thumbstick without right-side orbit drag
+    if (touchHud.joyState.magnitude > 0.12 && !touchHud.isOrbitDragging) {
+      camState.yaw += shortestAngleDiff(player.yaw, camState.yaw) * Math.min(1, 1.6 * dt);
+    }
+
     coopSystem.update(dt, {
       keys,
       joyState: touchHud.joyState,
       camYaw: camState.yaw,
       camera,
     });
-  } else if (coopSystem?.frostLance?.active) {
-    coopSystem.frostLance.update(dt);
   }
 
   terrainKit.update(
@@ -1035,7 +1440,6 @@ function animate() {
   }
   post.render(dt);
 
-  // Strict >= 500ms throttle on DOM telemetry updates (zero per-frame DOM mutations!)
   if (sampleDrawsThisFrame) {
     const sceneDraws = Math.max(1, renderer.info.render.calls - 11);
     renderer.info.autoReset = true;
@@ -1061,13 +1465,19 @@ window.__WORLD__ = {
   village,
   meadow,
   coopSystem,
+  vfxKit: coopSystem.vfxKit,
   frostLance: coopSystem.frostLance,
+  enemyManager: coopSystem.enemyManager,
+  campaignLoop: coopSystem.campaignLoop,
+  coopClient: coopSystem.coopClient,
   touchHud,
   player,
   VIEWS,
   WORLD_SHOTS,
+  STAGE5_GAMEPLAY_SHOTS,
   setView,
   setShot,
+  setGameplayShot,
   setTimeOfDay: applyTimeOfDay,
   setProfile,
   toggleHud,

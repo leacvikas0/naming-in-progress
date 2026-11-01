@@ -214,8 +214,8 @@ export async function createEnemyManager({
         nz = cz + (dz / d) * maxR;
       }
     } else if (currentActId === 'act2_plaza') {
-      // Keep outside the central Roofed Stone Well collider (r = 1.65 + radius)
-      const minWellR = 1.65 + radius + 0.35;
+      // Keep outside the central Roofed Stone Well collider (r >= 2.35 + radius)
+      const minWellR = 2.35 + radius;
       const dWell = Math.hypot(nx, nz);
       if (dWell < minWellR) {
         if (dWell > 1e-5) {
@@ -223,6 +223,42 @@ export async function createEnemyManager({
           nz = (nz / dWell) * minWellR;
         } else {
           nz = minWellR;
+        }
+      }
+      // Keep clear of the 4 Well Plaza bollard-and-rail wooden fence segments (r = 6.05m)
+      const plazaFenceAngles = [0.72, 2.38, -2.35, -0.74];
+      const rFence = 6.05;
+      const hx = 1.38;
+      const hz = 0.36;
+      for (let i = 0; i < plazaFenceAngles.length; i++) {
+        const ang = plazaFenceAngles[i];
+        const fx = Math.cos(ang) * rFence;
+        const fz = Math.sin(ang) * rFence;
+        const rotY = -ang + Math.PI * 0.5;
+        const cos = Math.cos(-rotY);
+        const sin = Math.sin(-rotY);
+        const lx = (nx - fx) * cos - (nz - fz) * sin;
+        const lz = (nx - fx) * sin + (nz - fz) * cos;
+        const cx = clamp(lx, -hx, hx);
+        const cz = clamp(lz, -hz, hz);
+        const dx = lx - cx;
+        const dz = lz - cz;
+        const d = Math.hypot(dx, dz);
+        if (d < radius) {
+          let pushX = 0;
+          let pushZ = 0;
+          if (d > 1e-5) {
+            pushX = (dx / d) * (radius - d);
+            pushZ = (dz / d) * (radius - d);
+          } else {
+            pushZ = (lz >= 0 ? 1 : -1) * (hz + radius);
+          }
+          const wCos = Math.cos(rotY);
+          const wSin = Math.sin(rotY);
+          const nlx = lx + pushX;
+          const nlz = lz + pushZ;
+          nx = fx + nlx * wCos - nlz * wSin;
+          nz = fz + nlx * wSin + nlz * wCos;
         }
       }
     } else if (currentActId === 'act3_shrine' || z < -68.0) {
