@@ -28,6 +28,7 @@ export const HERO_STATS = {
     speed: 7.5,
     sprintMult: 1.55,
     comboDmg: [22, 26, 38],
+    combo4Dmg: 46,
     heavyDmg: 56,
     interceptDmg: 34,
     interceptShield: 35,
@@ -44,6 +45,8 @@ export const HERO_STATS = {
     sprintMult: 1.50,
     boltDmg: [18, 22, 30],
     boltRange: 14.5,
+    heavyNovaDmg: 42,
+    heavyNovaRadius: 3.5,
     infuseHeal: 45,
     infuseDuration: 12.0,
     infuseCd: 7.0,
@@ -206,10 +209,12 @@ export const MARK_TO_DETONATION = {
 
 export const FINISHER_SOURCES = new Set([
   'combo3',
+  'combo4',
   'charged',
   'heavy',
   'intercept',
   'shatterlance',
+  'mage_heavy',
   'couples_ultimate',
 ]);
 
@@ -739,6 +744,7 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     source === 'combo1' ||
     source === 'combo2' ||
     source === 'combo3' ||
+    source === 'combo4' ||
     source === 'charged' ||
     source === 'heavy' ||
     source === 'intercept';
@@ -1336,6 +1342,7 @@ export function createHeadlessCampaignSim() {
     let baseDmg = HERO_STATS.Knight.comboDmg[0];
     if (swingType === 'combo2') baseDmg = HERO_STATS.Knight.comboDmg[1];
     else if (swingType === 'combo3') baseDmg = HERO_STATS.Knight.comboDmg[2];
+    else if (swingType === 'combo4') baseDmg = HERO_STATS.Knight.combo4Dmg || 46;
     else if (swingType === 'charged' || swingType === 'heavy') baseDmg = HERO_STATS.Knight.heavyDmg;
 
     const res = applyHitAndResolveDetonation(

@@ -237,43 +237,38 @@ export const SEMANTIC_ANIMATIONS = {
 
   // Melee Combat
   combo1: {
-    candidates: ['1H_Melee_Attack_Slice_Horizontal', '2H_Melee_Attack_Slice', 'Dualwield_Melee_Attack_Slice'],
-    byStyle: {
-      '2h': ['2H_Melee_Attack_Slice', '2H_Melee_Attack_Chop'],
-      dual: ['Dualwield_Melee_Attack_Slice', '1H_Melee_Attack_Slice_Horizontal'],
-      '1h': ['1H_Melee_Attack_Slice_Horizontal'],
-    },
+    candidates: ['1H_Melee_Attack_Slice_Horizontal'],
     aliases: ['Melee_1H_Attack_Slice_Horizontal'],
     loop: false,
   },
   combo2: {
-    candidates: ['1H_Melee_Attack_Slice_Diagonal', '2H_Melee_Attack_Chop', 'Dualwield_Melee_Attack_Chop'],
-    byStyle: {
-      '2h': ['2H_Melee_Attack_Chop', '2H_Melee_Attack_Slice'],
-      dual: ['Dualwield_Melee_Attack_Chop', '1H_Melee_Attack_Slice_Diagonal'],
-      '1h': ['1H_Melee_Attack_Slice_Diagonal'],
-    },
+    candidates: ['1H_Melee_Attack_Slice_Diagonal'],
     aliases: ['Melee_1H_Attack_Slice_Diagonal'],
     loop: false,
   },
   combo3: {
-    candidates: ['1H_Melee_Attack_Chop', '1H_Melee_Attack_Stab', '2H_Melee_Attack_Stab'],
-    byStyle: {
-      '2h': ['2H_Melee_Attack_Stab', '2H_Melee_Attack_Chop'],
-      dual: ['Dualwield_Melee_Attack_Stab', '1H_Melee_Attack_Chop'],
-      '1h': ['1H_Melee_Attack_Chop', '1H_Melee_Attack_Stab'],
-    },
+    candidates: ['1H_Melee_Attack_Chop'],
     aliases: ['Melee_1H_Attack_Chop'],
     loop: false,
   },
+  combo4: {
+    candidates: ['1H_Melee_Attack_Jump_Chop', '2H_Melee_Attack_Chop'],
+    aliases: ['Melee_1H_Attack_Jump_Chop'],
+    loop: false,
+  },
+  stab: {
+    candidates: ['1H_Melee_Attack_Stab'],
+    aliases: ['Melee_1H_Attack_Stab'],
+    loop: false,
+  },
   charged: {
-    candidates: ['1H_Melee_Attack_Jump_Chop', '2H_Melee_Attack_Spinning', '2H_Melee_Attack_Spin'],
-    byStyle: {
-      '2h': ['2H_Melee_Attack_Spin', '2H_Melee_Attack_Spinning', '1H_Melee_Attack_Jump_Chop'],
-      dual: ['Dualwield_Melee_Attack_Chop', '1H_Melee_Attack_Jump_Chop'],
-      '1h': ['1H_Melee_Attack_Jump_Chop'],
-    },
+    candidates: ['2H_Melee_Attack_Spinning', '1H_Melee_Attack_Jump_Chop'],
     aliases: ['Melee_1H_Attack_Spin', 'Melee_2H_Attack_Spin'],
+    loop: false,
+  },
+  shield_bash: {
+    candidates: ['Block_Attack'],
+    aliases: ['Melee_Shield_Bash'],
     loop: false,
   },
   block: {
@@ -288,6 +283,26 @@ export const SEMANTIC_ANIMATIONS = {
   },
 
   // Ranged / Magic / Romantic Co-Op Invocations
+  mage_attack1: {
+    candidates: ['Spellcast_Shoot'],
+    aliases: ['Mage_Attack_1'],
+    loop: false,
+  },
+  mage_attack2: {
+    candidates: ['1H_Ranged_Shoot', '2H_Ranged_Shoot'],
+    aliases: ['Mage_Attack_2'],
+    loop: false,
+  },
+  mage_attack3: {
+    candidates: ['Spellcast_Raise'],
+    aliases: ['Mage_Attack_3'],
+    loop: false,
+  },
+  mage_heavy: {
+    candidates: ['Throw', 'Spellcast_Long'],
+    aliases: ['Mage_Heavy'],
+    loop: false,
+  },
   cast_shoot: {
     candidates: ['Spellcast_Shoot'],
     aliases: ['Ranged_Magic_Shoot'],

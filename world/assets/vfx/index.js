@@ -1,12 +1,13 @@
 // ============================================================================
 // world/assets/vfx/index.js
 //
-// Stage 4 Complete Opaque VFX & Sword Breathing Suite API:
+// Stage 4 Complete Opaque VFX, Mage Bolts & Sword Breathing Suite API:
 // - `createFrostLanceSystem(options)`
 // - `createShatterlanceSystem(options)`
 // - `createCinderFallSystem(options)`
 // - `createStormLanceSystem(options)`
 // - `createSwordVfxSystem(options)`
+// - `createMageBoltSystem(options)`
 // - `createVfxKit(options)`
 // - `getSharedNoiseAtlas()`, `createNoiseAtlas(size)`
 // ============================================================================
@@ -42,10 +43,20 @@ import {
   SwordVfxSystem,
   createSwordVfxSystem,
   createBladeSheathGeometry,
+  createLiveSwordRibbonGeometry,
   createUkiyoeSlashArcGeometry,
+  LOCAL_BLADE_GUARD,
+  LOCAL_BLADE_TIP,
   BREATHING_PALETTES,
   SWING_CONFIGS,
 } from './sword-vfx.js';
+import {
+  MageBoltSystem,
+  createMageBoltSystem,
+  createStarlightCrystalGeometry,
+  createCometWakeRibbonGeometry,
+  MAGE_BOLT_DEFAULTS,
+} from './mage-bolt.js';
 
 export {
   createNoiseAtlas,
@@ -70,13 +81,21 @@ export {
   SwordVfxSystem,
   createSwordVfxSystem,
   createBladeSheathGeometry,
+  createLiveSwordRibbonGeometry,
   createUkiyoeSlashArcGeometry,
+  LOCAL_BLADE_GUARD,
+  LOCAL_BLADE_TIP,
   BREATHING_PALETTES,
   SWING_CONFIGS,
+  MageBoltSystem,
+  createMageBoltSystem,
+  createStarlightCrystalGeometry,
+  createCometWakeRibbonGeometry,
+  MAGE_BOLT_DEFAULTS,
 };
 
 /**
- * Convenience factory for the complete Stage 4 VFX & Sword Breathing Kit.
+ * Convenience factory for the complete Stage 4 VFX, Mage Bolts & Sword Breathing Kit.
  */
 export function createVfxKit({
   scene,
@@ -85,6 +104,7 @@ export function createVfxKit({
   shatterlanceConfig = {},
   cinderFallConfig = {},
   stormLanceConfig = {},
+  mageBoltConfig = {},
   onApexImpact = null,
 } = {}) {
   const noiseAtlas = getSharedNoiseAtlas();
@@ -117,8 +137,13 @@ export function createVfxKit({
     scene,
     getGroundHeight,
   });
+  const mageBolt = createMageBoltSystem({
+    scene,
+    getGroundHeight,
+    config: mageBoltConfig,
+  });
 
-  const allSystems = [frostLance, shatterlance, cinderFall, stormLance, swordVfx];
+  const allSystems = [frostLance, shatterlance, cinderFall, stormLance, swordVfx, mageBolt];
   const _tmpShake = new THREE.Vector3();
 
   return {
@@ -128,6 +153,7 @@ export function createVfxKit({
     cinderFall,
     stormLance,
     swordVfx,
+    mageBolt,
     castFrostLance: (origin, direction, options = {}) =>
       frostLance.cast(origin, direction, options),
     castShatterlance: (origin, direction, options = {}) =>
@@ -136,6 +162,7 @@ export function createVfxKit({
       cinderFall.cast(origin, direction, options),
     castStormLance: (origin, direction, options = {}) =>
       stormLance.cast(origin, direction, options),
+    fireMageBolt: (options = {}) => mageBolt.fireComboVolley(options),
     castSpell: (spellId, origin, direction, options = {}) => {
       const id = String(spellId || 'frost_lance').toLowerCase();
       if (id === 'shatterlance' || id === '2') return shatterlance.cast(origin, direction, options);
@@ -144,6 +171,9 @@ export function createVfxKit({
       }
       if (id === 'storm_lance' || id === 'stormlance' || id === '4') {
         return stormLance.cast(origin, direction, options);
+      }
+      if (id === 'mage_bolt' || id === 'magebolt' || id === 'bolt') {
+        return mageBolt.fireComboVolley({ origin, direction, ...options });
       }
       return frostLance.cast(origin, direction, options);
     },
@@ -180,6 +210,7 @@ export function createVfxKit({
       cinderFall: cinderFall.getStats(),
       stormLance: stormLance.getStats(),
       swordVfx: swordVfx.getStats(),
+      mageBolt: mageBolt.getStats(),
     }),
     clear: () => {
       for (const sys of allSystems) sys.clear();

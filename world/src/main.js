@@ -880,6 +880,7 @@ const camState = {
   yaw: Math.PI + 0.18,
   pitch: 0.10,
   dist: 8.6,
+  baseFov: 50,
   vistaPos: new THREE.Vector3(5.2, 3.8, 23.2),
   vistaTarget: new THREE.Vector3(-3.2, 5.8, -16.0),
 };
@@ -889,6 +890,9 @@ let elapsed = 0;
 const _meadowFocus = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
 const _camShake = new THREE.Vector3();
+const _camImpactPos = new THREE.Vector3();
+const _camImpactLook = new THREE.Vector3();
+const _camImpactFov = { value: 0 };
 
 function updateMeadowFocus(simTime) {
   camera.getWorldDirection(_camDir);
@@ -918,25 +922,38 @@ function updateCamera() {
     _camShake.set(0, 0, 0);
   }
 
+  if (coopSystem?.getCameraImpactOffset) {
+    coopSystem.getCameraImpactOffset(_camImpactPos, _camImpactLook, _camImpactFov);
+  } else {
+    _camImpactPos.set(0, 0, 0);
+    _camImpactLook.set(0, 0, 0);
+    _camImpactFov.value = 0;
+  }
+
   if (camState.mode === 'player') {
     const h = 1.55 + Math.sin(camState.pitch) * camState.dist;
     const flat = Math.cos(camState.pitch) * camState.dist;
     camera.position.set(
-      player.x - Math.sin(camState.yaw) * flat + _camShake.x,
-      player.y + h + _camShake.y,
-      player.z - Math.cos(camState.yaw) * flat + _camShake.z
+      player.x - Math.sin(camState.yaw) * flat + _camShake.x + _camImpactPos.x,
+      player.y + h + _camShake.y + _camImpactPos.y,
+      player.z - Math.cos(camState.yaw) * flat + _camShake.z + _camImpactPos.z
     );
     camera.lookAt(
-      player.x + Math.sin(camState.yaw) * 6.0 + _camShake.x * 0.6,
-      player.y + 1.85 + _camShake.y * 0.6,
-      player.z + Math.cos(camState.yaw) * 6.0 + _camShake.z * 0.6
+      player.x + Math.sin(camState.yaw) * 6.0 + _camShake.x * 0.6 + _camImpactLook.x,
+      player.y + 1.85 + _camShake.y * 0.6 + _camImpactLook.y,
+      player.z + Math.cos(camState.yaw) * 6.0 + _camShake.z * 0.6 + _camImpactLook.z
     );
+    const targetFov = (camState.baseFov || 50) + (_camImpactFov.value || 0);
+    if (Math.abs(camera.fov - targetFov) > 1e-3) {
+      camera.fov = targetFov;
+      camera.updateProjectionMatrix();
+    }
   } else {
-    camera.position.copy(camState.vistaPos).add(_camShake);
+    camera.position.copy(camState.vistaPos).add(_camShake).add(_camImpactPos);
     camera.lookAt(
-      camState.vistaTarget.x + _camShake.x * 0.5,
-      camState.vistaTarget.y + _camShake.y * 0.5,
-      camState.vistaTarget.z + _camShake.z * 0.5
+      camState.vistaTarget.x + _camShake.x * 0.5 + _camImpactLook.x,
+      camState.vistaTarget.y + _camShake.y * 0.5 + _camImpactLook.y,
+      camState.vistaTarget.z + _camShake.z * 0.5 + _camImpactLook.z
     );
   }
   camera.updateMatrixWorld();
@@ -945,11 +962,13 @@ function updateCamera() {
 export function setView(id) {
   const v = VIEWS[id] || VIEWS.plaza;
   activeViewId = v.id;
+  coopSystem?.resetCameraImpact?.();
   if (v.mode === 'player') {
     camState.mode = 'player';
     camState.yaw = v.yaw;
     camState.pitch = v.pitch;
     camState.dist = v.dist;
+    camState.baseFov = 50;
     camera.fov = 50;
     camera.updateProjectionMatrix();
     coopSystem.teleportLeaderAndPartner(v.px, v.pz, v.yaw);
@@ -957,6 +976,7 @@ export function setView(id) {
     camState.mode = 'vista';
     camState.vistaPos.set(...v.pos);
     camState.vistaTarget.set(...v.target);
+    camState.baseFov = v.fov || 50;
     camera.fov = v.fov || 50;
     camera.updateProjectionMatrix();
     if (v.id === 'arena') {
@@ -979,11 +999,13 @@ export function setShot(shotId) {
   camState.mode = 'vista';
   camState.vistaPos.set(...s.pos);
   camState.vistaTarget.set(...s.target);
+  camState.baseFov = s.fov || 52;
   camera.fov = s.fov || 52;
   camera.updateProjectionMatrix();
 
-  // Clear camera shake before posing architectural shot
+  // Clear camera shake & impact before posing architectural shot
   coopSystem.vfxKit.clear();
+  coopSystem.resetCameraImpact?.();
   updateCamera();
 
   // Deterministically position and pose Knight, Mage, and East Arena Skeletons (0 VFX/Indicator draws)
@@ -1018,6 +1040,7 @@ export function setGameplayShot(gameplayShotId) {
   camState.mode = 'vista';
   camState.vistaPos.set(...spec.pos);
   camState.vistaTarget.set(...spec.target);
+  camState.baseFov = spec.fov || 46;
   camera.fov = spec.fov || 46;
   camera.updateProjectionMatrix();
 
@@ -1030,6 +1053,7 @@ export function setGameplayShot(gameplayShotId) {
   coopSystem.vfxKit.cinderFall._shakeOffset?.set(0, 0, 0);
   coopSystem.vfxKit.stormLance._shakeOffset?.set(0, 0, 0);
   coopSystem.vfxKit.swordVfx._shakeOffset?.set(0, 0, 0);
+  coopSystem.resetCameraImpact?.();
   updateCamera();
 
   // Synchronize HUD state & Banner for the showcase shot
@@ -1395,9 +1419,21 @@ applyTimeOfDay('day');
 setView('plaza');
 syncProfileButtons();
 
+export function setCameraOrbit(yaw, pitch = 0.14, dist = 7.8) {
+  camState.mode = 'player';
+  if (typeof yaw === 'number') camState.yaw = yaw;
+  if (typeof pitch === 'number') camState.pitch = clamp(pitch, 0.04, 1.15);
+  if (typeof dist === 'number') camState.dist = clamp(dist, 3.5, 24.0);
+  updateCamera();
+}
+
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const rawDt = clock.getDelta();
+  const dt =
+    typeof window.__FIXED_DT__ === 'number' && window.__FIXED_DT__ > 0
+      ? window.__FIXED_DT__
+      : Math.min(rawDt, 0.05);
   elapsed += dt;
   frames++;
   telemetryTimer += dt;
@@ -1418,6 +1454,8 @@ function animate() {
       camYaw: camState.yaw,
       camera,
     });
+  } else if (coopSystem?.vfxKit && !coopSystem.enemyManager?.frozenShotId) {
+    coopSystem.vfxKit.update(dt);
   }
 
   terrainKit.update(
@@ -1472,10 +1510,12 @@ window.__WORLD__ = {
   coopClient: coopSystem.coopClient,
   touchHud,
   player,
+  camState,
   VIEWS,
   WORLD_SHOTS,
   STAGE5_GAMEPLAY_SHOTS,
   setView,
+  setCameraOrbit,
   setShot,
   setGameplayShot,
   setTimeOfDay: applyTimeOfDay,

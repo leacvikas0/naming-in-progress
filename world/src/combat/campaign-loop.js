@@ -335,7 +335,65 @@ export function createCampaignLoop({
   let hudDirtyTimer = 0;
   let wingmanCastTimer = 1.6;
   let wingmanSpellIdx = 0;
+  let wingmanBoltTimer = 0.75;
+  let wingmanBoltIdx = 0;
   let indicatorsHiddenForShot = false;
+
+  const _tmpStaffTip = new THREE.Vector3();
+
+  function getMageStaffTipPos(mageState) {
+    const weaponOrSocket =
+      mageState?.char?.equippedWeapons?.['handSlot.r'] ||
+      mageState?.char?.sockets?.['handSlot.r'] ||
+      mageState?.char?.sockets?.['handslot.r'];
+    if (weaponOrSocket && typeof weaponOrSocket.localToWorld === 'function') {
+      mageState.char?.group?.updateMatrixWorld?.(true);
+      _tmpStaffTip.set(0, 0.95, 0);
+      weaponOrSocket.localToWorld(_tmpStaffTip);
+      return { x: _tmpStaffTip.x, y: _tmpStaffTip.y, z: _tmpStaffTip.z };
+    }
+    const fx = Math.sin(mageState?.yaw || 0);
+    const fz = Math.cos(mageState?.yaw || 0);
+    const mx = mageState?.x || 0;
+    const mz = mageState?.z || 0;
+    return {
+      x: mx + fx * 0.65,
+      y: (mageState?.y ?? walkableHeightAt(mx, mz)) + 1.35,
+      z: mz + fz * 0.65,
+    };
+  }
+
+  function fireMageStaffVolleyVfx(mageState, targetPos, comboIndex = 0) {
+    if (!vfxKit?.mageBolt?.fireComboVolley) return;
+    const staffTip = getMageStaffTipPos(mageState);
+    const yaw = mageState?.yaw || 0;
+    const dx = targetPos ? targetPos.x - staffTip.x : Math.sin(yaw);
+    const dz = targetPos ? targetPos.z - staffTip.z : Math.cos(yaw);
+    const dLen = Math.hypot(dx, dz) || 1;
+    const dir = { x: dx / dLen, y: 0, z: dz / dLen };
+    const resolvedTarget = targetPos || {
+      x: staffTip.x + dir.x * 11.5,
+      y: walkableHeightAt(staffTip.x + dir.x * 11.5, staffTip.z + dir.z * 11.5) + 1.08,
+      z: staffTip.z + dir.z * 11.5,
+    };
+
+    // MageBoltSystem adds handForward (0.55m) and handHeight (1.24m) to origin;
+    // subtract them so startX/startY/startZ lands at the exact handSlot.r staff tip!
+    const handForward = vfxKit.mageBolt.config?.handForward ?? 0.55;
+    const handHeight = vfxKit.mageBolt.config?.handHeight ?? 1.24;
+    const origin = {
+      x: staffTip.x - dir.x * handForward,
+      y: staffTip.y - handHeight,
+      z: staffTip.z - dir.z * handForward,
+    };
+
+    vfxKit.mageBolt.fireComboVolley({
+      origin,
+      direction: dir,
+      targetPos: resolvedTarget,
+      comboIndex,
+    });
+  }
 
   const tetherSurge = {
     active: false,
@@ -640,6 +698,9 @@ export function createCampaignLoop({
     } else if (swingType === 'combo3') {
       baseDmg = HERO_STATS.Knight.comboDmg[2];
       range = 4.2;
+    } else if (swingType === 'combo4') {
+      baseDmg = HERO_STATS.Knight.combo4Dmg || 46;
+      range = 4.4;
     } else if (swingType === 'charged' || swingType === 'heavy') {
       baseDmg = HERO_STATS.Knight.heavyDmg;
       range = 4.6;
@@ -654,7 +715,7 @@ export function createCampaignLoop({
       );
     }
     if (combatSfx) {
-      if (swingType === 'charged' || swingType === 'heavy') {
+      if (swingType === 'charged' || swingType === 'heavy' || swingType === 'combo4') {
         combatSfx.playHeavyFinisher?.(combatHeroes.Knight.breathingStyle);
       } else {
         combatSfx.playSwordSlash?.(
@@ -704,6 +765,106 @@ export function createCampaignLoop({
     }
 
     return { swingType, swingYaw, softTarget, hits };
+  }
+
+  function performMageBoltAttack(comboIndex = 0, mageState, partnerPos = null) {
+    if (combatHeroes.Mage.downed || !mageState) return null;
+
+    const enemies = enemyManager ? enemyManager.activeEnemies : [];
+    const softTarget = selectSoftLockTarget(
+      mageState,
+      mageState.yaw || 0,
+      enemies,
+      { maxRange: HERO_STATS.Mage.boltRange, partnerPos }
+    );
+
+    let aimYaw = mageState.yaw || 0;
+    let targetPos = null;
+    if (softTarget) {
+      aimYaw = Math.atan2(softTarget.x - mageState.x, softTarget.z - mageState.z);
+      targetPos = { x: softTarget.x, y: (softTarget.y || 0) + 1.0, z: softTarget.z };
+    } else {
+      const tx = mageState.x + Math.sin(aimYaw) * 9.5;
+      const tz = mageState.z + Math.cos(aimYaw) * 9.5;
+      targetPos = { x: tx, y: walkableHeightAt(tx, tz) + 1.0, z: tz };
+    }
+
+    mageState.yaw = aimYaw;
+    if (mageState.char?.group) {
+      mageState.char.group.position.set(
+        mageState.x,
+        mageState.y ?? walkableHeightAt(mageState.x, mageState.z),
+        mageState.z
+      );
+      mageState.char.group.rotation.y = aimYaw;
+    }
+
+    // Fire Starlight Bolt Volley from staff tip (`handSlot.r`)
+    fireMageStaffVolleyVfx(mageState, targetPos, comboIndex);
+
+    if (combatSfx) {
+      if (comboIndex === 3) {
+        combatSfx.playHeavyFinisher?.('rime');
+      } else {
+        combatSfx.playSwordSlash?.(comboIndex, 'rime');
+      }
+    }
+
+    let hits = [];
+    if (enemyManager) {
+      if (comboIndex === 3) {
+        // Charged Starlight Nova Orb: 42 AoE dmg in 3.5m radius
+        hits = enemyManager.applyAreaOrLineHit({
+          origin: softTarget || targetPos,
+          radius: HERO_STATS.Mage.heavyNovaRadius || 3.5,
+          hitSpec: {
+            source: 'mage_heavy',
+            baseDmg: HERO_STATS.Mage.heavyNovaDmg || 42,
+            applyMark: 'rime',
+            detonatesMark: true,
+            empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
+            attackerPos: mageState,
+          },
+        });
+        addResonance(10);
+      } else if (comboIndex === 2 && softTarget) {
+        // 3-Bolt Converging Starlight Fan Volley that applies 'rime' mark
+        hits = enemyManager.applyAreaOrLineHit({
+          origin: softTarget,
+          radius: 2.5,
+          maxTargets: 3,
+          hitSpec: {
+            source: 'mage_attack3',
+            baseDmg: HERO_STATS.Mage.boltDmg[2] || 30,
+            applyMark: 'rime',
+            empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
+            attackerPos: mageState,
+          },
+        });
+        addResonance(7);
+      } else if (softTarget) {
+        const res = enemyManager.applyHitToEnemy(softTarget, {
+          source: comboIndex === 1 ? 'mage_attack2' : 'mage_attack1',
+          baseDmg: HERO_STATS.Mage.boltDmg[comboIndex] || 18,
+          applyMark: null,
+          empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
+          attackerPos: mageState,
+        });
+        if (res) hits.push({ enemy: softTarget, result: res });
+        addResonance(5);
+      }
+
+      for (const h of hits) {
+        if (h.result?.detonation) {
+          addResonance(DETONATIONS[h.result.detonation.id]?.resonanceGain || 18);
+          vfxKit?.swordVfx?.triggerDetonation?.(h.result.detonation.id, h.result.detonation);
+          combatSfx?.playDetonation?.(h.result.detonation.id);
+          onDetonation?.(h.result.detonation, h.enemy);
+        }
+      }
+    }
+
+    return { comboIndex, aimYaw, softTarget, targetPos, hits };
   }
 
   function performPartnerSkill(activeHeroId, heroStates) {
@@ -987,9 +1148,8 @@ export function createCampaignLoop({
     }
 
     // -----------------------------------------------------------------------
-    // 2. Populate `crestAndTetherMesh` (3D Overhead Elemental Crests at
-    //    y = 2.15m, Boss Bone Aegis Shields, and Waist-Height y = 0.85m
-    //    Golden Soul Tether between Knight and Mage)
+    // 2. Populate `crestAndTetherMesh` strictly for 3D Overhead Enemy
+    //    Elemental Crests (y = 2.15m) and Boss Bone Aegis Shields
     // -----------------------------------------------------------------------
     let cCount = 0;
 
@@ -1095,68 +1255,7 @@ export function createCampaignLoop({
       }
     }
 
-    // 2B. Waist-Height (y = 0.85m) Golden Soul Tether between Knight and Mage
-    if (knight && mage) {
-      const distKM = Math.hypot(knight.x - mage.x, knight.z - mage.z);
-      if (distKM > 0.35 && distKM < 28.0) {
-        const infusionColor =
-          tetherSurge.style === 'rime'
-            ? PALETTE.crestRime
-            : tetherSurge.style === 'solar'
-              ? PALETTE.crestSolar
-              : tetherSurge.style === 'tempest'
-                ? PALETTE.crestTempest
-                : PALETTE.tetherEmpowered;
-
-        const baseColor =
-          combatHeroes.Knight.breathingStyle !== 'none'
-            ? PALETTE.tetherEmpowered
-            : PALETTE.tetherIdle;
-
-        const dx = knight.x - mage.x;
-        const dz = knight.z - mage.z;
-        const tetherYaw = Math.atan2(dx, dz);
-
-        for (let b = 0; b < TETHER_BEAD_COUNT; b++) {
-          const t = (b + 0.5) / TETHER_BEAD_COUNT; // 0 at Mage -> 1 at Knight
-          const bx = mage.x + dx * t;
-          const bz = mage.z + dz * t;
-          const sag = Math.sin(t * Math.PI) * Math.min(0.28, distKM * 0.04);
-          const waveY = Math.sin(elapsed * 4.5 - t * 8.0) * 0.035;
-          const by =
-            (mage.y ?? walkableHeightAt(mage.x, mage.z)) * (1.0 - t) +
-            (knight.y ?? walkableHeightAt(knight.x, knight.z)) * t +
-            0.85 -
-            sag +
-            waveY;
-
-          let beadScale = combatHeroes.Knight.breathingStyle !== 'none' ? 0.075 : 0.052;
-          _colorTmp.copy(baseColor);
-
-          if (tetherSurge.active) {
-            const dSurge = Math.abs(t - tetherSurge.progress);
-            const surgeFactor = Math.max(0, 1.0 - dSurge * 4.2);
-            beadScale += surgeFactor * 0.11;
-            _colorTmp.lerp(infusionColor, surgeFactor * 0.88);
-          }
-
-          pushCrestInstance(
-            bx,
-            by,
-            bz,
-            beadScale * 0.85,
-            beadScale * 0.85,
-            beadScale * 1.65,
-            0.0,
-            tetherYaw,
-            elapsed * 2.0 + b * 0.4,
-            _colorTmp
-          );
-        }
-      }
-    }
-
-    crestInd.mesh.count = cCount;
+    crestInd.mesh.count = enemyManager ? cCount : Math.max(cCount, TETHER_BEAD_COUNT);
     crestInd.mesh.visible = cCount > 0;
     if (cCount > 0) {
       crestInd.mesh.instanceMatrix.needsUpdate = true;
@@ -1286,7 +1385,7 @@ export function createCampaignLoop({
       }
     }
 
-    // 4. Smart Solo Wingman AI (auto-casts rotating spell every 4.5s in combat so Knight's blade stays infused!)
+    // 4. Smart Solo Wingman AI (auto-casts rotating spell every 4.5s + fires Starlight Bolts between casts!)
     if (
       soloWingmanActive &&
       enemyManager &&
@@ -1295,8 +1394,11 @@ export function createCampaignLoop({
       !combatHeroes.Mage.downed
     ) {
       wingmanCastTimer -= dt;
-      if (wingmanCastTimer <= 0) {
-        wingmanCastTimer = 4.5;
+      wingmanBoltTimer -= dt;
+
+      if (wingmanCastTimer <= 0 && combatHeroes.Knight.breathingStyle === 'none') {
+        wingmanCastTimer = 9.0;
+        wingmanBoltTimer = 1.15;
         const nextSpellId =
           WINGMAN_SPELL_ROTATION[wingmanSpellIdx % WINGMAN_SPELL_ROTATION.length];
         wingmanSpellIdx++;
@@ -1305,8 +1407,32 @@ export function createCampaignLoop({
         if (target) {
           const yaw = Math.atan2(target.x - mage.x, target.z - mage.z);
           mage.yaw = yaw;
-          mage.char?.play?.('cast_spell', { loop: false, fade: 0.1, force: true });
+          mage.actionState = 'cast_spell';
+          mage.actionTimer = 0.56;
+          mage.char?.play?.('cast_spell', { loop: false, fade: 0.08, timeScale: 1.24, force: true });
           castSpell(nextSpellId, mage, yaw, knight);
+        }
+      } else if (wingmanBoltTimer <= 0) {
+        wingmanBoltTimer = 1.12;
+        const bIdx = wingmanBoltIdx % 3;
+        wingmanBoltIdx++;
+        const boltClip =
+          bIdx === 0 ? 'mage_attack1' : bIdx === 1 ? 'mage_attack2' : 'mage_attack3';
+        const boltStartTime = bIdx === 2 ? 0.12 : 0.04;
+        const boltTimeScale = bIdx === 2 ? 1.50 : 1.45;
+        const boltDuration = bIdx === 2 ? 0.52 : 0.46;
+
+        const boltRes = performMageBoltAttack(bIdx, mage, knight);
+        if (boltRes) {
+          mage.actionState = boltClip;
+          mage.actionTimer = boltDuration;
+          mage.char?.play?.(boltClip, {
+            loop: false,
+            fade: 0.07,
+            startTime: boltStartTime,
+            timeScale: boltTimeScale,
+            force: true,
+          });
         }
       }
     }
@@ -1419,6 +1545,7 @@ export function createCampaignLoop({
     handlePlayerHit,
     castSpell,
     performKnightSwing,
+    performMageBoltAttack,
     performPartnerSkill,
     performCouplesUltimate,
     getStateSnapshot,

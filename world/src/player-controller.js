@@ -541,10 +541,159 @@ export async function createCoopPlayerSystem({
   heroesGroup.add(knightChar.group);
   heroesGroup.add(mageChar.group);
 
+  // 1B. Smooth 2nd-Order Spring-Damper + Low-Frequency Trauma Camera Impact
+  //     (stiffness = 165, damping = 16, 18 Hz & 27 Hz phased sine, 0.28s fovKick ease, zero Math.random()!)
+  const cameraImpact = {
+    stiffness: 165,
+    damping: 16,
+    px: 0,
+    py: 0,
+    pz: 0,
+    vx: 0,
+    vy: 0,
+    vz: 0,
+    trauma: 0,
+    phase: 0,
+    lastDirX: 0,
+    lastDirZ: 1,
+    fovOffset: 0,
+    fovKickPeak: 0,
+    fovKickTimer: 0,
+    fovKickDuration: 0.28,
+  };
+
+  function resetCameraImpact() {
+    cameraImpact.px = 0;
+    cameraImpact.py = 0;
+    cameraImpact.pz = 0;
+    cameraImpact.vx = 0;
+    cameraImpact.vy = 0;
+    cameraImpact.vz = 0;
+    cameraImpact.trauma = 0;
+    cameraImpact.phase = 0;
+    cameraImpact.fovOffset = 0;
+    cameraImpact.fovKickPeak = 0;
+    cameraImpact.fovKickTimer = 0;
+  }
+
+  function triggerCameraImpulse({
+    intensity = 0.12,
+    dirX = undefined,
+    dirZ = undefined,
+    fovKick = 1.2,
+  } = {}) {
+    const leaderYaw = heroStates?.[activeHeroId]?.yaw ?? initialPos.yaw ?? 0;
+    const rawDx = dirX !== undefined ? dirX : Math.sin(leaderYaw);
+    const rawDz = dirZ !== undefined ? dirZ : Math.cos(leaderYaw);
+    const dLen = Math.hypot(rawDx, rawDz) || 1;
+    const nx = rawDx / dLen;
+    const nz = rawDz / dLen;
+
+    const cleanIntensity = clamp(Number(intensity) || 0, 0, 0.65);
+    const impulseSpeed = cleanIntensity * 8.4;
+
+    cameraImpact.vx += nx * impulseSpeed;
+    cameraImpact.vy += cleanIntensity * 4.0;
+    cameraImpact.vz += nz * impulseSpeed;
+
+    cameraImpact.trauma = clamp(cameraImpact.trauma + cleanIntensity * 1.15, 0, 0.65);
+    cameraImpact.lastDirX = nx;
+    cameraImpact.lastDirZ = nz;
+
+    const cleanFov = clamp(Number(fovKick) || 0, 0, 3.6);
+    if (cleanFov > 0) {
+      cameraImpact.fovKickPeak = Math.max(cameraImpact.fovOffset, cleanFov);
+      cameraImpact.fovKickDuration = 0.28;
+      cameraImpact.fovKickTimer = 0.28;
+    }
+  }
+
+  function stepCameraImpact(dt) {
+    const subSteps = 2;
+    const h = Math.min(Math.max(0, dt), 0.05) / subSteps;
+    const k = cameraImpact.stiffness;
+    const c = cameraImpact.damping;
+    for (let s = 0; s < subSteps; s++) {
+      const ax = -k * cameraImpact.px - c * cameraImpact.vx;
+      const ay = -k * cameraImpact.py - c * cameraImpact.vy;
+      const az = -k * cameraImpact.pz - c * cameraImpact.vz;
+      cameraImpact.vx += ax * h;
+      cameraImpact.vy += ay * h;
+      cameraImpact.vz += az * h;
+      cameraImpact.px += cameraImpact.vx * h;
+      cameraImpact.py += cameraImpact.vy * h;
+      cameraImpact.pz += cameraImpact.vz * h;
+    }
+
+    cameraImpact.phase += dt;
+    cameraImpact.trauma *= Math.exp(-5.8 * dt);
+    if (cameraImpact.trauma < 1e-4) cameraImpact.trauma = 0;
+
+    if (cameraImpact.fovKickTimer > 0) {
+      cameraImpact.fovKickTimer = Math.max(0, cameraImpact.fovKickTimer - dt);
+      const u = 1.0 - cameraImpact.fovKickTimer / cameraImpact.fovKickDuration;
+      const env =
+        u < 0.18
+          ? u / 0.18
+          : Math.pow(Math.max(0, 1.0 - (u - 0.18) / 0.82), 2.2);
+      cameraImpact.fovOffset = cameraImpact.fovKickPeak * env;
+    } else {
+      cameraImpact.fovOffset = 0;
+      cameraImpact.fovKickPeak = 0;
+    }
+  }
+
+  function getCameraImpactOffset(outPos = null, outLook = null, outFov = null) {
+    const w1 = 18.0 * Math.PI * 2;
+    const w2 = 27.0 * Math.PI * 2;
+    const t = cameraImpact.phase;
+    const env = cameraImpact.trauma * cameraImpact.trauma * 0.42;
+
+    const waveLat = Math.sin(t * w1) * 0.65 + Math.sin(t * w2 + 1.15) * 0.35;
+    const waveVert = Math.cos(t * w1 + 0.7) * 0.60 + Math.sin(t * w2 + 2.4) * 0.40;
+    const waveFwd = Math.sin(t * w1 + 1.9) * 0.50;
+
+    const perpX = -cameraImpact.lastDirZ;
+    const perpZ = cameraImpact.lastDirX;
+
+    const ox = cameraImpact.px + (perpX * waveLat + cameraImpact.lastDirX * waveFwd) * env;
+    const oy = cameraImpact.py + waveVert * env * 0.85;
+    const oz = cameraImpact.pz + (perpZ * waveLat + cameraImpact.lastDirZ * waveFwd) * env;
+
+    const lx = ox * 0.62;
+    const ly = oy * 0.68;
+    const lz = oz * 0.62;
+
+    if (outPos) {
+      outPos.x = ox;
+      outPos.y = oy;
+      outPos.z = oz;
+    }
+    if (outLook) {
+      outLook.x = lx;
+      outLook.y = ly;
+      outLook.z = lz;
+    }
+    if (outFov && typeof outFov === 'object') {
+      outFov.value = cameraImpact.fovOffset;
+      outFov.fov = cameraImpact.fovOffset;
+      outFov.offset = cameraImpact.fovOffset;
+    }
+
+    return {
+      posOffset: outPos || { x: ox, y: oy, z: oz },
+      lookOffset: outLook || { x: lx, y: ly, z: lz },
+      fovOffset: cameraImpact.fovOffset,
+    };
+  }
+
   // 2. Complete Stage 4 Opaque VFX & Sword Breathing Suite (`createVfxKit`)
   const vfxKit = createVfxKit({
     scene,
     getGroundHeight: walkableHeightAt,
+    onApexImpact: () => {
+      triggerCameraImpulse({ intensity: 0.22, fovKick: 2.2 });
+    },
   });
   vfxKit.swordVfx.attachToKnight(knightChar);
 
@@ -563,6 +712,7 @@ export async function createCoopPlayerSystem({
     onDetonation: (det) => {
       localHitstopTimer = 0.07;
       knightChar.mixer.timeScale = 0.05;
+      triggerCameraImpulse({ intensity: 0.32, fovKick: 3.0 });
       if (onBanner && det) {
         onBanner({
           title: `${det.label} · +${det.bonusDmg} AoE BURST`,
@@ -658,6 +808,7 @@ export async function createCoopPlayerSystem({
     onDetonation: (det) => {
       localHitstopTimer = 0.07;
       knightChar.mixer.timeScale = 0.05;
+      triggerCameraImpulse({ intensity: 0.32, fovKick: 3.0 });
       if (onBanner && det) {
         onBanner({
           title: `${det.label} · +${det.bonusDmg} AoE BURST`,
@@ -708,16 +859,44 @@ export async function createCoopPlayerSystem({
       const yaw = msg.yaw ?? caster.yaw;
       startOneShotAction(caster, 'cast_spell', 0.62, { timeScale: 1.2, fade: 0.08 });
       campaignLoop.castSpell(spellId, msg.origin || caster, yaw, heroStates.Knight);
+      triggerCameraImpulse({
+        intensity: 0.22,
+        dirX: Math.sin(yaw),
+        dirZ: Math.cos(yaw),
+        fovKick: 2.2,
+      });
     },
     onPeerAction: (msg) => {
       const role = msg.role === 'Knight' ? 'Knight' : 'Mage';
       const st = heroStates[role];
       if (!st) return;
-      if (msg.action === 'combo1' || msg.action === 'combo2' || msg.action === 'combo3' || msg.action === 'charged') {
-        startOneShotAction(st, msg.action, 0.54, { timeScale: 1.24, fade: 0.08 });
+      if (
+        msg.action === 'combo1' ||
+        msg.action === 'combo2' ||
+        msg.action === 'combo3' ||
+        msg.action === 'combo4' ||
+        msg.action === 'charged'
+      ) {
+        startOneShotAction(st, msg.action, 0.54, { timeScale: 1.38, fade: 0.07 });
         if (role === 'Knight') {
           campaignLoop.performKnightSwing(msg.action, st, msg.yaw ?? st.yaw, heroStates.Mage);
         }
+      } else if (
+        msg.action === 'mage_attack1' ||
+        msg.action === 'mage_attack2' ||
+        msg.action === 'mage_attack3' ||
+        msg.action === 'mage_heavy'
+      ) {
+        const cIdx =
+          msg.action === 'mage_heavy'
+            ? 3
+            : msg.action === 'mage_attack3'
+              ? 2
+              : msg.action === 'mage_attack2'
+                ? 1
+                : 0;
+        startOneShotAction(st, msg.action, 0.50, { timeScale: 1.45, fade: 0.07 });
+        campaignLoop.performMageBoltAttack(cIdx, st, heroStates.Knight);
       } else if (msg.action === 'skill') {
         campaignLoop.performPartnerSkill(role, heroStates);
       } else if (msg.action === 'ultimate') {
@@ -776,12 +955,18 @@ export async function createCoopPlayerSystem({
     });
   }
 
-  function startOneShotAction(st, clipKey, duration, { timeScale = 1.0, fade = 0.1 } = {}) {
+  function startOneShotAction(
+    st,
+    clipKey,
+    duration,
+    { startTime = undefined, timeScale = 1.0, fade = 0.07 } = {}
+  ) {
     st.actionState = clipKey;
     st.actionTimer = duration;
     st.char.play(clipKey, {
       loop: false,
       fade,
+      startTime,
       timeScale,
       force: true,
     });
@@ -832,6 +1017,13 @@ export async function createCoopPlayerSystem({
     const castClip = spell.slot === 2 || spell.slot === 4 ? 'cast_shoot' : 'cast_spell';
     startOneShotAction(mageState, castClip, 0.62, { timeScale: 1.24, fade: 0.08 });
 
+    triggerCameraImpulse({
+      intensity: 0.22,
+      dirX: Math.sin(mageState.yaw),
+      dirZ: Math.cos(mageState.yaw),
+      fovKick: 2.2,
+    });
+
     coopClient.sendSpellCast({
       spellId: spell.id,
       origin: { x: mageState.x, y: mageState.y, z: mageState.z },
@@ -845,6 +1037,40 @@ export async function createCoopPlayerSystem({
 
   function launchMageFrostLance() {
     return triggerSpell(1);
+  }
+
+  const KNIGHT_COMBO_SPECS = [
+    { clip: 'combo1', startTime: 0.10, timeScale: 1.25, duration: 0.48, stepDist: 0.24 },
+    { clip: 'combo2', startTime: 0.28, timeScale: 1.15, duration: 0.48, stepDist: 0.26 },
+    { clip: 'combo3', startTime: 0.42, timeScale: 1.15, duration: 0.50, stepDist: 0.32 },
+    { clip: 'combo4', startTime: 0.52, timeScale: 1.20, duration: 0.54, stepDist: 0.85, hopVy: 3.6 },
+  ];
+
+  const MAGE_COMBO_SPECS = [
+    { clip: 'mage_attack1', startTime: 0.04, timeScale: 1.45, duration: 0.46 },
+    { clip: 'mage_attack2', startTime: 0.04, timeScale: 1.45, duration: 0.46 },
+    { clip: 'mage_attack3', startTime: 0.12, timeScale: 1.50, duration: 0.52 },
+  ];
+
+  function advanceHeroStep(st, dist) {
+    if (!dist || dist <= 0) return;
+    const fx = Math.sin(st.yaw);
+    const fz = Math.cos(st.yaw);
+    let next = resolveCollisions(st.x + fx * dist, st.z + fz * dist, player.radius);
+    if (campaignLoop.currentActId === 'act3_shrine' || next.z < -68.0) {
+      const shr = resolveShrineObstacles(
+        next.x,
+        next.z,
+        player.radius,
+        campaignLoop.currentActId === 'act3_shrine'
+      );
+      next = { ...next, x: shr.x, z: shr.z };
+    }
+    st.x = next.x;
+    st.z = next.z;
+    if (st.grounded) {
+      st.y = walkableHeightAt(st.x, st.z);
+    }
   }
 
   function triggerAction(actionType) {
@@ -893,52 +1119,83 @@ export async function createCoopPlayerSystem({
     }
 
     if (actionType === 'attack') {
-      if (leader.comboResetTimer > 0) {
-        leader.comboIndex = (leader.comboIndex + 1) % 3;
-      } else {
-        leader.comboIndex = 0;
-      }
-      leader.comboResetTimer = 1.15;
-
       if (leader.id === 'Knight') {
-        const clips = ['combo1', 'combo2', 'combo3'];
-        const clip = clips[leader.comboIndex];
-        const swingRes = campaignLoop.performKnightSwing(clip, leader, leader.yaw, partner);
+        if (leader.comboResetTimer > 0) {
+          leader.comboIndex = (leader.comboIndex + 1) % 4;
+        } else {
+          leader.comboIndex = 0;
+        }
+        leader.comboResetTimer = 1.20;
+
+        const cSpec = KNIGHT_COMBO_SPECS[leader.comboIndex] || KNIGHT_COMBO_SPECS[0];
+        const swingRes = campaignLoop.performKnightSwing(cSpec.clip, leader, leader.yaw, partner);
         if (swingRes?.swingYaw !== undefined) {
           leader.yaw = swingRes.swingYaw;
-          applyTransform(leader);
         }
-        startOneShotAction(leader, clip, 0.50, { timeScale: 1.28, fade: 0.07 });
+        advanceHeroStep(leader, cSpec.stepDist);
+        if (cSpec.hopVy) {
+          leader.vy = cSpec.hopVy;
+          leader.grounded = false;
+        }
+        applyTransform(leader);
+
+        startOneShotAction(leader, cSpec.clip, cSpec.duration, {
+          startTime: cSpec.startTime,
+          timeScale: cSpec.timeScale,
+          fade: 0.06,
+        });
+
+        const isHeavyComboHit = leader.comboIndex >= 2;
+        triggerCameraImpulse({
+          intensity: isHeavyComboHit ? 0.16 : 0.07,
+          dirX: Math.sin(leader.yaw),
+          dirZ: Math.cos(leader.yaw),
+          fovKick: isHeavyComboHit ? 1.8 : 0.8,
+        });
+
         coopClient.sendActionEvent({
           role: 'Knight',
-          action: clip,
+          action: cSpec.clip,
           x: leader.x,
           y: leader.y,
           z: leader.z,
           yaw: leader.yaw,
         });
       } else {
-        const clips = ['combo1', 'cast_shoot', 'cast_spell'];
-        const clip = clips[leader.comboIndex];
-        const softTarget = selectSoftLockTarget(
-          leader,
-          leader.yaw,
-          enemyManager.activeEnemies,
-          { maxRange: HERO_STATS.Mage.boltRange, partnerPos: partner }
-        );
-        if (softTarget) {
-          leader.yaw = Math.atan2(softTarget.x - leader.x, softTarget.z - leader.z);
-          applyTransform(leader);
-          enemyManager.applyHitToEnemy(softTarget, {
-            source: clip,
-            baseDmg: HERO_STATS.Mage.boltDmg[leader.comboIndex] || 20,
-            applyMark: leader.comboIndex === 2 ? 'rime' : null,
-            attackerPos: leader,
-          });
-          campaignLoop.addResonance(5);
+        if (leader.comboResetTimer > 0) {
+          leader.comboIndex = (leader.comboIndex + 1) % 3;
+        } else {
+          leader.comboIndex = 0;
         }
-        startOneShotAction(leader, clip, 0.50, { timeScale: 1.26, fade: 0.08 });
+        leader.comboResetTimer = 1.15;
+
+        const mSpec = MAGE_COMBO_SPECS[leader.comboIndex] || MAGE_COMBO_SPECS[0];
+        campaignLoop.performMageBoltAttack(leader.comboIndex, leader, partner);
+        applyTransform(leader);
+
+        startOneShotAction(leader, mSpec.clip, mSpec.duration, {
+          startTime: mSpec.startTime,
+          timeScale: mSpec.timeScale,
+          fade: 0.06,
+        });
+
+        triggerCameraImpulse({
+          intensity: 0.07,
+          dirX: Math.sin(leader.yaw),
+          dirZ: Math.cos(leader.yaw),
+          fovKick: 0.8,
+        });
+
+        coopClient.sendActionEvent({
+          role: 'Mage',
+          action: mSpec.clip,
+          x: leader.x,
+          y: leader.y,
+          z: leader.z,
+          yaw: leader.yaw,
+        });
       }
+      syncSharedPlayerFromLeader();
       onHudStateChanged?.(campaignLoop.getStateSnapshot());
       return;
     }
@@ -948,9 +1205,23 @@ export async function createCoopPlayerSystem({
         const swingRes = campaignLoop.performKnightSwing('charged', leader, leader.yaw, partner);
         if (swingRes?.swingYaw !== undefined) {
           leader.yaw = swingRes.swingYaw;
-          applyTransform(leader);
         }
-        startOneShotAction(leader, 'charged', 0.66, { timeScale: 1.18, fade: 0.08 });
+        advanceHeroStep(leader, 0.35);
+        applyTransform(leader);
+
+        startOneShotAction(leader, 'charged', 0.58, {
+          startTime: 0.0,
+          timeScale: 1.15,
+          fade: 0.07,
+        });
+
+        triggerCameraImpulse({
+          intensity: 0.16,
+          dirX: Math.sin(leader.yaw),
+          dirZ: Math.cos(leader.yaw),
+          fovKick: 1.8,
+        });
+
         coopClient.sendActionEvent({
           role: 'Knight',
           action: 'charged',
@@ -960,8 +1231,32 @@ export async function createCoopPlayerSystem({
           yaw: leader.yaw,
         });
       } else {
-        triggerSpell(2);
+        campaignLoop.performMageBoltAttack(3, leader, partner);
+        applyTransform(leader);
+
+        startOneShotAction(leader, 'mage_heavy', 0.56, {
+          startTime: 0.35,
+          timeScale: 1.55,
+          fade: 0.07,
+        });
+
+        triggerCameraImpulse({
+          intensity: 0.16,
+          dirX: Math.sin(leader.yaw),
+          dirZ: Math.cos(leader.yaw),
+          fovKick: 1.8,
+        });
+
+        coopClient.sendActionEvent({
+          role: 'Mage',
+          action: 'mage_heavy',
+          x: leader.x,
+          y: leader.y,
+          z: leader.z,
+          yaw: leader.yaw,
+        });
       }
+      syncSharedPlayerFromLeader();
       onHudStateChanged?.(campaignLoop.getStateSnapshot());
       return;
     }
@@ -977,7 +1272,17 @@ export async function createCoopPlayerSystem({
             leader.yaw,
             campaignLoop.combatHeroes.Knight.breathingStyle
           );
-          startOneShotAction(leader, 'charged', 0.56, { timeScale: 1.28, fade: 0.08 });
+          startOneShotAction(leader, 'stab', 0.46, {
+            startTime: 0.10,
+            timeScale: 1.45,
+            fade: 0.06,
+          });
+          triggerCameraImpulse({
+            intensity: 0.16,
+            dirX: Math.sin(leader.yaw),
+            dirZ: Math.cos(leader.yaw),
+            fovKick: 1.8,
+          });
           onBanner?.({
             title: '🛡️ CHIVALRIC INTERCEPT · GOLDEN WARD',
             subtitle: '+35 HP Shield Granted to Both Partners · Marks Detonated',
@@ -985,6 +1290,12 @@ export async function createCoopPlayerSystem({
           });
         } else {
           startOneShotAction(leader, 'cast_spell', 0.60, { timeScale: 1.22, fade: 0.08 });
+          triggerCameraImpulse({
+            intensity: 0.16,
+            dirX: Math.sin(leader.yaw),
+            dirZ: Math.cos(leader.yaw),
+            fovKick: 1.8,
+          });
           onBanner?.({
             title: '✨ SOUL INFUSE · PARTNER HEALED',
             subtitle: `+${HERO_STATS.Mage.infuseHeal} HP Restored · Knight Blade Ignited`,
@@ -1000,6 +1311,7 @@ export async function createCoopPlayerSystem({
           yaw: leader.yaw,
         });
       }
+      syncSharedPlayerFromLeader();
       onHudStateChanged?.(campaignLoop.getStateSnapshot());
       return;
     }
@@ -1019,8 +1331,18 @@ export async function createCoopPlayerSystem({
         }
       }
       campaignLoop.performCouplesUltimate(heroStates);
-      startOneShotAction(heroStates.Knight, 'charged', 0.75, { timeScale: 1.12, fade: 0.08 });
+      startOneShotAction(heroStates.Knight, 'charged', 0.75, {
+        startTime: 0.0,
+        timeScale: 1.15,
+        fade: 0.08,
+      });
       startOneShotAction(heroStates.Mage, 'burst_aoe', 0.75, { timeScale: 1.12, fade: 0.08 });
+      triggerCameraImpulse({
+        intensity: 0.32,
+        dirX: Math.sin(leader.yaw),
+        dirZ: Math.cos(leader.yaw),
+        fovKick: 3.0,
+      });
       coopClient.sendActionEvent({
         role: activeHeroId,
         action: 'ultimate',
@@ -1324,13 +1646,14 @@ export async function createCoopPlayerSystem({
     applyTransform(partner);
     partner.char.update(dt);
 
-    // 4. Update 3-Act Campaign Loop, Pooled Enemy AI & Stage 4 Opaque VFX Kit
+    // 4. Update 3-Act Campaign Loop, Pooled Enemy AI, Stage 4 Opaque VFX Kit & Spring Camera Impact
     campaignLoop.update(dt, {
       heroStates,
       soloWingmanActive: !isPeerLinked,
       camera,
     });
     vfxKit.update(dt);
+    stepCameraImpact(dt);
   }
 
   /**
@@ -1340,6 +1663,7 @@ export async function createCoopPlayerSystem({
    * within `tablet <= 48` and `desktop <= 60` draw calls.
    */
   function poseForShot(shotId, fallbackPlayerPos = null, camera = null) {
+    resetCameraImpact();
     const preset = SHOT_CHARACTER_POSES[shotId] || SHOT_CHARACTER_POSES['day-plaza'];
 
     const kx = preset.knight?.x ?? (fallbackPlayerPos ? fallbackPlayerPos[0] : 1.5);
@@ -1398,6 +1722,7 @@ export async function createCoopPlayerSystem({
    * (`STAGE5_GAMEPLAY_SHOTS`) for `shoot-stage5-gameplay.mjs`.
    */
   function poseForGameplayShot(gameplayShotId, camera = null) {
+    resetCameraImpact();
     const spec =
       STAGE5_GAMEPLAY_SHOTS[gameplayShotId] ||
       STAGE5_GAMEPLAY_SHOTS['01-desktop-act1-sunfire-slash'];
@@ -1575,6 +1900,10 @@ export async function createCoopPlayerSystem({
     campaignLoop,
     combatSfx,
     coopClient,
+    cameraImpact,
+    triggerCameraImpulse,
+    getCameraImpactOffset,
+    resetCameraImpact,
     launchMageFrostLance,
     triggerSpell,
     heroStates,

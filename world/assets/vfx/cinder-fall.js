@@ -5,20 +5,26 @@
 //
 // Visual & Engineering Contract:
 // - Strictly <= 4 InstancedMeshes when active, 0 draw calls when idle (`group.visible = false`):
-//     1. `asteroidMesh` (1 InstancedMesh): Angular chiseled volcanic basalt-magma
-//        asteroid monolith (`70%+` solid 4-band cel-shaded basalt armor plates
-//        split by recessed tectonic magma fissures, `transparent: false,
-//        depthWrite: true, side: THREE.FrontSide`).
+//     1. `asteroidMesh` (1 InstancedMesh):
+//        - In-flight (`impactElapsed < 0`): Slot 0 is the single hurtling `1.08m`
+//          chiseled volcanic basalt-magma asteroid monolith.
+//        - On impact (`impactElapsed >= 0`): Shatters immediately into 4 jagged
+//          broken boulder fragments (slots `0..3`, scale `0.48..0.64m`) that
+//          burst outward/upward (`vy = 4.2..8.5 m/s`, `gravity = -22 m/s^2`),
+//          bounce once on the ground (`restitution = 0.32`), settle on the
+//          crater floor, cool into dark charcoal basalt, and crumble into
+//          glowing ember ash via 3D `NoiseAtlas` erosion (ZERO shrinking or sinking!).
 //     2. `fireWakeMesh` (1 InstancedMesh): Closed 3D flame-tongue plume hulls
 //        along the in-flight wake (collapsing cleanly into the crater on impact)
 //        and roaring volcanic crater fire plumes (`transparent: false`, hard
-//        `discard` < 0.45, 3-band Ukiyo-e cel fire & dark soot-ink border).
+//        `discard < 0.45`, 3-band Ukiyo-e cel fire & dark soot-ink border).
 //     3. `craterRocksMesh` (1 InstancedMesh): 16 tilted basalt-and-magma crater
 //        rim monoliths heaved around the impact perimeter + 24 ballistic cinder
-//        rocks (`transparent: false, depthWrite: true, side: THREE.FrontSide`).
+//        chunks (`vy = 4.2..8.5 m/s`, `gravity = -22 m/s^2`, `restitution = 0.32`)
+//        that keep 100% scale and cool/crumble into glowing ash in place!
 //     4. `craterDecalMesh` (1 InstancedMesh): Wide 3D-relieved volcanic slag
 //        crater basin & 8-arm tectonic lava-rift scar grounding the entire
-//        outer ring of basalt rim slabs (`transparent: false`, `discard` < 0.45).
+//        outer ring of basalt rim slabs (`transparent: false`, `discard < 0.45`).
 // - Zero raw sRGB vec3 literals in GLSL; all palette colors passed via `THREE.Color`.
 // ============================================================================
 
@@ -52,11 +58,43 @@ function signedHash(n) {
   return hash11(n) * 2.0 - 1.0;
 }
 
+/**
+ * Deterministic 1-bounce ballistic trajectory (`gravity = -22 m/s^2`, `restitution = 0.32`).
+ * Bounces once on `floorY` and settles cleanly on the crater floor without sinking.
+ */
+function evalOneBounceBallistic(t, y0, vy0, gravity, restitution, floorY, outState) {
+  const a = -0.5 * gravity;
+  const h0 = Math.max(0.0, y0 - floorY);
+  const disc = Math.max(0.0, vy0 * vy0 + 4.0 * a * h0);
+  const sqrtDisc = Math.sqrt(disc);
+  const tHit1 = (vy0 + sqrtDisc) / (2.0 * a);
+  const vImpact = sqrtDisc;
+  const vy1 = vImpact * restitution;
+  const tBounceDur = (2.0 * vy1) / (-gravity);
+  const tSettle = tHit1 + tBounceDur;
+
+  if (t <= tHit1) {
+    outState.y = y0 + vy0 * t + 0.5 * gravity * t * t;
+    outState.horizT = t;
+    outState.spinT = t;
+  } else if (t <= tSettle) {
+    const tb = t - tHit1;
+    outState.y = Math.max(floorY, floorY + vy1 * tb + 0.5 * gravity * tb * tb);
+    outState.horizT = tHit1 + tb * 0.45;
+    outState.spinT = tHit1 + tb * 0.42;
+  } else {
+    outState.y = floorY;
+    outState.horizT = tHit1 + tBounceDur * 0.45;
+    outState.spinT = tHit1 + tBounceDur * 0.42;
+  }
+  return outState;
+}
+
 export const CINDER_FALL_DEFAULTS = Object.freeze({
   range: 14.0, // default arena impact distance
   speed: 22.5, // horizontal downrange travel speed, m/s
   lifetime: 2.2, // seconds crater burns after impact
-  fadeTime: 1.5, // seconds everything takes to clear
+  fadeTime: 1.5, // seconds everything takes to cool & crumble
 
   // Trajectory
   handHeight: 2.15,
@@ -71,8 +109,8 @@ export const CINDER_FALL_DEFAULTS = Object.freeze({
   rimSlabCount: 16,
   cinderRockCount: 24,
   craterRadius: 3.35,
-  fissureRadius: 6.85, // Wide enough to ground all outer basalt rim slabs!
-  trailBurnout: 0.08, // Collapses sky wake immediately upon impact so no sky-tube lingers!
+  fissureRadius: 6.85,
+  trailBurnout: 0.08,
 
   // Linear-sRGB Palette Uniforms (passed via THREE.Color)
   colorChar: '#1c1512',
@@ -101,7 +139,6 @@ export function createVolcanicAsteroidGeometry({
   craterDepth = 0.22,
   seed = 11.7,
 } = {}) {
-  // subdivisions = 1 gives bold, flat-planed polyhedral basalt armor plates
   const baseGeo = new THREE.IcosahedronGeometry(1.0, subdivisions).toNonIndexed();
   const posAttr = baseGeo.attributes.position;
 
@@ -143,25 +180,21 @@ export function createVolcanicAsteroidGeometry({
     let r = 1.0;
     let cav = 0.0;
 
-    // Bold angular volcanic cragginess
     const crag =
       Math.sin(v.x * 2.8 + seed) * Math.cos(v.y * 2.4 - seed) * 0.18 +
       Math.cos(v.z * 3.5 + v.x * 1.9) * 0.14;
     r += crag;
 
-    // Planar chisel cuts with magma-filled fault seams along the cut borders
     for (const cp of cutPlanes) {
       const proj = v.dot(cp.dir) * r;
       if (proj > cp.planeDist) {
         const bite = proj - cp.planeDist;
         r -= bite * 0.92;
-        // Emphasize magma seam along the fracture step edge
         const seamEdge = Math.exp(-Math.pow((bite - 0.05) * 14.0, 2.0));
         cav = Math.max(cav, seamEdge * 0.95);
       }
     }
 
-    // Deep volcanic fissure troughs
     for (const cd of craterDirs) {
       const ang = Math.acos(clamp(v.dot(cd), -1.0, 1.0));
       if (ang < 0.48) {
@@ -285,7 +318,7 @@ function createBasaltMagmaMaterial(noiseAtlas, sharedUniforms, config) {
     },
     vertexShader: /* glsl */ `
       attribute float aCavity;
-      attribute vec4 aInstanceMeta; // x: seed, y: heat (0..1.5), z: isSlab (0..1), w: age01
+      attribute vec4 aInstanceMeta; // x: seed, y: heat (0..1.5), z: dissolveProgress (0..1), w: isSlab (0..1)
 
       varying vec3 vWorldPos;
       varying vec3 vWorldNormal;
@@ -337,8 +370,9 @@ function createBasaltMagmaMaterial(noiseAtlas, sharedUniforms, config) {
 
       void main() {
         float seed = vMeta.x;
-        float heat = vMeta.y;
-        float isSlab = vMeta.z;
+        float heat = max(0.0, vMeta.y);
+        float dissolveProgress = clamp(vMeta.z, 0.0, 1.0);
+        float isSlab = vMeta.w;
 
         // 1. Crisp Derivative-Flat Facet Normal so every polyhedral rock plane reads distinctly
         vec3 dN = cross(dFdx(vWorldPos), dFdy(vWorldPos));
@@ -352,13 +386,16 @@ function createBasaltMagmaMaterial(noiseAtlas, sharedUniforms, config) {
         float ndv = clamp(dot(N, V), 0.0, 1.0);
 
         // 2. Sample Low-Frequency Tectonic Fault Mask (B) and Coarse Fracture Seams (R)
-        //    (Avoids uniform soccer-ball Voronoi cells—75% of the rock stays solid charred basalt!)
         vec2 uvMacro = vLocalPos.xz * 0.34 + vec2(vLocalPos.y * 0.31 + seed * 0.41, seed * 0.79);
         vec2 uvFault = vLocalPos.xy * 0.48 + vec2(vLocalPos.z * 0.42 - seed * 0.29, seed * 0.53);
         vec4 nMacro = texture2D(uNoiseAtlas, uvMacro);
         vec4 nFault = texture2D(uNoiseAtlas, uvFault + (nMacro.gb - 0.5) * 0.28);
 
-        // 3. 4-Band Derivative-Flat Basalt Cel Shading (high-contrast volcanic stone plates)
+        // 3. 3D Ash Crumble Dissolve (after heat cools to 0, erode in place without shrinking!)
+        float crumbleVal = nMacro.b * 0.55 + nFault.g * 0.45;
+        if (crumbleVal < dissolveProgress) discard;
+
+        // 4. 4-Band Derivative-Flat Basalt Cel Shading (high-contrast volcanic stone plates)
         float facetLift = 0.65 + 0.35 * ndv;
         float rockScore = clamp(ndl * 0.76 * facetLift + (nMacro.g - 0.5) * 0.16, 0.0, 1.0);
         vec3 rockCol = uColorChar;
@@ -366,7 +403,7 @@ function createBasaltMagmaMaterial(noiseAtlas, sharedUniforms, config) {
         rockCol = mix(rockCol, uColorRockMid, step(0.50, rockScore));
         rockCol = mix(rockCol, uColorRockLit, step(0.74, rockScore));
 
-        // 4. Tectonic Magma Fissures (gated by low-freq tectonic zones + recessed cavity + basal root heat)
+        // 5. Tectonic Magma Fissures (cools down to 0 first so orange veins turn into dark charcoal stone!)
         float basalGlow = isSlab * smoothstep(0.42, -0.15, vLocalPos.y);
         float tectonicGate = smoothstep(0.42, 0.78, nMacro.b + vCavity * 0.65 + basalGlow * 0.75);
         float seamLine = smoothstep(0.68, 0.93, nFault.r) * tectonicGate;
@@ -378,9 +415,13 @@ function createBasaltMagmaMaterial(noiseAtlas, sharedUniforms, config) {
 
         vec3 finalColor = mix(rockCol * mix(0.86, 1.0, uDaylight), magmaCol, smoothstep(0.18, 0.45, magmaMask));
 
-        // 5. Crisp Dark Charred Ink Silhouette Rim (dot(N, V))
+        // 6. Glowing Ember Orange Ash Edge (0.06-wide border right next to dissolveProgress)
+        float ashEdge = step(0.001, dissolveProgress) * (1.0 - smoothstep(dissolveProgress, dissolveProgress + 0.06, crumbleVal));
+        finalColor = mix(finalColor, uColorCrack * 1.35, ashEdge);
+
+        // 7. Crisp Dark Charred Ink Silhouette Rim (dot(N, V))
         float inkRim = 1.0 - smoothstep(0.14, 0.24, ndv);
-        finalColor = mix(finalColor, uColorInk, inkRim * (1.0 - magmaMask * 0.55));
+        finalColor = mix(finalColor, uColorInk, inkRim * (1.0 - max(magmaMask * 0.55, ashEdge)));
 
         gl_FragColor = vec4(finalColor, 1.0);
       }
@@ -455,7 +496,6 @@ function createFireWakeCutoutMaterial(noiseAtlas, sharedUniforms, config) {
         vec3 V = normalize(cameraPosition - vWorldPos);
         float ndv = clamp(dot(N, V), 0.0, 1.0);
 
-        // Scroll FBM channel (B/G) along tongue axis (vUv.y) for licking Ukiyo-e flame tongues (never Voronoi giraffe cells!)
         vec2 scrollUv = vec2(vUv.x * 1.15 + seed * 0.37, vUv.y * 0.95 - uTime * 2.4 + seed * 0.71);
         vec4 n0 = texture2D(uNoiseAtlas, scrollUv);
         vec4 n1 = texture2D(uNoiseAtlas, scrollUv * 1.75 + vec2(0.29, -uTime * 1.5));
@@ -464,10 +504,8 @@ function createFireWakeCutoutMaterial(noiseAtlas, sharedUniforms, config) {
         float tipErode = smoothstep(1.0, 0.14, vUv.y) * 0.76 + 0.24;
         float erodedMask = (tongueWave * 0.64 + ndv * 0.52) * tipErode * (1.0 - age * 0.38) * intensity;
 
-        // Hard alphaTest cutout (strictly >= 0.45, zero transparent fog!)
         if (erodedMask < 0.45) discard;
 
-        // 3-Band Ukiyo-e Cel Fire + Dark Soot-Ink Border
         float fireBand = (erodedMask - 0.45) / 0.55 + heat * 0.18 * (1.0 - vUv.y);
         vec3 col = uColorFlameEdge;
         col = mix(col, uColorFlameMid, step(0.26, fireBand));
@@ -558,7 +596,6 @@ function createCraterDecalMaterial(noiseAtlas, sharedUniforms, config) {
         vec4 n0 = texture2D(uNoiseAtlas, wPos * 0.14 + vec2(seed * 0.37, seed * 0.61));
         vec4 n1 = texture2D(uNoiseAtlas, wPos * 0.32 + vec2(0.23, 0.51));
 
-        // Wide Scorched Volcanic Slag Basin (grounds all outer basalt rim slabs!) + 8 Radial Tectonic Rifts
         float armWave = cos(ang * 8.0 + (n0.b - 0.5) * 2.6 + r * 1.4);
         float armMask = smoothstep(0.54, 0.94, armWave) * smoothstep(1.06, 0.20, r);
         float basinLobes = 0.78 + (n0.b - 0.5) * 0.24 + (n1.g - 0.5) * 0.12;
@@ -567,10 +604,8 @@ function createCraterDecalMaterial(noiseAtlas, sharedUniforms, config) {
         float fadeOut = 1.0 - smoothstep(0.70, 1.0, age);
         float totalMask = max(basinMask * 0.92, armMask * 0.96) * fadeOut;
 
-        // Hard cel cutout (< 0.45 discarded)
         if (totalMask < 0.45) discard;
 
-        // 3D height-field volcanic slag normal relief
         float e = 0.18;
         float h  = slagHeightAt(wPos);
         float hx = slagHeightAt(wPos + vec2(e, 0.0));
@@ -582,7 +617,6 @@ function createCraterDecalMaterial(noiseAtlas, sharedUniforms, config) {
         vec3 rockBase = mix(uColorChar, uColorRockDark, step(0.38, lambert * 0.7 + h * 0.3));
         rockBase = mix(rockBase, uColorRockMid, step(0.68, lambert * 0.7 + h * 0.3));
 
-        // Crisp 3-band cel-shaded radial magma fault lines & fractured caldera floor (never a blurry orange gradient!)
         float centralRing = smoothstep(0.38, 0.22, abs(r - 0.24 + (n0.b - 0.5) * 0.10));
         float riftLine = smoothstep(0.76, 0.94, armWave) * smoothstep(0.95, 0.14, r);
         float concentricRing = smoothstep(0.055, 0.0, abs(r - 0.54 + (n0.b - 0.5) * 0.07));
@@ -607,10 +641,13 @@ function createCraterDecalMaterial(noiseAtlas, sharedUniforms, config) {
 /* 3. Pooled, Deterministic CinderFallSystem (<= 4 Draw Calls)               */
 /* ------------------------------------------------------------------------- */
 
-const MAX_ASTEROID_CORES = 4; // 1 primary meteor monolith + 3 split basalt-magma boulders on impact
+const MAX_ASTEROID_CORES = 4; // 1 hurtling asteroid in flight -> shatters into 4 jagged broken boulder fragments on impact!
 const MAX_FIRE_TONGUES = 34; // wake plumes (in-flight) + roaring crater eruption fire tongues (post-impact)
-const MAX_CRATER_ROCKS = 40; // 16 crater rim basalt monoliths + 24 ballistic cinder rocks
+const MAX_CRATER_ROCKS = 40; // 16 crater rim basalt monoliths + 24 ballistic cinder chunks
 const MAX_CRATER_DECALS = 2;
+
+const BALLISTIC_GRAVITY = -22.0;
+const BALLISTIC_RESTITUTION = 0.32;
 
 const _dummy = new THREE.Object3D();
 const _pos = new THREE.Vector3();
@@ -618,6 +655,7 @@ const _nextPos = new THREE.Vector3();
 const _tangent = new THREE.Vector3();
 const _quat = new THREE.Quaternion();
 const _euler = new THREE.Euler();
+const _bounceState = { y: 0, horizT: 0, spinT: 0 };
 
 export class CinderFallSystem {
   constructor({
@@ -667,7 +705,7 @@ export class CinderFallSystem {
     this.fireWakeMat = createFireWakeCutoutMaterial(this.noiseAtlas, this.sharedUniforms, c);
     this.craterDecalMat = createCraterDecalMaterial(this.noiseAtlas, this.sharedUniforms, c);
 
-    // DC 1: Angular Chiseled Volcanic Basalt-Magma Asteroid Monolith
+    // DC 1: Angular Chiseled Volcanic Basalt-Magma Asteroid (1 in-flight -> 4 shattered boulder fragments on impact)
     const asteroidGeo = createVolcanicAsteroidGeometry({
       subdivisions: 1,
       cuts: 11,
@@ -760,11 +798,37 @@ export class CinderFallSystem {
     this.impactTime = this.castLength / Math.max(1.0, c.speed); // ~0.622s for 14m at 22.5 m/s
     this.totalDuration = this.impactTime + c.lifetime + c.fadeTime;
 
+    // 4 Jagged Shattered Boulder Fragments (`asteroidMesh` slots 0..3, scale `0.48..0.64m`)
+    // Routed around the rear/flanks of the crater so Skeleton_Warrior is never blocked from the front camera!
+    const boulderAngles = [-2.28, -0.78, 2.08, 2.82];
+    const boulderScales = [0.64, 0.59, 0.54, 0.48];
+    const boulderVys = [4.6, 5.5, 6.4, 7.6]; // vy in 4.2..8.5 m/s
+    const boulderSpeeds = [2.6, 3.1, 3.4, 3.9];
+    this.shatteredBoulderRecords = [];
+    for (let b = 0; b < MAX_ASTEROID_CORES; b++) {
+      const s = seed * 11.3 + b * 23.7;
+      const ang = boulderAngles[b];
+      const spd = boulderSpeeds[b];
+      this.shatteredBoulderRecords.push({
+        seed: 2.1 + b * 1.9,
+        ang,
+        startOffsetX: Math.cos(ang) * 0.55,
+        startOffsetZ: Math.sin(ang) * 0.55,
+        vx: Math.cos(ang) * spd,
+        vz: Math.sin(ang) * spd,
+        vy: boulderVys[b],
+        scale: boulderScales[b],
+        stagger: b * 0.035,
+        spinX: signedHash(s + 1.1) * 4.8,
+        spinY: signedHash(s + 2.3) * 4.8,
+        spinZ: signedHash(s + 3.7) * 4.8,
+      });
+    }
+
     this.rimSlabRecords = [];
     for (let i = 0; i < c.rimSlabCount; i++) {
       const s = seed * 19.7 + i * 29.3;
       const ang = (i / c.rimSlabCount) * TAU + signedHash(s + 1.1) * 0.14;
-      // Stepped-down front-right camera window so crater core, asteroid & staggering Skeleton_Warrior read clearly
       const isFrontWindow = ang > 0.30 && ang < 2.45;
       this.rimSlabRecords.push({
         seed: hash11(s + 2.3) * 10.0,
@@ -774,23 +838,24 @@ export class CinderFallSystem {
         radius: (isFrontWindow ? 0.44 : 0.64) + 0.28 * hash11(s + 6.9),
         lean: 0.42 + 0.26 * hash11(s + 8.3),
         stagger: hash11(s + 9.7) * 0.05,
+        dissolveStagger: (hash11(s + 11.3) - 0.5) * 0.12,
       });
     }
 
     this.cinderRockRecords = [];
     for (let i = 0; i < c.cinderRockCount; i++) {
       const s = seed * 41.3 + i * 17.9;
-      // Route ballistic cinder rocks outside the front camera sightline (avoiding ang in [0.35, 2.35]) so Skeleton_Warrior's chest is never occluded!
       const rawU = i / c.cinderRockCount;
       const ang = lerp(2.40, TAU + 0.30, rawU) + signedHash(s + 1.3) * 0.15;
-      const speed = 6.2 + 5.8 * hash11(s + 2.9);
+      const speed = 4.2 + 4.4 * hash11(s + 2.9);
       this.cinderRockRecords.push({
         seed: hash11(s + 4.1) * 10.0,
         ang,
         vx: Math.cos(ang) * speed,
         vz: Math.sin(ang) * speed,
-        vy: 4.8 + 4.8 * hash11(s + 5.7),
-        size: 0.20 + 0.16 * hash11(s + 7.3),
+        vy: 4.2 + 4.3 * hash11(s + 5.7), // vy = 4.2..8.5 m/s as specified
+        size: 0.22 + 0.16 * hash11(s + 7.3),
+        dissolveStagger: (hash11(s + 8.1) - 0.5) * 0.14,
         spinX: signedHash(s + 8.9) * 7.0,
         spinY: signedHash(s + 10.1) * 7.0,
         spinZ: signedHash(s + 11.7) * 7.0,
@@ -862,16 +927,18 @@ export class CinderFallSystem {
     const flightU = saturate(timeSeconds / Math.max(0.05, this.impactTime));
     const impactElapsed = timeSeconds - this.impactTime;
     const postImpactU = saturate(impactElapsed / Math.max(0.1, c.lifetime + c.fadeTime));
-    const fadeShrink = 1.0 - smoothstep(0.65, 1.0, postImpactU);
 
     const impX = this.origin.x + this.direction.x * this.castLength;
     const impZ = this.origin.z + this.direction.z * this.castLength;
     const impY = this.getGroundHeight(impX, impZ);
 
-    // 1. Evaluate Chiseled Volcanic Basalt Asteroid Monolith (DC 1)
+    // 1. Evaluate Volcanic Asteroid (DC 1):
+    //    - While `impactElapsed < 0`: slot 0 is the single hurtling 1.08m asteroid.
+    //    - Instant `impactElapsed >= 0`: shatters into 4 jagged broken boulder fragments
+    //      (slots 0..3, scale 0.48..0.64m) that bounce once (`restitution = 0.32`),
+    //      settle on the crater floor, cool down (`heat -> 0`), and crumble into glowing ash!
     let astSlot = 0;
     if (impactElapsed < 0) {
-      // Hurtling mid-air asteroid along arc
       this._trajectoryAt(flightU, _pos);
       _dummy.position.copy(_pos);
       _euler.set(timeSeconds * c.spin, timeSeconds * c.spin * 0.78, timeSeconds * c.spin * 0.52);
@@ -880,45 +947,47 @@ export class CinderFallSystem {
       _dummy.scale.setScalar(c.radius * popIn);
       _dummy.updateMatrix();
       this.asteroidMesh.setMatrixAt(astSlot, _dummy.matrix);
-      this.asteroidMetaAttr.setXYZW(astSlot, 1.7, 0.90 + 0.45 * flightU, 0.0, flightU);
+      this.asteroidMetaAttr.setXYZW(astSlot, 1.7, 0.95 + 0.40 * flightU, 0.0, 0.0);
       astSlot++;
-    } else if (fadeShrink > 0.02) {
-      // Colossal angular basalt-magma asteroid monolith embedded just behind/left of Skeleton_Warrior
-      // so both the jagged basalt monolith and the staggering Skeleton_Warrior are 100% hero-legible!
-      const settleDrop = smoothstep(0.0, 0.45, impactElapsed) * 0.28;
-      const sinkY = (1.0 - fadeShrink) * 0.85;
-      _dummy.position.set(impX - 1.05, impY + 1.06 - settleDrop - sinkY, impZ - 0.25);
-      _euler.set(0.38, 0.95, -0.28);
-      _dummy.quaternion.setFromEuler(_euler);
-      _dummy.scale.set(
-        c.radius * 1.28 * fadeShrink,
-        c.radius * 1.16 * fadeShrink,
-        c.radius * 1.24 * fadeShrink
-      );
-      _dummy.updateMatrix();
-      this.asteroidMesh.setMatrixAt(astSlot, _dummy.matrix);
-      this.asteroidMetaAttr.setXYZW(astSlot, 1.7, 1.15 * fadeShrink, 0.0, postImpactU);
-      astSlot++;
+    } else {
+      for (let b = 0; b < this.shatteredBoulderRecords.length; b++) {
+        const bRec = this.shatteredBoulderRecords[b];
+        const dissolveProgress = smoothstep(0.45, 0.98, postImpactU + bRec.stagger);
+        if (dissolveProgress >= 0.995) continue;
 
-      // 3 fractured volcanic boulder chunks flanking the impact basin
-      const splitAngles = [-2.25, 2.05, -0.65];
-      for (let b = 0; b < 3; b++) {
-        const bAng = splitAngles[b];
-        const bDist = 1.65 + smoothstep(0.0, 0.24, impactElapsed) * 0.55;
-        const bx = impX + Math.cos(bAng) * bDist;
-        const bz = impZ + Math.sin(bAng) * bDist;
-        const by = this.getGroundHeight(bx, bz) + 0.42 - sinkY * 0.6;
-        _dummy.position.set(bx, by, bz);
-        _euler.set(b * 1.1 + 0.4, bAng, 0.35);
-        _dummy.quaternion.setFromEuler(_euler);
-        _dummy.scale.set(
-          c.radius * 0.66 * fadeShrink,
-          c.radius * 0.58 * fadeShrink,
-          c.radius * 0.64 * fadeShrink
+        // First cool heat down to 0 so orange magma veins turn into dark charcoal stone before crumbling!
+        const rockHeat = 1.22 * (1.0 - smoothstep(0.10, 0.48, postImpactU + bRec.stagger));
+
+        const approxX = impX + bRec.startOffsetX + bRec.vx * 0.45;
+        const approxZ = impZ + bRec.startOffsetZ + bRec.vz * 0.45;
+        const floorY = this.getGroundHeight(approxX, approxZ) + bRec.scale * 0.46;
+
+        evalOneBounceBallistic(
+          impactElapsed,
+          impY + 0.62,
+          bRec.vy,
+          BALLISTIC_GRAVITY,
+          BALLISTIC_RESTITUTION,
+          floorY,
+          _bounceState
         );
+
+        const bx = impX + bRec.startOffsetX + bRec.vx * _bounceState.horizT;
+        const bz = impZ + bRec.startOffsetZ + bRec.vz * _bounceState.horizT;
+        const by = _bounceState.y;
+
+        _dummy.position.set(bx, by, bz);
+        _euler.set(
+          0.4 + bRec.spinX * _bounceState.spinT,
+          bRec.ang + bRec.spinY * _bounceState.spinT,
+          0.25 + bRec.spinZ * _bounceState.spinT
+        );
+        _dummy.quaternion.setFromEuler(_euler);
+        // Keep boulder fragment at 100% scale (0.48..0.64m) — NEVER shrink or sink into floor!
+        _dummy.scale.set(bRec.scale * 1.08, bRec.scale * 0.92, bRec.scale * 1.04);
         _dummy.updateMatrix();
         this.asteroidMesh.setMatrixAt(astSlot, _dummy.matrix);
-        this.asteroidMetaAttr.setXYZW(astSlot, 3.1 + b, 1.10 * fadeShrink, 0.0, postImpactU);
+        this.asteroidMetaAttr.setXYZW(astSlot, bRec.seed, rockHeat, dissolveProgress, 0.0);
         astSlot++;
       }
     }
@@ -933,7 +1002,6 @@ export class CinderFallSystem {
     for (let i = 0; i < MAX_FIRE_TONGUES; i++) {
       const rec = this.fireTongueRecords[i];
       if (rec.isWake && wakeBurnU < 0.99) {
-        // In-flight sky wake behind the falling meteor (collapses cleanly into the crater upon impact!)
         const headU = impactElapsed < 0 ? flightU : 0.96;
         const tailU = lerp(Math.max(0.0, headU - 0.48), headU, wakeBurnU);
         const sampleU = lerp(tailU, headU, rec.uOffset);
@@ -967,12 +1035,10 @@ export class CinderFallSystem {
         );
         wakeSlot++;
       } else if (!rec.isWake && impactElapsed >= -0.02 && postImpactU < 0.88) {
-        // Horseshoe crown of roaring volcanic fire-tongue plumes framing the crater & basalt monolith
         const tCol = Math.max(0.01, impactElapsed + 0.02);
         const colFade = 1.0 - smoothstep(0.38, 0.88, postImpactU);
         const kIdx = i - 14;
         const kSpan = kIdx / Math.max(1, MAX_FIRE_TONGUES - 15);
-        // Wrap around the rear & flanks (-2.65 .. +0.32 rad) leaving the front-right camera view open
         const horseshoeAng = lerp(-2.65, 0.32, kSpan);
         const rDist = (1.45 + rec.radial * 1.35) * smoothstep(0.0, 0.18, tCol);
         const fx = impX + Math.cos(horseshoeAng) * rDist;
@@ -995,20 +1061,26 @@ export class CinderFallSystem {
     this.fireWakeMesh.instanceMatrix.needsUpdate = true;
     this.wakeMetaAttr.needsUpdate = true;
 
-    // 3. Evaluate 16 Tilted Crater Rim Basalt Monoliths + 24 Ballistic Cinder Rocks (DC 3)
+    // 3. Evaluate 16 Tilted Crater Rim Basalt Monoliths + 24 Ballistic Cinder Chunks (DC 3)
+    //    Keep 100% scale & ground height; cool heat -> 0 and crumble via dissolveProgress!
     let rockSlot = 0;
-    if (impactElapsed >= -0.01 && fadeShrink > 0.02) {
+    if (impactElapsed >= -0.01) {
       const tImp = Math.max(0.0, impactElapsed + 0.01);
 
-      // 3a. 16 Crater Rim Basalt-and-Magma Monoliths
+      // 3a. 16 Crater Rim Basalt-and-Magma Monoliths (100% scale, zero sinking!)
       for (let i = 0; i < this.rimSlabRecords.length; i++) {
         const slab = this.rimSlabRecords[i];
         const tSlab = tImp - slab.stagger;
         if (tSlab < 0) continue;
+
+        const dissolveProgress = smoothstep(0.45, 0.98, postImpactU + slab.dissolveStagger);
+        if (dissolveProgress >= 0.995) continue;
+
+        const slabHeat = 1.24 * (1.0 - smoothstep(0.12, 0.50, postImpactU + slab.dissolveStagger));
         const emerge = outQuint(Math.min(1.0, tSlab / 0.15));
         const sx = impX + Math.cos(slab.ang) * slab.radial;
         const sz = impZ + Math.sin(slab.ang) * slab.radial;
-        const sy = this.getGroundHeight(sx, sz) - 0.16 - (1.0 - fadeShrink) * 1.1;
+        const sy = this.getGroundHeight(sx, sz) - 0.16;
 
         _dummy.position.set(sx, sy, sz);
         _pos.set(
@@ -1018,37 +1090,53 @@ export class CinderFallSystem {
         ).normalize();
         _dummy.quaternion.setFromUnitVectors(UP, _pos);
         _dummy.scale.set(
-          slab.radius * emerge * fadeShrink,
-          slab.height * emerge * fadeShrink,
-          slab.radius * emerge * fadeShrink
+          slab.radius * emerge,
+          slab.height * emerge,
+          slab.radius * emerge
         );
         _dummy.updateMatrix();
         this.craterRocksMesh.setMatrixAt(rockSlot, _dummy.matrix);
-        this.rocksMetaAttr.setXYZW(rockSlot, slab.seed, 1.22 * fadeShrink, 1.0, postImpactU);
+        this.rocksMetaAttr.setXYZW(rockSlot, slab.seed, slabHeat, dissolveProgress, 1.0);
         rockSlot++;
       }
 
-      // 3b. 24 Ballistic Cinder Rocks
-      const gravity = -17.0;
-      const drag = 0.65;
+      // 3b. 24 Ballistic Cinder Chunks (`vy = 4.2..8.5 m/s`, `gravity = -22 m/s^2`, `restitution = 0.32`)
       for (let i = 0; i < this.cinderRockRecords.length; i++) {
         const cin = this.cinderRockRecords[i];
-        const dragT = (1.0 - Math.exp(-drag * tImp)) / drag;
-        const cx = impX + cin.vx * dragT;
-        const cz = impZ + cin.vz * dragT;
-        const floorY = this.getGroundHeight(cx, cz) + 0.08;
-        const rawY = impY + 0.45 + cin.vy * dragT + 0.5 * gravity * tImp * tImp;
-        const cy = Math.max(floorY, rawY);
-        const spinT = rawY <= floorY ? tImp * 0.2 : tImp;
+        const dissolveProgress = smoothstep(0.45, 0.98, postImpactU + cin.dissolveStagger);
+        if (dissolveProgress >= 0.995) continue;
+
+        const cinHeat = 1.15 * (1.0 - smoothstep(0.08, 0.44, postImpactU + cin.dissolveStagger));
+        const approxX = impX + cin.vx * 0.45;
+        const approxZ = impZ + cin.vz * 0.45;
+        const floorY = this.getGroundHeight(approxX, approxZ) + cin.size * 0.42;
+
+        evalOneBounceBallistic(
+          tImp,
+          impY + 0.48,
+          cin.vy,
+          BALLISTIC_GRAVITY,
+          BALLISTIC_RESTITUTION,
+          floorY,
+          _bounceState
+        );
+
+        const cx = impX + cin.vx * _bounceState.horizT;
+        const cz = impZ + cin.vz * _bounceState.horizT;
+        const cy = _bounceState.y;
 
         _dummy.position.set(cx, cy, cz);
-        _euler.set(cin.spinX * spinT, cin.ang + cin.spinY * spinT, cin.spinZ * spinT);
+        _euler.set(
+          cin.spinX * _bounceState.spinT,
+          cin.ang + cin.spinY * _bounceState.spinT,
+          cin.spinZ * _bounceState.spinT
+        );
         _dummy.quaternion.setFromEuler(_euler);
-        const sc = cin.size * fadeShrink;
+        const sc = cin.size;
         _dummy.scale.set(sc * 0.95, sc * 1.35, sc * 0.95);
         _dummy.updateMatrix();
         this.craterRocksMesh.setMatrixAt(rockSlot, _dummy.matrix);
-        this.rocksMetaAttr.setXYZW(rockSlot, cin.seed, 1.05 * fadeShrink, 0.4, postImpactU);
+        this.rocksMetaAttr.setXYZW(rockSlot, cin.seed, cinHeat, dissolveProgress, 0.4);
         rockSlot++;
       }
     }
@@ -1061,13 +1149,14 @@ export class CinderFallSystem {
     if (impactElapsed >= -0.02) {
       const tCrater = Math.max(0.01, impactElapsed + 0.02);
       const reach = smoothstep(0.0, 0.18, tCrater);
+      const decalHeat = 1.22 * (1.0 - smoothstep(0.35, 0.85, postImpactU));
       const castYaw = Math.atan2(this.direction.x, this.direction.z);
       _dummy.position.set(impX, impY + 0.042, impZ);
       _dummy.quaternion.setFromAxisAngle(UP, castYaw);
       _dummy.scale.set(c.fissureRadius, 1.0, c.fissureRadius);
       _dummy.updateMatrix();
       this.craterDecalMesh.setMatrixAt(decalSlot, _dummy.matrix);
-      this.decalMetaAttr.setXYZW(decalSlot, postImpactU, reach, 0.49, 1.22 * fadeShrink);
+      this.decalMetaAttr.setXYZW(decalSlot, postImpactU, reach, 0.49, decalHeat);
       decalSlot++;
     }
     this.craterDecalMesh.count = decalSlot;

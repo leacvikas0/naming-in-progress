@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="data:," />
-    <title>Stage 4 VFX Suite — Spells &amp; Sword Breathing (Haru-machi Wisteria Arena Studio)</title>
+    <title>Stage 4 VFX Suite — Spells, Mage Bolts &amp; Live Bone-Tracked Sword Breathing</title>
     <style>
       * { box-sizing: border-box; }
       html, body {
@@ -139,6 +139,7 @@
       <button data-shot="10-storm-lance-discharge">10. Storm Lance</button>
       <button data-shot="11-sword-sunfire-slash">11. Hinokami Slash</button>
       <button data-shot="12-sword-glacial-detonation">12. Glacial Detonation</button>
+      <button data-shot="13-mage-bolt-volley">13. Mage Bolt Volley</button>
     </div>
 
     <script type="module">
@@ -161,6 +162,7 @@
         createCinderFallSystem,
         createStormLanceSystem,
         createSwordVfxSystem,
+        createMageBoltSystem,
       } from './index.js';
 
       const canvas = document.getElementById('scene');
@@ -264,7 +266,7 @@
 
       actorsGroup.add(mageChar.group, knightChar.group, skelWarrior.group, skelMage.group);
 
-      // 4. Instantiate All 5 Stage 4 VFX Systems
+      // 4. Instantiate All 6 Stage 4 VFX Systems (4 Spells + Live Bone-Tracked Sword VFX + Mage Bolts)
       const frostLance = createFrostLanceSystem({
         scene,
         getGroundHeight: walkableHeightAt,
@@ -292,12 +294,18 @@
       });
       swordVfx.attachToKnight(knightChar);
 
+      const mageBolt = createMageBoltSystem({
+        scene,
+        getGroundHeight: walkableHeightAt,
+      });
+
       const allSystems = {
         frostLance,
         shatterlance,
         cinderFall,
         stormLance,
         swordVfx,
+        mageBolt,
       };
 
       const CAST_ORIGIN = new THREE.Vector3(60.8, walkableHeightAt(60.8, -4.0), -4.0);
@@ -310,6 +318,7 @@
         cinderFall.clear();
         stormLance.clear();
         swordVfx.clear();
+        mageBolt.clear();
       }
 
       function applyTimeOfDayMode(todMode, simTime = 1.0) {
@@ -353,9 +362,10 @@
         cinderFall.setLighting(lightingCfg);
         stormLance.setLighting(lightingCfg);
         swordVfx.setLighting(lightingCfg);
+        mageBolt.setLighting(lightingCfg);
       }
 
-      // 5. The 12 Deterministic Multi-Beat & Multi-System Verification Shots
+      // 5. The Deterministic Multi-Beat & Multi-System Verification Shots
       const BASE_SKEL_W_Y = walkableHeightAt(75.15, -3.45);
       const BASE_SKEL_M_Y = walkableHeightAt(77.2, -5.65);
 
@@ -491,7 +501,7 @@
         '09-cinder-fall-crater': {
           id: '09-cinder-fall-crater',
           system: 'cinderFall',
-          label: '9. Cinder Fall Crater Impact (t = 0.76s) — Chiseled Basalt-Magma Asteroid, Fire-Tongue Wake & Rim Slabs',
+          label: '9. Cinder Fall Crater Impact (t = 0.76s) — 4 Shattered Basalt Boulders, Fire-Tongue Wake & Rim Slabs',
           tod: 'day',
           time: 0.76,
           pos: [71.2, 3.95, 4.45],
@@ -507,9 +517,9 @@
         '10-storm-lance-discharge': {
           id: '10-storm-lance-discharge',
           system: 'stormLance',
-          label: '10. Storm Lance Discharge (t = 0.34s) — 16 Braided Lightning Ribbons, Chain Arc & Fulgurite Spikes',
+          label: '10. Storm Lance Discharge (t = 0.24s) — 24Hz Strobe Lightning Spear, Chain Arc & Fulgurite Spikes',
           tod: 'evening',
-          time: 0.34,
+          time: 0.24,
           pos: [66.6, 4.35, 9.25],
           target: [67.4, 1.65, -4.0],
           fov: 50,
@@ -523,9 +533,9 @@
         '11-sword-sunfire-slash': {
           id: '11-sword-sunfire-slash',
           system: 'swordVfx',
-          label: '11. Hinokami Sunfire Slash (t = 0.15s) — Opaque Flame Blade Sheath & Ukiyo-e Diagonal Slash Ribbon',
+          label: '11. Hinokami Sunfire Slash (t = 0.22s) — Live Bone-Tracked KayKit Diagonal Slash Trail & Tangential Sparks',
           tod: 'day',
-          time: 0.15,
+          time: 0.22,
           pos: [73.6, 2.95, 1.95],
           target: [73.9, 1.45, -3.75],
           fov: 43,
@@ -535,16 +545,18 @@
             infusion: 'solar',
             swing: {
               type: 'combo2',
+              clip: '1H_Melee_Attack_Slice_Diagonal',
+              clipTime: 0.46,
               style: 'solar',
-              origin: [72.85, walkableHeightAt(72.85, -3.80), -3.80],
+              origin: [72.65, walkableHeightAt(72.65, -3.80), -3.80],
               yaw: Math.PI * 0.5,
-              age: 0.15,
+              age: 0.22,
             },
             detonation: null,
           },
           poses: {
             mage: { clip: 'Idle_Combat', time: 0.40 },
-            knight: { clip: 'combo3', time: 0.36 },
+            knight: { clip: '1H_Melee_Attack_Slice_Diagonal', time: 0.46 },
             skelW: { clip: 'hit_A', time: 0.18, dy: 0.10, pitch: -0.16 },
             skelM: { clip: 'Idle_Combat', time: 0.45, dy: 0.0, pitch: 0.0 },
           },
@@ -552,9 +564,9 @@
         '12-sword-glacial-detonation': {
           id: '12-sword-glacial-detonation',
           system: 'swordVfx',
-          label: '12. Glacial Tide Shatterblow Detonation (t = 0.22s) — Combo3 Chop & 18-Wedge Crystal Burst',
+          label: '12. Glacial Tide Shatterblow Detonation (t = 0.30s) — Live Bone-Tracked Combo3 Chop & 28-Wedge Crystal Burst',
           tod: 'day',
-          time: 0.22,
+          time: 0.30,
           pos: [73.6, 3.15, 2.25],
           target: [74.5, 1.75, -3.80],
           fov: 44,
@@ -564,22 +576,46 @@
             infusion: 'rime',
             swing: {
               type: 'combo3',
+              clip: '1H_Melee_Attack_Chop',
+              clipTime: 0.68,
               style: 'rime',
               origin: [72.75, walkableHeightAt(72.75, -3.80), -3.80],
               yaw: Math.PI * 0.5,
-              age: 0.20,
+              age: 0.30,
             },
             detonation: {
               type: 'shatterblow',
               pos: [75.10, walkableHeightAt(75.10, -3.80), -3.80],
-              age: 0.22,
+              age: 0.24,
             },
           },
           poses: {
             mage: { clip: 'cheer', time: 0.45 },
-            knight: { clip: 'combo3', time: 0.38 },
+            knight: { clip: '1H_Melee_Attack_Chop', time: 0.68 },
             skelW: { clip: 'hit_A', time: 0.28, dy: 0.30, pitch: -0.26 },
             skelM: { clip: 'hit_B', time: 0.22, dy: 0.08, pitch: -0.12 },
+          },
+        },
+        '13-mage-bolt-volley': {
+          id: '13-mage-bolt-volley',
+          system: 'mageBolt',
+          label: '13. Mage 3-Bolt Converging Starlight Fan Volley (t = 0.26s) — Starlight Crystal Heads & Comet Wakes',
+          tod: 'day',
+          time: 0.26,
+          pos: [66.2, 3.45, 5.85],
+          target: [67.8, 1.45, -3.90],
+          fov: 45,
+          boltConfig: {
+            origin: [60.2, walkableHeightAt(60.2, -4.0), -4.0],
+            direction: [1.0, 0.0, 0.0],
+            targetPos: [75.1, walkableHeightAt(75.1, -3.8) + 1.08, -3.8],
+            comboIndex: 2,
+          },
+          poses: {
+            mage: { clip: 'cast_shoot', time: 0.38 },
+            knight: { clip: 'Idle_Combat', time: 0.35 },
+            skelW: { clip: 'Idle_Combat', time: 0.40, dy: 0.0, pitch: 0.0 },
+            skelM: { clip: 'Idle_Combat', time: 0.55, dy: 0.0, pitch: 0.0 },
           },
         },
       };
@@ -596,6 +632,8 @@
           stormLance.seek(timeSeconds);
         } else if (def.system === 'swordVfx') {
           swordVfx.seek(timeSeconds, def.swordPose);
+        } else if (def.system === 'mageBolt') {
+          mageBolt.seek(timeSeconds, def.boltConfig);
         } else {
           frostLance.seek(timeSeconds);
         }
@@ -671,6 +709,8 @@
           cinderFall.cast(CAST_ORIGIN, CAST_DIR, { range: 14.0, seed: 1.0 });
         } else if (def.system === 'stormLance') {
           stormLance.cast(CAST_ORIGIN, CAST_DIR, { range: 14.3, seed: 1.0 });
+        } else if (def.system === 'mageBolt') {
+          mageBolt.fireComboVolley(def.boltConfig);
         } else if (def.system === 'frostLance') {
           frostLance.cast(CAST_ORIGIN, CAST_DIR, { range: 14.5, seed: 1.0 });
         }
@@ -682,7 +722,6 @@
         stageGroup.visible = false;
         sky.group.visible = false;
         if (def.system === 'swordVfx') {
-          // Keep only Knight's handSlot.r sheathMesh visible inside actorsGroup during isolated VFX measurement
           actorsGroup.visible = true;
           mageChar.group.visible = false;
           skelWarrior.group.visible = false;
@@ -698,7 +737,11 @@
         renderer.info.reset();
         const t0 = performance.now();
         for (let iter = 0; iter < 20; iter++) {
-          seekActiveSystem(def, def.time);
+          if (def.system === 'swordVfx') {
+            swordVfx._evaluateState(def.time);
+          } else {
+            seekActiveSystem(def, def.time);
+          }
         }
         renderer.render(scene, camera);
         const t1 = performance.now();
@@ -785,6 +828,7 @@
         cinderFall,
         stormLance,
         swordVfx,
+        mageBolt,
         knightChar,
         mageChar,
         scene,

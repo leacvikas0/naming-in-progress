@@ -1,28 +1,34 @@
 // ============================================================================
 // world/assets/vfx/sword-vfx.js
 //
-// Stage 4 Pass 2: Opaque *Demon Slayer* Sword Breathing & Physical Detonations
+// Stage 4 Pass 2: 100% Live Bone-Tracked *Demon Slayer* Sword Breathing &
+// Physical Elemental Detonations (Zero Ground Garbage on Swings!)
 //
 // Visual & Engineering Contract:
 // - Strictly <= 4 draw calls when active, 0 draw calls when idle:
 //     1. `sheathMesh` (1 Mesh attached to `knightChar.equippedWeapons['handSlot.r']`
 //        with `userData.isVfx = true`): Sleek, blade-hugging 3D elemental sheath
 //        with serrated Ukiyo-e flame/frost/storm edge tongues above the crossguard
-//        (`y = 0.22..1.46`), `transparent: false, depthWrite: true, side: THREE.FrontSide`,
-//        hard `discard` < 0.45.
-//     2. `slashRibbonMesh` (1 InstancedMesh): Broad, camera-legible 3D crescent
-//        Ukiyo-e Slash Arc Ribbons sweeping from the Knight's sword cleave plane
-//        through the target + low ground-hugging detonation shockwave crests
-//        (`transparent: false, depthWrite: true, side: THREE.FrontSide`, hard
-//        `discard` < 0.45, 3-band cel colors + woodblock ink striations).
-//     3. `shrapnelMesh` (1 InstancedMesh): Solid 3D elemental slash-wake fangs &
-//        radial detonation crystal/magma/fulgurite crowns (`shatterblow`: 24
-//        luminous V1 cerulean-sapphire glacier spires; `solar_flare`: erupting
-//        solar flame-magma spires + cinders; `thunderchain`: radial obsidian-gold
-//        fulgurite monoliths), `transparent: false, depthWrite: true, side: THREE.FrontSide`.
-//     4. `detonationDecalMesh` (1 InstancedMesh): 3D height-field snow-rime /
-//        volcanic-slag / fulgurite-scar ground detonation plate (`transparent: false`,
-//        hard `discard` < 0.45).
+//        (`y = 0.22..1.48`), `transparent: false, depthWrite: true, side: THREE.FrontSide`,
+//        hard `discard < 0.45`.
+//     2. `liveRibbonMesh` (aliased as `slashRibbonMesh`, 1 Mesh):
+//        100% Live Bone-Tracked Sword Trail sampled directly from `rightSword.matrixWorld`
+//        between `localGuard = (0, 0.20, 0)` and `localTip = (0, 1.72, 0)` across a
+//        48-slice Catmull-Rom-interpolated ring buffer (`trailLifetime = 0.24s`),
+//        plus ground-hugging detonation shockwave crest during `triggerDetonation`
+//        (`transparent: false, depthWrite: true, side: THREE.DoubleSide`,
+//        hard `alphaTest` `discard < 0.45`).
+//     3. `shrapnelMesh` (1 InstancedMesh):
+//        - On normal sword swings: 8 small, fast-moving airborne tangential blade
+//          sparks (`size = 0.08..0.14m`) flying off `tipWorld` along the blade's
+//          motion vector and dissolving via `NoiseAtlas` erosion in `0.22s`
+//          (ZERO floor spikes on swings!).
+//        - On `triggerDetonation(type, pos)`: 28 radial 3D glacier/magma/fulgurite
+//          detonation spires that dissolve via `NoiseAtlas` fracture erosion without
+//          uniform shrinking.
+//     4. `detonationDecalMesh` (1 InstancedMesh):
+//        Strictly used for `triggerDetonation(type, pos)` (ZERO floor decals on
+//        normal sword swings!).
 // ============================================================================
 
 import * as THREE from 'three';
@@ -31,6 +37,10 @@ import { createGlacierCrystalGeometry } from './frost-lance.js';
 
 const TAU = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
+
+// Exact sword_1handed.gltf local blade coordinates inside `knightChar.equippedWeapons['handSlot.r']`
+export const LOCAL_BLADE_GUARD = Object.freeze(new THREE.Vector3(0, 0.32, 0));
+export const LOCAL_BLADE_TIP = Object.freeze(new THREE.Vector3(0, 1.92, 0));
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const saturate = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -53,6 +63,27 @@ function hash11(n) {
 
 function signedHash(n) {
   return hash11(n) * 2.0 - 1.0;
+}
+
+function catmullRomScalar(p0, p1, p2, p3, t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return (
+    0.5 *
+    (2.0 * p1 +
+      (-p0 + p2) * t +
+      (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 +
+      (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
+  );
+}
+
+function catmullRomVec3(p0, p1, p2, p3, t, out) {
+  out.set(
+    catmullRomScalar(p0.x, p1.x, p2.x, p3.x, t),
+    catmullRomScalar(p0.y, p1.y, p2.y, p3.y, t),
+    catmullRomScalar(p0.z, p1.z, p2.z, p3.z, t)
+  );
+  return out;
 }
 
 export const BREATHING_PALETTES = Object.freeze({
@@ -79,7 +110,6 @@ export const BREATHING_PALETTES = Object.freeze({
     band1: '#56b8f5',
     band2: '#f0fcff',
     ink: '#0d2c4d',
-    // Exact Locked V1 Luminous Glacial Cerulean Subsurface Palette
     chipCore: '#4b92c9',
     chipDeep: '#24629c',
     chipMid: '#4d8ec4',
@@ -96,7 +126,6 @@ export const BREATHING_PALETTES = Object.freeze({
     band1: '#ff7b14',
     band2: '#fff3a1',
     ink: '#210d06',
-    // Blazing Hinokami Solar-Magma Palette
     chipCore: '#ff6a12',
     chipDeep: '#4a1207',
     chipMid: '#cc290a',
@@ -124,15 +153,70 @@ export const BREATHING_PALETTES = Object.freeze({
   },
 });
 
-// tiltZ around -0.56..-0.62 rad (-33°) banks the crescent face toward the 3rd-person
-// camera while sweeping across the target's torso so both the Ukiyo-e wave pattern
-// and the target's head/shoulders remain 100% visible!
+/**
+ * Active Swing Windows synced to Measured KayKit `Rig_Medium_CombatMelee` Clips.
+ */
 export const SWING_CONFIGS = Object.freeze({
-  combo1: { tiltZ: -0.48, pitchX: 0.16, radius: 2.32, arcSpan: Math.PI * 1.22, duration: 0.38 },
-  combo2: { tiltZ: -0.58, pitchX: 0.20, radius: 2.36, arcSpan: Math.PI * 1.26, duration: 0.40 },
-  combo3: { tiltZ: -0.54, pitchX: 0.18, radius: 2.40, arcSpan: Math.PI * 1.30, duration: 0.46 },
-  charged: { tiltZ: -0.35, pitchX: 0.10, radius: 2.90, arcSpan: Math.PI * 1.96, duration: 0.56 },
-  intercept: { tiltZ: -0.52, pitchX: 0.16, radius: 2.75, arcSpan: Math.PI * 1.15, duration: 0.42 },
+  combo1: {
+    clip: '1H_Melee_Attack_Slice_Horizontal',
+    startTime: 0.10,
+    timeScale: 1.25,
+    duration: 0.48,
+    activeStart: 0.01,
+    activeEnd: 0.25,
+    tiltZ: -0.18,
+    arcSpan: Math.PI * 1.15,
+  },
+  combo2: {
+    clip: '1H_Melee_Attack_Slice_Diagonal',
+    startTime: 0.28,
+    timeScale: 1.15,
+    duration: 0.48,
+    activeStart: 0.03,
+    activeEnd: 0.24,
+    tiltZ: -0.58,
+    arcSpan: Math.PI * 1.24,
+  },
+  combo3: {
+    clip: '1H_Melee_Attack_Chop',
+    startTime: 0.42,
+    timeScale: 1.15,
+    duration: 0.50,
+    activeStart: 0.04,
+    activeEnd: 0.25,
+    tiltZ: -1.12,
+    arcSpan: Math.PI * 1.18,
+  },
+  combo4: {
+    clip: '1H_Melee_Attack_Jump_Chop',
+    startTime: 0.52,
+    timeScale: 1.20,
+    duration: 0.54,
+    activeStart: 0.05,
+    activeEnd: 0.28,
+    tiltZ: -1.25,
+    arcSpan: Math.PI * 1.28,
+  },
+  charged: {
+    clip: '2H_Melee_Attack_Spinning',
+    startTime: 0.0,
+    timeScale: 1.15,
+    duration: 0.58,
+    activeStart: 0.01,
+    activeEnd: 0.52,
+    tiltZ: -0.12,
+    arcSpan: Math.PI * 2.0,
+  },
+  intercept: {
+    clip: '1H_Melee_Attack_Stab',
+    startTime: 0.28,
+    timeScale: 1.25,
+    duration: 0.44,
+    activeStart: 0.02,
+    activeEnd: 0.24,
+    tiltZ: -0.32,
+    arcSpan: Math.PI * 0.92,
+  },
 });
 
 function normalizeStyleKey(style) {
@@ -151,7 +235,7 @@ function normalizeStyleKey(style) {
 }
 
 /* ------------------------------------------------------------------------- */
-/* 1. Procedural Closed Outward-Wound Geometries (`side: THREE.FrontSide`)   */
+/* 1. Procedural Geometries (`createBladeSheathGeometry` & Live Trail Buffer)*/
 /* ------------------------------------------------------------------------- */
 
 /**
@@ -164,7 +248,6 @@ export function createBladeSheathGeometry({ rings = 16, cols = 10 } = {}) {
   for (let r = 0; r < rings; r++) {
     const v = r / (rings - 1);
     const y = lerp(0.22, 1.48, v);
-    // Matches KayKit sword_1handed blade envelope + 8mm elemental sheath clearance, tapering from v = 0.72 to tip
     const taper =
       v < 0.72
         ? lerp(0.92, 1.0, v / 0.72)
@@ -180,7 +263,7 @@ export function createBladeSheathGeometry({ rings = 16, cols = 10 } = {}) {
       const serration = 1.0 + 0.18 * edgePow * (0.55 + 0.45 * Math.sin(v * Math.PI * 5.0));
       const x = Math.cos(ang) * widthX * serration;
       const z = Math.sin(ang) * thickZ;
-      const radialEdge = Math.abs(Math.cos(ang)); // 0 along flat spine, 1 at outer blade edge fins
+      const radialEdge = Math.abs(Math.cos(ang));
       pts.push({ pos: [x, y, z], u, v, radialEdge });
     }
     ringPts.push(pts);
@@ -249,73 +332,57 @@ export function createBladeSheathGeometry({ rings = 16, cols = 10 } = {}) {
   return geometry;
 }
 
+const MAX_TRAIL_SLICES = 48;
+const DET_RING_SLICES = 24;
+const TOTAL_RIBBON_SLICES = MAX_TRAIL_SLICES + DET_RING_SLICES;
+const RADIAL_VERTS = 5; // v = 0, 0.25, 0.5, 0.75, 1.0 across guard -> tip
+
 /**
- * Sleek, sculptural 3D Crescent Ukiyo-e Slash Arc Geometry in the local XZ plane
- * centered on +Z (forward), with `innerR = 0.64..outerR = 1.04` so it sweeps
- * cleanly across the enemy torso without blocking their silhouette.
+ * Dynamic vertex buffer for `liveRibbonMesh` (supports 48 bone-tracked trail slices
+ * + optional 24-slice ground-hugging detonation shockwave crest in 1 single draw call).
  */
-export function createUkiyoeSlashArcGeometry({ steps = 48 } = {}) {
-  const arcSpan = Math.PI * 1.26;
-  const innerR = 0.64;
-  const outerR = 1.04;
-  const halfThickY = 0.068;
+export function createLiveSwordRibbonGeometry() {
+  const maxVerts = TOTAL_RIBBON_SLICES * RADIAL_VERTS;
+  const maxQuads = (TOTAL_RIBBON_SLICES - 1) * (RADIAL_VERTS - 1);
+  const positions = new Float32Array(maxVerts * 3);
+  const normals = new Float32Array(maxVerts * 3);
+  const uvs = new Float32Array(maxVerts * 2);
+  const sliceAges = new Float32Array(maxVerts); // 0..1 age normalized to trailLifetime
+  const indices = new Uint16Array(maxQuads * 6);
 
-  const rings = [];
-  for (let i = 0; i < steps; i++) {
-    const u = i / (steps - 1);
-    const endTaper = Math.sin(u * Math.PI);
-    const headSwell = Math.sin(Math.pow(u, 0.85) * Math.PI);
-    const ang = (u - 0.48) * arcSpan;
-    const sinA = Math.sin(ang);
-    const cosA = Math.cos(ang);
-
-    const rIn = lerp(0.86, innerR, headSwell);
-    const rMid = lerp(0.91, (innerR + outerR) * 0.54, headSwell);
-    const rOut = lerp(0.96, outerR, Math.pow(endTaper, 0.45));
-    const hY = halfThickY * Math.pow(endTaper, 0.55);
-
-    rings.push([
-      { pos: [sinA * rOut, 0.0, cosA * rOut], u, v: 1.0 },
-      { pos: [sinA * rMid, hY, cosA * rMid], u, v: 0.60 },
-      { pos: [sinA * rIn, 0.0, cosA * rIn], u, v: 0.0 },
-      { pos: [sinA * rMid, -hY, cosA * rMid], u, v: 0.60 },
-    ]);
-  }
-
-  const positions = [];
-  const uvs = [];
-
-  const pushTri = (a, b, c) => {
-    positions.push(a.pos[0], a.pos[1], a.pos[2], b.pos[0], b.pos[1], b.pos[2], c.pos[0], c.pos[1], c.pos[2]);
-    uvs.push(a.u, a.v, b.u, b.v, c.u, c.v);
-  };
-
-  for (let i = 0; i < steps - 1; i++) {
-    const r0 = rings[i];
-    const r1 = rings[i + 1];
-    for (let k = 0; k < 4; k++) {
-      const kNext = (k + 1) % 4;
-      const a = r0[k];
-      const b = r1[k];
-      const c = r1[kNext];
-      const d = r0[kNext];
-      pushTri(a, b, c);
-      pushTri(a, c, d);
-      pushTri(a, c, b);
-      pushTri(a, d, c);
-    }
+  for (let i = 0; i < maxVerts; i++) {
+    normals[i * 3 + 1] = 1.0;
   }
 
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
+  const posAttr = new THREE.BufferAttribute(positions, 3);
+  const normAttr = new THREE.BufferAttribute(normals, 3);
+  const uvAttr = new THREE.BufferAttribute(uvs, 2);
+  const ageAttr = new THREE.BufferAttribute(sliceAges, 1);
+  const idxAttr = new THREE.BufferAttribute(indices, 1);
+
+  posAttr.setUsage(THREE.DynamicDrawUsage);
+  normAttr.setUsage(THREE.DynamicDrawUsage);
+  uvAttr.setUsage(THREE.DynamicDrawUsage);
+  ageAttr.setUsage(THREE.DynamicDrawUsage);
+  idxAttr.setUsage(THREE.DynamicDrawUsage);
+
+  geometry.setAttribute('position', posAttr);
+  geometry.setAttribute('normal', normAttr);
+  geometry.setAttribute('uv', uvAttr);
+  geometry.setAttribute('aSliceAge', ageAttr);
+  geometry.setIndex(idxAttr);
+  geometry.setDrawRange(0, 0);
   return geometry;
 }
 
+// Legacy export kept for backwards compatibility with any external imports
+export function createUkiyoeSlashArcGeometry() {
+  return createLiveSwordRibbonGeometry();
+}
+
 /* ------------------------------------------------------------------------- */
-/* 2. Opaque Cel Shaders (`transparent: false`)                              */
+/* 2. Opaque Cel Shaders (`transparent: false, depthWrite: true`)            */
 /* ------------------------------------------------------------------------- */
 
 function createBladeSheathMaterial(noiseAtlas, sharedUniforms) {
@@ -368,17 +435,14 @@ function createBladeSheathMaterial(noiseAtlas, sharedUniforms) {
         vec3 V = normalize(cameraPosition - vWorldPos);
         float ndv = clamp(dot(N, V), 0.0, 1.0);
 
-        // Scroll smooth FBM (channel B/G, never cellular Voronoi scribbles!) upward along the blade
         vec2 scrollUv = vec2(vUv.x * 1.4, vUv.y * 1.35 - uTime * 2.4);
         vec4 nSample = texture2D(uNoiseAtlas, scrollUv);
 
-        // Carve licking Ukiyo-e flame/frost tongues along the outer cutting edges
         float coreSolid = 1.0 - vEdgeFactor * 0.78;
         float flowWave = nSample.b * 0.58 + nSample.g * 0.42;
         float tongueMask = coreSolid + flowWave * 0.56 * smoothstep(1.0, 0.12, vUv.y * 0.35);
         if (tongueMask < 0.45) discard;
 
-        // 3-Band Ukiyo-e Blade Aura: Blazing central spine ridge -> vibrant mid body -> deep edge & ink rim
         float striation = sin(vEdgeFactor * 10.0 - vUv.y * 8.0 + nSample.b * 3.5) * 0.08;
         float bandScore = (1.0 - vEdgeFactor) * 0.74 + flowWave * 0.28 + striation;
         vec3 col = uColorBand0;
@@ -395,13 +459,13 @@ function createBladeSheathMaterial(noiseAtlas, sharedUniforms) {
   });
 }
 
-function createSlashArcMaterial(noiseAtlas, sharedUniforms) {
+function createLiveSwordRibbonMaterial(noiseAtlas, sharedUniforms) {
   return new THREE.ShaderMaterial({
-    name: 'SwordVfxUkiyoeSlashArcMaterial',
+    name: 'SwordVfxLiveBoneRibbonMaterial',
     transparent: false,
     depthWrite: true,
     depthTest: true,
-    side: THREE.FrontSide,
+    side: THREE.DoubleSide,
     uniforms: {
       uNoiseAtlas: { value: noiseAtlas },
       uTime: sharedUniforms.uTime,
@@ -411,30 +475,18 @@ function createSlashArcMaterial(noiseAtlas, sharedUniforms) {
       uColorInk: sharedUniforms.uSlashInk,
     },
     vertexShader: /* glsl */ `
-      attribute vec4 aSlashMeta; // x: progress (0..1), y: seed, z: role, w: intensity
+      attribute float aSliceAge;
       varying vec2 vUv;
-      varying vec4 vMeta;
+      varying float vSliceAge;
       varying vec3 vWorldPos;
       varying vec3 vWorldNormal;
 
       void main() {
         vUv = uv;
-        vMeta = aSlashMeta;
-
-        mat4 instMat = modelMatrix * instanceMatrix;
-        vec4 world = instMat * vec4(position, 1.0);
+        vSliceAge = aSliceAge;
+        vec4 world = modelMatrix * vec4(position, 1.0);
         vWorldPos = world.xyz;
-
-        vec3 col0 = instMat[0].xyz;
-        vec3 col1 = instMat[1].xyz;
-        vec3 col2 = instMat[2].xyz;
-        vec3 invScaleSq = 1.0 / max(vec3(dot(col0, col0), dot(col1, col1), dot(col2, col2)), vec3(1e-6));
-        vWorldNormal = normalize(
-          col0 * (normal.x * invScaleSq.x) +
-          col1 * (normal.y * invScaleSq.y) +
-          col2 * (normal.z * invScaleSq.z)
-        );
-
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
         gl_Position = projectionMatrix * viewMatrix * world;
       }
     `,
@@ -447,46 +499,47 @@ function createSlashArcMaterial(noiseAtlas, sharedUniforms) {
       uniform vec3 uColorInk;
 
       varying vec2 vUv;
-      varying vec4 vMeta;
+      varying float vSliceAge;
       varying vec3 vWorldPos;
       varying vec3 vWorldNormal;
 
       void main() {
-        float progress = clamp(vMeta.x, 0.0, 1.0);
-        float seed = vMeta.y;
-        float intensity = vMeta.w;
-        if (intensity <= 0.01 || progress >= 1.0) discard;
+        // vUv.x = u (0.0 at newest live blade edge -> 1.0 at oldest tail)
+        // vUv.y = v (0.0 at inner crossguard 0.20 -> 1.0 at outer razor tip 1.72)
+        float u = clamp(vUv.x, 0.0, 1.0);
+        float v = clamp(vUv.y, 0.0, 1.0);
+        float age01 = clamp(vSliceAge, 0.0, 1.0);
+        if (age01 >= 0.995) discard;
 
-        // vUv.x is along the arc (0 = Knight sword tail, 1 = leading cleave head); vUv.y is radial (0 = inner wake, 1 = outer razor edge)
-        float headFront = clamp(progress * 1.65 + 0.35, 0.0, 1.04);
-        float tailErase = clamp((progress - 0.45) * 1.25, 0.0, 0.92);
-        if (vUv.x > headFront || vUv.x < tailErase) discard;
-
-        vec2 nUv = vec2(vUv.x * 2.2 - uTime * 2.0 + seed * 0.41, vUv.y * 1.35 + seed * 0.73);
+        vec2 nUv = vec2(u * 2.1 + uTime * 2.2, v * 1.45 - uTime * 0.6);
         vec4 n0 = texture2D(uNoiseAtlas, nUv);
-        vec4 n1 = texture2D(uNoiseAtlas, nUv * 1.9 + vec2(0.37, 0.61));
+        vec4 n1 = texture2D(uNoiseAtlas, nUv * 1.85 + vec2(0.37, 0.61));
 
-        // Ukiyo-e woodblock flame/wave tongues trailing along the inner wake (vUv.y -> 0) and tail
-        float arcWindow = smoothstep(tailErase, tailErase + 0.14, vUv.x) * smoothstep(headFront, headFront - 0.10, vUv.x);
-        float radialWeight = smoothstep(0.0, 0.64, vUv.y);
-        float waveNoise = n0.b * 0.60 + n1.g * 0.40;
-        float erodedMask = (radialWeight * 0.76 + waveNoise * 0.46) * arcWindow * intensity;
+        // Ukiyo-e woodblock flame/frost/storm tongues trailing off the tail (u -> 1) and inner concave edge (v -> 0)
+        // Carves out the inner hub so the Knight's helmet, body, and sword hilt stay 100% visible inside a sleek crescent!
+        float tailProgress = max(u * 0.90, age01 * 0.92);
+        float tailDissolve = 1.0 - smoothstep(0.42, 0.95, tailProgress);
+        float innerWake = smoothstep(0.10, 0.56, v + (1.0 - u) * 0.16);
+        float waveNoise = n0.b * 0.62 + n1.g * 0.38;
+        float erodedMask = (innerWake * 0.78 + waveNoise * 0.50) * tailDissolve;
 
-        // Hard alphaTest cutout (strictly >= 0.45, zero transparent fog!)
+        // Hard alphaTest cutout (strictly >= 0.45, zero transparent glass!)
         if (erodedMask < 0.45) discard;
 
         // Bold Ukiyo-e concentric flow striations + 3-Band Demon Slayer Breathing Crescent
-        float striation = sin(vUv.y * 18.0 + n0.b * 5.0 - vUv.x * 7.5) * 0.15;
-        float celScore = vUv.y * 0.68 + n1.b * 0.24 + striation;
+        // Keeps 75% of the crescent in rich Crimson/Vermilion (or Sapphire/Cerulean) with a tight 22% molten-gold/white outer crest!
+        float striation = sin(v * 22.0 + n0.b * 5.8 + u * 9.0) * 0.16;
+        float celScore = pow(v, 1.38) * 0.72 + (1.0 - u * 0.45) * 0.12 + (n1.b - 0.5) * 0.22 + striation;
         vec3 col = uColorBand0;
-        col = mix(col, uColorBand1 * 1.05, step(0.40, celScore));
-        col = mix(col, uColorBand2 * 1.20, step(0.72, celScore));
+        col = mix(col, uColorBand1 * 1.04, step(0.36, celScore));
+        col = mix(col, uColorBand2 * 1.14, step(0.78, celScore));
 
-        // Crisp sumi-ink woodblock border along the cutout tongues, internal wave ribs, and outer razor spine
+        // Crisp sumi-ink woodblock border along cutout tongues, internal wave ribs, and outer razor spine
         float cutoutInk = 1.0 - smoothstep(0.45, 0.54, erodedMask);
-        float outerRazorInk = smoothstep(0.94, 0.995, vUv.y);
-        float waveRibInk = smoothstep(0.035, 0.0, abs(celScore - 0.40)) * 0.65;
-        col = mix(col, uColorInk, max(max(cutoutInk, outerRazorInk * 0.85), waveRibInk));
+        float outerRazorInk = smoothstep(0.935, 0.992, v);
+        float waveRib1 = smoothstep(0.032, 0.0, abs(celScore - 0.36)) * 0.78;
+        float waveRib2 = smoothstep(0.028, 0.0, abs(celScore - 0.78)) * 0.68;
+        col = mix(col, uColorInk, max(max(cutoutInk, outerRazorInk * 0.90), max(waveRib1, waveRib2)));
 
         gl_FragColor = vec4(col, 1.0);
       }
@@ -514,7 +567,7 @@ function createShrapnelCrystalMaterial(noiseAtlas, sharedUniforms) {
       uColorInk: sharedUniforms.uSlashInk,
     },
     vertexShader: /* glsl */ `
-      attribute vec4 aChipMeta; // x: seed, y: glow, z: isAirborne (0=grounded spire, 1=slash fang), w: unused
+      attribute vec4 aChipMeta; // x: seed, y: glow, z: isAirborne (0=grounded spire, 1=tangential spark), w: dissolveProgress (0..1)
       varying vec3 vWorldPos;
       varying vec3 vWorldNormal;
       varying vec3 vLocalPos;
@@ -562,9 +615,9 @@ function createShrapnelCrystalMaterial(noiseAtlas, sharedUniforms) {
         float seed = vMeta.x;
         float glowBoost = vMeta.y;
         float isAirborne = vMeta.z;
+        float dissolveProgress = clamp(vMeta.w, 0.0, 1.0);
 
         // 1. Locked V1 Horizontal-Azimuth Optical Thickness & Derivative-Flat Facets
-        //    (Guarantees Shatterblow spires in 12 match Frost Lance 03 and never turn pitch-black!)
         vec3 dN = cross(dFdx(vWorldPos), dFdy(vWorldPos));
         vec3 N = length(dN) > 1e-8 ? normalize(dN) : normalize(vWorldNormal);
         if (dot(N, vWorldNormal) < 0.0) N = -N;
@@ -588,12 +641,16 @@ function createShrapnelCrystalMaterial(noiseAtlas, sharedUniforms) {
         float v1 = texture2D(uNoiseAtlas, vp.yz * 1.90 + vec2(0.67, vp.x * 0.53)).b;
         float veins = smoothstep(0.44, 0.90, 0.55 * v0 + 0.45 * v1);
 
+        // Physical NoiseAtlas erosion for tangential sparks & detonation spires (zero uniform shrinking!)
+        float hLocal = clamp(vLocalPos.y, 0.0, 1.0);
+        float erodeNoise = (0.56 * r0 + 0.44 * v0) * 0.72 + (1.0 - hLocal) * 0.28;
+        if (dissolveProgress > 0.001 && erodeNoise < dissolveProgress) discard;
+
         vec3 body = mix(uColorLit, uColorDeep, thickness);
         body = mix(body, uColorSeam, veins * 0.30);
         body = mix(body, uColorSeam, cracks * 0.28);
 
         // 3. Basal Rime / Ember Surge on Ground-Rooted Spires
-        float hLocal = clamp(vLocalPos.y, 0.0, 1.0);
         float rimeFbm = texture2D(uNoiseAtlas, vLocalPos.xy * 1.35 + vec2(seed * 0.29, vLocalPos.z * 1.35)).b;
         float rime = smoothstep(0.50, 0.0, hLocal) * (0.5 + 0.5 * rimeFbm) * (1.0 - isAirborne * 0.65);
         body = mix(body, uColorSeam, clamp(rime, 0.0, 1.0) * 0.56);
@@ -609,7 +666,7 @@ function createShrapnelCrystalMaterial(noiseAtlas, sharedUniforms) {
         vec3 diffuseLit = body * skyProbe * mix(0.82, 0.98, uDaylight);
         float spec = pow(max(dot(N, H), 0.0), 48.0) * 0.20 * mix(0.5, 1.0, uDaylight);
 
-        // 6. Permanent Subsurface Inner Light (Reinhard-rolled)
+        // 6. Permanent Subsurface Inner Light + Dissolve Fracture Edge
         vec3 glow = uColorSeam * rimAmount * 0.80;
         glow += uColorCore * (cracks * 0.62 + veins * 0.28) * 1.45;
         glow += uColorCore * (0.86 + 0.14 * glowBoost);
@@ -617,6 +674,9 @@ function createShrapnelCrystalMaterial(noiseAtlas, sharedUniforms) {
         glow /= (1.0 + glow * 0.35);
 
         vec3 finalColor = diffuseLit + uColorSeam * spec + glow;
+        float dissolveEdge = step(0.001, dissolveProgress) * (1.0 - smoothstep(dissolveProgress, dissolveProgress + 0.08, erodeNoise));
+        finalColor = mix(finalColor, uColorSeam * 1.32, dissolveEdge);
+
         gl_FragColor = vec4(finalColor, 1.0);
       }
     `,
@@ -703,7 +763,6 @@ function createDetonationDecalMaterial(noiseAtlas, sharedUniforms) {
 
         if (mask < 0.45) discard;
 
-        // 3D height-field forward differences (e = 0.16m) for packed snow-rime / slag relief
         float e = 0.16;
         float h  = crustDepthAt(wPos);
         float hx = crustDepthAt(wPos + vec2(e, 0.0));
@@ -714,8 +773,6 @@ function createDetonationDecalMaterial(noiseAtlas, sharedUniforms) {
         float lambert = clamp(dot(nrm, lightDir), 0.0, 1.0);
         float shade = 0.36 + 0.64 * pow(lambert, 0.80);
 
-        // 3-band stepped crust so solar stays dark-char -> crimson -> blazing orange (never khaki-olive!)
-        // and rime stays glacial cerulean -> sky ice -> snow white!
         vec3 col = mix(uColorDeep, uColorBase, step(0.46, shade));
         col = mix(col, uColorEdge, step(0.68, shade));
 
@@ -737,19 +794,24 @@ function createDetonationDecalMaterial(noiseAtlas, sharedUniforms) {
 /* 3. Pooled, Deterministic SwordVfxSystem (<= 4 Draw Calls)                 */
 /* ------------------------------------------------------------------------- */
 
-const MAX_SLASH_RIBBONS = 8;
 const MAX_SHRAPNEL = 42;
 const MAX_DETONATION_DECALS = 3;
+const TRAIL_LIFETIME = 0.24;
+const SPARK_LIFETIME = 0.22;
+const SUB_SLICES_PER_STEP = 4;
 
 const _dummy = new THREE.Object3D();
 const _pos = new THREE.Vector3();
 const _euler = new THREE.Euler();
-const _quatYaw = new THREE.Quaternion();
-const _quatTilt = new THREE.Quaternion();
-const _quatPitch = new THREE.Quaternion();
-const _quatSpin = new THREE.Quaternion();
-const _forwardZ = new THREE.Vector3(0, 0, 1);
-const _rightX = new THREE.Vector3(1, 0, 0);
+const _guardW = new THREE.Vector3();
+const _tipW = new THREE.Vector3();
+const _interpGuard = new THREE.Vector3();
+const _interpTip = new THREE.Vector3();
+const _bladeDir = new THREE.Vector3();
+const _tangDir = new THREE.Vector3();
+const _arcNorm = new THREE.Vector3();
+const _pivot = new THREE.Vector3();
+const _radialVec = new THREE.Vector3();
 
 export class SwordVfxSystem {
   constructor({ scene, getGroundHeight = () => 0 } = {}) {
@@ -786,6 +848,11 @@ export class SwordVfxSystem {
     this.knightChar = null;
     this.infusionStyle = 'none';
     this.infusionTimer = 0;
+    this.trailLifetime = TRAIL_LIFETIME;
+
+    // Ring buffer / trail history of up to 48 Catmull-Rom-interpolated (guardWorld, tipWorld, age) slices
+    this.trailSlices = [];
+    this.controlPostures = [];
 
     this.swingState = {
       active: false,
@@ -794,7 +861,11 @@ export class SwordVfxSystem {
       origin: new THREE.Vector3(),
       yaw: 0,
       age: 0,
-      duration: 0.40,
+      duration: 0.52,
+      activeStart: 0.02,
+      activeEnd: 0.28,
+      clip: '1H_Melee_Attack_Slice_Horizontal',
+      clipTime: null,
     };
 
     this.detonationState = {
@@ -803,7 +874,7 @@ export class SwordVfxSystem {
       style: 'rime',
       pos: new THREE.Vector3(),
       age: 0,
-      duration: 0.85,
+      duration: 0.90,
     };
 
     this._shakeOffset = new THREE.Vector3();
@@ -823,21 +894,17 @@ export class SwordVfxSystem {
     this.sheathMesh.frustumCulled = false;
     this.sheathMesh.visible = false;
 
-    // 2. World-Space Ukiyo-e Slash Arc Ribbon InstancedMesh
-    const slashGeo = createUkiyoeSlashArcGeometry({ steps: 48 });
-    this.slashMetaAttr = new THREE.InstancedBufferAttribute(
-      new Float32Array(MAX_SLASH_RIBBONS * 4),
-      4
-    );
-    slashGeo.setAttribute('aSlashMeta', this.slashMetaAttr);
-    this.slashMat = createSlashArcMaterial(this.noiseAtlas, this.sharedUniforms);
-    this.slashRibbonMesh = new THREE.InstancedMesh(slashGeo, this.slashMat, MAX_SLASH_RIBBONS);
-    this.slashRibbonMesh.name = 'SwordVfx_DC2_UkiyoeSlashRibbons';
-    this.slashRibbonMesh.frustumCulled = false;
-    this.slashRibbonMesh.count = 0;
-    this.group.add(this.slashRibbonMesh);
+    // 2. True Live Bone-Tracked Sword Ribbon Mesh (aliased as `slashRibbonMesh`)
+    const ribbonGeo = createLiveSwordRibbonGeometry();
+    this.slashMat = createLiveSwordRibbonMaterial(this.noiseAtlas, this.sharedUniforms);
+    this.liveRibbonMesh = new THREE.Mesh(ribbonGeo, this.slashMat);
+    this.liveRibbonMesh.name = 'SwordVfx_DC2_LiveBoneSwordRibbon';
+    this.liveRibbonMesh.frustumCulled = false;
+    this.liveRibbonMesh.visible = false;
+    this.slashRibbonMesh = this.liveRibbonMesh;
+    this.group.add(this.liveRibbonMesh);
 
-    // 3. Solid 3D Elemental Slash-Wake Fangs & Detonation Spires InstancedMesh
+    // 3. Airborne Tangential Blade Sparks (Swings) & 3D Detonation Spires (Detonations)
     const chipGeo = createGlacierCrystalGeometry({
       seed: 29.7,
       sides: 7,
@@ -854,7 +921,7 @@ export class SwordVfxSystem {
     this.shrapnelMesh.count = 0;
     this.group.add(this.shrapnelMesh);
 
-    // 4. Detonation Ground Scar & 3D Snow-Rime / Slag Basin InstancedMesh
+    // 4. Detonation Ground Scar & 3D Snow-Rime / Slag Basin InstancedMesh (Strictly for Detonations!)
     const decalGeo = new THREE.PlaneGeometry(2, 2, 1, 1).rotateX(-Math.PI / 2);
     this.decalMetaAttr = new THREE.InstancedBufferAttribute(
       new Float32Array(MAX_DETONATION_DECALS * 4),
@@ -874,19 +941,22 @@ export class SwordVfxSystem {
   }
 
   _seedShrapnelPool() {
-    // Compact ground-erupting elemental fangs strictly in the forward cleave zone around the enemy (never floating behind the Knight!)
-    this.swingChipRecords = [];
-    for (let i = 0; i < 10; i++) {
-      const s = 13.7 + i * 19.1;
-      const uArc = i / 9;
-      this.swingChipRecords.push({
-        isGroundFang: true,
+    // 8 Airborne Tangential Blade Sparks emitted off `tipWorld` during the forward cleave (ZERO floor spikes!)
+    this.tangentialSparkRecords = [];
+    for (let i = 0; i < 8; i++) {
+      const s = 17.3 + i * 23.1;
+      this.tangentialSparkRecords.push({
         seed: hash11(s + 1.1) * 10.0,
-        arcAngle: lerp(-0.38, 0.42, uArc),
-        radial: 1.75 + 0.65 * hash11(s + 2.3),
-        height: 0.68 + 0.42 * hash11(s + 3.7),
-        radius: 0.18 + 0.08 * hash11(s + 5.1),
-        lean: 0.44 + 0.22 * hash11(s + 6.9),
+        emitFrac: 0.38 + (i / 7) * 0.54,
+        bladeFrac: 0.76 + 0.24 * hash11(s + 2.3),
+        speed: 5.8 + 3.4 * hash11(s + 3.7),
+        outwardSpeed: 1.2 + 1.5 * hash11(s + 4.9),
+        liftSpeed: signedHash(s + 6.1) * 1.2,
+        size: 0.08 + 0.06 * hash11(s + 7.3), // 0.08..0.14m as specified
+        spawned: false,
+        spawnAge: 0,
+        spawnPos: new THREE.Vector3(),
+        vel: new THREE.Vector3(),
       });
     }
 
@@ -895,8 +965,6 @@ export class SwordVfxSystem {
       const s = 51.3 + i * 23.7;
       const isRingWedge = i < 22;
       const az = ((i / 28) * TAU + signedHash(s + 1.3) * 0.08 + TAU) % TAU;
-      // Cover the entire front camera hemisphere AND the left side toward the Knight (az in [0.05, 3.65] or > 5.95)
-      // with low ankle-to-knee framing fangs, keeping the central 1.35m arena around Skeleton_Warrior 100% open!
       const inCameraWindow = az < 3.65 || az > 5.95;
       this.detonationWedgeRecords.push({
         isRingWedge,
@@ -910,6 +978,7 @@ export class SwordVfxSystem {
         height: (inCameraWindow ? 0.56 : 2.55) + (inCameraWindow ? 0.24 : 0.85) * hash11(s + 9.9),
         radius: (inCameraWindow ? 0.20 : 0.44) + (inCameraWindow ? 0.07 : 0.16) * hash11(s + 11.3),
         spin: signedHash(s + 13.1) * 8.0,
+        stagger: hash11(s + 15.3) * 0.10,
       });
     }
   }
@@ -930,6 +999,330 @@ export class SwordVfxSystem {
     this.sharedUniforms.uDecalDeep.value.set(pal.decalDeep);
     this.sharedUniforms.uDecalBase.value.set(pal.decalBase);
     this.sharedUniforms.uDecalEdge.value.set(pal.decalEdge);
+  }
+
+  _getRightSwordNode() {
+    if (!this.knightChar) return null;
+    return (
+      this.knightChar.equippedWeapons?.['handSlot.r'] ||
+      this.knightChar.sockets?.['handSlot.r'] ||
+      null
+    );
+  }
+
+  /**
+   * Samples `(guardWorld, tipWorld)` directly from `rightSword.matrixWorld`
+   * (or synthesizes along the measured bone trajectory if `knightChar` is not attached).
+   */
+  _sampleCurrentBladeSegment(outGuard, outTip, fallbackProgressU = 0.5) {
+    const rightSword = this._getRightSwordNode();
+    if (rightSword && this.knightChar?.group) {
+      this.knightChar.group.updateMatrixWorld(true);
+      outGuard.copy(LOCAL_BLADE_GUARD).applyMatrix4(rightSword.matrixWorld);
+      outTip.copy(LOCAL_BLADE_TIP).applyMatrix4(rightSword.matrixWorld);
+      return true;
+    }
+
+    // Fallback bone trajectory synthesizer when `knightChar` is not attached
+    const sw = this.swingState;
+    const cfg = SWING_CONFIGS[sw.type] || SWING_CONFIGS.combo1;
+    const u = clamp(fallbackProgressU, 0.0, 1.0);
+    const span = cfg.arcSpan || Math.PI * 1.2;
+    const localAng = (u - 0.48) * span;
+    const tilt = cfg.tiltZ || -0.48;
+
+    const cosY = Math.cos(sw.yaw);
+    const sinY = Math.sin(sw.yaw);
+    const fwdX = sinY;
+    const fwdZ = cosY;
+    const rightX = cosY;
+    const rightZ = -sinY;
+
+    const dirRight = Math.sin(localAng) * Math.cos(tilt);
+    const dirUp = Math.sin(localAng) * Math.sin(tilt);
+    const dirFwd = Math.cos(localAng);
+
+    const dx = rightX * dirRight + fwdX * dirFwd;
+    const dy = dirUp;
+    const dz = rightZ * dirRight + fwdZ * dirFwd;
+    const invLen = 1.0 / (Math.hypot(dx, dy, dz) || 1.0);
+
+    const cx = sw.origin.x + fwdX * 0.25;
+    const cy = sw.origin.y + 1.12;
+    const cz = sw.origin.z + fwdZ * 0.25;
+
+    outGuard.set(cx + dx * invLen * 0.52, cy + dy * invLen * 0.52, cz + dz * invLen * 0.52);
+    outTip.set(cx + dx * invLen * 1.88, cy + dy * invLen * 1.88, cz + dz * invLen * 1.88);
+    return false;
+  }
+
+  /**
+   * Adds a new `(guardWorld, tipWorld)` control posture and subdivides the step from
+   * `(prevGuard, prevTip)` into 4 Catmull-Rom / radial-preserved sub-slices.
+   */
+  _pushControlPostureAndSubdivide(guardW, tipW, dtStep = 0.012, ageAtEnd = 0.0) {
+    const newCtrl = {
+      guard: guardW.clone(),
+      tip: tipW.clone(),
+      age: ageAtEnd,
+    };
+
+    const ctrlCount = this.controlPostures.length;
+    if (ctrlCount === 0) {
+      this.controlPostures.push(newCtrl);
+      this.trailSlices.unshift({
+        guard: guardW.clone(),
+        tip: tipW.clone(),
+        age: ageAtEnd,
+      });
+      return;
+    }
+
+    const p2 = this.controlPostures[ctrlCount - 1];
+    const p1 = this.controlPostures[Math.max(0, ctrlCount - 2)];
+    const p0 = this.controlPostures[Math.max(0, ctrlCount - 3)];
+    const p3 = newCtrl;
+
+    // Emit tangential airborne blade sparks when the swing crosses their emitFrac
+    const sw = this.swingState;
+    const activeSpan = Math.max(0.05, sw.activeEnd - sw.activeStart);
+    const currActiveU = saturate((sw.age - ageAtEnd - sw.activeStart) / activeSpan);
+
+    const fwdX = Math.sin(sw.yaw);
+    const fwdZ = Math.cos(sw.yaw);
+
+    for (let s = 0; s < this.tangentialSparkRecords.length; s++) {
+      const sp = this.tangentialSparkRecords[s];
+      if (!sp.spawned && currActiveU >= sp.emitFrac) {
+        _tangDir.subVectors(tipW, p2.tip);
+        if (_tangDir.lengthSq() < 1e-5) {
+          _tangDir.set(fwdX, -0.2, fwdZ);
+        }
+        _tangDir.normalize();
+        const fwdDot = _tangDir.x * fwdX + _tangDir.z * fwdZ;
+        if (fwdDot < 0.2 && currActiveU < 0.65) {
+          continue;
+        }
+        if (fwdDot < 0.35) {
+          _tangDir.x = lerp(_tangDir.x, fwdX, 0.65);
+          _tangDir.z = lerp(_tangDir.z, fwdZ, 0.65);
+          _tangDir.normalize();
+        }
+        sp.spawned = true;
+        sp.spawnAge = sw.age - ageAtEnd;
+        sp.spawnPos.lerpVectors(guardW, tipW, sp.bladeFrac);
+        _bladeDir.subVectors(tipW, guardW).normalize();
+        sp.vel
+          .copy(_tangDir)
+          .multiplyScalar(sp.speed)
+          .addScaledVector(_bladeDir, sp.outwardSpeed);
+        sp.vel.y += sp.liftSpeed;
+      }
+    }
+
+    // Knight chest pivot for radial arc preservation on fast 40 m/s swings
+    if (this.knightChar?.group) {
+      _pivot.copy(this.knightChar.group.position);
+    } else {
+      _pivot.copy(sw.origin);
+    }
+    _pivot.y += 1.12;
+
+    const len2 = p2.guard.distanceTo(p2.tip);
+    const len3 = p3.guard.distanceTo(p3.tip);
+    const rad2 = p2.tip.distanceTo(_pivot);
+    const rad3 = p3.tip.distanceTo(_pivot);
+
+    for (let sub = 1; sub <= SUB_SLICES_PER_STEP; sub++) {
+      const t = sub / SUB_SLICES_PER_STEP;
+      catmullRomVec3(p0.guard, p1.guard, p2.guard, p3.guard, t, _interpGuard);
+      catmullRomVec3(p0.tip, p1.tip, p2.tip, p3.tip, t, _interpTip);
+
+      // Preserve radial arc curvature around the Knight's shoulder/chest pivot and exact blade length
+      const targetBladeLen = lerp(len2, len3, t);
+      const targetTipRad = lerp(rad2, rad3, t);
+
+      _radialVec.subVectors(_interpTip, _pivot);
+      const curRad = _radialVec.length();
+      if (curRad > 1e-4) {
+        _radialVec.multiplyScalar(lerp(curRad, targetTipRad, 0.55) / curRad);
+        _interpTip.copy(_pivot).add(_radialVec);
+      }
+
+      _bladeDir.subVectors(_interpTip, _interpGuard);
+      if (_bladeDir.lengthSq() > 1e-5) {
+        _bladeDir.normalize();
+        _interpGuard.copy(_interpTip).addScaledVector(_bladeDir, -targetBladeLen);
+      }
+
+      const subAge = ageAtEnd + (1.0 - t) * dtStep;
+      this.trailSlices.unshift({
+        guard: _interpGuard.clone(),
+        tip: _interpTip.clone(),
+        age: subAge,
+      });
+    }
+
+    this.controlPostures.push(newCtrl);
+    if (this.controlPostures.length > 4) {
+      this.controlPostures.shift();
+    }
+    if (this.trailSlices.length > MAX_TRAIL_SLICES) {
+      this.trailSlices.length = MAX_TRAIL_SLICES;
+    }
+  }
+
+  /**
+   * Rebuilds the vertex buffer (`position`, `normal`, `uv`, `aSliceAge`, `index`) of `liveRibbonMesh`.
+   */
+  _rebuildLiveRibbonBuffer() {
+    const geo = this.liveRibbonMesh.geometry;
+    const posArr = geo.attributes.position.array;
+    const normArr = geo.attributes.normal.array;
+    const uvArr = geo.attributes.uv.array;
+    const ageArr = geo.attributes.aSliceAge.array;
+    const idxArr = geo.index.array;
+
+    let vertOffset = 0;
+    let idxOffset = 0;
+
+    // 1. Live Bone-Tracked Sword Trail Ribbon (`u = 0..1` newest blade edge -> oldest tail, `v = 0..1` guard -> tip)
+    const sliceCount = Math.min(this.trailSlices.length, MAX_TRAIL_SLICES);
+    if (sliceCount >= 2) {
+      for (let i = 0; i < sliceCount; i++) {
+        const s = this.trailSlices[i];
+        const sPrev = this.trailSlices[Math.max(0, i - 1)];
+        const sNext = this.trailSlices[Math.min(sliceCount - 1, i + 1)];
+
+        const u = i / (sliceCount - 1);
+        const age01 = clamp(s.age / Math.max(0.04, this.trailLifetime), 0.0, 1.0);
+
+        _bladeDir.subVectors(s.tip, s.guard);
+        const bladeLen = _bladeDir.length() || 1.0;
+        _bladeDir.divideScalar(bladeLen);
+
+        _tangDir.subVectors(sPrev.tip, sNext.tip);
+        if (_tangDir.lengthSq() < 1e-6) {
+          _tangDir.set(0, 1, 0);
+        } else {
+          _tangDir.normalize();
+        }
+
+        _arcNorm.crossVectors(_tangDir, _bladeDir);
+        if (_arcNorm.lengthSq() < 1e-5) {
+          _arcNorm.set(0, 1, 0);
+        } else {
+          _arcNorm.normalize();
+        }
+
+        // Clean 3D camber along `_arcNorm` so edge-on swings stay ~0.25m thick without ballooning into a sail
+        const twistSpan = (0.16 + 0.08 * Math.sin(u * Math.PI)) * (1.0 - age01 * 0.25);
+
+        for (let r = 0; r < RADIAL_VERTS; r++) {
+          const v = r / (RADIAL_VERTS - 1);
+          const offsetNorm = Math.sin(v * Math.PI) * twistSpan;
+          const vx = lerp(s.guard.x, s.tip.x, v) + _arcNorm.x * offsetNorm;
+          const vy = lerp(s.guard.y, s.tip.y, v) + _arcNorm.y * offsetNorm;
+          const vz = lerp(s.guard.z, s.tip.z, v) + _arcNorm.z * offsetNorm;
+
+          const vIdx = vertOffset + r;
+          posArr[vIdx * 3 + 0] = vx;
+          posArr[vIdx * 3 + 1] = vy;
+          posArr[vIdx * 3 + 2] = vz;
+
+          normArr[vIdx * 3 + 0] = _arcNorm.x;
+          normArr[vIdx * 3 + 1] = _arcNorm.y;
+          normArr[vIdx * 3 + 2] = _arcNorm.z;
+
+          uvArr[vIdx * 2 + 0] = u;
+          uvArr[vIdx * 2 + 1] = v;
+          ageArr[vIdx] = age01;
+        }
+
+        if (i < sliceCount - 1) {
+          const row0 = vertOffset;
+          const row1 = vertOffset + RADIAL_VERTS;
+          for (let r = 0; r < RADIAL_VERTS - 1; r++) {
+            const a = row0 + r;
+            const b = row1 + r;
+            const c = row1 + r + 1;
+            const d = row0 + r + 1;
+            idxArr[idxOffset++] = a;
+            idxArr[idxOffset++] = b;
+            idxArr[idxOffset++] = c;
+            idxArr[idxOffset++] = a;
+            idxArr[idxOffset++] = c;
+            idxArr[idxOffset++] = d;
+          }
+        }
+        vertOffset += RADIAL_VERTS;
+      }
+    }
+
+    // 2. Optional Ground-Hugging Detonation Shockwave Crest Ribbon (Strictly during `triggerDetonation`)
+    if (this.detonationState.active) {
+      const det = this.detonationState;
+      const uDet = det.age / Math.max(0.08, det.duration);
+      if (uDet >= 0 && uDet < 0.96) {
+        const emerge = outQuint(Math.min(1.0, uDet * 3.8));
+        const innerR = 1.45 * emerge;
+        const outerR = 2.55 * emerge;
+        const ringBaseVert = vertOffset;
+
+        for (let i = 0; i < DET_RING_SLICES; i++) {
+          const u = i / (DET_RING_SLICES - 1);
+          const ang = u * Math.PI * 1.65 + uDet * 1.2;
+          const ca = Math.cos(ang);
+          const sa = Math.sin(ang);
+
+          for (let r = 0; r < RADIAL_VERTS; r++) {
+            const v = r / (RADIAL_VERTS - 1);
+            const rad = lerp(innerR, outerR, v);
+            const liftY = det.pos.y + 0.16 + v * 0.28 + Math.sin(u * Math.PI) * 0.12;
+            const vIdx = vertOffset + r;
+
+            posArr[vIdx * 3 + 0] = det.pos.x + sa * rad;
+            posArr[vIdx * 3 + 1] = liftY;
+            posArr[vIdx * 3 + 2] = det.pos.z + ca * rad;
+
+            normArr[vIdx * 3 + 0] = sa;
+            normArr[vIdx * 3 + 1] = 0.65;
+            normArr[vIdx * 3 + 2] = ca;
+
+            uvArr[vIdx * 2 + 0] = u;
+            uvArr[vIdx * 2 + 1] = v;
+            ageArr[vIdx] = uDet * 0.85;
+          }
+
+          if (i < DET_RING_SLICES - 1) {
+            const row0 = ringBaseVert + i * RADIAL_VERTS;
+            const row1 = row0 + RADIAL_VERTS;
+            for (let r = 0; r < RADIAL_VERTS - 1; r++) {
+              const a = row0 + r;
+              const b = row1 + r;
+              const c = row1 + r + 1;
+              const d = row0 + r + 1;
+              idxArr[idxOffset++] = a;
+              idxArr[idxOffset++] = b;
+              idxArr[idxOffset++] = c;
+              idxArr[idxOffset++] = a;
+              idxArr[idxOffset++] = c;
+              idxArr[idxOffset++] = d;
+            }
+          }
+          vertOffset += RADIAL_VERTS;
+        }
+      }
+    }
+
+    geo.setDrawRange(0, idxOffset);
+    geo.attributes.position.needsUpdate = true;
+    geo.attributes.normal.needsUpdate = true;
+    geo.attributes.uv.needsUpdate = true;
+    geo.attributes.aSliceAge.needsUpdate = true;
+    geo.index.needsUpdate = true;
+
+    this.liveRibbonMesh.visible = idxOffset > 0;
   }
 
   /**
@@ -973,10 +1366,11 @@ export class SwordVfxSystem {
   }
 
   /**
-   * Spawns a sweeping world-space Ukiyo-e Slash Arc Ribbon from the Knight's cleave plane.
+   * Starts a live bone-tracked sword swing synced to KayKit's melee animation clip.
    */
   triggerSwing(swingType = 'combo1', origin = null, yaw = null, styleOverride = null) {
-    const cfg = SWING_CONFIGS[swingType] || SWING_CONFIGS.combo1;
+    const typeKey = SWING_CONFIGS[swingType] ? swingType : 'combo1';
+    const cfg = SWING_CONFIGS[typeKey];
     const style = normalizeStyleKey(
       styleOverride || (this.infusionStyle !== 'none' ? this.infusionStyle : 'none')
     );
@@ -997,15 +1391,24 @@ export class SwordVfxSystem {
         : this.knightChar?.group
           ? this.knightChar.group.rotation.y
           : 0;
-    this.swingState.type = SWING_CONFIGS[swingType] ? swingType : 'combo1';
+    this.swingState.type = typeKey;
     this.swingState.style = style;
     this.swingState.duration = cfg.duration;
+    this.swingState.activeStart = cfg.activeStart;
+    this.swingState.activeEnd = cfg.activeEnd;
+    this.swingState.clip = cfg.clip;
+    this.swingState.clipTime = null;
     this.swingState.age = 0;
     this.swingState.active = true;
 
+    this.trailSlices.length = 0;
+    this.controlPostures.length = 0;
+    for (const sp of this.tangentialSparkRecords) {
+      sp.spawned = false;
+    }
+
     this._applyPaletteToUniforms(style, false);
     this.group.visible = true;
-    this._evaluateState(0.08);
     return this;
   }
 
@@ -1028,7 +1431,7 @@ export class SwordVfxSystem {
 
     this._applyPaletteToUniforms(style, true);
     this.group.visible = true;
-    this._evaluateState(0.08);
+    this._evaluateState(this.sharedUniforms.uTime.value);
     return this;
   }
 
@@ -1046,7 +1449,82 @@ export class SwordVfxSystem {
   }
 
   /**
-   * Deterministic timeline & pose seeker for screenshot verification.
+   * Reconstructs the exact 16-substep Catmull-Rom bone-tracked sword trail for
+   * the current `this.swingState.age` by sampling `knightChar`'s animation clip
+   * across `[tStart, tEnd]` and restoring the live mixer state afterward.
+   * Guarantees 100% smooth, frame-rate-independent trails whether running at
+   * 144 FPS on Desktop, 90 FPS on Tablet, or 15 FPS in video capture!
+   */
+  _reconstructBoneTrailForCurrentSwing({ preserveLiveAction = false } = {}) {
+    if (!this.swingState.active) return;
+    const sw = this.swingState;
+    const cfg = SWING_CONFIGS[sw.type] || SWING_CONFIGS.combo1;
+    const clipName = sw.clip || cfg.clip;
+    const targetClipTime =
+      sw.clipTime !== null && sw.clipTime !== undefined
+        ? sw.clipTime
+        : cfg.startTime + sw.age * cfg.timeScale;
+
+    this.trailSlices.length = 0;
+    this.controlPostures.length = 0;
+    for (const sp of this.tangentialSparkRecords) {
+      sp.spawned = false;
+    }
+
+    const tEnd = Math.min(sw.age, cfg.activeEnd);
+    const trailFadeAfterEnd = Math.max(0, sw.age - cfg.activeEnd);
+    if (trailFadeAfterEnd >= this.trailLifetime) {
+      return;
+    }
+    const tStart = Math.max(cfg.activeStart, sw.age - this.trailLifetime);
+
+    if (sw.age >= cfg.activeStart && tEnd > tStart + 0.002) {
+      const SUBSTEPS = 16;
+      const dtSub = (tEnd - tStart) / SUBSTEPS;
+      const activeSpan = Math.max(0.04, cfg.activeEnd - cfg.activeStart);
+
+      const canPoseKnight = Boolean(this.knightChar && typeof this.knightChar.poseAt === 'function');
+      const liveKey = preserveLiveAction ? this.knightChar?.anim?.currentKey : null;
+
+      for (let step = 0; step <= SUBSTEPS; step++) {
+        const uStep = step / SUBSTEPS;
+        const tSwing = lerp(tStart, tEnd, uStep);
+        const sliceAgeAtTarget = sw.age - tSwing;
+        const tClipSample = Math.max(
+          0.01,
+          cfg.startTime + tSwing * cfg.timeScale
+        );
+        const activeFrac = saturate((tSwing - cfg.activeStart) / activeSpan);
+
+        if (canPoseKnight) {
+          this.knightChar.poseAt(clipName, tClipSample);
+        }
+        this._sampleCurrentBladeSegment(_guardW, _tipW, activeFrac);
+        this._pushControlPostureAndSubdivide(_guardW, _tipW, dtSub, sliceAgeAtTarget);
+      }
+
+      // Restore exact final Knight pose at `targetClipTime` so sword mesh matches `u = 0` of ribbon
+      if (canPoseKnight) {
+        this.knightChar.poseAt(clipName, Math.max(0.01, targetClipTime));
+        if (preserveLiveAction && liveKey && this.knightChar?.anim?.play) {
+          const act = this.knightChar.anim.play(liveKey, {
+            loop: false,
+            fade: 0,
+            startTime: Math.max(0.01, targetClipTime),
+            timeScale: cfg.timeScale,
+            force: true,
+          });
+          if (act) {
+            this.knightChar.mixer.update(0);
+            this.knightChar.group.updateMatrixWorld(true);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Deterministic timeline & pose seeker for screenshot/video verification.
    */
   seek(timeSeconds, poseConfig = null) {
     this.sharedUniforms.uTime.value = timeSeconds;
@@ -1059,8 +1537,12 @@ export class SwordVfxSystem {
         const sw = poseConfig.swing;
         this.triggerSwing(sw.type || 'combo2', sw.origin, sw.yaw, sw.style || poseConfig.infusion);
         this.swingState.age = sw.age ?? timeSeconds;
+        this.swingState.clip = sw.clip || SWING_CONFIGS[this.swingState.type].clip;
+        this.swingState.clipTime = sw.clipTime ?? poseConfig.clipTime ?? null;
       } else {
         this.swingState.active = false;
+        this.trailSlices.length = 0;
+        this.controlPostures.length = 0;
       }
       if (poseConfig.detonation) {
         const det = poseConfig.detonation;
@@ -1074,6 +1556,10 @@ export class SwordVfxSystem {
       if (this.detonationState.active) this.detonationState.age = timeSeconds;
     }
 
+    if (this.swingState.active) {
+      this._reconstructBoneTrailForCurrentSwing({ preserveLiveAction: false });
+    }
+
     this._evaluateState(timeSeconds);
     return this;
   }
@@ -1081,125 +1567,44 @@ export class SwordVfxSystem {
   _evaluateState(clockTime = 0) {
     this.sharedUniforms.uTime.value = clockTime;
 
-    let slashSlot = 0;
     let chipSlot = 0;
     let decalSlot = 0;
 
-    // 1. Evaluate Active Sword Swing (Cohesive Ukiyo-e Slash Arc Crescent + Slash-Wake Fangs)
+    // 1. Evaluate Active Sword Swing (Live Bone-Tracked Ribbon + 8 Airborne Tangential Sparks; ZERO floor garbage!)
     if (this.swingState.active) {
       const sw = this.swingState;
-      const u = sw.age / Math.max(0.05, sw.duration);
-      if (u >= 0 && u <= 1.0) {
-        const cfg = SWING_CONFIGS[sw.type] || SWING_CONFIGS.combo1;
-        this._applyPaletteToUniforms(sw.style, false);
+      this._applyPaletteToUniforms(sw.style, false);
 
-        const fwdX = Math.sin(sw.yaw);
-        const fwdZ = Math.cos(sw.yaw);
-        // Anchor crescent center slightly ahead of the Knight's chest (0.35m) so the trailing arc wraps right from his sword hand through the target!
-        const cx = sw.origin.x + fwdX * 0.35;
-        const cy = sw.origin.y + 1.12;
-        const cz = sw.origin.z + fwdZ * 0.35;
+      if (sw.age <= sw.duration + this.trailLifetime) {
+        const drag = 2.4;
+        for (let i = 0; i < this.tangentialSparkRecords.length && chipSlot < MAX_SHRAPNEL; i++) {
+          const sp = this.tangentialSparkRecords[i];
+          if (!sp.spawned) continue;
+          const spAge = sw.age - sp.spawnAge;
+          if (spAge < 0 || spAge > SPARK_LIFETIME) continue;
 
-        _quatYaw.setFromAxisAngle(UP, sw.yaw);
-        _quatTilt.setFromAxisAngle(_forwardZ, cfg.tiltZ);
-        _quatPitch.setFromAxisAngle(_rightX, cfg.pitchX || 0.14);
+          const spU = saturate(spAge / SPARK_LIFETIME);
+          const dissolveProgress = smoothstep(0.22, 0.98, spU);
+          if (dissolveProgress >= 0.995) continue;
 
-        // Slot 0: Primary Broad Ukiyo-e Slash Arc Crescent
-        const numArcSlices = sw.type === 'charged' ? 2 : 1;
-        for (let s = 0; s < numArcSlices && slashSlot < MAX_SLASH_RIBBONS; s++) {
-          _dummy.position.set(cx, cy, cz);
-          _quatSpin.setFromAxisAngle(UP, s * Math.PI + (sw.type === 'charged' ? u * 2.2 : 0.08));
-          _dummy.quaternion.copy(_quatYaw).multiply(_quatTilt).multiply(_quatPitch).multiply(_quatSpin);
+          const dragT = (1.0 - Math.exp(-drag * spAge)) / drag;
+          const wx = sp.spawnPos.x + sp.vel.x * dragT;
+          const wy = sp.spawnPos.y + sp.vel.y * dragT - 0.5 * 6.0 * spAge * spAge;
+          const wz = sp.spawnPos.z + sp.vel.z * dragT;
 
-          const rScale = cfg.radius * (0.90 + 0.14 * outQuint(Math.min(1.0, u * 2.4)));
-          const zStretch = sw.type === 'intercept' ? 1.32 : 1.04;
-          _dummy.scale.set(rScale, 1.25, rScale * zStretch);
+          _dummy.position.set(wx, wy, wz);
+          _pos.copy(sp.vel).normalize();
+          _dummy.quaternion.setFromUnitVectors(UP, _pos);
+          // Physical Scale Rule: 0.08..0.14m tangential spark dissolves via NoiseAtlas erosion without shrinking!
+          _dummy.scale.set(sp.size * 0.55, sp.size * 1.45, sp.size * 0.55);
           _dummy.updateMatrix();
-          this.slashRibbonMesh.setMatrixAt(slashSlot, _dummy.matrix);
-          this.slashMetaAttr.setXYZW(slashSlot, u * 0.82, 0.37 + s * 1.9, 0.0, 1.0);
-          slashSlot++;
-        }
-
-        // Slot 1: Tightly Overlapped Outer Crest Flare (adds 3D woodblock thickness without a separated gap!)
-        if (slashSlot < MAX_SLASH_RIBBONS) {
-          _dummy.position.set(cx, cy + 0.06, cz);
-          _quatSpin.setFromAxisAngle(UP, -0.06);
-          _dummy.quaternion.copy(_quatYaw).multiply(_quatTilt).multiply(_quatPitch).multiply(_quatSpin);
-          const crestScale = cfg.radius * 0.94;
-          _dummy.scale.set(crestScale, 1.05, crestScale * 1.02);
-          _dummy.updateMatrix();
-          this.slashRibbonMesh.setMatrixAt(slashSlot, _dummy.matrix);
-          this.slashMetaAttr.setXYZW(slashSlot, clamp(u * 0.82 - 0.04, 0.04, 0.95), 2.13, 0.0, 0.96);
-          slashSlot++;
-        }
-
-        // Only spawn slash-wake fangs when no full detonation crown is active (keeps detonation shots 100% clean!)
-        if (!this.detonationState.active) {
-          const fadeChip = 1.0 - smoothstep(0.62, 1.0, u);
-          const emerge = outQuint(Math.min(1.0, u * 3.5));
-
-          // Ground scorch/frost crescent decal underneath the sweeping sword cleave
-          if (decalSlot < MAX_DETONATION_DECALS) {
-            const gx = cx + fwdX * (cfg.radius * 0.68);
-            const gz = cz + fwdZ * (cfg.radius * 0.68);
-            const gy = this.getGroundHeight(gx, gz) + 0.042;
-            _dummy.position.set(gx, gy, gz);
-            _dummy.quaternion.setFromAxisAngle(UP, sw.yaw);
-            const gRad = 2.45 * emerge;
-            _dummy.scale.set(gRad, 1.0, gRad);
-            _dummy.updateMatrix();
-            this.detonationDecalMesh.setMatrixAt(decalSlot, _dummy.matrix);
-            this.decalMetaAttr.setXYZW(decalSlot, u * 0.75, 1.0, 0.31, fadeChip);
-            decalSlot++;
-          }
-
-          for (let i = 0; i < this.swingChipRecords.length && chipSlot < MAX_SHRAPNEL; i++) {
-            const rec = this.swingChipRecords[i];
-            const localAng = rec.arcAngle;
-            const rDist = rec.radial * (0.85 + 0.22 * emerge);
-            const wx = cx + Math.sin(sw.yaw + localAng) * rDist;
-            const wz = cz + Math.cos(sw.yaw + localAng) * rDist;
-            const groundY = this.getGroundHeight(wx, wz);
-
-            if (rec.isGroundFang) {
-              // Ground-rooted erupting flame/frost spires sweeping along the cleave arc
-              _dummy.position.set(wx, groundY - 0.12, wz);
-              _pos.set(
-                Math.sin(sw.yaw + localAng) * Math.sin(rec.lean),
-                Math.cos(rec.lean),
-                Math.cos(sw.yaw + localAng) * Math.sin(rec.lean)
-              ).normalize();
-              _dummy.quaternion.setFromUnitVectors(UP, _pos);
-              _dummy.scale.set(
-                rec.radius * emerge * fadeChip,
-                rec.height * emerge * fadeChip,
-                rec.radius * emerge * fadeChip
-              );
-              _dummy.updateMatrix();
-              this.shrapnelMesh.setMatrixAt(chipSlot, _dummy.matrix);
-              this.chipMetaAttr.setXYZW(chipSlot, rec.seed, 1.25, 0.0, 0.0);
-              chipSlot++;
-            } else {
-              // Tangential elemental splinters hugging the crescent wake at waist/chest height (y = 0.7..1.4m)
-              const wy = groundY + 0.75 + (i % 3) * 0.22;
-              _dummy.position.set(wx, wy, wz);
-              const tangYaw = sw.yaw + localAng + Math.PI * 0.45;
-              _pos.set(Math.sin(tangYaw) * 0.88, 0.35, Math.cos(tangYaw) * 0.88).normalize();
-              _dummy.quaternion.setFromUnitVectors(UP, _pos);
-              _dummy.scale.set(
-                rec.radius * 0.85 * fadeChip,
-                rec.height * 1.35 * fadeChip,
-                rec.radius * 0.85 * fadeChip
-              );
-              _dummy.updateMatrix();
-              this.shrapnelMesh.setMatrixAt(chipSlot, _dummy.matrix);
-              this.chipMetaAttr.setXYZW(chipSlot, rec.seed, 1.35, 1.0, 0.0);
-              chipSlot++;
-            }
-          }
+          this.shrapnelMesh.setMatrixAt(chipSlot, _dummy.matrix);
+          this.chipMetaAttr.setXYZW(chipSlot, sp.seed, 1.4, 1.0, dissolveProgress);
+          chipSlot++;
         }
       } else {
         this.swingState.active = false;
+        this.trailSlices.length = 0;
       }
     }
 
@@ -1215,7 +1620,7 @@ export class SwordVfxSystem {
         const fadeDet = 1.0 - smoothstep(0.62, 1.0, u);
         const emerge = outQuint(Math.min(1.0, u * 3.8));
 
-        // 2a. 3D Snow-Rime / Volcanic-Slag / Fulgurite-Scar Detonation Ground Plate
+        // 2a. 3D Snow-Rime / Volcanic-Slag / Fulgurite-Scar Detonation Ground Plate (Strictly on Detonations!)
         if (decalSlot < MAX_DETONATION_DECALS) {
           _dummy.position.set(dx, dy + 0.045, dz);
           _dummy.quaternion.identity();
@@ -1227,27 +1632,14 @@ export class SwordVfxSystem {
           decalSlot++;
         }
 
-        // 2b. Ground-Hugging Detonation Shockwave Crest Ribbons (at ankle height dy + 0.22m so they frame the base cleanly!)
-        for (let r = 0; r < 2 && slashSlot < MAX_SLASH_RIBBONS; r++) {
-          const rYaw = r * Math.PI + u * 1.1 + 0.4;
-          const rTilt = det.type === 'solar_flare' ? -0.35 : -0.18;
-          _quatYaw.setFromAxisAngle(UP, rYaw);
-          _quatTilt.setFromAxisAngle(_forwardZ, rTilt);
-          _dummy.position.set(dx, dy + 0.22 + r * 0.14, dz);
-          _dummy.quaternion.copy(_quatYaw).multiply(_quatTilt);
-          const wRad = (2.45 + r * 0.45) * emerge * fadeDet;
-          _dummy.scale.set(wRad, 0.95, wRad);
-          _dummy.updateMatrix();
-          this.slashRibbonMesh.setMatrixAt(slashSlot, _dummy.matrix);
-          this.slashMetaAttr.setXYZW(slashSlot, u * 0.72, 4.1 + r * 1.7, 0.0, fadeDet);
-          slashSlot++;
-        }
-
-        // 2c. 28 Solid 3D Detonation Glacier Spires / Solar Pillar Cinders / Fulgurite Monoliths
+        // 2b. 28 Solid 3D Detonation Glacier Spires / Solar Pillar Cinders / Fulgurite Monoliths
+        //     Keep at 100% erupted scale and dissolve via NoiseAtlas fracture erosion!
         for (let i = 0; i < this.detonationWedgeRecords.length && chipSlot < MAX_SHRAPNEL; i++) {
           const rec = this.detonationWedgeRecords[i];
+          const dissolveProgress = smoothstep(0.48, 0.98, u + rec.stagger);
+          if (dissolveProgress >= 0.995) continue;
+
           if (det.type === 'solar_flare' && !rec.isRingWedge) {
-            // Upward volcanic magma pillar spires at center + ballistic cinders (vy = 7.5)
             const cDist = rec.radial + rec.vOut * det.age * 0.55;
             const wx = dx + Math.cos(rec.az) * cDist;
             const wz = dz + Math.sin(rec.az) * cDist;
@@ -1255,14 +1647,13 @@ export class SwordVfxSystem {
             _dummy.position.set(wx, Math.max(dy + 0.1, wy), wz);
             _euler.set(rec.spin * det.age, rec.az, rec.spin * det.age * 0.6);
             _dummy.quaternion.setFromEuler(_euler);
-            const sc = rec.radius * 1.15 * fadeDet;
+            const sc = rec.radius * 1.15 * emerge;
             _dummy.scale.set(sc, sc * 1.8, sc);
             _dummy.updateMatrix();
             this.shrapnelMesh.setMatrixAt(chipSlot, _dummy.matrix);
-            this.chipMetaAttr.setXYZW(chipSlot, rec.seed, 1.3 * fadeDet, 1.0, 0.0);
+            this.chipMetaAttr.setXYZW(chipSlot, rec.seed, 1.3 * fadeDet, 1.0, dissolveProgress);
             chipSlot++;
           } else {
-            // Radial 3D Glacier Spires (shatterblow) / Solar Pillar / Thunderchain Monoliths
             const rSpread =
               det.type === 'thunderchain'
                 ? lerp(2.6, 0.75, emerge) * (0.68 + 0.32 * (i % 2))
@@ -1281,13 +1672,13 @@ export class SwordVfxSystem {
             _dummy.quaternion.setFromUnitVectors(UP, _pos);
             const hMult = det.type === 'solar_flare' ? 1.45 : 1.25;
             _dummy.scale.set(
-              rec.radius * emerge * fadeDet,
-              rec.height * hMult * emerge * fadeDet,
-              rec.radius * emerge * fadeDet
+              rec.radius * emerge,
+              rec.height * hMult * emerge,
+              rec.radius * emerge
             );
             _dummy.updateMatrix();
             this.shrapnelMesh.setMatrixAt(chipSlot, _dummy.matrix);
-            this.chipMetaAttr.setXYZW(chipSlot, rec.seed, 1.3 * fadeDet, 0.0, 0.0);
+            this.chipMetaAttr.setXYZW(chipSlot, rec.seed, 1.3 * fadeDet, 0.0, dissolveProgress);
             chipSlot++;
           }
         }
@@ -1314,9 +1705,8 @@ export class SwordVfxSystem {
       this._shakeOffset.set(0, 0, 0);
     }
 
-    this.slashRibbonMesh.count = slashSlot;
-    this.slashRibbonMesh.instanceMatrix.needsUpdate = true;
-    this.slashMetaAttr.needsUpdate = true;
+    // Rebuild dynamic vertex buffer of `liveRibbonMesh`
+    this._rebuildLiveRibbonBuffer();
 
     this.shrapnelMesh.count = chipSlot;
     this.shrapnelMesh.instanceMatrix.needsUpdate = true;
@@ -1326,7 +1716,7 @@ export class SwordVfxSystem {
     this.detonationDecalMesh.instanceMatrix.needsUpdate = true;
     this.decalMetaAttr.needsUpdate = true;
 
-    const anyWorldActive = slashSlot > 0 || chipSlot > 0 || decalSlot > 0;
+    const anyWorldActive = this.liveRibbonMesh.visible || chipSlot > 0 || decalSlot > 0;
     this.group.visible = anyWorldActive;
   }
 
@@ -1342,12 +1732,19 @@ export class SwordVfxSystem {
 
     if (this.swingState.active) {
       this.swingState.age += dt;
+      this._reconstructBoneTrailForCurrentSwing({ preserveLiveAction: true });
     }
+
     if (this.detonationState.active) {
       this.detonationState.age += dt;
     }
 
-    if (this.swingState.active || this.detonationState.active || this.group.visible) {
+    if (
+      this.swingState.active ||
+      this.detonationState.active ||
+      this.trailSlices.length > 0 ||
+      this.group.visible
+    ) {
       this._evaluateState(this.sharedUniforms.uTime.value);
     }
   }
@@ -1356,7 +1753,7 @@ export class SwordVfxSystem {
     let drawCalls = 0;
     if (this.sheathMesh.visible && this.sheathMesh.parent) drawCalls++;
     if (this.group.visible) {
-      if (this.slashRibbonMesh.count > 0) drawCalls++;
+      if (this.liveRibbonMesh.visible) drawCalls++;
       if (this.shrapnelMesh.count > 0) drawCalls++;
       if (this.detonationDecalMesh.count > 0) drawCalls++;
     }
@@ -1365,7 +1762,8 @@ export class SwordVfxSystem {
       infusionStyle: this.infusionStyle,
       drawCalls,
       sheathVisible: Boolean(this.sheathMesh.visible && this.sheathMesh.parent),
-      activeSlashRibbons: this.group.visible ? this.slashRibbonMesh.count : 0,
+      activeSlashRibbons: this.group.visible && this.liveRibbonMesh.visible ? 1 : 0,
+      activeTrailSlices: this.trailSlices.length,
       activeShrapnel: this.group.visible ? this.shrapnelMesh.count : 0,
       activeDecals: this.group.visible ? this.detonationDecalMesh.count : 0,
     };
@@ -1377,10 +1775,13 @@ export class SwordVfxSystem {
     this.sheathMesh.visible = false;
     this.swingState.active = false;
     this.detonationState.active = false;
+    this.trailSlices.length = 0;
+    this.controlPostures.length = 0;
     this._hitstopScale = 1.0;
     this._shakeOffset.set(0, 0, 0);
     this.group.visible = false;
-    this.slashRibbonMesh.count = 0;
+    this.liveRibbonMesh.visible = false;
+    this.liveRibbonMesh.geometry.setDrawRange(0, 0);
     this.shrapnelMesh.count = 0;
     this.detonationDecalMesh.count = 0;
   }
@@ -1392,7 +1793,7 @@ export class SwordVfxSystem {
     }
     this.sheathMesh.geometry.dispose();
     this.sheathMat.dispose();
-    this.slashRibbonMesh.geometry.dispose();
+    this.liveRibbonMesh.geometry.dispose();
     this.slashMat.dispose();
     this.shrapnelMesh.geometry.dispose();
     this.chipMat.dispose();

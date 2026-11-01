@@ -616,6 +616,7 @@ function createCelGlacierMaterial(noiseAtlas, sharedUniforms, corridorUniforms, 
 
       void main() {
         float birthFlash = max(0.0, vBirth);
+        float dissolveProgress = clamp(-vBirth, 0.0, 1.0);
 
         // 1. Outward-pointing per-triangle normal; use horizontal prism azimuth (horizN, horizV)
         //    for thickness & Fresnel so leaned spikes and close/low camera angles keep the
@@ -643,20 +644,24 @@ function createCelGlacierMaterial(noiseAtlas, sharedUniforms, corridorUniforms, 
         float v1 = texture2D(uNoiseAtlas, vp.yz * 1.90 + vec2(0.67, vp.x * 0.53)).b;
         float veins = smoothstep(0.44, 0.90, 0.55 * v0 + 0.45 * v1);
 
+        // 4. Voronoi Fracture Sublimation (keeps 100% physical spire scale & height during fade-out!)
+        float hLocal = clamp(vLocalPos.y + uIsDebris * 0.35, 0.0, 1.0);
+        float sublimateNoise = (0.58 * r0 + 0.42 * v0) * 0.72 + (1.0 - hLocal) * 0.28;
+        if (sublimateNoise < dissolveProgress) discard;
+
         vec3 body = mix(uColorIce, uColorDeep, thickness);
         body = mix(body, uColorRim, veins * uVeins * 0.52);
         body = mix(body, uColorRim, cracks * uFracture * 0.38);
 
-        // 4. Rime gathers where the crystal left the floor (Exact IceMaterial.js lines 166-168)
-        float hLocal = clamp(vLocalPos.y + uIsDebris * 0.35, 0.0, 1.0);
+        // 5. Rime gathers where the crystal left the floor (Exact IceMaterial.js lines 166-168)
         float rimeFbm = texture2D(uNoiseAtlas, vLocalPos.xy * 1.35 + vec2(vSeed * 0.29, vLocalPos.z * 1.35)).b;
         float rime = smoothstep(0.52, 0.0, hLocal) * (0.5 + 0.5 * rimeFbm) * (1.0 - uIsDebris * 0.70);
         body = mix(body, uColorRim, clamp(rime, 0.0, 1.0) * uFrostLine);
 
-        // 5. Lift facets that point at the camera so the silhouette reads as a bundle of hewn planes
+        // 6. Lift facets that point at the camera so the silhouette reads as a bundle of hewn planes
         body *= mix(1.0, 0.62 + 0.82 * ndv, uFacetSharp);
 
-        // 6. Even Sky-Probe + Key Sun Lighting (prevents downward-tilted ring planes from turning grey!)
+        // 7. Even Sky-Probe + Key Sun Lighting (prevents downward-tilted ring planes from turning grey!)
         vec3 L = normalize(vec3(uSunDir.x, max(0.45, uSunDir.y), uSunDir.z));
         vec3 H = normalize(L + V);
         float ndl = max(dot(N, L), 0.0);
@@ -666,8 +671,7 @@ function createCelGlacierMaterial(noiseAtlas, sharedUniforms, corridorUniforms, 
         // Subtle crisp planar specular reflection from the sun
         float spec = pow(max(dot(N, H), 0.0), 48.0) * 0.20 * mix(0.5, 1.0, uDaylight);
 
-        // 7. Pinpoint Surface Glints & Reinhard-Rolled Subsurface/Rim Glow
-        //    (Birth flash accents cracks & rime rather than bleaching out the dark core in shot 03!)
+        // 8. Pinpoint Surface Glints & Reinhard-Rolled Subsurface/Rim Glow
         float spNoise = texture2D(
           uNoiseAtlas,
           vWorldPos.xz * 0.75 + vec2(vWorldPos.y * 0.65, uTime * 0.06 + vSeed * 0.43)
@@ -677,7 +681,6 @@ function createCelGlacierMaterial(noiseAtlas, sharedUniforms, corridorUniforms, 
         float rimAmount = pow(1.0 - ndv, uFresnelPower);
         vec3 glow = uColorRim * rimAmount * 0.85;
         glow += uColorCore * (cracks * uFracture * 0.80 + veins * uVeins * 0.35) * uTranslucency;
-        // Permanent subsurface inner light (reproduces the exact luminous glacial cerulean of image.png at all timestamps!)
         glow += uColorCore * 0.88;
         glow += uColorRim * sp * 1.35;
         glow += uColorRim * birthFlash * (cracks * 0.65 + rime * 0.45) * 0.45;
@@ -685,6 +688,8 @@ function createCelGlacierMaterial(noiseAtlas, sharedUniforms, corridorUniforms, 
         glow /= (1.0 + glow * 0.35);
 
         vec3 finalColor = diffuseLit + uColorRim * spec + glow;
+        float sublimateEdge = step(0.001, dissolveProgress) * (1.0 - smoothstep(dissolveProgress, dissolveProgress + 0.075, sublimateNoise));
+        finalColor = mix(finalColor, uColorRim * 1.28, sublimateEdge);
 
         gl_FragColor = vec4(finalColor, 1.0);
       }
@@ -2028,12 +2033,24 @@ export class FrostLanceSystem {
       // CRITICAL BASE EMBEDDING FIX:
       // Sink every crystal by `tiltLiftCompensation = 0.54 * radius * sin(leanAngle)`
       // so the tilted `y = 0` ring is guaranteed to stay 100% below the ground surface!
+      // NEVER sink or shrink erupted spires during withdrawal (retractU > 0) — they sublimate in place!
       const riseSink = Math.min(0.0, emerge - 1.0) * height * 0.82;
       const tiltLiftCompensation = 0.54 * radius * Math.sin(leanAngle);
       _dummy.position.y += riseSink - tiltLiftCompensation - 0.08;
-      if (retractU > 0) {
-        const sink = inCubic(retractU);
-        _dummy.position.y -= sink * (height + radius + 0.45);
+
+      const sublimateU =
+        retractU > 0
+          ? smoothstep(0.02, 0.96, retractU * 1.12 - record.along * 0.10 - record.stagger * 0.08)
+          : 0.0;
+      if (sublimateU >= 0.995) {
+        _dummy.position.set(0, -999, 0);
+        _dummy.quaternion.identity();
+        _dummy.scale.setScalar(0.0001);
+        _dummy.updateMatrix();
+        this.crystalMeshes[variant].setMatrixAt(slot, _dummy.matrix);
+        this.crystalBirthAttrs[variant].array[slot] = -1.0;
+        used[variant] = Math.max(used[variant], slot + 1);
+        continue;
       }
 
       const widthGrow = lerp(0.86, 1.0, Math.min(1.0, emerge));
@@ -2045,10 +2062,10 @@ export class FrostLanceSystem {
       this.crystalMeshes[variant].setMatrixAt(slot, _dummy.matrix);
       const birthElapsed = Math.max(0, timeSeconds - record.eruptTime);
       const birthGlow = saturate(1.0 - birthElapsed / birthFade);
-      this.crystalBirthAttrs[variant].array[slot] = Math.max(
-        birthGlow,
-        shatterPhase * (1.0 - retractU) * 0.45
-      );
+      this.crystalBirthAttrs[variant].array[slot] =
+        sublimateU > 0.001
+          ? -sublimateU
+          : Math.max(birthGlow, shatterPhase * (1.0 - retractU) * 0.45);
       used[variant] = Math.max(used[variant], slot + 1);
     }
 
@@ -2094,13 +2111,12 @@ export class FrostLanceSystem {
       let scMult = 1.0;
       if (rec.mode === 'apexHemisphere') {
         const expand = outQuint(Math.min(1.0, u * 1.45));
-        scMult = lerp(0.32, rec.endScaleMult, expand) * (1.0 - smoothstep(0.62, 1.0, u) * 0.72);
-        birthArr[slot] = u < 0.35 ? 1.0 - u * 2.2 : -smoothstep(0.42, 1.0, u);
+        scMult = lerp(0.32, 1.0, expand);
+        birthArr[slot] = u < 0.35 ? 1.0 - u * 2.2 : -smoothstep(0.42, 0.98, u);
       } else {
         const popIn = smoothstep(0.0, 0.08, u);
-        const shrinkOut = lerp(1.0, rec.endScaleMult, smoothstep(0.45, 1.0, u));
-        scMult = popIn * shrinkOut;
-        birthArr[slot] = saturate(1.0 - u * 1.9);
+        scMult = popIn;
+        birthArr[slot] = u < 0.42 ? saturate(1.0 - u * 2.1) : -smoothstep(0.42, 0.98, u);
       }
 
       _dummy.scale.set(rec.scaleX * scMult, rec.scaleY * scMult, rec.scaleZ * scMult);

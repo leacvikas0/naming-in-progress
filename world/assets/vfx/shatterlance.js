@@ -312,6 +312,7 @@ function createShatterCrystalMaterial(noiseAtlas, sharedUniforms, config, { isGr
         float seed = vMeta.x;
         float glowMult = vMeta.y;
         float isAirborneOrCollar = vMeta.z;
+        float dissolveProgress = clamp(vMeta.w, 0.0, 1.0) * (1.0 - uIsGreatLance);
 
         // 1. Outward per-triangle normal + horizontal-azimuth optical thickness
         //    (matches locked V1 Frost Lance so leaned/airborne shards never turn pitch-black!)
@@ -339,20 +340,24 @@ function createShatterCrystalMaterial(noiseAtlas, sharedUniforms, config, { isGr
         float v1 = texture2D(uNoiseAtlas, vp.yz * 1.90 + vec2(0.67, vp.x * 0.53)).b;
         float veins = smoothstep(0.44, 0.90, 0.55 * v0 + 0.45 * v1);
 
+        // 4. Voronoi Fracture Sublimation (keeps 100% physical spire scale while sublimating in place!)
+        float hLocal = clamp(vLocalPos.y, 0.0, 1.0);
+        float sublimateNoise = (0.58 * r0 + 0.42 * v0) * 0.72 + (1.0 - hLocal) * 0.28;
+        if (sublimateNoise < dissolveProgress) discard;
+
         vec3 body = mix(uColorIce, uColorDeep, thickness);
         body = mix(body, uColorRim, veins * 0.30);
         body = mix(body, uColorRim, cracks * 0.28);
 
-        // 4. Basal Snow-Rime on Ground-Rooted Impact Spires
-        float hLocal = clamp(vLocalPos.y, 0.0, 1.0);
+        // 5. Basal Snow-Rime on Ground-Rooted Impact Spires
         float rimeFbm = texture2D(uNoiseAtlas, vLocalPos.xy * 1.35 + vec2(seed * 0.29, vLocalPos.z * 1.35)).b;
         float rime = smoothstep(0.48, 0.0, hLocal) * (0.5 + 0.5 * rimeFbm) * (1.0 - uIsGreatLance) * (1.0 - isAirborneOrCollar * 0.75);
         body = mix(body, uColorRim, clamp(rime, 0.0, 1.0) * 0.56);
 
-        // 5. Crisp Hewn-Plane Facet Separation
+        // 6. Crisp Hewn-Plane Facet Separation
         body *= mix(1.0, 0.64 + 0.80 * ndv, 0.82);
 
-        // 6. Sky-Probe + Key Sun Lighting
+        // 7. Sky-Probe + Key Sun Lighting
         vec3 L = normalize(vec3(uSunDir.x, max(0.45, uSunDir.y), uSunDir.z));
         vec3 H = normalize(L + V);
         float ndl = max(dot(N, L), 0.0);
@@ -360,17 +365,16 @@ function createShatterCrystalMaterial(noiseAtlas, sharedUniforms, config, { isGr
         vec3 diffuseLit = body * skyProbe * mix(0.82, 0.98, uDaylight);
         float spec = pow(max(dot(N, H), 0.0), 48.0) * 0.22 * mix(0.5, 1.0, uDaylight);
 
-        // 7. Great-Lance 7-Fluted Spiral Valley Channels & Charge Weld Surge
+        // 8. Great-Lance 7-Fluted Spiral Valley Channels & Charge Weld Surge
         float fluteValley = smoothstep(0.28, 0.82, vFacetUv.x) * uIsGreatLance;
         float fluteRidge = (1.0 - smoothstep(0.0, 0.42, vFacetUv.x)) * uIsGreatLance;
         float axialU = vFacetUv.y;
         float weldLine = exp(-pow((axialU - uChargeProgress) * 6.5, 2.0)) * uIsGreatLance;
         float lanceChannel = clamp(fluteValley * 0.85 + weldLine * 0.92, 0.0, 1.0);
-        // Deepen outer ridges to royal sapphire so the 7 glowing spiral flute valleys pop with razor contrast!
         diffuseLit = mix(diffuseLit, uColorDeep * 0.78, fluteRidge * 0.62);
         diffuseLit = mix(diffuseLit, uColorRim, lanceChannel * 0.78);
 
-        // 8. Permanent Subsurface Inner Light (Reinhard-rolled so it stays luminous cerulean, never black or bleached!)
+        // 9. Permanent Subsurface Inner Light + Frost-White Sublimation Rim Edge
         vec3 glow = uColorRim * rimAmount * 0.78;
         glow += uColorCore * (cracks * 0.58 + veins * 0.26) * 1.45;
         glow += uColorCore * 0.84;
@@ -379,6 +383,8 @@ function createShatterCrystalMaterial(noiseAtlas, sharedUniforms, config, { isGr
         glow /= (1.0 + glow * 0.35);
 
         vec3 finalColor = diffuseLit + uColorRim * spec + glow;
+        float sublimateEdge = step(0.001, dissolveProgress) * (1.0 - smoothstep(dissolveProgress, dissolveProgress + 0.075, sublimateNoise));
+        finalColor = mix(finalColor, uColorRim * 1.28, sublimateEdge);
         gl_FragColor = vec4(finalColor, 1.0);
       }
     `,
@@ -806,7 +812,7 @@ export class ShatterlanceSystem {
         this.intakeMetaAttr.array[mOff + 0] = rec.seed;
         this.intakeMetaAttr.array[mOff + 1] = 0.45 + 0.55 * shardProgress;
         this.intakeMetaAttr.array[mOff + 2] = 1.0;
-        this.intakeMetaAttr.array[mOff + 3] = shardProgress;
+        this.intakeMetaAttr.array[mOff + 3] = 0.0;
         intakeSlot++;
       }
     }
@@ -842,7 +848,7 @@ export class ShatterlanceSystem {
       );
       _dummy.updateMatrix();
       this.greatLanceMesh.setMatrixAt(lanceSlot, _dummy.matrix);
-      this.lanceMetaAttr.setXYZW(lanceSlot, 1.1, 0.95, 0.0, assemblyU);
+      this.lanceMetaAttr.setXYZW(lanceSlot, 1.1, 0.95, 0.0, 0.0);
       lanceSlot++;
     }
     this.greatLanceMesh.count = lanceSlot;
@@ -850,17 +856,18 @@ export class ShatterlanceSystem {
     this.lanceMetaAttr.needsUpdate = true;
 
     // 3. Evaluate Directional Railgun Shatter-Crown & Ballistic 3D Wedges (DC 3)
+    //    Keep at 100% erupted scale & ground height and sublimate via Voronoi fracture erosion!
     let wedgeSlot = 0;
     if (impactElapsed >= -0.02) {
       const tBreak = Math.max(0.0, impactElapsed + 0.02);
       const impX = this.origin.x + this.direction.x * this.castLength;
       const impZ = this.origin.z + this.direction.z * this.castLength;
       const impY = this.getGroundHeight(impX, impZ);
-      const fadeShrink = 1.0 - smoothstep(0.55, 1.0, postImpactU);
 
       for (let i = 0; i < MAX_SHATTER_WEDGES; i++) {
         const rec = this.wedgeRecords[i];
-        if (fadeShrink <= 0.02) continue;
+        const dissolveProgress = smoothstep(0.45, 0.98, postImpactU + (i / MAX_SHATTER_WEDGES) * 0.08);
+        if (dissolveProgress >= 0.995) continue;
 
         if (rec.isCrownSpike) {
           // Ground-rooted radial impaling glacier spires fanning outward from the railgun strike
@@ -878,12 +885,12 @@ export class ShatterlanceSystem {
             this.direction.z * (0.48 + Math.cos(rec.az) * 0.72) + this.side.z * Math.sin(rec.az) * 0.82
           ).normalize();
           _dummy.quaternion.setFromUnitVectors(UP, _pos);
-          const h = rec.size * 3.45 * pop * fadeShrink;
-          const r = rec.size * 0.92 * pop * fadeShrink;
+          const h = rec.size * 3.45 * pop;
+          const r = rec.size * 0.92 * pop;
           _dummy.scale.set(r, h, r);
           _dummy.updateMatrix();
           this.shatterWedgesMesh.setMatrixAt(wedgeSlot, _dummy.matrix);
-          this.wedgeMetaAttr.setXYZW(wedgeSlot, rec.seed, 1.0 - postImpactU * 0.5, 0.0, postImpactU);
+          this.wedgeMetaAttr.setXYZW(wedgeSlot, rec.seed, 1.0 - postImpactU * 0.5, 0.0, dissolveProgress);
           wedgeSlot++;
         } else {
           // High-velocity downrange ballistic crystal splinters
@@ -900,11 +907,11 @@ export class ShatterlanceSystem {
           _dummy.position.set(wx, wy, wz);
           _euler.set(rec.spinX * spinT, rec.az + rec.spinY * spinT, rec.spinZ * spinT);
           _dummy.quaternion.setFromEuler(_euler);
-          const sc = rec.size * fadeShrink;
+          const sc = rec.size;
           _dummy.scale.set(sc * 0.72, sc * 1.85, sc * 0.72);
           _dummy.updateMatrix();
           this.shatterWedgesMesh.setMatrixAt(wedgeSlot, _dummy.matrix);
-          this.wedgeMetaAttr.setXYZW(wedgeSlot, rec.seed, 1.0 - postImpactU * 0.5, 1.0, postImpactU);
+          this.wedgeMetaAttr.setXYZW(wedgeSlot, rec.seed, 1.0 - postImpactU * 0.5, 1.0, dissolveProgress);
           wedgeSlot++;
         }
       }
