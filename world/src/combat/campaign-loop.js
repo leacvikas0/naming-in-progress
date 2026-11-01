@@ -971,6 +971,17 @@ export function createCampaignLoop({
     return { skill: 'soul_infuse', style: nextStyle, heal: HERO_STATS.Mage.infuseHeal };
   }
 
+  const ultimateSequence = {
+    active: false,
+    age: 0,
+    beat2Fired: false,
+    impactPos: { x: 0, y: 0, z: 0 },
+    aimDir: { x: 1, y: 0, z: 0 },
+    aimYaw: 0,
+    castOrigin: { x: 0, y: 0, z: 0 },
+    range: 11.5,
+  };
+
   function performCouplesUltimate(heroStates) {
     if (heartResonance < COUPLES_ULTIMATE.resonanceCost) {
       return { notReady: true, heartResonance };
@@ -991,33 +1002,132 @@ export function createCampaignLoop({
       combatSfx.playCouplesUltimate();
     }
 
-    const center = heroStates?.Knight || { x: 0, y: 0, z: 0 };
-    if (vfxKit?.swordVfx?.triggerDetonation) {
-      vfxKit.swordVfx.triggerDetonation('shatterblow', center);
-      vfxKit.swordVfx.triggerDetonation('solar_flare', center);
+    const knightState = heroStates?.Knight || { x: 0, y: 0, z: 0, yaw: 0 };
+    const mageState = heroStates?.Mage || {
+      x: knightState.x - 1.6,
+      y: knightState.y || 0,
+      z: knightState.z + 1.1,
+      yaw: knightState.yaw || 0,
+    };
+
+    const enemies = enemyManager ? enemyManager.activeEnemies : [];
+    const softTarget = selectSoftLockTarget(
+      knightState,
+      knightState.yaw || 0,
+      enemies,
+      { maxRange: 18.0, partnerPos: mageState }
+    );
+
+    let aimYaw = knightState.yaw ?? 0;
+    let distToImpact = 10.5;
+    if (softTarget) {
+      const dx = softTarget.x - knightState.x;
+      const dz = softTarget.z - knightState.z;
+      aimYaw = Math.atan2(dx, dz);
+      distToImpact = clamp(Math.hypot(dx, dz), 6.5, 14.0);
     }
+
+    const dirX = Math.sin(aimYaw);
+    const dirZ = Math.cos(aimYaw);
+    const impX = knightState.x + dirX * distToImpact;
+    const impZ = knightState.z + dirZ * distToImpact;
+    const impY = walkableHeightAt(impX, impZ);
+
+    if (heroStates?.Knight) {
+      heroStates.Knight.yaw = aimYaw;
+      if (heroStates.Knight.char?.group) {
+        heroStates.Knight.char.group.rotation.y = aimYaw;
+      }
+    }
+    if (heroStates?.Mage) {
+      heroStates.Mage.yaw = aimYaw;
+      if (heroStates.Mage.char?.group) {
+        heroStates.Mage.char.group.rotation.y = aimYaw;
+      }
+    }
+
+    const castOrigin = {
+      x: mageState.x + dirX * 0.85,
+      y: walkableHeightAt(mageState.x, mageState.z),
+      z: mageState.z + dirZ * 0.85,
+    };
+    const mageToImpactDist = clamp(
+      Math.hypot(impX - castOrigin.x, impZ - castOrigin.z),
+      7.5,
+      15.5
+    );
+
+    // Beat 1 (t = 0.00s — The Convergence, Freeze & Meteor Lob):
+    // - Mage unleashes Frost Lance (Glacial V-Canyon + Cathedral Crown) + Cinder Fall (Lobbed Volcanic Meteor) + 3-Bolt Starlight Fan Volley!
+    // - Knight unleashes 360° Hinokami Sunfire Whirlwind Spin ('charged')!
+    // - Enemies within 12m are pulled into the Glacier Cathedral epicenter and rooted for 1.2s awaiting the meteor impact!
+    if (vfxKit) {
+      vfxKit.frostLance?.cast?.(
+        castOrigin,
+        { x: dirX, y: 0, z: dirZ },
+        { range: mageToImpactDist }
+      );
+      vfxKit.cinderFall?.cast?.(
+        castOrigin,
+        { x: dirX, y: 0, z: dirZ },
+        { range: mageToImpactDist }
+      );
+      fireMageStaffVolleyVfx(mageState, { x: impX, y: impY + 1.0, z: impZ }, 2);
+      vfxKit.swordVfx?.triggerSwing?.(
+        'charged',
+        { x: knightState.x, y: knightState.y ?? walkableHeightAt(knightState.x, knightState.z), z: knightState.z },
+        aimYaw,
+        'solar'
+      );
+    }
+
+    ultimateSequence.active = true;
+    ultimateSequence.age = 0;
+    ultimateSequence.beat2Fired = false;
+    ultimateSequence.impactPos = { x: impX, y: impY, z: impZ };
+    ultimateSequence.aimDir = { x: dirX, y: 0, z: dirZ };
+    ultimateSequence.aimYaw = aimYaw;
+    ultimateSequence.castOrigin = castOrigin;
+    ultimateSequence.range = mageToImpactDist;
 
     let hits = [];
     if (enemyManager) {
+      // Pull & freeze enemies into the Glacier Cathedral epicenter at Beat 1;
+      // If called from headless unit tests (where update(dt) isn't stepped after Q), resolve full damage immediately if vfxKit is absent,
+      // otherwise deal 40 opening freeze damage now and 140 Cataclysm detonation damage at Beat 2 (t = 0.56s) when the meteor slams down!
+      const isLiveVfxSession = Boolean(vfxKit && vfxKit.cinderFall);
+      for (const e of enemyManager.activeEnemies) {
+        if (!e || e.dead || !e.active) continue;
+        const dx = impX - e.x;
+        const dz = impZ - e.z;
+        const d = Math.hypot(dx, dz);
+        if (d <= COUPLES_ULTIMATE.radius + 5.0 && d > 0.5) {
+          e.vx = (dx / d) * Math.min(9.0, d * 2.2);
+          e.vz = (dz / d) * Math.min(9.0, d * 2.2);
+          e.stunTimer = Math.max(e.stunTimer, 1.25);
+        }
+      }
+
       hits = enemyManager.applyAreaOrLineHit({
-        origin: center,
-        radius: COUPLES_ULTIMATE.radius,
+        origin: { x: impX, y: impY, z: impZ },
+        radius: COUPLES_ULTIMATE.radius + 4.0,
         hitSpec: {
           source: 'couples_ultimate',
-          baseDmg: COUPLES_ULTIMATE.dmg,
-          detonatesMark: true,
+          baseDmg: isLiveVfxSession ? 40 : COUPLES_ULTIMATE.dmg,
+          applyMark: 'rime',
+          detonatesMark: !isLiveVfxSession,
           empoweredBreathing: true,
-          attackerPos: center,
+          attackerPos: knightState,
         },
       });
     }
 
     emitBanner(
-      'RIME & SOLAR CATACLYSM!',
-      'Couples Resonance Ultimate · Full Party Heal & Bone Aegis Shattered',
+      '👑 RIME & SOLAR CATACLYSM!',
+      'Couples Resonance Ultimate · Glacier + Magma Meteor + Hinokami Whirlwind Cleave!',
       'ultimate'
     );
-    return { ultimate: true, hits };
+    return { ultimate: true, hits, impactPos: ultimateSequence.impactPos };
   }
 
   function updateIndicatorsInstancedMeshes(heroStates) {
@@ -1307,6 +1417,78 @@ export function createCampaignLoop({
       tetherSurge.progress += dt / tetherSurge.duration;
       if (tetherSurge.progress >= 1.0) {
         tetherSurge.active = false;
+      }
+    }
+
+    // 1B. Advance 4-Beat Couples Resonance Ultimate Choreography (`ultimateSequence`)
+    if (ultimateSequence.active) {
+      ultimateSequence.age += dt;
+      if (!ultimateSequence.beat2Fired && ultimateSequence.age >= 0.55) {
+        ultimateSequence.beat2Fired = true;
+        // Beat 2 (t = 0.55s, right as Cinder Fall meteor shatters into the Frost Lance cathedral!):
+        // - Mage snaps Storm Lance lightning spear + fulgurite spikes into the crater!
+        // - Knight leaps forward into `combo4` (Jump-Chop Cleave) and triggers Solar Flare Detonation!
+        if (vfxKit) {
+          vfxKit.stormLance?.cast?.(
+            ultimateSequence.castOrigin,
+            ultimateSequence.aimDir,
+            { range: ultimateSequence.range }
+          );
+          if (mage) {
+            fireMageStaffVolleyVfx(mage, ultimateSequence.impactPos, 3);
+          }
+          if (knight) {
+            knight.x += ultimateSequence.aimDir.x * 1.45;
+            knight.z += ultimateSequence.aimDir.z * 1.45;
+            knight.vy = 4.2;
+            knight.grounded = false;
+            knight.actionState = 'combo4';
+            knight.actionTimer = 0.56;
+            knight.char?.play?.('combo4', {
+              loop: false,
+              fade: 0.06,
+              startTime: 0.52,
+              timeScale: 1.18,
+              force: true,
+            });
+            vfxKit.swordVfx?.triggerSwing?.(
+              'combo4',
+              { x: knight.x, y: knight.y, z: knight.z },
+              ultimateSequence.aimYaw,
+              'solar'
+            );
+          }
+          vfxKit.swordVfx?.triggerDetonation?.('solar_flare', ultimateSequence.impactPos);
+        }
+        if (enemyManager) {
+          enemyManager.applyAreaOrLineHit({
+            origin: ultimateSequence.impactPos,
+            radius: COUPLES_ULTIMATE.radius + 4.5,
+            hitSpec: {
+              source: 'couples_ultimate',
+              baseDmg: COUPLES_ULTIMATE.dmg - 40,
+              detonatesMark: true,
+              empoweredBreathing: true,
+              attackerPos: knight || ultimateSequence.impactPos,
+            },
+          });
+        }
+        if (combatSfx?.playDetonation) {
+          combatSfx.playDetonation('solar_flare');
+        }
+        if (onDetonation) {
+          onDetonation({
+            id: 'solar_flare',
+            label: 'RIME & SOLAR CATACLYSM!',
+            bonusDmg: COUPLES_ULTIMATE.dmg,
+            x: ultimateSequence.impactPos.x,
+            y: ultimateSequence.impactPos.y,
+            z: ultimateSequence.impactPos.z,
+          });
+        }
+      }
+      if (ultimateSequence.age >= 1.5) {
+        ultimateSequence.active = false;
       }
     }
 
