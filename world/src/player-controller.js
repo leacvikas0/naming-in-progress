@@ -263,6 +263,24 @@ export const SHOT_CHARACTER_POSES = {
     skeletonWarrior: { x: 56.2, z: -4.6, rotY: -1.45, clip: 'Idle_Combat', time: 0.40 },
     skeletonMage: { x: 58.4, z: -1.2, rotY: -1.45, clip: 'Idle_Combat', time: 0.60 },
   },
+  'day-flower-lobby': {
+    knight: { x: -1.15, z: 128.0, rotY: Math.PI + 0.15, clip: 'wave', time: 0.45 },
+    mage: { x: 1.15, z: 128.0, rotY: Math.PI - 0.15, clip: 'cheer', time: 0.52 },
+    skeletonWarrior: { x: -13.5, z: 86.0, rotY: 0.25, clip: 'Idle_Combat', time: 0.40 },
+    skeletonMage: { x: 15.8, z: 52.0, rotY: -0.35, clip: 'Idle_Combat', time: 0.60 },
+  },
+  'day-south-road-boulders': {
+    knight: { x: -5.2, z: 62.5, rotY: Math.PI + 0.25, clip: 'combo1', time: 0.32 },
+    mage: { x: -2.8, z: 64.0, rotY: Math.PI + 0.15, clip: 'cast_shoot', time: 0.38 },
+    skeletonWarrior: { x: 14.5, z: 52.0, rotY: -1.15, clip: 'Idle_Combat', time: 0.40 },
+    skeletonMage: { x: 17.2, z: 50.5, rotY: -1.25, clip: 'Idle_Combat', time: 0.60 },
+  },
+  'day-sacred-stone-roses': {
+    knight: { x: -1.95, z: -12.2, rotY: 2.35, clip: 'Idle_Combat', time: 0.35 },
+    mage: { x: 2.15, z: -12.6, rotY: -2.15, clip: 'pray_channel', time: 0.48 },
+    skeletonWarrior: { x: 56.2, z: -4.6, rotY: -1.45, clip: 'Idle_Combat', time: 0.40 },
+    skeletonMage: { x: 58.4, z: -1.2, rotY: -1.45, clip: 'Idle_Combat', time: 0.60 },
+  },
 };
 
 /**
@@ -682,6 +700,7 @@ export async function createCoopPlayerSystem({
 
   const createSanctuarySteleMesh = createPlazaSanctuarySteleMesh;
   const sanctuarySteleMesh = createSanctuarySteleMesh(walkableHeightAt);
+  sanctuarySteleMesh.visible = false;
   rootGroup.add(sanctuarySteleMesh);
 
   // 1. Instantiate the 2 Co-Op Heroes (Knight + Mage)

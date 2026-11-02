@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 
 export const SPECIES_SPECS = {
-  grassTuft:  { id: 'grassTuft',  name: 'Meadow Grass Tuft',        budget: 48,  flex: 1.0 },
-  bellflower: { id: 'bellflower', name: 'Violet Campanula Cluster', budget: 96,  flex: 0.75 },
-  daisy:      { id: 'daisy',      name: 'Meadow Daisy Cluster',     budget: 88,  flex: 0.7 },
-  lupine:     { id: 'lupine',     name: 'Lavender Lupine Spike',    budget: 110, flex: 0.65 },
-  cosmos:     { id: 'cosmos',     name: 'Rose-Pink Cosmos Cluster', budget: 88,  flex: 0.85 },
-  toonShrub:  { id: 'toonShrub',  name: 'Cel-Shaded Village Bush',  budget: 140, flex: 0.22 },
+  grassTuft:   { id: 'grassTuft',   name: 'Meadow Grass Tuft',        budget: 28,  flex: 1.0 },
+  bellflower:  { id: 'bellflower',  name: 'Violet Campanula Cluster', budget: 96,  flex: 0.75 },
+  daisy:       { id: 'daisy',       name: 'Meadow Daisy Cluster',     budget: 88,  flex: 0.7 },
+  lupine:      { id: 'lupine',      name: 'Lavender Lupine Spike',    budget: 110, flex: 0.65 },
+  cosmos:      { id: 'cosmos',      name: 'Rose-Pink Cosmos Cluster', budget: 88,  flex: 0.85 },
+  crimsonRose: { id: 'crimsonRose', name: 'Crimson Rose Cluster',     budget: 112, flex: 0.68 },
+  toonShrub:   { id: 'toonShrub',   name: 'Cel-Shaded Village Bush',  budget: 140, flex: 0.22 },
 };
 
 const _c = new THREE.Color();
@@ -45,62 +46,50 @@ function createBuilder() {
     tri(p0, p2, p3, c0, c2, c3, upBias);
   }
 
-  // Ported from refb-kit.js PartGeometryBuilder.addArchingLeaf:
-  // Sculpts a broad, 3-segment gracefully arching botanical ribbon blade whose width
-  // swells to a wide belly at t=0.38 (Math.sin(Math.pow(t, 0.72) * Math.PI)) and bows
-  // horizontally/outward across the upper half so tips NEVER point up like spikes.
-  function addArchingLeaf({
-    baseX = 0,
-    baseY = 0,
-    baseZ = 0,
+  // 2-triangle arched Ghibli ribbon blade with low swollen mid-belly and wide bowed tip
+  function addGrassRibbon2Tri({
+    x0 = 0,
+    z0 = 0,
     yaw = 0,
-    swirl = 0.14,
-    pitch = 0.54,
-    length = 0.72,
-    width = 0.125,
-    arch = 0.34,
-    fold = 0.018,
-    roll = 0.22,
-    cBase,
+    reach = 0.28,
+    archH = 0.19,
+    tipY = 0.34,
+    bellyW = 0.092,
+    roll = 0.16,
+    cRoot,
     cMid,
     cTip,
   }) {
-    const sampleRing = (t) => {
-      const curYaw = yaw + swirl * t;
-      const cosY = Math.cos(curYaw);
-      const sinY = Math.sin(curYaw);
-      const sideX = -sinY;
-      const sideZ = cosY;
+    const dx = Math.cos(yaw), dz = Math.sin(yaw);
+    const px = -dz, pz = dx;
+    const root = [x0 - dx * 0.018, 0.0, z0 - dz * 0.018];
+    const bx = x0 + dx * reach * 0.40;
+    const bz = z0 + dz * reach * 0.40;
+    const midL = [bx - px * bellyW, archH + Math.max(0, roll * bellyW), bz - pz * bellyW];
+    const midR = [bx + px * bellyW, archH + Math.max(0, -roll * bellyW), bz + pz * bellyW];
+    const tip  = [x0 + dx * reach, tipY, z0 + dz * reach];
+    tri(root, midR, midL, cRoot, cMid, cMid, 0.48);
+    tri(midL, midR, tip, cMid, cMid, cTip, 0.62);
+  }
 
-      const profile = Math.sin(Math.pow(t, 0.72) * Math.PI);
-      const halfW = width * 0.5 * profile;
-      const reach = length * t * Math.cos(pitch + t * arch * 0.6);
-      const lift = length * (t * Math.sin(pitch) - t * t * arch);
-
-      const cx = baseX + cosY * reach;
-      const cy = baseY + (t === 0 ? 0.0 : Math.max(0.012, lift));
-      const cz = baseZ + sinY * reach;
-      const bank = halfW * Math.sin(roll) + fold * profile;
-
-      return {
-        center: [cx, cy, cz],
-        left: [cx + sideX * halfW, Math.max(0.0, cy + bank), cz + sideZ * halfW],
-        right: [cx - sideX * halfW, Math.max(0.0, cy + fold * profile * 0.5 - halfW * Math.sin(roll) * 0.5), cz - sideZ * halfW],
-      };
-    };
-
-    const r0 = sampleRing(0.0);
-    const r1 = sampleRing(0.36); // Wide swollen leaf belly (t ≈ 0.38)
-    const r2 = sampleRing(0.72); // Broad upper arching ribbon crest
-    const r3 = sampleRing(1.0);  // Outward-flowing ribbon tip (never a vertical spike)
-
-    const col1 = lerpRgb(cBase, cMid, 0.55);
-    const col2 = lerpRgb(cMid, cTip, 0.62);
-
-    // 3 longitudinal segments (t: 0 -> 0.36 -> 0.72 -> 1.0) = 4 tris per broad arching blade
-    tri(r0.center, r1.right, r1.left, cBase, col1, col1, 0.42);
-    quad(r1.left, r1.right, r2.right, r2.left, col1, col1, col2, col2, 0.52);
-    tri(r2.left, r2.right, r3.center, col2, col2, cTip, 0.64);
+  // 1-triangle broad arching grass blade with both base corners grounded at y=0 and sunlit arched tip
+  function addGrassBlade1Tri({
+    x0 = 0,
+    z0 = 0,
+    yaw = 0,
+    reach = 0.25,
+    tipY = 0.30,
+    baseW = 0.086,
+    cRoot,
+    cMid,
+    cTip,
+  }) {
+    const dx = Math.cos(yaw), dz = Math.sin(yaw);
+    const px = -dz, pz = dx;
+    const pRootL = [x0 - px * baseW, 0.0, z0 - pz * baseW];
+    const pRootR = [x0 + dx * 0.035 + px * baseW, 0.0, z0 + dz * 0.035 + pz * baseW];
+    const pTip   = [x0 + dx * reach, tipY, z0 + dz * reach];
+    tri(pRootL, pRootR, pTip, cRoot, lerpRgb(cRoot, cMid, 0.65), cTip, 0.56);
   }
 
   // Slender 3D orthogonal crossed stalk (4 tris): consistent botanical thickness from 360° and penetrates into disk
@@ -154,49 +143,38 @@ function createBuilder() {
     return geo;
   }
 
-  return { tri, quad, addArchingLeaf, crossedStalk, archedStem3Seg, leafDiamond, finish };
+  return { tri, quad, addGrassRibbon2Tri, addGrassBlade1Tri, crossedStalk, archedStem3Seg, leafDiamond, finish };
 }
 
 export function buildGrassTuft() {
   const b = createBuilder();
-  // Ghibli meadow palette: deep teal-emerald root -> vibrant meadow green belly -> sunlit chartreuse arch crest
-  const cRoot = rgb('#2f5e50');
-  const cMid  = rgb('#62a34c');
-  const cTipA = rgb('#bce06c');
-  const cTipB = rgb('#a6d15e');
+  // Ghibli meadow palette: warm ochre / deep teal-emerald root -> rich sunlit meadow emerald mid -> luminous chartreuse tips
+  const cRootTeal  = rgb('#355e44');
+  const cRootOchre = rgb('#4a6b38');
+  const cMid       = rgb('#64a848');
+  const cTipA      = rgb('#b8e268');
+  const cTipB      = rgb('#c8ea74');
 
-  // 7 broad, gracefully arching 3-segment blades radiating across a lush clump footprint.
-  // Each blade rises at pitch 0.56..0.74, swells to a wide belly at t=0.36, arches across
-  // a wide ribbon quad to t=0.72, and bows horizontally at t=1.0 (zero upright spikes).
-  const blades = [
-    { yaw: 0.18, rOff: 0.04, len: 0.92, wid: 0.136, pitch: 0.72, arch: 0.33, swirl:  0.18, roll:  0.24, tip: cTipA },
-    { yaw: 1.08, rOff: 0.09, len: 0.80, wid: 0.128, pitch: 0.62, arch: 0.35, swirl: -0.16, roll: -0.22, tip: cTipB },
-    { yaw: 1.98, rOff: 0.06, len: 0.88, wid: 0.138, pitch: 0.68, arch: 0.34, swirl:  0.15, roll:  0.26, tip: cTipA },
-    { yaw: 2.88, rOff: 0.10, len: 0.72, wid: 0.120, pitch: 0.56, arch: 0.35, swirl: -0.18, roll: -0.20, tip: cTipB },
-    { yaw: 3.78, rOff: 0.05, len: 0.84, wid: 0.132, pitch: 0.64, arch: 0.34, swirl:  0.16, roll:  0.22, tip: cTipA },
-    { yaw: 4.68, rOff: 0.11, len: 0.68, wid: 0.116, pitch: 0.52, arch: 0.34, swirl: -0.14, roll: -0.24, tip: cTipB },
-    { yaw: 5.52, rOff: 0.07, len: 0.78, wid: 0.126, pitch: 0.60, arch: 0.34, swirl:  0.17, roll:  0.20, tip: cTipA },
-  ];
+  // 14-Triangle, ~0.85m-wide Multi-Clump Ghibli Grass Patch:
+  // 3 offset mini-clumps arranged in an organic triangle around (0.03, 0.20), (-0.22, -0.15), and (0.21, -0.14)
+  // totaling 5 + 5 + 4 = 14 triangles.
 
-  for (const d of blades) {
-    b.addArchingLeaf({
-      baseX: Math.cos(d.yaw) * d.rOff,
-      baseY: 0.0,
-      baseZ: Math.sin(d.yaw) * d.rOff,
-      yaw: d.yaw,
-      swirl: d.swirl,
-      pitch: d.pitch,
-      length: d.len,
-      width: d.wid,
-      arch: d.arch,
-      fold: 0.018,
-      roll: d.roll,
-      cBase: cRoot,
-      cMid: cMid,
-      cTip: d.tip,
-    });
-  }
-  return b.finish('grassTuft'); // 28 tris (<= 48 budget)
+  // Mini-Clump 1: Front-Apex cluster around (0.03, 0.20) — 5 triangles (two 2-tri ribbons + one 1-tri blade)
+  b.addGrassRibbon2Tri({ x0: 0.03,  z0: 0.20,  yaw: 1.35, reach: 0.26, archH: 0.21, tipY: 0.36, bellyW: 0.095, roll:  0.18, cRoot: cRootTeal,  cMid, cTip: cTipA });
+  b.addGrassRibbon2Tri({ x0: 0.01,  z0: 0.18,  yaw: 3.45, reach: 0.27, archH: 0.20, tipY: 0.33, bellyW: 0.090, roll: -0.16, cRoot: cRootOchre, cMid, cTip: cTipB });
+  b.addGrassBlade1Tri({  x0: 0.05,  z0: 0.19,  yaw: 5.55, reach: 0.26, tipY: 0.31,  baseW: 0.088, cRoot: cRootTeal,  cMid, cTip: cTipA });
+
+  // Mini-Clump 2: Rear-Left cluster around (-0.22, -0.15) — 5 triangles (two 2-tri ribbons + one 1-tri blade)
+  b.addGrassRibbon2Tri({ x0: -0.22, z0: -0.15, yaw: 2.82, reach: 0.24, archH: 0.20, tipY: 0.33, bellyW: 0.090, roll:  0.16, cRoot: cRootOchre, cMid, cTip: cTipB });
+  b.addGrassRibbon2Tri({ x0: -0.20, z0: -0.17, yaw: 4.55, reach: 0.26, archH: 0.19, tipY: 0.31, bellyW: 0.086, roll: -0.17, cRoot: cRootTeal,  cMid, cTip: cTipA });
+  b.addGrassBlade1Tri({  x0: -0.21, z0: -0.13, yaw: 0.85, reach: 0.25, tipY: 0.29,  baseW: 0.085, cRoot: cRootOchre, cMid, cTip: cTipB });
+
+  // Mini-Clump 3: Rear-Right cluster around (0.21, -0.14) — 4 triangles (one 2-tri ribbon + two 1-tri blades)
+  b.addGrassRibbon2Tri({ x0: 0.21,  z0: -0.14, yaw: 0.18, reach: 0.24, archH: 0.21, tipY: 0.34, bellyW: 0.092, roll:  0.17, cRoot: cRootTeal,  cMid, cTip: cTipA });
+  b.addGrassBlade1Tri({  x0: 0.19,  z0: -0.16, yaw: 4.92, reach: 0.26, tipY: 0.30,  baseW: 0.086, cRoot: cRootOchre, cMid, cTip: cTipB });
+  b.addGrassBlade1Tri({  x0: 0.20,  z0: -0.12, yaw: 2.25, reach: 0.24, tipY: 0.29,  baseW: 0.084, cRoot: cRootTeal,  cMid, cTip: cTipA });
+
+  return b.finish('grassTuft'); // 14 tris (<= 28 budget)
 }
 
 export function buildBellflower() {
@@ -495,6 +473,110 @@ export function buildToonShrub() {
   return b.finish('toonShrub'); // 140 tris (<= 140)
 }
 
+export function buildCrimsonRose() {
+  const b = createBuilder();
+  // Dark emerald serrated base & stem foliage (#23522c -> #46853c)
+  const cLeafB = rgb('#23522c'), cLeafM = rgb('#346b34'), cLeafT = rgb('#46853c');
+  // Velvety crimson outer petals (#9e1326) -> rich scarlet mid-cup (#e32636) -> sunlit inner whorl (#ff5c72)
+  const cVelvetDeep   = rgb('#6a0a16');
+  const cOuterCrimson = rgb('#9e1326');
+  const cMidScarlet   = rgb('#e32636');
+  const cInnerWhorl   = rgb('#ff5c72');
+  const cHeartGlow    = rgb('#ff94a4');
+
+  // 6 radial serrated base foliage leaves (12 tris) + 3 higher cradling stem leaves (6 tris) = 18 tris
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + 0.22;
+    b.leafDiamond(
+      Math.cos(a) * 0.018,
+      0.012,
+      Math.sin(a) * 0.018,
+      a,
+      0.25 + (i % 2) * 0.03,
+      0.072,
+      0.098,
+      0.048,
+      cLeafB,
+      cLeafM,
+      cLeafT
+    );
+  }
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + 0.78;
+    b.leafDiamond(
+      Math.cos(a) * 0.056,
+      0.16 + i * 0.038,
+      Math.sin(a) * 0.056,
+      a,
+      0.21,
+      0.062,
+      0.084,
+      0.044,
+      cLeafB,
+      cLeafM,
+      cLeafT
+    );
+  }
+
+  // 4 cupped 3D rose blossoms spanning 0.32m..0.52m facing all 4 azimuth quadrants (4 * 23 = 92 tris -> 110 total)
+  const roses = [
+    { a: 0.24,  r: 0.054, h: 0.45, tilt: 0.15, scale: 1.08, spin: 0.10 },
+    { a: 1.84,  r: 0.130, h: 0.40, tilt: 0.24, scale: 0.98, spin: 0.72 },
+    { a: 3.46,  r: 0.136, h: 0.35, tilt: 0.26, scale: 0.94, spin: 1.35 },
+    { a: 4.96,  r: 0.124, h: 0.31, tilt: 0.28, scale: 0.90, spin: 1.98 },
+  ];
+
+  for (const h of roses) {
+    const dx = Math.cos(h.a), dz = Math.sin(h.a), px = -dz, pz = dx;
+    const cx = dx * h.r, cy = h.h, cz = dz * h.r;
+    // 1. Sturdy rose stalk penetrating into the calyx cup (4 tris)
+    b.crossedStalk(dx * 0.015, dz * 0.015, cx, cy + 0.008, cz, 0.013, 0.010, cLeafB, cLeafT, h.a);
+
+    const ny = Math.cos(h.tilt), nr = Math.sin(h.tilt);
+    const ux = dx * nr, uy = ny, uz = dz * nr, tx = dx * ny, ty = -nr, tz = dz * ny;
+    const pt = (rad, ang, lift) => {
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      return [
+        cx + ((px * ca + tx * sa) * rad + ux * lift) * h.scale,
+        cy + (ty * sa * rad + uy * lift) * h.scale,
+        cz + ((pz * ca + tz * sa) * rad + uz * lift) * h.scale,
+      ];
+    };
+
+    // 2. Outer deep velvety crimson rounded goblet petals (5 petals * 2 tris = 10 tris)
+    for (let i = 0; i < 5; i++) {
+      const aMid = (i / 5) * Math.PI * 2 + h.spin;
+      const pBase = pt(0.022, aMid, -0.014);
+      const pL    = pt(0.114, aMid - 0.68, 0.044);
+      const pR    = pt(0.116, aMid + 0.68, 0.052);
+      const pRim  = pt(0.120, aMid + 0.05, 0.062);
+      b.tri(pBase, pR, pL, cVelvetDeep, cOuterCrimson, cOuterCrimson, 0.54);
+      b.tri(pL, pR, pRim, cOuterCrimson, cOuterCrimson, cMidScarlet, 0.72);
+    }
+
+    // 3. Mid-cup rich scarlet overlapping spiral petals (5 petals * 1 tri = 5 tris)
+    for (let i = 0; i < 5; i++) {
+      const aMid = ((i + 0.5) / 5) * Math.PI * 2 + h.spin;
+      const pB   = pt(0.038, aMid - 0.50, 0.012);
+      const pR   = pt(0.088, aMid + 0.54, 0.060);
+      const pTop = pt(0.090, aMid - 0.04, 0.072);
+      b.tri(pB, pR, pTop, cOuterCrimson, cMidScarlet, cInnerWhorl, 0.78);
+    }
+
+    // 4. Sunlit inner whorl spiral cone (4 spiral facets * 1 tri = 4 tris)
+    const whorlApex = pt(0.008, h.spin, 0.082);
+    for (let k = 0; k < 4; k++) {
+      const a0 = (k / 4) * Math.PI * 2 + h.spin + 0.35;
+      const a1 = a0 + 1.88;
+      const w0 = pt(0.056, a0, 0.046);
+      const w1 = pt(0.048, a1, 0.068);
+      b.tri(whorlApex, w0, w1, cHeartGlow, cMidScarlet, cInnerWhorl, 0.88);
+    }
+  }
+
+  return b.finish('crimsonRose'); // 110 tris (<= 112 budget)
+}
+
 export function createSpeciesGeometries() {
   return {
     grassTuft: buildGrassTuft(),
@@ -502,6 +584,7 @@ export function createSpeciesGeometries() {
     daisy: buildDaisy(),
     lupine: buildLupine(),
     cosmos: buildCosmos(),
+    crimsonRose: buildCrimsonRose(),
     toonShrub: buildToonShrub(),
   };
 }

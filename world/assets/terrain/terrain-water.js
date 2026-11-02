@@ -20,7 +20,7 @@ import {
 /**
  * Frustum-Culled Chunked Valley Terrain, 512x512 Gouache Splat Shader with
  * Painterly Meadow Brushstrokes & Wildflower Stippling, Directional Architectural
- * & Dappled Tree Shadows, Sculpted Multi-Ridge Mountain Horizon, and v7 Hydrological System
+ * & Dappled Tree Shadows, Sculpted Multi-Ridge Mountain Horizon, and Wave 1C Hydrological System
  * (`world/assets/terrain/terrain-water.js`).
  */
 
@@ -34,6 +34,10 @@ export const PALETTE = {
   stone: 0xd4cfc2,
   stoneWarm: 0xe2dcd0,
   stoneDark: 0xa8a294,
+  limestoneLight: 0xdfd7c6,
+  limestoneMid: 0xb5ada0,
+  limestoneShadow: 0x7d776e,
+  boulderMoss: 0x62a442,
   roofRed: 0xd94e28,
   doorWood: 0x7c4a24,
   windowBlue: 0x2f6fc4,
@@ -70,7 +74,16 @@ export const PALETTE = {
   trunk: 0x8c583a,
 };
 
-export const MAX_TREE_SHADOWS = 48;
+export const MAX_TREE_SHADOWS = 72;
+
+export function bakeWorldDataTextures(size = 512) {
+  const worldMaskTex = createWorldMaskTexture(size);
+  return {
+    worldMaskTex,
+    worldExtent: INNER_EXTENT,
+    buildTimeMs: worldMaskTex.userData.buildTimeMs || 0,
+  };
+}
 
 export function buildTreeShadowUniformArray(treeList = TREES) {
   const arr = [];
@@ -343,8 +356,9 @@ export function batchVertexColorGroup(
 
 /**
  * Builds the Gouache Terrain ShaderMaterial driven by the fast 512x512 `uWorldMask` DataTexture,
- * with painterly spring-meadow brushstrokes, wildflower hillside stippling, and directional
- * shadows cast by trees, Tudor buildings, the Well, the Shrine Archway, and the Arena Fence.
+ * covering `uInnerSpan = 340.0m` (`[-170..+170]m`), with painterly spring-meadow brushstrokes,
+ * wildflower hillside stippling, and directional shadows cast by all 68 trees, 5 Tudor buildings,
+ * the Well, the Shrine Archway, and the Arena Fence.
  */
 function createGouacheTerrainMaterial(worldMaskTex) {
   const { treeShadowVecs, treeCount } = buildTreeShadowUniformArray();
@@ -352,7 +366,7 @@ function createGouacheTerrainMaterial(worldMaskTex) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uWorldMask: { value: worldMaskTex },
-      uInnerSpan: { value: INNER_EXTENT * 2.0 }, // 280.0m
+      uInnerSpan: { value: INNER_EXTENT * 2.0 }, // 340.0m (-170..+170)
       uSunDir: { value: SUN_DIR.clone() },
       uLightTint: { value: new THREE.Color(1, 1, 1) },
       uGrassMid: { value: new THREE.Color(PALETTE.grassMid) },
@@ -374,8 +388,8 @@ function createGouacheTerrainMaterial(worldMaskTex) {
       uMountainRock: { value: new THREE.Color(0x64886c) },
       uMountainCrest: { value: new THREE.Color(0x7c989e) },
       uFogColor: { value: new THREE.Color(0xd8eef8) },
-      uFogNear: { value: 165.0 },
-      uFogFar: { value: 540.0 },
+      uFogNear: { value: 185.0 },
+      uFogFar: { value: 580.0 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vWorldPos;
@@ -401,7 +415,7 @@ function createGouacheTerrainMaterial(worldMaskTex) {
       uniform vec3 uGrassDark;
       uniform vec3 uGrassSunSweep;
       uniform vec3 uTreeShadowCol;
-      uniform vec4 uTreeShadows[48];
+      uniform vec4 uTreeShadows[72];
       uniform int uTreeCount;
       uniform vec4 uBldgPos[5];
       uniform vec4 uBldgRotH[5];
@@ -467,7 +481,7 @@ function createGouacheTerrainMaterial(worldMaskTex) {
         float dapple = smoothstep(0.18, 0.78, vnoise(xz * 1.85 + vec2(3.7, -2.1)));
         float maxShd = 0.0;
 
-        for (int i = 0; i < 48; i++) {
+        for (int i = 0; i < 72; i++) {
           if (i >= uTreeCount) break;
           vec4 tr = uTreeShadows[i];
           vec2 rel = xz - tr.xz;
@@ -541,7 +555,6 @@ function createGouacheTerrainMaterial(worldMaskTex) {
 
         // 3. Northern Shrine Archway, Altar Pedestal & Planters around (0, -90)
         if (xz.y < -69.0 && abs(xz.x) < 16.5) {
-          // Left & Right Romanesque Arch Piers at (±3.1, -93.5) + Arch Span
           for (int s = -1; s <= 1; s += 2) {
             vec2 pierBase = vec2(float(s) * 3.1, -93.5);
             vec2 relP = xz - pierBase;
@@ -551,12 +564,10 @@ function createGouacheTerrainMaterial(worldMaskTex) {
                          * (1.0 - smoothstep(0.68, 1.05, pAcross));
             shd = max(shd, inPier * 0.88);
           }
-          // Arch Crown bridge shadow
           vec2 archShadowCenter = vec2(0.0, -93.5) + shadowDir * 5.2;
           float dArchCrown = length((xz - archShadowCenter) / vec2(3.6, 1.35));
           shd = max(shd, (1.0 - smoothstep(0.72, 1.05, dArchCrown)) * 0.85);
 
-          // Co-Op Spell Pedestal at (-5.8, -87.8)
           vec2 pedCenter = vec2(-5.8, -87.8) + shadowDir * 0.95;
           float dPed = length((xz - pedCenter) / vec2(1.25, 1.45));
           shd = max(shd, (1.0 - smoothstep(0.70, 1.05, dPed)) * 0.82);
@@ -582,14 +593,14 @@ function createGouacheTerrainMaterial(worldMaskTex) {
         float inInner = step(abs(xz.x), uInnerSpan * 0.5 - 0.5) * step(abs(xz.y), uInnerSpan * 0.5 - 0.5);
         vec4 mask = texture2D(uWorldMask, clamp(maskUv, 0.001, 0.999));
 
-        // 1. Smooth Painterly Spring-Meadow Gradient & Sunlit Hillside Sweeps (zero noisy streaks!)
+        // 1. Smooth Painterly Spring-Meadow Gradient & Sunlit Hillside Sweeps
         float nBroad = vnoise(xz * 0.022 + vec2(1.7, 3.1));
         float nMed   = vnoise(xz * 0.055 + vec2(-2.3, 1.9));
         float meadowGrad = smoothstep(0.18, 0.82, nBroad * 0.68 + nMed * 0.32);
         vec3 col = mix(uGrassDark, uGrassMid, smoothstep(0.0, 0.52, meadowGrad));
         col = mix(col, uGrassLight, smoothstep(0.38, 0.92, meadowGrad));
 
-        // Warm golden-green sunlit hillside sweeps (#b4de6b) matching ref-target-trees.png left hillside
+        // Warm golden-green sunlit hillside sweeps
         float ndl = dot(normalize(vWorldNormal), normalize(uSunDir)) * 0.5 + 0.5;
         float hillSweep = smoothstep(0.3, 9.0, h) * smoothstep(0.45, 0.80, ndl) * smoothstep(0.30, 0.78, nBroad);
         col = mix(col, uGrassSunSweep, hillSweep * 0.42);
@@ -609,8 +620,10 @@ function createGouacheTerrainMaterial(worldMaskTex) {
 
           float dPond = length((xz - vec2(-62.0, 6.0)) / vec2(28.0, 36.0));
           float dPlunge = length(xz - vec2(-51.4, -20.8)) / 14.0;
-          float nearShore = 1.0 - smoothstep(0.95, 1.18, min(dPond, dPlunge));
-          float sandW = nearShore * (1.0 - smoothstep(-0.45, -0.22, h)) * smoothstep(-1.55, -1.18, h);
+          float dPierStone = length(xz - vec2(-42.0, 18.0)) / 7.5;
+          float nearShore = 1.0 - smoothstep(0.95, 1.18, min(min(dPond, dPlunge), dPierStone));
+          float maskSand = gVal > 0.502 ? clamp((gVal - 0.5) * 2.0, 0.0, 1.0) : 0.0;
+          float sandW = max(maskSand, nearShore * (1.0 - smoothstep(-0.45, -0.18, h)) * smoothstep(-1.58, -1.16, h));
 
           if (sandW > 0.01) {
             float peb = (vnoise(xz * 3.8) - 0.5) * 0.07;
@@ -645,21 +658,21 @@ function createGouacheTerrainMaterial(worldMaskTex) {
           }
         }
 
-        float wLake = 1.0 - smoothstep(-1.65, -1.15, h);
+        float wLake = 1.0 - smoothstep(-1.68, -1.24, h);
         if (wLake > 0.001) {
           col = mix(col, uLakeBed, wLake);
         }
 
-        // Natural green-to-slate-blue atmospheric mountain flank shading (zero white snow stains!)
+        // Natural green-to-slate-blue atmospheric mountain flank shading beyond r = 166m
         float distOrigin = length(xz);
-        if (distOrigin > 125.0) {
+        if (distOrigin > 166.0) {
           float nMtn = vnoise(xz * 0.025) * 5.0;
           float hMod = h + nMtn;
-          float wRock = smoothstep(12.0, 26.0, hMod) * smoothstep(128.0, 195.0, distOrigin);
+          float wRock = smoothstep(12.0, 26.0, hMod) * smoothstep(168.0, 235.0, distOrigin);
           if (wRock > 0.001) {
             col = mix(col, uMountainRock, wRock * 0.65);
           }
-          float wCrest = smoothstep(26.0, 40.0, hMod) * smoothstep(180.0, 250.0, distOrigin);
+          float wCrest = smoothstep(26.0, 42.0, hMod) * smoothstep(220.0, 295.0, distOrigin);
           if (wCrest > 0.001) {
             col = mix(col, uMountainCrest, wCrest * 0.72);
           }
@@ -770,25 +783,30 @@ function buildChunkedTerrainAndSkirt(terrainMat) {
   group.name = 'chunked-terrain';
 
   const gridCount = 4;
-  const chunkSize = (INNER_EXTENT * 2) / gridCount; // 70m
-  const chunkSegs = 30;
-  const chunks = [];
+  const chunkSize = (INNER_EXTENT * 2) / gridCount; // 85m (340m / 4)
+  const chunkSegs = 26;
+  const chunkGeos = [];
 
   for (let r = 0; r < gridCount; r++) {
     const cz = -INNER_EXTENT + (r + 0.5) * chunkSize;
     for (let c = 0; c < gridCount; c++) {
       const cx = -INNER_EXTENT + (c + 0.5) * chunkSize;
       const geo = buildChunkWithOuterLip(chunkSize, chunkSegs, cx, cz);
-
-      const chunkMesh = new THREE.Mesh(geo, terrainMat);
-      chunkMesh.name = `terrain-chunk-${r}-${c}`;
-      chunkMesh.position.set(cx, 0, cz);
-      chunkMesh.frustumCulled = true;
-      chunkMesh.receiveShadow = true;
-      group.add(chunkMesh);
-      chunks.push(chunkMesh);
+      const nonIdx = geo.index ? geo.toNonIndexed() : geo;
+      nonIdx.translate(cx, 0, cz);
+      chunkGeos.push(nonIdx);
     }
   }
+
+  const mergedInnerGeo = mergeGeometries(chunkGeos, false);
+  mergedInnerGeo.computeBoundingBox();
+  mergedInnerGeo.computeBoundingSphere();
+
+  const innerMesh = new THREE.Mesh(mergedInnerGeo, terrainMat);
+  innerMesh.name = 'inner-valley-terrain';
+  innerMesh.receiveShadow = true;
+  group.add(innerMesh);
+  const chunks = [innerMesh];
 
   const skirtSegs = 36;
   const ringSkipMin = 11;
@@ -903,9 +921,7 @@ function addStratifiedRockMass(parent, { x, y, z, rx, ry, rz, rotY = 0, mossCap 
 
 /**
  * Sculpts a smooth-shaded, softly rounded mountain ridge or green foothill peak
- * matching the exact background mountain silhouettes of `docs/refs/ref-target-trees.png`
- * (smooth curved crestlines in misty slate-blue `#788ea0 -> #98aebf` and olive-green `#567c52 -> #709866`,
- * zero low-poly faceted potato octagons and zero artificial white snow cones).
+ * matching the background mountain silhouettes of `docs/references/visual-concepts/01-title.png`.
  */
 function buildSculptedMountainMassif({
   width = 110,
@@ -934,7 +950,6 @@ function buildSculptedMountainMassif({
     for (let ix = 0; ix <= segX; ix++) {
       const vx = (ix / segX) * 2.0 - 1.0;
 
-      // Smooth cosine/Gaussian bell ridge profile so silhouettes curve gracefully like ref-target-trees.png
       const dxMain = (vx - asym) * 1.15;
       const dzMain = vz * 1.20;
       const r2Main = dxMain * dxMain + dzMain * dzMain;
@@ -971,7 +986,6 @@ function buildSculptedMountainMassif({
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   geo.setIndex(indices);
-  // Compute smooth vertex normals BEFORE converting to non-indexed so the mountain silhouette is silky-smooth!
   geo.computeVertexNormals();
   return geo.toNonIndexed();
 }
@@ -997,22 +1011,20 @@ function buildSkyAndAlpineHorizonAndHydroStructures(gradientMap, opts = {}) {
   };
 
   if (opts.includeConeMountains !== false) {
-    // Smooth-shaded atmospheric olive-green foothill peaks & misty slate-blue distant mountain ridges
-    // rising gently behind the outer valley horizon (matching ref-target-trees.png!)
-    const peakCount = 20;
+    const peakCount = 22;
     for (let i = 0; i < peakCount; i++) {
       const a = (i / peakCount) * Math.PI * 2 + 0.08;
       const x = Math.cos(a);
       const z = Math.sin(a);
-      if (z > 0.86 && Math.abs(x) < 0.25) continue;
+      if (z > 0.88 && Math.abs(x) < 0.22) continue;
       const isOlive = i % 3 === 0;
-      const r = isOlive ? 248 + (i % 2) * 14 : 272 + (i % 3) * 18;
+      const r = isOlive ? 282 + (i % 2) * 16 : 312 + (i % 3) * 20;
       const px = x * r;
       const pz = z * r;
       const groundY = terrainHeightAt(px, pz);
-      const h = isOlive ? 34 + ((i * 7) % 12) : 44 + ((i * 11) % 16);
-      const w = isOlive ? 105 + ((i * 13) % 24) : 132 + ((i * 17) % 34);
-      const d = 76 + ((i * 7) % 22);
+      const h = isOlive ? 38 + ((i * 7) % 14) : 48 + ((i * 11) % 18);
+      const w = isOlive ? 115 + ((i * 13) % 26) : 142 + ((i * 17) % 36);
+      const d = 82 + ((i * 7) % 24);
 
       const massifGeo = buildSculptedMountainMassif({
         width: w,
@@ -1023,7 +1035,6 @@ function buildSkyAndAlpineHorizonAndHydroStructures(gradientMap, opts = {}) {
       });
       const peak = addColoredMesh(envRaw, massifGeo, null, false);
       peak.userData.flatShading = false;
-      // Seat 15m below groundY so the wide massif flanks blend seamlessly into the outer valley ridge
       peak.position.set(px, groundY - 15.0, pz);
       peak.rotation.y = -a + Math.PI * 0.5 + ((i % 3) - 1) * 0.14;
     }
@@ -1032,14 +1043,14 @@ function buildSkyAndAlpineHorizonAndHydroStructures(gradientMap, opts = {}) {
   if (opts.includeHorizonClouds !== false) {
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2 + 0.38;
-      const r = 255 + (i % 2) * 24;
+      const r = 290 + (i % 2) * 24;
       const cx = Math.cos(a) * r;
-      const cy = 88 + (i % 3) * 9;
+      const cy = 92 + (i % 3) * 9;
       const cz = Math.sin(a) * r;
       for (let j = 0; j < 3; j++) {
         const puff = addColoredMesh(
           envRaw,
-          new THREE.IcosahedronGeometry(8 + (j === 1 ? 3.5 : 0), 1),
+          new THREE.IcosahedronGeometry(8.5 + (j === 1 ? 3.5 : 0), 1),
           0xf8fcff,
           false,
           true
@@ -1054,17 +1065,13 @@ function buildSkyAndAlpineHorizonAndHydroStructures(gradientMap, opts = {}) {
   const wf = LANDMARKS.waterfall;
   const sx64 = streamCenterX(-64.0);
   const rockMasses = [
-    // West (Left) Canyon Buttress Tier
     { x: wf.x - 3.85, y: 2.3, z: wf.z - 1.2, rx: 2.15, ry: 5.5, rz: 1.95, rotY: 0.22, mossCap: true },
     { x: wf.x - 4.75, y: 1.0, z: wf.z + 0.6, rx: 1.90, ry: 3.5, rz: 1.80, rotY: -0.18, mossCap: true },
     { x: wf.x - 3.30, y: -0.2, z: wf.z + 1.9, rx: 1.45, ry: 1.9, rz: 1.35, rotY: 0.45, mossCap: false },
     { x: wf.x - 2.95, y: 4.1, z: wf.z - 2.4, rx: 1.65, ry: 2.4, rz: 1.50, rotY: 0.12, mossCap: true },
-    // East (Right) Canyon Buttress & Flume Weir Support (between waterfall and watermill)
     { x: wf.x + 2.85, y: 2.3, z: wf.z - 1.4, rx: 1.95, ry: 5.3, rz: 1.75, rotY: 0.35, mossCap: true },
     { x: wf.x + 2.35, y: 0.6, z: wf.z + 0.2, rx: 1.45, ry: 2.7, rz: 1.40, rotY: -0.24, mossCap: false },
-    // Submerged weir lip stones under the waterfall crest
     { x: wf.x, y: 3.8, z: wf.z - 1.85, rx: 2.1, ry: 2.2, rz: 0.95, rotY: 0.42, mossCap: false },
-    // Prominent Upstream Headwaters Spring Hillock & Grotto Outcrop (so stream never starts out of flat grass!)
     { x: sx64,       y: 6.2, z: -66.2, rx: 4.4, ry: 3.6, rz: 3.2, rotY: 0.12, mossCap: true },
     { x: sx64 - 3.4, y: 5.6, z: -64.0, rx: 2.6, ry: 2.6, rz: 2.2, rotY: 0.28, mossCap: true },
     { x: sx64 + 3.4, y: 5.6, z: -64.0, rx: 2.6, ry: 2.6, rz: 2.2, rotY: -0.25, mossCap: true },
@@ -1434,9 +1441,11 @@ function buildAnimatedWaterSurfaces() {
         vec2 p = vWorldPos.xz;
         vec2 pondRel = (p - vec2(-62.0, 6.0)) / vec2(27.1, 34.9);
         float rPond = length(pondRel);
+        float dCausewayIsland = length(p - vec2(-42.0, 18.0));
 
-        // Rich cerulean-to-turquoise depth gradient
-        float depthT = 1.0 - smoothstep(0.08, 0.92, rPond);
+        // Rich cerulean-to-turquoise depth gradient (shallower near (-42, 18) causeway sandbar)
+        float shallowBoost = 1.0 - smoothstep(3.5, 9.5, dCausewayIsland);
+        float depthT = clamp((1.0 - smoothstep(0.08, 0.92, rPond)) * (1.0 - shallowBoost * 0.85), 0.0, 1.0);
         vec3 col = mix(uShallow, uDeep, depthT * 0.86);
 
         // Organic wind-ripple streaks
@@ -1446,13 +1455,19 @@ function buildAnimatedWaterSurfaces() {
         float shimmer = smoothstep(0.74, 0.88, rippleWave);
         col = mix(col, mix(uShallow, uFoam, 0.58), shimmer * 0.34);
 
-        // Shoreline contour foam band + concentric plunge-pool ripples
+        // Shoreline contour foam band + concentric plunge-pool & sandbar ripples
         float shoreEdgeFoam = smoothstep(0.86, 0.96, rPond) * (1.0 - smoothstep(0.97, 1.01, rPond))
                             * (0.65 + 0.35 * sin(rPond * 28.0 - uTime * 2.5));
+        float islandEdgeFoam = smoothstep(2.8, 4.2, dCausewayIsland) * (1.0 - smoothstep(4.4, 5.8, dCausewayIsland))
+                             * (0.6 + 0.4 * sin(dCausewayIsland * 3.2 - uTime * 2.2));
         float dPlunge = length(p - vec2(-50.8, -19.2));
         float plungeRip = smoothstep(0.58, 0.82, sin(dPlunge * 2.4 - uTime * 3.4)) * smoothstep(6.2, 1.2, dPlunge);
 
-        float foamMask = clamp(vWaterMode * 0.88 + shoreEdgeFoam * 0.62 + plungeRip * 0.72, 0.0, 1.0);
+        float foamMask = clamp(
+          vWaterMode * 0.88 + shoreEdgeFoam * 0.62 + islandEdgeFoam * 0.55 + plungeRip * 0.72,
+          0.0,
+          1.0
+        );
         col = mix(col, uFoam, foamMask) * uLightTint;
 
         // Feather shoreline alpha smoothly into wet sand so no polygonal CircleGeometry edges appear

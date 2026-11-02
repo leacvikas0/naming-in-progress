@@ -311,9 +311,18 @@ export function createHousesKit(renderer = null) {
     }
 
     finalizeRoofTiles(add, materials);
-    mergeStatic(group, { outline: 0.018, materials });
+    group.userData.plinthH = plinthH;
+    group.userData.eaveY = eaveY;
+    group.userData.ridgeY = ridgeY;
+    mergeStatic(group, { outline: 0.018, materials, plinthH, eaveY });
 
+    const cx = spec.x ?? 0;
+    const cy = spec.y ?? 0;
+    const cz = spec.z ?? 0;
     const rotY = spec.rotY ?? 0;
+    const cos = Math.cos(rotY);
+    const sin = Math.sin(rotY);
+
     const doorDist = stepInfo.z; // d * 0.5 + 1.35
     const doorWorldOffset = new THREE.Vector3(
       Math.sin(rotY) * doorDist,
@@ -326,9 +335,9 @@ export function createHousesKit(renderer = null) {
     const collider = {
       id: spec.id || type,
       type: 'obb',
-      x: spec.x ?? 0,
-      y: spec.y ?? 0,
-      z: spec.z ?? 0,
+      x: cx,
+      y: cy,
+      z: cz,
       w,
       d,
       halfW: w * 0.5 + colliderPad,
@@ -339,11 +348,72 @@ export function createHousesKit(renderer = null) {
       rotY,
     };
 
+    const makeWingObb = (wing, lx, lz, hx, hz, height = eaveY) => {
+      const wx = cx + lx * cos + lz * sin;
+      const wz = cz - lx * sin + lz * cos;
+      return {
+        id: `${spec.id || type}-${wing}`,
+        parentId: spec.id || type,
+        wing,
+        type: 'obb',
+        x: wx,
+        y: cy,
+        z: wz,
+        localX: lx,
+        localZ: lz,
+        w: hx * 2,
+        d: hz * 2,
+        halfW: hx,
+        halfD: hz,
+        hx,
+        hz,
+        height,
+        rotY,
+      };
+    };
+
+    const wingColliders = [];
+    if (type === 'inn') {
+      wingColliders.push(
+        makeWingObb('porch-steps', 0, d * 0.5 + 1.15, 2.35, 1.25, 3.5),
+        makeWingObb('outdoor-table', -3.55, d * 0.5 + 1.35, 1.15, 1.05, 1.2),
+      );
+    } else if (type === 'herbalist') {
+      wingColliders.push(
+        makeWingObb('conservatory', -w * 0.5 - 1.25, 0.2, 1.45, 2.35, 3.6),
+        makeWingObb('front-steps', 0, d * 0.5 + 0.9, 1.3, 0.95, 1.0),
+      );
+    } else if (type === 'smithy') {
+      wingColliders.push(
+        makeWingObb('forge-shed', w * 0.5 + 1.75, 0.35, 1.85, 2.35, 4.3),
+        makeWingObb('front-steps', 0, d * 0.5 + 0.9, 1.3, 0.95, 1.0),
+      );
+    } else if (type === 'gardener') {
+      wingColliders.push(
+        makeWingObb(
+          'kitchen-garden',
+          spec.gardenPatch?.ox ?? 6.5,
+          spec.gardenPatch?.oz ?? 0,
+          2.35,
+          2.95,
+          1.2,
+        ),
+        makeWingObb('front-steps', 0, d * 0.5 + 0.9, 1.3, 0.95, 1.0),
+      );
+    } else if (type === 'watermill') {
+      wingColliders.push(
+        makeWingObb('waterwheel', -w * 0.5 - 0.85, 0, 1.15, 2.45, 3.5),
+        makeWingObb('front-steps', 0, d * 0.5 + 0.9, 1.3, 0.95, 1.0),
+      );
+    }
+
+    const colliders = [collider, ...wingColliders];
+
     const update = (dt = 0) => {
       if (wheelGroup) wheelGroup.rotation.x += dt * 1.15;
     };
 
-    return { group, doorWorldOffset, collider, update };
+    return { group, doorWorldOffset, collider, wingColliders, colliders, update };
   }
 
   function buildAllVillageBuildings(buildingsSpec = Object.values(VILLAGE_BUILDING_SPECS)) {
@@ -358,7 +428,7 @@ export function createHousesKit(renderer = null) {
       const built = buildVillageBuilding(id, spec);
       group.add(built.group);
       buildings.push({ id, spec, ...built });
-      colliders.push(built.collider);
+      colliders.push(...built.colliders);
       updaters.push(built.update);
     }
 

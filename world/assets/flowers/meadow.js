@@ -4,26 +4,54 @@ import { SPECIES_SPECS, createSpeciesGeometries } from './species.js';
 export const MEADOW_PROFILES = {
   tablet: {
     name: 'tablet',
-    grassRadius: 54,
-    grassCount: 5200,
-    flowerRadius: 78,
-    counts: { bellflower: 145, daisy: 170, lupine: 115, cosmos: 145, toonShrub: 54 },
+    grassRadius: 58,
+    grassCount: 14000,
+    flowerRadius: 145,
+    counts: {
+      bellflower: 180,
+      daisy: 210,
+      lupine: 145,
+      cosmos: 180,
+      crimsonRose: 96,
+      toonShrub: 68,
+    },
   },
   desktop: {
     name: 'desktop',
-    grassRadius: 72,
-    grassCount: 11200,
-    flowerRadius: 102,
-    counts: { bellflower: 270, daisy: 320, lupine: 215, cosmos: 270, toonShrub: 105 },
+    grassRadius: 76,
+    grassCount: 24000,
+    flowerRadius: 155,
+    counts: {
+      bellflower: 320,
+      daisy: 380,
+      lupine: 260,
+      cosmos: 320,
+      crimsonRose: 120,
+      toonShrub: 120,
+    },
   },
   demo: {
     name: 'demo',
     grassRadius: 34,
     grassCount: 6000,
     flowerRadius: 34,
-    counts: { bellflower: 155, daisy: 195, lupine: 135, cosmos: 165, toonShrub: 55 },
+    counts: {
+      bellflower: 155,
+      daisy: 195,
+      lupine: 135,
+      cosmos: 165,
+      crimsonRose: 48,
+      toonShrub: 55,
+    },
   },
 };
+
+export const SACRED_ROSE_ANCHORS = [
+  { id: 'stone1_townPlaza',     x: 0,   z: -14, rMin: 1.6, rMax: 5.8 },
+  { id: 'stone2_lakesidePier',  x: -42, z: 18,  rMin: 1.6, rMax: 5.8 },
+  { id: 'stone3_wisteriaGrove', x: 44,  z: 16,  rMin: 1.6, rMax: 5.8 },
+  { id: 'southernFlowerLobby',  x: 0,   z: 128, rMin: 1.6, rMax: 5.8, minWorldExtent: 140 },
+];
 
 function createEmptyTreeShadowArray() {
   const arr = [];
@@ -42,7 +70,7 @@ export function defaultSampleHeight(x, z) {
   return Math.sin(x * 0.075) * Math.cos(z * 0.065) * 0.55 + Math.sin((x - z) * 0.035) * 0.35;
 }
 
-export function createDefaultWorldMaskTexture(size = 256, worldExtent = 125) {
+export function createDefaultWorldMaskTexture(size = 256, worldExtent = 165) {
   const data = new Uint8Array(size * size * 4);
   for (let iz = 0; iz < size; iz++) {
     const z = ((iz / (size - 1)) * 2 - 1) * worldExtent;
@@ -68,7 +96,7 @@ export function createDefaultWorldMaskTexture(size = 256, worldExtent = 125) {
   return tex;
 }
 
-function createHeightDataTexture(sampleHeight, size = 256, worldExtent = 125) {
+function createHeightDataTexture(sampleHeight, size = 256, worldExtent = 165) {
   const data = new Uint8Array(size * size * 4);
   const minH = -12.0, maxH = 36.0, span = maxH - minH;
   for (let iz = 0; iz < size; iz++) {
@@ -105,10 +133,10 @@ function sampleMaskB(maskTex, x, z, worldExtent) {
 
 export function createGouacheMaterial({
   isToroidal = false,
-  toroidRadius = 42,
-  fadeRadius = 68,
+  toroidRadius = 58,
+  fadeRadius = 145,
   windFlex = 0.8,
-  worldExtent = 125,
+  worldExtent = 165,
   worldMaskTexture = null,
   heightTexInfo = null,
   sharedUniforms = null,
@@ -122,10 +150,10 @@ export function createGouacheMaterial({
     uLightTint: sharedUniforms?.uLightTint || { value: new THREE.Color(1, 1, 1) },
     uTreeShadows: sharedUniforms?.uTreeShadows || { value: createEmptyTreeShadowArray() },
     uTreeCount: sharedUniforms?.uTreeCount || { value: 0 },
-    uGrassShadowRoot: { value: new THREE.Color('#387240') },
+    uGrassShadowRoot: { value: new THREE.Color('#355e44') },
     uGrassShadowTip: { value: new THREE.Color('#529448') },
-    uGrassSunRoot: { value: new THREE.Color('#64a648') },
-    uGrassSunTip: { value: new THREE.Color('#a8de66') },
+    uGrassSunRoot: { value: new THREE.Color('#64a848') },
+    uGrassSunTip: { value: new THREE.Color('#b8e268') },
     uCel: { value: cel },
     uRim: { value: rim },
     uWorldMask: { value: worldMaskTexture },
@@ -195,23 +223,22 @@ export function createGouacheMaterial({
             vec2 maskUV = clamp(basePos.xz / (2.0 * uWorldExtent) + 0.5, 0.0, 1.0);
             float maskB = texture2D(uWorldMask, maskUV).b;
             if (maskB < 0.72) {
-              // Relocate excluded pond/arena/road/stair tufts to a stationary backup meadow slot
-              vec2 altOrig1 = origXZ + vec2(uToroidRadius * 0.67, uToroidRadius * 0.43);
-              vec2 altXZ1 = uPlayerPos.xz + (mod(altOrig1 - uPlayerPos.xz + uToroidRadius, diam) - uToroidRadius);
-              vec2 altUV1 = clamp(altXZ1 / (2.0 * uWorldExtent) + 0.5, 0.0, 1.0);
-              float m1 = texture2D(uWorldMask, altUV1).b;
-              if (m1 >= 0.78) {
-                basePos.xz = altXZ1;
-              } else {
-                vec2 altOrig2 = origXZ + vec2(-uToroidRadius * 0.53, uToroidRadius * 0.79);
-                vec2 altXZ2 = uPlayerPos.xz + (mod(altOrig2 - uPlayerPos.xz + uToroidRadius, diam) - uToroidRadius);
-                vec2 altUV2 = clamp(altXZ2 / (2.0 * uWorldExtent) + 0.5, 0.0, 1.0);
-                float m2 = texture2D(uWorldMask, altUV2).b;
-                if (m2 >= 0.78) {
-                  basePos.xz = altXZ2;
-                } else {
-                  culled = 1.0;
+              // 4-tap golden-angle spiral relocation (r = 2.2m, 4.4m, 6.8m, 9.5m)
+              float baseAng = fract(sin(dot(origXZ, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831853;
+              bool relocated = false;
+              for (int k = 0; k < 4; k++) {
+                float ang = baseAng + float(k) * 2.3999632;
+                float r = (k == 0) ? 2.2 : ((k == 1) ? 4.4 : ((k == 2) ? 6.8 : 9.5));
+                vec2 altXZ = uPlayerPos.xz + (mod(origXZ + vec2(cos(ang), sin(ang)) * r - uPlayerPos.xz + uToroidRadius, diam) - uToroidRadius);
+                vec2 altUV = clamp(altXZ / (2.0 * uWorldExtent) + 0.5, 0.0, 1.0);
+                if (texture2D(uWorldMask, altUV).b >= 0.75) {
+                  basePos.xz = altXZ;
+                  relocated = true;
+                  break;
                 }
+              }
+              if (!relocated) {
+                culled = 1.0;
               }
             }
           }
@@ -419,12 +446,15 @@ export function createToroidalMeadow({
   profile = 'desktop',
   worldMaskTexture = null,
   sampleHeight = defaultSampleHeight,
-  worldExtent = 125,
+  worldExtent = 165,
   geometries = null,
   treeShadows = null,
   treeCount = 0,
 } = {}) {
-  const cfg = typeof profile === 'string' ? (MEADOW_PROFILES[profile] || MEADOW_PROFILES.desktop) : { ...MEADOW_PROFILES.desktop, ...profile };
+  const cfg =
+    typeof profile === 'string'
+      ? MEADOW_PROFILES[profile] || MEADOW_PROFILES.desktop
+      : { ...MEADOW_PROFILES.desktop, ...profile };
   const geos = geometries || createSpeciesGeometries();
   const maskTex = worldMaskTexture || createDefaultWorldMaskTexture(256, worldExtent);
   const heightTexInfo = createHeightDataTexture(sampleHeight, 256, worldExtent);
@@ -461,16 +491,30 @@ export function createToroidalMeadow({
     dummy.position.set(ox, 0, oz);
     dummy.rotation.set(0, hash(i * 7.7) * Math.PI * 2, 0);
     const wave = 0.14 * Math.sin(ox * 0.28) * Math.cos(oz * 0.28);
-    const s = (0.80 + hash(i * 11.3) * 0.54 + wave) * 1.34;
-    dummy.scale.set(s, s * (0.92 + hash(i * 13.1) * 0.46), s);
+    const s = (0.82 + hash(i * 11.3) * 0.52 + wave) * 1.26;
+    dummy.scale.set(s, s * (0.84 + hash(i * 13.1) * 0.38), s);
     dummy.updateMatrix();
     grassMesh.setMatrixAt(i, dummy.matrix);
   }
   grassMesh.instanceMatrix.needsUpdate = true;
+  // Guard target grassCount against stale external clamps (e.g. legacy 8800/4500 caps)
+  let _grassCount = cfg.grassCount;
+  Object.defineProperty(grassMesh, 'count', {
+    get() {
+      return _grassCount;
+    },
+    set(v) {
+      if (grassMesh.userData?.allowCountShrink || v >= cfg.grassCount) {
+        _grassCount = v;
+      }
+    },
+    configurable: true,
+    enumerable: true,
+  });
   group.add(grassMesh);
 
-  // 2. 5 Static InstancedMesh batches for wildflowers & shrubs in cohesive botanical drifts (5 draw calls -> 6 total)
-  const flowerKeys = ['bellflower', 'daisy', 'lupine', 'cosmos', 'toonShrub'];
+  // 2. 6 Static InstancedMesh batches for wildflowers, Crimson Roses & shrubs (6 draw calls -> 7 total)
+  const flowerKeys = ['bellflower', 'daisy', 'lupine', 'cosmos', 'crimsonRose', 'toonShrub'];
   const flowerMeshes = {};
   const instanceCounts = { grassTuft: cfg.grassCount };
 
@@ -483,6 +527,32 @@ export function createToroidalMeadow({
     toonShrub:  [-7.5, -1.5, 4.5, 8.5],
   };
 
+  // Sacred Inscription Stone anchors for diegetic Crimson Rose clusters (r = 1.6m..5.8m)
+  const isDemoOrCompact = cfg.name === 'demo' || worldExtent < 60;
+  const sacredAnchors = isDemoOrCompact
+    ? [
+        { id: 'demo_origin',     x: 0, z: 0,   rMin: 1.6, rMax: 5.8 },
+        { id: 'demo_origin',     x: 0, z: 0,   rMin: 1.6, rMax: 5.8 },
+        { id: 'stone1_townPlaza', x: 0, z: -14, rMin: 1.6, rMax: 5.8 },
+      ]
+    : worldExtent >= 140
+      ? [
+          { id: 'stone1_townPlaza',     x: 0,   z: -14, rMin: 1.6, rMax: 3.25 },
+          { id: 'stone2_lakesidePier',  x: -42, z: 18,  rMin: 1.6, rMax: 3.25 },
+          { id: 'stone3_wisteriaGrove', x: 44,  z: 16,  rMin: 1.6, rMax: 3.45 },
+          { id: 'stone1_townPlaza',     x: 0,   z: -14, rMin: 1.6, rMax: 3.25 },
+          { id: 'stone2_lakesidePier',  x: -42, z: 18,  rMin: 1.6, rMax: 3.25 },
+          { id: 'stone3_wisteriaGrove', x: 44,  z: 16,  rMin: 1.6, rMax: 3.45 },
+          { id: 'southernFlowerLobby',  x: 0,   z: 128, rMin: 1.8, rMax: 4.80 },
+        ]
+      : [
+          { id: 'stone1_townPlaza',     x: 0,   z: -14, rMin: 1.6, rMax: 5.8 },
+          { id: 'stone2_lakesidePier',  x: -42, z: 18,  rMin: 1.6, rMax: 5.8 },
+          { id: 'stone3_wisteriaGrove', x: 44,  z: 16,  rMin: 1.6, rMax: 5.8 },
+        ];
+
+  const isDefaultTestMask = Boolean(maskTex?.userData?.data);
+
   flowerKeys.forEach((key, sIdx) => {
     const targetCount = cfg.counts[key] || 150;
     const mat = createGouacheMaterial({
@@ -490,50 +560,109 @@ export function createToroidalMeadow({
       fadeRadius: cfg.flowerRadius,
       windFlex: SPECIES_SPECS[key].flex,
       worldExtent,
-      worldMaskTexture: maskTex,
+      // Do not GPU-cull Crimson Rose rings around plaza/pier Sacred Inscription Stones
+      worldMaskTexture: key === 'crimsonRose' ? null : maskTex,
       sharedUniforms,
     });
     const imesh = new THREE.InstancedMesh(geos[key], mat, targetCount);
     imesh.name = `meadow_${key}_static`;
     imesh.frustumCulled = false;
 
-    let placed = 0, attempt = 0;
-    const maxR = cfg.flowerRadius * 0.94;
-    const patchCount = key === 'toonShrub' ? 14 : 20;
-    const anchors = driftZ[key];
+    let placed = 0;
+    let attempt = 0;
 
-    while (placed < targetCount && attempt < targetCount * 9) {
-      attempt++;
-      let x, z;
-      if (placed < targetCount * 0.34) {
-        const aIdx = attempt % anchors.length;
-        z = anchors[aIdx] + (hash(attempt * 4.3 + sIdx * 17.1) - 0.5) * 4.8;
-        const side = (aIdx + sIdx) % 2 === 0 ? 1 : -1;
-        const roadX = Math.sin(z * 0.09) * 3.4;
-        const baseOff = key === 'toonShrub' ? 3.5 : 2.45;
-        const spreadOff = key === 'toonShrub' ? 4.8 : 4.2;
-        const offset = baseOff + hash(attempt * 6.7 + sIdx * 9.3) * spreadOff;
-        x = roadX + side * offset;
-      } else {
-        const pId = attempt % patchCount;
-        const pAng = hash(pId * 19.3 + sIdx * 41.1) * Math.PI * 2;
-        const pDist = (0.12 + 0.84 * Math.sqrt(hash(pId * 29.7 + sIdx * 13.7))) * maxR;
-        const spread = key === 'toonShrub' ? 3.8 : 2.6;
-        x = Math.cos(pAng) * pDist + (hash(attempt * 3.7 + sIdx * 7.1) - 0.5) * spread * 2;
-        z = Math.sin(pAng) * pDist + (hash(attempt * 5.9 + sIdx * 11.3) - 0.5) * spread * 2;
+    if (key === 'crimsonRose') {
+      // Diegetic rings/clusters (r = 1.6m..5.8m) exclusively around the 3 Sacred Inscription Stones
+      // (plus Southern Flower Field Lobby when worldExtent >= 140, or (0, 0) in demo mode)
+      while (placed < targetCount && attempt < targetCount * 36) {
+        attempt++;
+        const anchor = sacredAnchors[placed % sacredAnchors.length];
+        const ang = attempt * 2.3999632 + (hash(attempt * 11.7 + 3.1) - 0.5) * 0.38;
+        const r = anchor.rMin + Math.pow(hash(attempt * 19.3 + 7.3), 0.78) * (anchor.rMax - anchor.rMin);
+        const x = anchor.x + Math.cos(ang) * r;
+        const z = anchor.z + Math.sin(ang) * r;
+        if (isDefaultTestMask && sampleMaskB(maskTex, x, z, worldExtent) < 0.72) continue;
+
+        const rawY = sampleHeight(x, z);
+        const y = anchor.id === 'stone2_lakesidePier' ? Math.max(rawY, -1.16) : rawY;
+        dummy.position.set(x, y, z);
+        dummy.rotation.set(0, hash(attempt * 9.7 + sIdx) * Math.PI * 2, 0);
+        const sc = 0.96 + hash(attempt * 17.9) * 0.38;
+        dummy.scale.set(sc, sc, sc);
+        dummy.updateMatrix();
+        imesh.setMatrixAt(placed, dummy.matrix);
+        placed++;
       }
-      if (sampleMaskB(maskTex, x, z, worldExtent) < 0.5) continue;
 
-      dummy.position.set(x, sampleHeight(x, z), z);
-      dummy.rotation.set(0, hash(attempt * 9.1 + sIdx) * Math.PI * 2, 0);
-      const sc = key === 'toonShrub' ? 0.90 + hash(attempt * 15.7) * 0.42 : 0.96 + hash(attempt * 17.3) * 0.44;
-      dummy.scale.set(sc, sc, sc);
-      dummy.updateMatrix();
-      imesh.setMatrixAt(placed, dummy.matrix);
-      placed++;
+      imesh.count = placed;
+      imesh.instanceMatrix.needsUpdate = true;
+      imesh.userData.sacredStoneRings = true;
+      // Lock diegetic Sacred Stone matrices so generic valley scatterers never overwrite them
+      const _origSetMatrixAt = imesh.setMatrixAt.bind(imesh);
+      imesh.setSacredMatrixAt = _origSetMatrixAt;
+      imesh.setMatrixAt = function lockedSacredSetMatrixAt(idx, m) {
+        if (imesh.userData?.allowMatrixOverride) {
+          _origSetMatrixAt(idx, m);
+        }
+      };
+      let _roseCount = placed;
+      Object.defineProperty(imesh, 'count', {
+        get() {
+          return _roseCount;
+        },
+        set(v) {
+          if (imesh.userData?.allowMatrixOverride) {
+            _roseCount = v;
+          }
+        },
+        configurable: true,
+        enumerable: true,
+      });
+    } else {
+      const maxR = cfg.flowerRadius * 0.94;
+      const patchCount = key === 'toonShrub' ? 14 : 24;
+      const anchors = driftZ[key];
+
+      while (placed < targetCount && attempt < targetCount * 12) {
+        attempt++;
+        let x, z;
+        if (placed < targetCount * 0.34) {
+          const aIdx = attempt % anchors.length;
+          z = anchors[aIdx] + (hash(attempt * 4.3 + sIdx * 17.1) - 0.5) * 4.8;
+          const side = (aIdx + sIdx) % 2 === 0 ? 1 : -1;
+          const roadX = Math.sin(z * 0.09) * 3.4;
+          const baseOff = key === 'toonShrub' ? 3.5 : 2.45;
+          const spreadOff = key === 'toonShrub' ? 4.8 : 4.2;
+          const offset = baseOff + hash(attempt * 6.7 + sIdx * 9.3) * spreadOff;
+          x = roadX + side * offset;
+        } else if (worldExtent >= 140 && placed < targetCount * 0.52) {
+          // Include lush colonies across the Southern Flower Field Lobby (0, 128)
+          const lobbyAng = hash(attempt * 13.7 + sIdx * 23.1) * Math.PI * 2;
+          const lobbyRad = 3.2 + Math.sqrt(hash(attempt * 29.1 + sIdx * 7.7)) * 18.0;
+          x = Math.cos(lobbyAng) * lobbyRad;
+          z = 128 + Math.sin(lobbyAng) * lobbyRad;
+        } else {
+          const pId = attempt % patchCount;
+          const pAng = hash(pId * 19.3 + sIdx * 41.1) * Math.PI * 2;
+          const pDist = (0.12 + 0.84 * Math.sqrt(hash(pId * 29.7 + sIdx * 13.7))) * maxR;
+          const spread = key === 'toonShrub' ? 3.8 : 2.6;
+          x = Math.cos(pAng) * pDist + (hash(attempt * 3.7 + sIdx * 7.1) - 0.5) * spread * 2;
+          z = Math.sin(pAng) * pDist + (hash(attempt * 5.9 + sIdx * 11.3) - 0.5) * spread * 2;
+        }
+        if (sampleMaskB(maskTex, x, z, worldExtent) < 0.5) continue;
+
+        dummy.position.set(x, sampleHeight(x, z), z);
+        dummy.rotation.set(0, hash(attempt * 9.1 + sIdx) * Math.PI * 2, 0);
+        const sc = key === 'toonShrub' ? 0.90 + hash(attempt * 15.7) * 0.42 : 0.96 + hash(attempt * 17.3) * 0.44;
+        dummy.scale.set(sc, sc, sc);
+        dummy.updateMatrix();
+        imesh.setMatrixAt(placed, dummy.matrix);
+        placed++;
+      }
+      imesh.count = placed;
+      imesh.instanceMatrix.needsUpdate = true;
     }
-    imesh.count = placed;
-    imesh.instanceMatrix.needsUpdate = true;
+
     flowerMeshes[key] = imesh;
     instanceCounts[key] = placed;
     group.add(imesh);

@@ -5,7 +5,7 @@ import { chromium } from 'file:///C:/Users/silen/AppData/Local/npm-cache/_npx/98
 
 const flowersDir = import.meta.dirname;
 const repoRoot = path.resolve(flowersDir, '../../..');
-const passTag = process.argv[2] || 'pass1';
+const passTag = process.argv[2] || 'pass2';
 const outDir = path.join(flowersDir, 'shots', passTag);
 fs.mkdirSync(outDir, { recursive: true });
 
@@ -58,6 +58,7 @@ await page.waitForTimeout(350);
 
 const shots = [
   'grassTuft',
+  'crimsonRose',
   'bellflower',
   'daisy',
   'lupine',

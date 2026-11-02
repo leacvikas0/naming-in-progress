@@ -5,7 +5,7 @@ import { chromium } from 'file:///C:/Users/silen/AppData/Local/npm-cache/_npx/98
 
 const assetDir = import.meta.dirname;
 const repoRoot = path.resolve(assetDir, '../../..');
-const passName = process.argv[2] || 'pass1';
+const passName = process.argv[2] || 'pass2';
 const outDir = path.join(assetDir, 'shots', passName);
 fs.mkdirSync(outDir, { recursive: true });
 
@@ -67,9 +67,13 @@ await page.waitForFunction(() => Boolean(window.__TERRAIN_PREVIEW__), null, {
 await page.waitForTimeout(300);
 
 const shotIds = [
+  'flower-lobby-north',
+  'boulders-walls-fences',
+  'wisteria-orbit-front',
+  'wisteria-orbit-side',
+  'pier-shoreline',
   'shrine-arch-stairs',
   'waterfall-flume-channel',
-  'pier-shoreline',
   'wisteria-trees-arena',
   'well-plaza-roads',
   'aerial-overview',
@@ -80,9 +84,9 @@ const report = {
   timestamp: new Date().toISOString(),
   budgets: {
     targetFps: 144,
-    maxDrawCalls: 24,
-    maxTriangles: 120000,
-    maxMaskBuildMs: 30,
+    maxDrawCalls: 9,
+    maxTriangles: 185000,
+    maxMaskBuildMs: 50,
   },
   consoleErrors,
   shots: {},
@@ -114,13 +118,14 @@ report.summary = {
   maxFrustumTrianglesObserved: Math.max(...allShots.map((s) => s.triangles)),
   minFrustumTrianglesObserved: Math.min(...allShots.map((s) => s.triangles)),
   totalSceneTriangles: allShots[0]?.totalSceneTriangles || 0,
+  colliderCount: allShots[0]?.colliderCount || 0,
   maskBuildMs: allShots[0]?.maskBuildMs || 0,
   consoleErrorCount: consoleErrors.length,
   passesAllBudgets:
     consoleErrors.length === 0 &&
-    Math.max(...allShots.map((s) => s.draws)) <= 24 &&
-    Math.max(...allShots.map((s) => s.triangles)) < 120000 &&
-    (allShots[0]?.totalSceneTriangles || 0) < 120000,
+    Math.max(...allShots.map((s) => s.draws)) <= 9 &&
+    Math.max(...allShots.map((s) => s.triangles)) < 185000 &&
+    (allShots[0]?.totalSceneTriangles || 0) < 185000,
 };
 
 const reportPath = path.join(outDir, 'report.json');

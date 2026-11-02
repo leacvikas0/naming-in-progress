@@ -1,11 +1,11 @@
 {
   "pass": "pass2",
-  "timestamp": "2026-10-29T13:35:43.687Z",
+  "timestamp": "2026-11-02T13:00:22.582Z",
   "budget": {
-    "maxDrawCalls": 16,
+    "maxDrawCalls": 15,
     "maxTriangles": 48000,
     "actualLineupDrawCalls": 15,
-    "actualLineupTriangles": 46544,
+    "actualLineupTriangles": 47504,
     "drawCallsPass": true,
     "trianglesPass": true,
     "zeroConsoleErrors": true
@@ -15,72 +15,126 @@
     "inn-3q": {
       "shot": "inn-3q",
       "drawCalls": 10,
-      "triangles": 11930,
+      "triangles": 12082,
       "sceneDrawCalls": 11,
-      "sceneTriangles": 11932,
+      "sceneTriangles": 12084,
       "meshNodes": 10,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\houses\\shots\\pass2\\inn-3q.png"
     },
     "inn-front": {
       "shot": "inn-front",
       "drawCalls": 10,
-      "triangles": 11930,
+      "triangles": 12082,
       "sceneDrawCalls": 11,
-      "sceneTriangles": 11932,
+      "sceneTriangles": 12084,
       "meshNodes": 10,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\houses\\shots\\pass2\\inn-front.png"
+    },
+    "inn-right-90": {
+      "shot": "inn-right-90",
+      "drawCalls": 10,
+      "triangles": 12082,
+      "sceneDrawCalls": 11,
+      "sceneTriangles": 12084,
+      "meshNodes": 10,
+      "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\houses\\shots\\pass2\\inn-right-90.png"
+    },
+    "inn-rear-180": {
+      "shot": "inn-rear-180",
+      "drawCalls": 10,
+      "triangles": 12082,
+      "sceneDrawCalls": 11,
+      "sceneTriangles": 12084,
+      "meshNodes": 10,
+      "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\houses\\shots\\pass2\\inn-rear-180.png"
+    },
+    "inn-left-270": {
+      "shot": "inn-left-270",
+      "drawCalls": 10,
+      "triangles": 12082,
+      "sceneDrawCalls": 11,
+      "sceneTriangles": 12084,
+      "meshNodes": 10,
+      "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\houses\\shots\\pass2\\inn-left-270.png"
+    },
+    "inn-overhead": {
+      "shot": "inn-overhead",
+      "drawCalls": 10,
+      "triangles": 12082,
+      "sceneDrawCalls": 11,
+      "sceneTriangles": 12084,
+      "meshNodes": 10,
+      "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\houses\\shots\\pass2\\inn-overhead.png"
+    },
+    "window-closeup-front": {
+      "shot": "window-closeup-front",
+      "drawCalls": 10,
+      "triangles": 12082,
+      "sceneDrawCalls": 11,
+      "sceneTriangles": 12084,
+      "meshNodes": 10,
+      "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\houses\\shots\\pass2\\window-closeup-front.png"
+    },
+    "window-closeup-side": {
+      "shot": "window-closeup-side",
+      "drawCalls": 10,
+      "triangles": 8834,
+      "sceneDrawCalls": 11,
+      "sceneTriangles": 8836,
+      "meshNodes": 10,
+      "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\houses\\shots\\pass2\\window-closeup-side.png"
     },
     "herbalist-3q": {
       "shot": "herbalist-3q",
       "drawCalls": 12,
-      "triangles": 8116,
+      "triangles": 8268,
       "sceneDrawCalls": 13,
-      "sceneTriangles": 8118,
+      "sceneTriangles": 8270,
       "meshNodes": 11,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\houses\\shots\\pass2\\herbalist-3q.png"
     },
     "smithy-3q": {
       "shot": "smithy-3q",
       "drawCalls": 10,
-      "triangles": 9012,
+      "triangles": 9212,
       "sceneDrawCalls": 11,
-      "sceneTriangles": 9014,
+      "sceneTriangles": 9214,
       "meshNodes": 10,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\houses\\shots\\pass2\\smithy-3q.png"
     },
     "gardener-3q": {
       "shot": "gardener-3q",
       "drawCalls": 10,
-      "triangles": 8658,
+      "triangles": 8834,
       "sceneDrawCalls": 11,
-      "sceneTriangles": 8660,
+      "sceneTriangles": 8836,
       "meshNodes": 10,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\houses\\shots\\pass2\\gardener-3q.png"
     },
     "watermill-3q": {
       "shot": "watermill-3q",
       "drawCalls": 13,
-      "triangles": 8828,
+      "triangles": 9108,
       "sceneDrawCalls": 14,
-      "sceneTriangles": 8830,
+      "sceneTriangles": 9110,
       "meshNodes": 13,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\houses\\shots\\pass2\\watermill-3q.png"
     },
     "all-lineup": {
       "shot": "all-lineup",
       "drawCalls": 15,
-      "triangles": 46544,
+      "triangles": 47504,
       "sceneDrawCalls": 16,
-      "sceneTriangles": 46546,
+      "sceneTriangles": 47506,
       "meshNodes": 14,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\houses\\shots\\pass2\\all-lineup.png"
     },
     "all-rear-lineup": {
       "shot": "all-rear-lineup",
       "drawCalls": 15,
-      "triangles": 46544,
+      "triangles": 47504,
       "sceneDrawCalls": 16,
-      "sceneTriangles": 46546,
+      "sceneTriangles": 47506,
       "meshNodes": 14,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\houses\\shots\\pass2\\all-rear-lineup.png"
     }

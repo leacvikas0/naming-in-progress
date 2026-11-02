@@ -128,11 +128,22 @@ export function makeWall({
   outline = 0.022,
 }) {
   const shape = new THREE.Shape();
+  const hasMid = height > 1.2;
+  const yLow = Math.min(0.45, height * 0.25);
+  const yHigh = Math.max(yLow + 0.1, height - 0.55);
   shape.moveTo(-length / 2, 0);
   shape.lineTo(length / 2, 0);
+  if (hasMid) {
+    shape.lineTo(length / 2, yLow);
+    shape.lineTo(length / 2, yHigh);
+  }
   shape.lineTo(length / 2, height);
   if (gableRise > 0) shape.lineTo(0, height + gableRise);
   shape.lineTo(-length / 2, height);
+  if (hasMid) {
+    shape.lineTo(-length / 2, yHigh);
+    shape.lineTo(-length / 2, yLow);
+  }
   shape.closePath();
 
   for (const hole of holes) {
@@ -1128,6 +1139,8 @@ export function buildTimberFrame(
     floorY = null,
     hasStoneLower = false,
     skipRightGableCenter = false,
+    sideWinLeft = true,
+    upperWins = false,
   },
 ) {
   const beam = (bw, bh, bd, x, y, z, outline = 0.012) => {
@@ -1138,7 +1151,17 @@ export function buildTimberFrame(
   };
 
   for (const z of [d / 2 + 0.05, -d / 2 - 0.05]) {
-    if (floorY && !hasStoneLower) beam(w, 0.2, 0.12, 0, floorY, z, 0.012);
+    if (floorY && !hasStoneLower) {
+      if (z > 0 && !upperWins) {
+        const halfGap = 1.04;
+        const segW = Math.max(0.4, w / 2 - halfGap);
+        for (const sx of [-1, 1]) {
+          beam(segW, 0.2, 0.12, sx * (halfGap + segW / 2), floorY, z, 0.012);
+        }
+      } else {
+        beam(w, 0.2, 0.12, 0, floorY, z, 0.012);
+      }
+    }
     beam(w, 0.22, 0.12, 0, eaveY - 0.14, z, 0.012);
     const postStart = hasStoneLower && floorY ? floorY : plinthH;
     const postH = eaveY - postStart;
@@ -1148,9 +1171,9 @@ export function buildTimberFrame(
     for (const sx of [-1, 1]) {
       add(
         beamBetween(
-          [sx * (w / 2 - 0.18), eaveY - 1.1, z + Math.sign(z) * 0.01],
-          [sx * (w / 2 - 1.02), eaveY - 0.22, z + Math.sign(z) * 0.01],
-          0.14,
+          [sx * (w / 2 - 0.16), eaveY - 0.78, z + Math.sign(z) * 0.01],
+          [sx * (w / 2 - 0.68), eaveY - 0.2, z + Math.sign(z) * 0.01],
+          0.13,
           0.1,
           materials.timber,
         ),
@@ -1160,14 +1183,41 @@ export function buildTimberFrame(
 
   for (const x of [-w / 2 - 0.05, w / 2 + 0.05]) {
     const isRightGableChimney = skipRightGableCenter && x > 0;
-    if (floorY && !hasStoneLower) beam(0.12, 0.2, d, x, floorY, 0, 0.012);
-    beam(0.12, 0.22, d, x, eaveY - 0.14, 0, 0.012);
+    const isLeftConservatory = x < 0 && !sideWinLeft && !hasStoneLower;
+    if (floorY && !hasStoneLower && !isLeftConservatory) {
+      if (isRightGableChimney) {
+        const halfChimZ = 0.84;
+        const segD = Math.max(0.4, d / 2 - halfChimZ);
+        for (const sz of [-1, 1]) {
+          beam(0.12, 0.2, segD, x, floorY, sz * (halfChimZ + segD / 2), 0.012);
+        }
+      } else {
+        beam(0.12, 0.2, d, x, floorY, 0, 0.012);
+      }
+    }
+    if (isRightGableChimney) {
+      const halfChimZ = 0.84;
+      const segD = Math.max(0.4, d / 2 - halfChimZ);
+      for (const sz of [-1, 1]) {
+        beam(0.12, 0.22, segD, x, eaveY - 0.14, sz * (halfChimZ + segD / 2), 0.012);
+      }
+    } else {
+      beam(0.12, 0.22, d, x, eaveY - 0.14, 0, 0.012);
+    }
 
     const postStart = hasStoneLower && floorY ? floorY : plinthH;
     const postH = eaveY - postStart;
-    const zPosts = isRightGableChimney ? [-d / 2 + 0.08, d / 2 - 0.08] : [-d / 2 + 0.08, d / 2 - 0.08, 0];
+    // Window-flanking studs at z = ±1.22 sit cleanly outside the blue window shutters ([-1.105, +1.105])
+    const zPosts = isRightGableChimney
+      ? [-d / 2 + 0.08, d / 2 - 0.08]
+      : [-d / 2 + 0.08, d / 2 - 0.08, -1.22, 1.22];
     for (const z of zPosts) {
-      beam(0.14, postH, 0.24, x, postStart + postH / 2, z, 0.012);
+      const isInnerStud = Math.abs(z) < d / 2 - 0.5;
+      const pStart = isLeftConservatory && isInnerStud ? Math.max(postStart, 3.56) : postStart;
+      const pH = eaveY - pStart;
+      if (pH > 0.2) {
+        beam(0.14, pH, isInnerStud ? 0.18 : 0.24, x, pStart + pH / 2, z, 0.012);
+      }
     }
 
     const rise = ridgeY - eaveY;
@@ -2294,6 +2344,8 @@ export function buildCoreShell(
     floorY,
     hasStoneLower: stoneLowerH > 0,
     skipRightGableCenter,
+    sideWinLeft,
+    upperWins,
   });
   buildMainGableRoof(add, materials, { w, d, eaveY: eaveY - 0.12, ridgeY, seed: seed + 20, skipFront });
   buildLanternUnit(add, materials, { x: 1.22, y: plinthH + 1.98, z: d / 2 });
@@ -2301,7 +2353,10 @@ export function buildCoreShell(
 
 /* ------------------------------------------------------------------ merging */
 
-export function mergeStatic(root, { outline = 0.018, materials = null } = {}) {
+export function mergeStatic(
+  root,
+  { outline = 0.018, materials = null, plinthH = null, eaveY = null } = {},
+) {
   root.updateMatrixWorld(true);
   const invRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
   const buckets = new Map();
@@ -2352,6 +2407,9 @@ export function mergeStatic(root, { outline = 0.018, materials = null } = {}) {
     outMesh.parent?.remove(outMesh);
   }
 
+  const rootEaveY = eaveY ?? root.userData?.eaveY ?? null;
+  const rootPlinthH = plinthH ?? root.userData?.plinthH ?? 0.55;
+
   for (const mesh of meshes) {
     const local = new THREE.Matrix4().multiplyMatrices(invRoot, mesh.matrixWorld);
     let geo = mesh.geometry.clone();
@@ -2373,6 +2431,49 @@ export function mergeStatic(root, { outline = 0.018, materials = null } = {}) {
       }
       geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     }
+
+    const targetMat = mesh.material.userData?.bucketMat || mesh.material;
+    const meshEaveY = mesh.userData?.eaveY ?? rootEaveY;
+    const meshPlinthH = mesh.userData?.plinthH ?? rootPlinthH;
+    const isUnlitBasic = mesh.material?.toneMapped === false || targetMat?.toneMapped === false;
+
+    if (meshEaveY !== null && !mesh.userData?.aoBaked && !isUnlitBasic) {
+      const posAttr = geo.attributes.position;
+      const colAttr = geo.attributes.color;
+      const eaveStart = meshEaveY - 0.55;
+      const groundTop = meshPlinthH + 0.45; // 1.0m when plinthH = 0.55
+
+      for (let i = 0; i < vCount; i++) {
+        const vy = posAttr.getY(i);
+        let r = colAttr.getX(i);
+        let g = colAttr.getY(i);
+        let b = colAttr.getZ(i);
+
+        // Top 0.55m below roof eaves (eaveY - 0.55 .. eaveY): warm 18% shadow gradient
+        // darkening vertex RGB smoothly down to ~0.82 at the eave line with warm umber tint [0.80, 0.78, 0.74]
+        if (vy >= eaveStart && vy <= meshEaveY + 0.28) {
+          const u = THREE.MathUtils.clamp((vy - eaveStart) / 0.55, 0, 1);
+          const tEave = u * u * (3 - 2 * u);
+          r *= 1 - tEave * 0.2;
+          g *= 1 - tEave * 0.22;
+          b *= 1 - tEave * 0.26;
+        }
+
+        // Bottom 0.45m above ground/foundation (0.0 .. 1.0m): 15% ground-contact AO gradient
+        // darkening vertex RGB smoothly down to 0.85 at the base
+        if (vy <= groundTop) {
+          const u = THREE.MathUtils.clamp((groundTop - vy) / 0.45, 0, 1);
+          const tGround = u * u * (3 - 2 * u);
+          r *= 1 - tGround * 0.15;
+          g *= 1 - tGround * 0.15;
+          b *= 1 - tGround * 0.16;
+        }
+
+        colAttr.setXYZ(i, r, g, b);
+      }
+      colAttr.needsUpdate = true;
+    }
+
     for (const k of Object.keys(geo.attributes)) {
       if (k !== 'position' && k !== 'normal' && k !== 'uv' && k !== 'color') {
         geo.deleteAttribute(k);
@@ -2389,7 +2490,6 @@ export function mergeStatic(root, { outline = 0.018, materials = null } = {}) {
       outlineGeos.push(oGeo);
     }
 
-    const targetMat = mesh.material.userData?.bucketMat || mesh.material;
     const key = targetMat.uuid;
     let bucket = buckets.get(key);
     if (!bucket) {
@@ -2411,6 +2511,7 @@ export function mergeStatic(root, { outline = 0.018, materials = null } = {}) {
     mergedMesh.castShadow = bucket.cast;
     mergedMesh.receiveShadow = bucket.receive;
     mergedMesh.name = 'merged';
+    if (rootEaveY !== null) mergedMesh.userData.aoBaked = true;
     root.add(mergedMesh);
   }
 

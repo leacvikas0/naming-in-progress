@@ -64,6 +64,47 @@ async function main() {
       `${type}: invalid collider half-extents (${built.collider.halfW}, ${built.collider.halfD})`,
     );
 
+    assert(
+      Array.isArray(built.wingColliders) && built.wingColliders.length === 2,
+      `${type}: expected 2 wingColliders, got ${built.wingColliders?.length}`,
+    );
+    assert(
+      Array.isArray(built.colliders) && built.colliders.length === 3,
+      `${type}: expected 3 total colliders (1 main + 2 wings), got ${built.colliders?.length}`,
+    );
+
+    // Verify rotated world-space wing OBB coordinates using village spec (non-zero x, z, rotY)
+    const rotatedBuilt = kit.buildVillageBuilding(type, spec);
+    for (const wc of rotatedBuilt.wingColliders) {
+      assert(wc.type === 'obb', `${type}: wing collider ${wc.id} must have type === 'obb'`);
+      assert(wc.hx > 0.5 && wc.hz > 0.5, `${type}: wing collider ${wc.id} invalid hx/hz`);
+      const expWx = (spec.x ?? 0) + wc.localX * Math.cos(spec.rotY) + wc.localZ * Math.sin(spec.rotY);
+      const expWz = (spec.z ?? 0) - wc.localX * Math.sin(spec.rotY) + wc.localZ * Math.cos(spec.rotY);
+      assert(
+        Math.abs(wc.x - expWx) < 1e-6 && Math.abs(wc.z - expWz) < 1e-6,
+        `${type}: wing collider ${wc.id} world pos mismatch: got (${wc.x}, ${wc.z}), expected (${expWx}, ${expWz})`,
+      );
+    }
+
+    // Verify baked vertex-color eave shadow & ground AO on static meshes
+    let hasGroundAO = false;
+    let hasEaveShadow = false;
+    const eaveY = 0.55 + spec.wallH;
+    built.group.traverse((obj) => {
+      if (!obj.isMesh || obj.isInstancedMesh || obj.userData.isOutline) return;
+      const pos = obj.geometry.attributes.position;
+      const col = obj.geometry.attributes.color;
+      if (!pos || !col) return;
+      for (let i = 0; i < pos.count; i++) {
+        const vy = pos.getY(i);
+        const r = col.getX(i);
+        if (vy <= 0.6 && r <= 0.88) hasGroundAO = true;
+        if (Math.abs(vy - eaveY) < 0.15 && r <= 0.85) hasEaveShadow = true;
+      }
+    });
+    assert(hasGroundAO, `${type}: missing ground-contact AO vertex colors near base`);
+    assert(hasEaveShadow, `${type}: missing eave-shadow vertex colors near eaveY=${eaveY}`);
+
     built.group.updateMatrixWorld(true);
     const bbox = new THREE.Box3().setFromObject(built.group);
     const minPlinthY = type === 'watermill' ? -2.5 : -1.4;
@@ -85,6 +126,13 @@ async function main() {
     perBuildingSummary[type] = {
       doorLocalX: built.doorWorldOffset.localX,
       doorLocalZ: built.doorWorldOffset.localZ,
+      wingColliders: rotatedBuilt.wingColliders.map((w) => ({
+        id: w.id,
+        localX: Number(w.localX.toFixed(2)),
+        localZ: Number(w.localZ.toFixed(2)),
+        hx: w.hx,
+        hz: w.hz,
+      })),
       minY: Number(bbox.min.y.toFixed(3)),
       maxY: Number(bbox.max.y.toFixed(3)),
       widthX: Number((bbox.max.x - bbox.min.x).toFixed(2)),
@@ -101,8 +149,12 @@ async function main() {
   const lineupStats = countGeometryStats(lineup.group);
 
   assert(
-    lineupStats.meshNodes <= 16,
-    `Lineup mesh/draw-call nodes (${lineupStats.meshNodes}) exceeds max 16`,
+    Array.isArray(lineup.colliders) && lineup.colliders.length === 15,
+    `Expected 15 total colliders (5 main + 10 wing OBBs) in buildAllVillageBuildings, got ${lineup.colliders?.length}`,
+  );
+  assert(
+    lineupStats.meshNodes <= 15,
+    `Lineup mesh/draw-call nodes (${lineupStats.meshNodes}) exceeds max 15`,
   );
   assert(
     lineupStats.triangles <= 48000,
@@ -137,8 +189,8 @@ async function main() {
     `Expected 0 console errors in pass2, got: ${JSON.stringify(report.consoleErrors)}`,
   );
   assert(
-    report.budget.actualLineupDrawCalls <= 16,
-    `WebGL lineup draw calls (${report.budget.actualLineupDrawCalls}) > 16`,
+    report.budget.actualLineupDrawCalls <= 15,
+    `WebGL lineup draw calls (${report.budget.actualLineupDrawCalls}) > 15`,
   );
   assert(
     report.budget.actualLineupTriangles <= 48000,
@@ -148,6 +200,12 @@ async function main() {
   const expectedShots = [
     'inn-3q',
     'inn-front',
+    'inn-right-90',
+    'inn-rear-180',
+    'inn-left-270',
+    'inn-overhead',
+    'window-closeup-front',
+    'window-closeup-side',
     'herbalist-3q',
     'smithy-3q',
     'gardener-3q',
@@ -168,6 +226,7 @@ async function main() {
         status: 'PASS',
         lineupDrawCalls: report.budget.actualLineupDrawCalls,
         lineupTriangles: report.budget.actualLineupTriangles,
+        totalColliders: lineup.colliders.length,
         consoleErrors: report.consoleErrors.length,
         buildings: perBuildingSummary,
       },

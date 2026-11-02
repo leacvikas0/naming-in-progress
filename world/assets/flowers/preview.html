@@ -111,7 +111,7 @@
   <div id="hud-top">
     <div class="card">
       <div class="title" id="mode-title">Haru-machi · Botanical &amp; Toroidal Meadow Studio</div>
-      <div class="sub">3-Tone Gouache Cel Shader · Zero Textures · 1 Toroidal Grass + 5 Static Flower InstancedMeshes (6 Draw Calls)</div>
+      <div class="sub">3-Tone Gouache Cel Shader · 14-Tri Multi-Clump Grass · 4-Tap Golden-Angle Relocation · Crimson Rose Sacred Rings (7 Draw Calls)</div>
     </div>
     <div class="card">
       <div id="stats-pill">Initializing...</div>
@@ -122,6 +122,7 @@
     <button data-mode="species-sheet">Species Sheet</button>
     <button data-mode="meadow-drift">Meadow Drift</button>
     <button data-mode="grassTuft">grassTuft</button>
+    <button data-mode="crimsonRose">crimsonRose</button>
     <button data-mode="bellflower">bellflower</button>
     <button data-mode="daisy">daisy</button>
     <button data-mode="lupine">lupine</button>
@@ -145,7 +146,15 @@
     renderer.autoClear = false;
 
     const pack = createBotanicalPack();
-    const speciesOrder = ['grassTuft', 'bellflower', 'daisy', 'lupine', 'cosmos', 'toonShrub'];
+    const speciesOrder = [
+      'grassTuft',
+      'crimsonRose',
+      'bellflower',
+      'daisy',
+      'lupine',
+      'cosmos',
+      'toonShrub',
+    ];
 
     // Build individual studio stage scenes (each with grounded turf plinth disc)
     const studioStages = {};
@@ -156,21 +165,27 @@
 
       const box = pack.geometries[key].boundingBox;
       const h = box.max.y - box.min.y;
-      const r = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * 0.68;
+      const spanXZ = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
+      const r = spanXZ * 0.62;
 
-      const discGeo = new THREE.CylinderGeometry(r * 1.35, r * 1.45, 0.024, 24);
+      const discGeo = new THREE.CylinderGeometry(r * 1.28, r * 1.36, 0.024, 28);
       discGeo.translate(0, -0.012, 0);
       const discMat = new THREE.MeshBasicMaterial({ color: 0x3b7a34 });
       const disc = new THREE.Mesh(discGeo, discMat);
       sc.add(disc);
 
-      const ringGeo = new THREE.RingGeometry(r * 1.33, r * 1.46, 24);
+      const ringGeo = new THREE.RingGeometry(r * 1.26, r * 1.37, 28);
       ringGeo.rotateX(-Math.PI / 2);
       ringGeo.translate(0, 0.001, 0);
       const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x67b346, side: THREE.DoubleSide }));
       sc.add(ring);
 
-      studioStages[key] = { scene: sc, mesh, centerY: h * 0.48, radius: Math.max(h * 0.74, r * 1.16) };
+      studioStages[key] = {
+        scene: sc,
+        mesh,
+        centerY: h * 0.46,
+        radius: Math.max(h * 0.78, r * 1.15),
+      };
     }
 
     // Build Meadow Drift showcase scene
@@ -188,11 +203,11 @@
     const tabletMeadow = createToroidalMeadow({ profile: 'tablet' });
     const desktopMeadow = createToroidalMeadow({ profile: 'desktop' });
 
-    const cam = new THREE.PerspectiveCamera(38, 1, 0.05, 250);
+    const cam = new THREE.PerspectiveCamera(38, 1, 0.05, 350);
     let currentMode = 'meadow-drift';
     let fpsSmoothed = 144;
     let lastFrameTime = performance.now();
-    let lastRenderCalls = 6;
+    let lastRenderCalls = 7;
     let lastRenderTris = 0;
 
     const overlay = document.getElementById('overlay-labels');
@@ -207,29 +222,32 @@
 
       if (speciesOrder.includes(mode)) {
         const st = pack.stats[mode];
-        titleEl.textContent = `${st.name} (${mode}) · Multi-Angle Studio Inspection`;
+        titleEl.textContent = `${st.name} (${mode}) · 360° Multi-Angle Studio Inspection`;
         overlay.innerHTML = `
-          <div class="vp-badge" style="left:20px; top:76px;">3/4 Hero Turntable <span>${st.triangles} / ${st.budget} tris</span></div>
-          <div class="vp-badge" style="left:63%; top:76px;">Front Elevation (y=0 Grounded)</div>
-          <div class="vp-badge" style="left:63%; top:52%;">Top-Down Radial Silhouette</div>
+          <div class="vp-badge" style="left:18px; top:74px;">3/4 Hero Turntable <span>${st.triangles} / ${st.budget} tris</span></div>
+          <div class="vp-badge" style="left:18px; top:56.5%;">Overhead (90° Top-Down Footprint)</div>
+          <div class="vp-badge" style="left:47.5%; top:74px;">0° Front Orbit (+Z)</div>
+          <div class="vp-badge" style="left:74.0%; top:74px;">90° Right Orbit (+X)</div>
+          <div class="vp-badge" style="left:47.5%; top:52.5%;">180° Rear Orbit (-Z)</div>
+          <div class="vp-badge" style="left:74.0%; top:52.5%;">270° Left Orbit (-X)</div>
         `;
       } else if (mode === 'species-sheet') {
-        titleEl.textContent = 'Botanical Pack · All 6 Vertex-Colored Species Sheet';
-        const cols = 3, rows = 2;
+        titleEl.textContent = 'Botanical Pack · All 7 Vertex-Colored Species Sheet (14-Tri Grass + Crimson Rose + 5 Wildflowers/Shrubs)';
+        const cols = 4, rows = 2;
         speciesOrder.forEach((key, idx) => {
           const c = idx % cols, r = Math.floor(idx / cols);
           const st = pack.stats[key];
           const badge = document.createElement('div');
           badge.className = 'vp-badge';
-          badge.style.left = `${(c * 100) / cols + 1.5}%`;
+          badge.style.left = `${(c * 100) / cols + 1.2}%`;
           badge.style.top = `${r === 0 ? 74 : window.innerHeight * 0.5 + 12}px`;
           badge.innerHTML = `${key} · ${st.name} <span>${st.triangles}/${st.budget} tris</span>`;
           overlay.appendChild(badge);
         });
       } else {
-        titleEl.textContent = 'Toroidal GPU Meadow Drift · 1 Toroidal Grass + 5 Static Wildflower Batches (6 Draw Calls)';
+        titleEl.textContent = 'Toroidal GPU Meadow · 14-Tri Multi-Clump Grass + 4-Tap Golden-Angle Relocation + Crimson Rose Rings';
         overlay.innerHTML = `
-          <div class="vp-badge" style="left:20px; top:76px;">uWorldMask.b &lt; 0.5 Winding Path Exclusion <span>${driftDemo.meadow.drawCalls} Meadow Draw Calls</span></div>
+          <div class="vp-badge" style="left:20px; top:76px;">4-Tap Golden-Angle Road Relocation + Crimson Rose Sacred Ring <span>${driftDemo.meadow.drawCalls} Meadow Draw Calls</span></div>
         `;
       }
     }
@@ -257,35 +275,58 @@
         const st = studioStages[currentMode];
         const R = st.radius;
         const cy = st.centerY;
-        const leftW = Math.floor(W * 0.61);
+        const leftW = Math.floor(W * 0.46);
         const rightW = W - leftW;
+        const cellW = Math.floor(rightW * 0.5);
         const halfH = Math.floor(H * 0.5);
+        const botLeftH = Math.floor(H * 0.45);
+        const topLeftH = H - botLeftH;
+        const orbitDist = R * 3.15;
+        const orbitY = cy * 1.12 + R * 0.36;
 
-        // 1. Main 3/4 Hero View
+        // 1. Top-Left: 3/4 Hero View
         renderViewport(
-          st.scene, 0, 0, leftW, H,
-          [R * 2.15, cy + R * 1.15, R * 2.38],
-          [0, cy * 0.96, 0],
+          st.scene, 0, botLeftH, leftW, topLeftH,
+          [R * 2.05, cy + R * 1.18, R * 2.28],
+          [0, cy * 0.95, 0],
           0xe7f0f8, 35
         );
-        // 2. Top-Right: Front Elevation (with generous headroom above tallest tips)
+        // 2. Bottom-Left: Overhead (90° Top-Down)
         renderViewport(
-          st.scene, leftW, halfH, rightW, H - halfH,
-          [0, cy * 1.04, R * 3.55],
-          [0, cy * 1.02, 0],
-          0xdfe9f3, 35
-        );
-        // 3. Bottom-Right: Top-Down View
-        renderViewport(
-          st.scene, leftW, 0, rightW, halfH,
-          [0.01, R * 3.20, 0.08],
+          st.scene, 0, 0, leftW, botLeftH,
+          [0.01, R * 3.25, 0.06],
           [0, 0, 0],
           0xd8e4f0, 34
+        );
+        // 3. Right Grid (0° Front, 90° Right, 180° Rear, 270° Left)
+        renderViewport(
+          st.scene, leftW, halfH, cellW, H - halfH,
+          [0, orbitY, orbitDist],
+          [0, cy, 0],
+          0xdfe9f3, 35
+        );
+        renderViewport(
+          st.scene, leftW + cellW, halfH, rightW - cellW, H - halfH,
+          [orbitDist, orbitY, 0],
+          [0, cy, 0],
+          0xe4eef7, 35
+        );
+        renderViewport(
+          st.scene, leftW, 0, cellW, halfH,
+          [0, orbitY, -orbitDist],
+          [0, cy, 0],
+          0xe4eef7, 35
+        );
+        renderViewport(
+          st.scene, leftW + cellW, 0, rightW - cellW, halfH,
+          [-orbitDist, orbitY, 0],
+          [0, cy, 0],
+          0xdfe9f3, 35
         );
         lastRenderCalls = 1;
         lastRenderTris = pack.stats[currentMode].triangles;
       } else if (currentMode === 'species-sheet') {
-        const cols = 3, rows = 2;
+        const cols = 4, rows = 2;
         const cellW = Math.floor(W / cols), cellH = Math.floor(H / rows);
         let sumTris = 0;
         speciesOrder.forEach((key, idx) => {
@@ -303,7 +344,15 @@
           );
           sumTris += pack.stats[key].triangles;
         });
-        lastRenderCalls = 6;
+        // 8th cell (bottom-right): Meadow Drift preview
+        renderViewport(
+          meadowScene, 3 * cellW, 0, W - 3 * cellW, cellH,
+          [2.4, 2.3, 9.2],
+          [0.0, 0.35, -1.5],
+          0xcbe5fa,
+          42
+        );
+        lastRenderCalls = 7;
         lastRenderTris = sumTris;
       } else {
         renderer.setViewport(0, 0, W, H);
@@ -312,11 +361,11 @@
         renderer.clear();
         cam.fov = 44;
         cam.aspect = W / H;
-        cam.position.set(1.8, 2.25, 13.5);
-        cam.lookAt(-0.4, 0.55, -6.0);
+        cam.position.set(1.9, 2.15, 11.2);
+        cam.lookAt(-0.2, 0.45, -3.5);
         cam.updateProjectionMatrix();
         renderer.render(meadowScene, cam);
-        lastRenderCalls = driftDemo.meadow.drawCalls; // 6 meadow InstancedMesh draw calls
+        lastRenderCalls = driftDemo.meadow.drawCalls; // 7 meadow InstancedMesh draw calls
         lastRenderTris = renderer.info.render.triangles;
       }
 
@@ -365,12 +414,14 @@
           profiles: {
             tablet: {
               drawCalls: tabletMeadow.drawCalls,
-              grassRadius: 42,
+              grassRadius: 58,
+              flowerRadius: 145,
               instanceCounts: tabletMeadow.instanceCounts,
             },
             desktop: {
               drawCalls: desktopMeadow.drawCalls,
-              grassRadius: 56,
+              grassRadius: 76,
+              flowerRadius: 155,
               instanceCounts: desktopMeadow.instanceCounts,
             },
           },

@@ -2,9 +2,15 @@ import * as THREE from 'three';
 import {
   PLAY_BOUNDARY_RADIUS,
   INNER_EXTENT,
+  TERRAIN_SIZE,
   OUTER_EXTENT,
   WORLD_SIZE,
   ZONES,
+  PATROL_CLEARINGS,
+  INSCRIPTION_STONES,
+  BOULDERS,
+  DRY_STONE_WALLS,
+  ROADSIDE_FENCES,
   BUILDINGS,
   BUILDING_LIST,
   BUILDINGS_BY_ID,
@@ -28,18 +34,30 @@ import {
   makeToonGradient,
   makeOutlineMaterial,
   batchVertexColorGroup,
+  bakeWorldDataTextures,
   buildTreeShadowUniformArray,
   buildTerrainAndWater,
 } from './terrain-water.js';
 import { buildLandmarks } from './landmarks.js';
-import { buildBotanicalTrees } from './trees.js';
+import {
+  buildBotanicalTrees,
+  buildSingleTreeGeometry,
+  buildWisteriaTree,
+  buildShrineTree,
+} from './trees.js';
 
 export {
   PLAY_BOUNDARY_RADIUS,
   INNER_EXTENT,
+  TERRAIN_SIZE,
   OUTER_EXTENT,
   WORLD_SIZE,
   ZONES,
+  PATROL_CLEARINGS,
+  INSCRIPTION_STONES,
+  BOULDERS,
+  DRY_STONE_WALLS,
+  ROADSIDE_FENCES,
   BUILDINGS,
   BUILDING_LIST,
   BUILDINGS_BY_ID,
@@ -58,6 +76,7 @@ export {
   heightAt,
   sampleWorld,
   createWorldMaskTexture,
+  bakeWorldDataTextures,
   makeToonGradient,
   makeOutlineMaterial,
   batchVertexColorGroup,
@@ -65,18 +84,14 @@ export {
   buildTerrainAndWater,
   buildLandmarks,
   buildBotanicalTrees,
+  buildSingleTreeGeometry,
+  buildWisteriaTree,
+  buildShrineTree,
 };
 
 /**
- * Assembles the complete Haru-machi v7 Terrain, Water, Landmarks & Botanical Trees asset kit
+ * Assembles the complete Haru-machi Wave 1C Terrain, Water, Landmarks, Boulders & Volumetric 3D Trees kit
  * (`world/assets/terrain/index.js`).
- *
- * Engineered for a locked 144 FPS within `< 55,000` total triangles and `<= 22` total draw calls:
- * - 4x4 Frustum-Culled Terrain Chunks (`70m x 70m` at `36x36` segs = 2,592 tris/chunk, 41,472 tris total)
- * - Low-Poly Outer Valley Skirt (`40x40` grid with inner `±140m` hole omitted = 2,552 tris) + Alpine Horizon Ring
- * - Fast `512x512` `uWorldMask` DataTexture (`< 30ms` CPU generation) + Gouache Terrain Shader
- * - Merged v7 Landmarks (`landmarks.js` <= 5 draw calls)
- * - Merged Botanical Hero & Valley Trees (`trees.js` <= 2 draw calls, <= 1,200 tris/hero tree)
  */
 export function createTerrainAndLandmarks(renderer, opts = {}) {
   const root = new THREE.Group();

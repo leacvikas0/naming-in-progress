@@ -1,25 +1,29 @@
 import * as THREE from 'three';
 
 /**
- * Haru-machi v7 Expanded Valley & Toroidal Map Geography (`world/assets/terrain/geography.js`).
+ * Haru-machi Wave 1C Expanded Valley & Toroidal Map Geography (`world/assets/terrain/geography.js`).
  *
- * Synchronized 100% with `world/src/blockout/geography.js` (v7):
- * - `PLAY_BOUNDARY_RADIUS = 125`
- * - `INNER_EXTENT = 140` (`280m × 280m` inner playable valley, `-140..+140`)
- * - `WORLD_SIZE = 640` (`640m × 640m` outer valley & mountain skirt, `-320..+320`)
+ * - `PLAY_BOUNDARY_RADIUS = 165`
+ * - `INNER_EXTENT = 170` (`340m × 340m` inner playable valley, `-170..+170`)
+ * - `OUTER_EXTENT = 360`, `WORLD_SIZE = 720` (`720m × 720m` outer valley & mountain skirt, `-360..+360`)
  * - `ZONES.hamlet` at `(0, 0, y = 0.0)`, `r = 10.5m` ring road, 4 inward-facing cottages
  * - `ZONES.millpond` at `(-62, 6, waterY = -1.2, bedY = -3.0, rx = 28, rz = 36)`,
  *   `watermill` at `(-44.0, -18.0, y = 0.3, rotY = 0.42)`, `waterfall` at `(-51.4, -20.8, topY = 5.2, bottomY = -1.2)`,
- *   `pier` at `xStart = -35.5, xEnd = -52.0, z = 8.5, y = -0.35`
- * - `ZONES.arena` at `(68, -4, y = 0.6, fenceR = 19.5)` with 3 Wisteria hero trees >= 3.8m outside the fence
+ *   `pier` at `xStart = -35.5, xEnd = -52.0, z = 8.5, y = -0.35`, plus shallow wading sandbar/causeway to `(-42, 18)`
+ * - `ZONES.arena` at `(68, -4, y = 0.6, fenceR = 19.5)` with Wisteria hero trees >= 5.0m outside the fence
  * - `ZONES.shrine` at `(0.0, -86.0, y = 8.0, platformR = 14.5)` at top of 56-step axial staircase (`z = -15.0 -> -71.5`),
  *   Romanesque Stone Archway at `(0.0, -93.5)`, and raised stone planters at `(±10.6, -90.8)`
+ * - `ZONES.flowerLobby` at `(0.0, 128.0, y = 1.6, innerR = 22.0, outerR = 34.0)` connected by winding
+ *   `~110m` country dirt road (`id: 'south_flower_road'`) with 2 flat roadside skeleton patrol clearings
+ *   at `(-14, 86)` and `(16, 52)` (`r = 10.5m`).
+ * - `INSCRIPTION_STONES` at Town Plaza `(0, -14)`, Lakeside Pier `(-42, 18)`, and Wisteria Grove `(44, 16)`.
  */
 
-export const PLAY_BOUNDARY_RADIUS = 125;
-export const INNER_EXTENT = 140; // 280m x 280m high-res chunked inner valley (-140..+140)
-export const OUTER_EXTENT = 320; // 640m x 640m outer mountain & valley skirt (-320..+320)
-export const WORLD_SIZE = 640;
+export const PLAY_BOUNDARY_RADIUS = 165;
+export const INNER_EXTENT = 170; // 340m x 340m high-res chunked inner valley (-170..+170)
+export const TERRAIN_SIZE = 340;
+export const OUTER_EXTENT = 360; // 720m x 720m outer mountain & valley skirt (-360..+360)
+export const WORLD_SIZE = 720;
 
 export function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
@@ -106,7 +110,64 @@ export const ZONES = {
     rx: 28,
     rz: 36,
   },
+  flowerLobby: {
+    id: 'flowerLobby',
+    name: 'Zone E · Southern Flower Field Lobby',
+    x: 0.0,
+    z: 128.0,
+    y: 1.6,
+    innerR: 22.0,
+    outerR: 34.0,
+  },
 };
+
+export const PATROL_CLEARINGS = [
+  {
+    id: 'clearing_south_east',
+    name: 'Lower Roadside Patrol Clearing',
+    x: 16.0,
+    z: 52.0,
+    y: 0.55,
+    r: 10.5,
+    outerR: 15.5,
+  },
+  {
+    id: 'clearing_south_west',
+    name: 'Upper Roadside Patrol Clearing',
+    x: -14.0,
+    z: 86.0,
+    y: 1.05,
+    r: 10.5,
+    outerR: 15.5,
+  },
+];
+
+export const INSCRIPTION_STONES = [
+  {
+    id: 'stone_plaza',
+    name: 'Town Plaza Sacred Inscription Stone',
+    x: 0.0,
+    z: -14.0,
+    y: 0.0,
+    rotY: 0.0,
+  },
+  {
+    id: 'stone_pier',
+    name: 'Lakeside Pier Sacred Inscription Stone',
+    x: -42.0,
+    z: 18.0,
+    y: -1.08,
+    rotY: 0.48,
+  },
+  {
+    id: 'stone_grove',
+    name: 'Wisteria Grove Sacred Inscription Stone',
+    x: 44.0,
+    z: 16.0,
+    y: 0.42,
+    rotY: -0.38,
+  },
+];
 
 export function getBuildingDoorWorldPos(b, offsetFromFrontWall = 1.35) {
   const dist = b.d * 0.5 + offsetFromFrontWall;
@@ -291,16 +352,21 @@ export const ROADS = [
     points: RING_PTS,
   },
   {
-    id: 'south_approach',
-    name: 'South Valley Approach',
-    width: 4.5,
+    id: 'south_flower_road',
+    name: 'Southern Flower Field Country Road',
+    width: 4.4,
     surface: 'dirt',
     points: [
-      [0, 105],
-      [1.4, 78],
-      [-0.8, 52],
-      [0.4, 28],
-      [0, RING_RADIUS],
+      [0.0, 128.0],
+      [0.0, 122.0],
+      [-3.2, 109.0],
+      [-6.0, 96.0],
+      [-1.5, 82.0],
+      [10.0, 68.0],
+      [2.0, 55.0],
+      [-8.0, 42.0],
+      [-3.8, 26.0],
+      [0.0, RING_RADIUS],
     ],
   },
   {
@@ -314,6 +380,18 @@ export const ROADS = [
       [-26.5, 7.2],
       [-31.5, 8.5],
       [-35.5, 8.5],
+    ],
+  },
+  {
+    id: 'pier_stone_causeway',
+    name: 'Lakeside Sacred Stone Causeway',
+    width: 3.2,
+    surface: 'cobble',
+    points: [
+      [-33.2, 9.8],
+      [-35.8, 13.8],
+      [-39.2, 16.4],
+      [-42.0, 18.0],
     ],
   },
   {
@@ -339,6 +417,17 @@ export const ROADS = [
       [23.0, -1.8],
       [36.0, -3.2],
       [48.5, -4.0],
+    ],
+  },
+  {
+    id: 'wisteria_grove_path',
+    name: 'Sacred Wisteria Grove Trail',
+    width: 3.2,
+    surface: 'dirt',
+    points: [
+      [36.0, -3.2],
+      [40.2, 6.5],
+      [44.0, 16.0],
     ],
   },
   {
@@ -449,11 +538,13 @@ export const LANDMARKS = {
     span: 6.2,
     height: 5.8,
   },
+  inscriptionStones: INSCRIPTION_STONES,
+  patrolClearings: PATROL_CLEARINGS,
 };
 
-// All 48 trees verified for >= 5.0m clearance from arena fence (r=19.5 around (68,-4)),
-// >= 4.5m clearance from all roads/stairs, and zero overlap with rocks, buildings, or shrine lookback vista.
-// Arranged in natural 2-to-4 tree woodland groves with mixed scales (0.88..1.40) and canopy variants (0..2).
+// All 68 trees verified for >= 5.0m clearance from arena fence (r=19.5 around (68,-4)),
+// >= 4.5m clearance from all roads/stairs, >= 13.5m from patrol clearing centers,
+// >= 25.0m from Southern Flower Field Lobby center (0, 128), and zero overlap with rocks or buildings.
 export const TREES = [
   // Shrine Planter Guardians (2 Hero Trees in Raised Stone Planters)
   { id: 'wisteria_shrine',  kind: 'wisteria', variant: 0, x: 10.6,  z: -90.8, scale: 1.22, hasPlanter: true, label: 'Shrine Guardian Wisteria' },
@@ -495,28 +586,29 @@ export const TREES = [
   { kind: 'sakura',   variant: 1, x: 50.5,  z: -31.0, scale: 1.02 },
   { kind: 'oak',      variant: 2, x: 38.5,  z: -33.0, scale: 0.90 },
 
-  // Grove 8: East-Southeast Meadow Grove (3 trees)
-  { kind: 'oak',      variant: 1, x: 35.5,  z: 22.5,  scale: 1.22 },
-  { kind: 'sakura',   variant: 0, x: 43.5,  z: 27.5,  scale: 1.05 },
-  { kind: 'oak',      variant: 2, x: 51.5,  z: 21.5,  scale: 0.92 },
+  // Grove 8: Sacred Wisteria Grove around Stone (44, 16) (4 trees)
+  { id: 'wisteria_grove_n', kind: 'wisteria', variant: 0, x: 36.5,  z: 14.8,  scale: 1.26, label: 'Sacred Grove North Wisteria' },
+  { id: 'wisteria_grove_e', kind: 'wisteria', variant: 1, x: 52.4,  z: 17.2,  scale: 1.36, label: 'Sacred Grove East Wisteria' },
+  { id: 'wisteria_grove_s', kind: 'wisteria', variant: 2, x: 42.5,  z: 24.2,  scale: 1.26, label: 'Sacred Grove South Wisteria' },
+  { kind: 'sakura',   variant: 0, x: 34.8,  z: 21.8,  scale: 1.08 },
 
   // Grove 9: South-West Hamlet Approach Woodland Grove (4 trees)
   { kind: 'oak',      variant: 0, x: -26.0, z: 31.0,  scale: 1.24 },
-  { kind: 'sakura',   variant: 1, x: -18.5, z: 36.5,  scale: 1.04 },
-  { kind: 'oak',      variant: 2, x: -14.5, z: 47.5,  scale: 1.15 },
-  { kind: 'oak',      variant: 0, x: -23.5, z: 53.0,  scale: 0.94 },
+  { kind: 'sakura',   variant: 1, x: -19.5, z: 36.5,  scale: 1.04 },
+  { kind: 'wisteria', variant: 2, x: -21.0, z: 46.5,  scale: 1.18 },
+  { kind: 'oak',      variant: 0, x: -26.5, z: 54.0,  scale: 0.96 },
 
-  // Grove 10: South-East Hamlet Approach Woodland Grove (4 trees)
+  // Grove 10: South-East Hamlet Approach & Patrol Clearing Perimeter Grove (4 trees)
   { kind: 'oak',      variant: 0, x: 25.0,  z: 30.0,  scale: 1.20 },
-  { kind: 'sakura',   variant: 2, x: 17.5,  z: 37.5,  scale: 1.02 },
-  { kind: 'oak',      variant: 1, x: 15.5,  z: 48.0,  scale: 1.16 },
-  { kind: 'oak',      variant: 0, x: 24.5,  z: 54.5,  scale: 0.92 },
+  { kind: 'sakura',   variant: 2, x: 18.5,  z: 36.5,  scale: 1.04 },
+  { kind: 'wisteria', variant: 1, x: 30.5,  z: 49.0,  scale: 1.22 },
+  { kind: 'oak',      variant: 0, x: 28.5,  z: 60.5,  scale: 1.06 },
 
-  // Grove 11: Far South Valley Entrance Groves (4 trees)
-  { kind: 'oak',      variant: 1, x: -16.5, z: 78.0,  scale: 1.22 },
-  { kind: 'sakura',   variant: 0, x: -24.5, z: 84.5,  scale: 1.05 },
-  { kind: 'oak',      variant: 0, x: 18.0,  z: 76.5,  scale: 1.20 },
-  { kind: 'sakura',   variant: 2, x: 26.0,  z: 83.0,  scale: 1.02 },
+  // Grove 11: Mid-South Valley & Upper Patrol Clearing Perimeter Groves (4 trees)
+  { kind: 'oak',      variant: 1, x: -28.5, z: 78.0,  scale: 1.22 },
+  { kind: 'wisteria', variant: 0, x: -27.5, z: 92.5,  scale: 1.26 },
+  { kind: 'oak',      variant: 0, x: 14.5,  z: 80.0,  scale: 1.20 },
+  { kind: 'sakura',   variant: 2, x: 20.5,  z: 91.5,  scale: 1.08 },
 
   // Grove 12: West Lakeshore & Millpond Ridge Groves (5 trees)
   { kind: 'oak',      variant: 0, x: -94.0, z: -16.0, scale: 1.28 },
@@ -530,6 +622,125 @@ export const TREES = [
   { kind: 'wisteria', variant: 1, x: 22.0,  z: -86.5, scale: 1.16 },
   { kind: 'sakura',   variant: 0, x: 106.0, z: -16.5, scale: 1.24 },
   { kind: 'wisteria', variant: 1, x: 108.0, z: 8.5,   scale: 1.18 },
+
+  // Grove 14: Southern Country Road Approach Groves (4 trees)
+  { kind: 'wisteria', variant: 0, x: -21.5, z: 106.0, scale: 1.28 },
+  { kind: 'sakura',   variant: 1, x: -14.5, z: 112.5, scale: 1.12 },
+  { kind: 'oak',      variant: 2, x: 14.5,  z: 105.0, scale: 1.22 },
+  { kind: 'wisteria', variant: 1, x: 21.5,  z: 111.5, scale: 1.26 },
+
+  // Grove 15: Southern Flower Field Lobby West Wisteria Curtain Grove (5 trees, matching 01-title.png left)
+  { id: 'wisteria_lobby_w1', kind: 'wisteria', variant: 0, x: -25.5, z: 122.0, scale: 1.38, label: 'Flower Lobby West Hero Wisteria' },
+  { id: 'wisteria_lobby_w2', kind: 'wisteria', variant: 1, x: -27.0, z: 133.5, scale: 1.32, label: 'Flower Lobby SW Wisteria' },
+  { kind: 'sakura',   variant: 2, x: -22.5, z: 143.0, scale: 1.18 },
+  { kind: 'oak',      variant: 0, x: -35.5, z: 127.5, scale: 1.24 },
+  { kind: 'wisteria', variant: 2, x: -16.5, z: 149.5, scale: 1.24 },
+
+  // Grove 16: Southern Flower Field Lobby East Wisteria Curtain Grove (5 trees, matching 01-title.png right)
+  { id: 'wisteria_lobby_e1', kind: 'wisteria', variant: 0, x: 25.5,  z: 122.5, scale: 1.38, label: 'Flower Lobby East Hero Wisteria' },
+  { id: 'wisteria_lobby_e2', kind: 'wisteria', variant: 2, x: 27.0,  z: 134.0, scale: 1.30, label: 'Flower Lobby SE Wisteria' },
+  { kind: 'sakura',   variant: 1, x: 22.5,  z: 143.5, scale: 1.16 },
+  { kind: 'oak',      variant: 1, x: 35.5,  z: 128.0, scale: 1.22 },
+  { kind: 'wisteria', variant: 0, x: 16.5,  z: 149.5, scale: 1.24 },
+
+  // Grove 17: Southern Horizon Rim & Outer Meadow Groves (3 trees)
+  { id: 'wisteria_lobby_s',  kind: 'wisteria', variant: 1, x: 0.0,   z: 154.5, scale: 1.34, label: 'Flower Lobby South Crown Wisteria' },
+  { kind: 'sakura',   variant: 0, x: -46.0, z: 108.0, scale: 1.18 },
+  { kind: 'oak',      variant: 2, x: 46.0,  z: 106.0, scale: 1.20 },
+
+  // Grove 18: Lakeside South Shore & Causeway Overlook Grove (3 trees)
+  { id: 'wisteria_pier_s',   kind: 'wisteria', variant: 0, x: -31.5, z: 28.5,  scale: 1.26, label: 'Lakeside South Wisteria' },
+  { kind: 'sakura',   variant: 1, x: -42.5, z: 36.0,  scale: 1.14 },
+  { kind: 'oak',      variant: 0, x: -58.0, z: 46.0,  scale: 1.22 },
+];
+
+// 52 Multi-Faceted Chiseled Limestone Boulders (moss-topped, warm limestone sides, slate base AO)
+export const BOULDERS = [
+  // Group A: Southern Flower Field Lobby & Winding Country Road Bends (18 boulders)
+  { x: -8.5,  z: 118.5, rx: 1.45, ry: 1.05, rz: 1.25, rotY: 0.40, mossy: true },
+  { x: -10.2, z: 120.2, rx: 0.85, ry: 0.65, rz: 0.78, rotY: 1.10, mossy: false },
+  { x: 8.8,   z: 116.5, rx: 1.35, ry: 0.98, rz: 1.15, rotY: -0.50, mossy: true },
+  { x: 10.4,  z: 118.0, rx: 0.78, ry: 0.58, rz: 0.72, rotY: 0.20, mossy: false },
+  { x: -23.5, z: 116.0, rx: 1.85, ry: 1.35, rz: 1.55, rotY: 0.80, mossy: true },
+  { x: 23.5,  z: 117.0, rx: 1.75, ry: 1.28, rz: 1.48, rotY: -0.70, mossy: true },
+  { x: -24.0, z: 138.5, rx: 1.65, ry: 1.22, rz: 1.42, rotY: 0.30, mossy: true },
+  { x: 24.2,  z: 139.0, rx: 1.60, ry: 1.18, rz: 1.38, rotY: -0.40, mossy: true },
+  { x: -12.5, z: 101.5, rx: 1.50, ry: 1.10, rz: 1.30, rotY: 0.60, mossy: true },
+  { x: -14.2, z: 103.0, rx: 0.92, ry: 0.68, rz: 0.84, rotY: 1.40, mossy: false },
+  { x: 5.5,   z: 94.0,  rx: 1.38, ry: 0.96, rz: 1.18, rotY: -0.30, mossy: true },
+  { x: -25.8, z: 85.0,  rx: 1.72, ry: 1.26, rz: 1.48, rotY: 0.90, mossy: true },
+  { x: -9.5,  z: 73.5,  rx: 1.42, ry: 1.04, rz: 1.22, rotY: 0.20, mossy: true },
+  { x: 19.5,  z: 68.5,  rx: 1.65, ry: 1.20, rz: 1.40, rotY: -0.60, mossy: true },
+  { x: 27.8,  z: 51.5,  rx: 1.78, ry: 1.30, rz: 1.52, rotY: 0.50, mossy: true },
+  { x: -16.5, z: 41.5,  rx: 1.48, ry: 1.08, rz: 1.26, rotY: -0.80, mossy: true },
+  { x: 6.5,   z: 36.0,  rx: 1.32, ry: 0.94, rz: 1.14, rotY: 0.70, mossy: true },
+  { x: -10.5, z: 24.5,  rx: 1.22, ry: 0.88, rz: 1.05, rotY: -0.20, mossy: false },
+
+  // Group B: Lakeside Pier, Causeway & Millpond Banks (12 boulders)
+  { x: -36.2, z: 21.5,  rx: 1.35, ry: 0.95, rz: 1.18, rotY: 0.50, mossy: true },
+  { x: -33.8, z: 22.8,  rx: 1.28, ry: 0.92, rz: 1.10, rotY: -0.40, mossy: true },
+  { x: -31.5, z: 19.5,  rx: 1.55, ry: 1.12, rz: 1.35, rotY: 0.90, mossy: true },
+  { x: -29.0, z: 3.5,   rx: 1.25, ry: 0.90, rz: 1.08, rotY: 0.30, mossy: false },
+  { x: -34.0, z: -12.5, rx: 1.48, ry: 1.08, rz: 1.28, rotY: -0.60, mossy: true },
+  { x: -52.0, z: 34.5,  rx: 1.85, ry: 1.32, rz: 1.60, rotY: 0.70, mossy: true },
+  { x: -68.0, z: 41.0,  rx: 2.10, ry: 1.48, rz: 1.75, rotY: -0.30, mossy: true },
+  { x: -86.5, z: 26.0,  rx: 1.95, ry: 1.40, rz: 1.65, rotY: 0.40, mossy: true },
+  { x: -91.0, z: -2.0,  rx: 2.05, ry: 1.45, rz: 1.72, rotY: 1.10, mossy: true },
+  { x: -85.0, z: -22.0, rx: 1.80, ry: 1.30, rz: 1.55, rotY: -0.50, mossy: true },
+  { x: -64.0, z: -32.0, rx: 1.90, ry: 1.38, rz: 1.62, rotY: 0.20, mossy: true },
+  { x: -42.0, z: -28.5, rx: 1.52, ry: 1.10, rz: 1.30, rotY: -0.70, mossy: true },
+
+  // Group C: Northern Shrine Staircase Hillsides & Overlook Ridge (11 boulders)
+  { x: -8.5,  z: -22.5, rx: 1.38, ry: 1.02, rz: 1.18, rotY: 0.40, mossy: true },
+  { x: 8.5,   z: -24.0, rx: 1.42, ry: 1.05, rz: 1.22, rotY: -0.50, mossy: true },
+  { x: -9.8,  z: -38.5, rx: 1.62, ry: 1.18, rz: 1.38, rotY: 0.80, mossy: true },
+  { x: 10.2,  z: -41.0, rx: 1.58, ry: 1.15, rz: 1.35, rotY: -0.30, mossy: true },
+  { x: -11.0, z: -56.0, rx: 1.75, ry: 1.28, rz: 1.48, rotY: 0.20, mossy: true },
+  { x: 11.2,  z: -58.5, rx: 1.70, ry: 1.24, rz: 1.44, rotY: -0.70, mossy: true },
+  { x: -18.5, z: -76.0, rx: 1.88, ry: 1.36, rz: 1.60, rotY: 0.60, mossy: true },
+  { x: 18.5,  z: -76.5, rx: 1.85, ry: 1.34, rz: 1.58, rotY: -0.40, mossy: true },
+  { x: -16.5, z: -96.0, rx: 2.05, ry: 1.48, rz: 1.72, rotY: 0.90, mossy: true },
+  { x: 16.5,  z: -96.5, rx: 2.00, ry: 1.44, rz: 1.68, rotY: -0.80, mossy: true },
+  { x: 0.0,   z: -105.0, rx: 2.25, ry: 1.58, rz: 1.85, rotY: 0.10, mossy: true },
+
+  // Group D: East Arena Approach & Sacred Wisteria Grove Perimeter (11 boulders)
+  { x: 28.5,  z: 4.5,   rx: 1.35, ry: 0.98, rz: 1.15, rotY: 0.30, mossy: true },
+  { x: 34.0,  z: -10.5, rx: 1.45, ry: 1.06, rz: 1.24, rotY: -0.60, mossy: true },
+  { x: 38.2,  z: 19.5,  rx: 1.32, ry: 0.95, rz: 1.12, rotY: 0.50, mossy: true },
+  { x: 49.8,  z: 12.5,  rx: 1.40, ry: 1.02, rz: 1.20, rotY: -0.40, mossy: true },
+  { x: 48.2,  z: 22.0,  rx: 0.95, ry: 0.70, rz: 0.85, rotY: 1.00, mossy: false },
+  { x: 54.0,  z: -22.5, rx: 1.68, ry: 1.22, rz: 1.42, rotY: 0.70, mossy: true },
+  { x: 56.5,  z: 16.5,  rx: 1.62, ry: 1.18, rz: 1.38, rotY: -0.50, mossy: true },
+  { x: 86.0,  z: -24.0, rx: 1.85, ry: 1.34, rz: 1.56, rotY: 0.20, mossy: true },
+  { x: 88.5,  z: 18.0,  rx: 1.80, ry: 1.30, rz: 1.52, rotY: -0.80, mossy: true },
+  { x: 96.5,  z: -9.5,  rx: 1.95, ry: 1.42, rz: 1.65, rotY: 0.60, mossy: true },
+  { x: 95.0,  z: 9.5,   rx: 1.90, ry: 1.38, rz: 1.60, rotY: -0.30, mossy: true },
+];
+
+// 10 Coursed Chiseled Dry-Stone Country Wall Segments along Southern Road Bends & Hamlet Approaches
+export const DRY_STONE_WALLS = [
+  { id: 'wall_lobby_w',     x0: -5.8,  z0: 113.0, x1: -11.5, z1: 121.5, height: 0.86, thickness: 0.54 },
+  { id: 'wall_lobby_e',     x0: 5.8,   z0: 113.0, x1: 11.5,  z1: 121.5, height: 0.86, thickness: 0.54 },
+  { id: 'wall_south_up_w',  x0: -10.5, z0: 90.0,  x1: -9.2,  z1: 100.5, height: 0.82, thickness: 0.52 },
+  { id: 'wall_south_up_e',  x0: 3.5,   z0: 98.0,  x1: 4.8,   z1: 108.5, height: 0.82, thickness: 0.52 },
+  { id: 'wall_south_mid_e', x0: 14.5,  z0: 62.5,  x1: 13.8,  z1: 73.0,  height: 0.84, thickness: 0.52 },
+  { id: 'wall_south_low_w', x0: -12.5, z0: 36.5,  x1: -11.0, z1: 47.0,  height: 0.84, thickness: 0.52 },
+  { id: 'wall_hamlet_sw',   x0: -6.8,  z0: 21.0,  x1: -10.8, z1: 30.5,  height: 0.80, thickness: 0.50 },
+  { id: 'wall_hamlet_se',   x0: 4.8,   z0: 22.0,  x1: 2.2,   z1: 31.5,  height: 0.80, thickness: 0.50 },
+  { id: 'wall_mill_lane_n', x0: -16.5, z0: 1.0,   x1: -25.5, z1: 4.0,   height: 0.78, thickness: 0.48 },
+  { id: 'wall_arena_way_n', x0: 18.0,  z0: -4.2,  x1: 28.5,  z1: -5.4,  height: 0.78, thickness: 0.48 },
+];
+
+// 8 Wooden Split-Rail Timber Fence Segments framing the Southern Flower Field Approach & Pastures
+export const ROADSIDE_FENCES = [
+  { id: 'fence_lobby_nw', x0: -12.5, z0: 122.5, x1: -20.5, z1: 130.5, spans: 3 },
+  { id: 'fence_lobby_sw', x0: -20.5, z0: 130.5, x1: -18.5, z1: 141.0, spans: 3 },
+  { id: 'fence_lobby_ne', x0: 12.5,  z0: 122.5, x1: 20.5,  z1: 130.5, spans: 3 },
+  { id: 'fence_lobby_se', x0: 20.5,  z0: 130.5, x1: 18.5,  z1: 141.0, spans: 3 },
+  { id: 'fence_road_up_w', x0: -8.2, z0: 103.5, x1: -6.2,  z1: 112.0, spans: 2 },
+  { id: 'fence_road_up_e', x0: 5.2,  z0: 109.5, x1: 5.6,   z1: 118.0, spans: 2 },
+  { id: 'fence_clear_e_s', x0: 11.5, z0: 61.5,  x1: 21.5,  z1: 61.0,  spans: 3 },
+  { id: 'fence_clear_w_n', x0: -19.5, z0: 76.5, x1: -9.5,  z1: 76.0,  spans: 3 },
 ];
 
 export function roadDistanceAt(x, z) {
@@ -576,37 +787,37 @@ export function streamCenterX(z) {
 export function terrainHeightAt(x, z) {
   const distFromOrigin = Math.hypot(x, z);
 
-  // Outer valley basin rise & mountain ridge cradle beyond r = 88m
+  // Outer valley basin rise & mountain ridge cradle beyond r = 118m
   let rimLift = 0.0;
-  if (distFromOrigin > 88.0) {
+  if (distFromOrigin > 118.0) {
     const angle = Math.atan2(z, x);
     const ridgeWave =
-      distFromOrigin > 130.0
+      distFromOrigin > 165.0
         ? 0.65 +
           0.22 * Math.sin(angle * 5 + 0.6) +
           0.18 * Math.cos(angle * 7 - 0.4) +
           0.15 * (fbm2(x * 0.012, z * 0.012, 91) - 0.5)
         : 0.65;
     rimLift =
-      smoothstep(88, 155, distFromOrigin) * 8.5 +
-      smoothstep(130, 285, distFromOrigin) * 34.0 * ridgeWave;
+      smoothstep(118, 190, distFromOrigin) * 8.5 +
+      smoothstep(168, 330, distFromOrigin) * 36.0 * ridgeWave;
   }
 
-  // Keep south approach valley corridor gently open
+  // Keep south approach valley corridor gently open all the way to Flower Field Lobby (z = 128)
   const southGap =
-    z > 20 ? (1.0 - smoothstep(14, 42, Math.abs(x))) * smoothstep(20, 130, z) : 0.0;
+    z > 18 ? (1.0 - smoothstep(16, 46, Math.abs(x))) * smoothstep(18, 152, z) : 0.0;
 
   // Inside the flat Hamlet terrace (r <= 28m), skip 3-octave fbm2 undulation
   const dHamlet = distFromOrigin;
   const wHamlet = 1.0 - smoothstep(ZONES.hamlet.innerR, ZONES.hamlet.outerR, dHamlet);
   const undulation =
     wHamlet > 0.999 ? 0.0 : (fbm2(x * 0.018, z * 0.018, 42) - 0.5) * 2.4;
-  let h = (undulation + rimLift) * (1.0 - southGap * 0.65);
+  let h = (undulation + rimLift) * (1.0 - southGap * 0.72);
 
   // Northern Shrine ridge terrace (centered on x = 0.0, z = -86.0, y = 8.0)
-  if (z < -16.0 && Math.abs(x) < 75.0) {
+  if (z < -18.0 && Math.abs(x) < 75.0) {
     const northFactor =
-      smoothstep(-16, -72, z) * smoothstep(75, 24, Math.abs(x));
+      smoothstep(-18, -72, z) * smoothstep(75, 24, Math.abs(x));
     h = lerp(h, ZONES.shrine.y, northFactor);
   }
 
@@ -623,8 +834,8 @@ export function terrainHeightAt(x, z) {
   }
 
   // East foothills behind the Arena
-  if (x > 92.0) {
-    h += smoothstep(92, 135, x) * 7.5;
+  if (x > 96.0) {
+    h += smoothstep(96, 155, x) * 7.5;
   }
 
   // Zone A: Central Hamlet flat terrace (y = 0.0)
@@ -639,6 +850,15 @@ export function terrainHeightAt(x, z) {
     h = lerp(h, ZONES.arena.y, wArena);
   }
 
+  // Sacred Wisteria Grove Stone Terrace at (44.0, 16.0, y = 0.42)
+  if (x > 34.0 && x < 54.0 && z > 6.0 && z < 26.0) {
+    const dGroveStone = Math.hypot(x - 44.0, z - 16.0);
+    const wGroveStone = 1.0 - smoothstep(4.5, 8.5, dGroveStone);
+    if (wGroveStone > 0) {
+      h = lerp(h, 0.42, wGroveStone);
+    }
+  }
+
   // Zone D: Northern Shrine Overlook flat terrace (y = 8.0)
   if (z < -56.0 && Math.abs(x) < 32.0) {
     const dShrine = Math.hypot(x - ZONES.shrine.x, z - ZONES.shrine.z);
@@ -646,9 +866,30 @@ export function terrainHeightAt(x, z) {
     h = lerp(h, ZONES.shrine.y, wShrine);
   }
 
-  // Linearly graded ramp along x = 0.0 from z = -15.0 (y = 0.0) to z = -71.5 (y = 8.0)
-  if (z <= -13.0 && z >= -73.0 && Math.abs(x) < 18.0) {
-    const rampT = clamp((-15.0 - z) / (71.5 - 15.0), 0, 1);
+  // Zone E: Southern Flower Field Lobby plateau at (0, 128, y = 1.6, innerR = 22.0, outerR = 34.0)
+  if (z > 88.0 && z < 166.0 && Math.abs(x) < 38.0) {
+    const dLobby = Math.hypot(x - ZONES.flowerLobby.x, z - ZONES.flowerLobby.z);
+    const wLobby = 1.0 - smoothstep(ZONES.flowerLobby.innerR, ZONES.flowerLobby.outerR, dLobby);
+    if (wLobby > 0) {
+      h = lerp(h, ZONES.flowerLobby.y, wLobby);
+    }
+  }
+
+  // 2 Flat Roadside Skeleton Patrol Clearings at (16, 52) and (-14, 86) (r = 10.5m)
+  for (let i = 0; i < PATROL_CLEARINGS.length; i++) {
+    const pc = PATROL_CLEARINGS[i];
+    if (Math.abs(x - pc.x) < pc.outerR && Math.abs(z - pc.z) < pc.outerR) {
+      const dPc = Math.hypot(x - pc.x, z - pc.z);
+      const wPc = 1.0 - smoothstep(pc.r, pc.outerR, dPc);
+      if (wPc > 0) {
+        h = lerp(h, pc.y, wPc);
+      }
+    }
+  }
+
+  // Linearly graded ramp along x = 0.0 from z = -18.0 (y = 0.0) to z = -71.5 (y = 8.0)
+  if (z <= -17.5 && z >= -73.0 && Math.abs(x) < 18.0) {
+    const rampT = clamp((-18.0 - z) / (71.5 - 18.0), 0, 1);
     const rampY = lerp(0.0, ZONES.shrine.y, rampT);
     const pathLat = 1.0 - smoothstep(2.6, 15.0, Math.abs(x));
     h = lerp(h, rampY, pathLat);
@@ -726,6 +967,34 @@ export function terrainHeightAt(x, z) {
       const targetY = lerp(LANDMARKS.pier.y - 0.08, LANDMARKS.pier.y + 0.11, smoothstep(-35.5, -31.8, x));
       h = lerp(h, targetY, wLat * wLon);
     }
+
+    // Walkable Shallow Sandbar & Stone Causeway to Lakeside Pier Sacred Stone at (-42.0, 18.0)
+    // Connects shore (-33.0, 9.8) -> (-42.0, 18.0) with dry/ankle-deep elevation (y >= -1.36m, stone island at y = -1.08m)
+    if (x > -49.0 && x < -30.0 && z > 7.5 && z < 25.0) {
+      const ax = -33.0;
+      const az = 9.8;
+      const bx = -42.0;
+      const bz = 18.0;
+      const abx = bx - ax;
+      const abz = bz - az;
+      const tCauseway = clamp(((x - ax) * abx + (z - az) * abz) / (abx * abx + abz * abz), 0, 1);
+      const px = ax + abx * tCauseway;
+      const pz = az + abz * tCauseway;
+      const dCauseway = Math.hypot(x - px, z - pz);
+      const wCauseway = 1.0 - smoothstep(2.6, 5.4, dCauseway);
+      const causewayY = lerp(-0.55, -1.24, tCauseway);
+
+      const dIsland = Math.hypot(x - (-42.0), z - 18.0);
+      const wIsland = 1.0 - smoothstep(3.4, 6.6, dIsland);
+      const islandY = -1.08;
+
+      if (wCauseway > 0) {
+        h = Math.max(h, lerp(h, causewayY, wCauseway));
+      }
+      if (wIsland > 0) {
+        h = Math.max(h, lerp(h, islandY, wIsland));
+      }
+    }
   }
 
   return h;
@@ -750,16 +1019,24 @@ export function walkableHeightAt(x, z) {
     x <= pier.xStart + 3.8 &&
     Math.abs(z - pier.z) <= pier.width * 0.55
   ) {
-    return pier.y + 0.12;
+    const deckY = pier.y + 0.12;
+    if (x > pier.xStart + 1.8) {
+      const gh = terrainHeightAt(x, z);
+      const t = clamp((pier.xStart + 3.8 - x) / 2.0, 0, 1);
+      return lerp(gh, deckY, t);
+    }
+    return deckY;
   }
   const gh = terrainHeightAt(x, z);
-  return Math.max(gh, ZONES.millpond.waterY - 0.15);
+  // Shallow ankle-deep wading floor clamped at waterY - 0.35 = -1.55m
+  return Math.max(gh, ZONES.millpond.waterY - 0.35);
 }
 
 export const heightAt = walkableHeightAt;
 
 /**
- * Evaluates terrain height + surface weights + foliage exclusion mask + contact AO at `(x, z)`.
+ * Evaluates terrain height + surface weights + foliage exclusion mask + contact AO at `(x, z)`
+ * across the full `INNER_EXTENT = 170` (`[-170..+170]m`).
  */
 export function sampleWorld(x, z) {
   const h = terrainHeightAt(x, z);
@@ -772,19 +1049,20 @@ export function sampleWorld(x, z) {
   let minBuildingDist = 10.0;
   let roadFoliageClear = false;
 
-  if (x < -28.0 && z > -32.0 && z < 46.0 && h >= -1.6 && h <= -0.2) {
+  if (x < -28.0 && z > -32.0 && z < 46.0 && h >= -1.62 && h <= -0.18) {
     const dPond = Math.hypot((x - mp.x) / mp.rx, (z - mp.z) / mp.rz);
     const dPlunge = Math.hypot(x - wf.x, z - wf.z) / 14.0;
-    const nearShore = 1.0 - smoothstep(0.95, 1.18, Math.min(dPond, dPlunge));
+    const dPierStone = Math.hypot(x - (-42.0), z - 18.0) / 7.5;
+    const nearShore = 1.0 - smoothstep(0.95, 1.18, Math.min(dPond, dPlunge, dPierStone));
     if (nearShore > 0) {
       sandWeight =
         nearShore *
-        smoothstep(-0.22, -0.45, h) *
-        (1.0 - smoothstep(-1.18, -1.55, h));
+        smoothstep(-0.18, -0.45, h) *
+        (1.0 - smoothstep(-1.22, -1.58, h));
     }
   }
 
-  if (Math.abs(x) < 108 && Math.abs(z) < 108) {
+  if (Math.abs(x) < INNER_EXTENT && Math.abs(z) < INNER_EXTENT) {
     // Continuous paved Village Well Plaza & Commons Ring (r = 0 .. 12.6m) — zero grass moat!
     if (Math.abs(x) < 14.5 && Math.abs(z) < 14.5) {
       const rOrig = Math.hypot(x, z);
@@ -809,6 +1087,26 @@ export function sampleWorld(x, z) {
             dirtWeight = Math.max(dirtWeight, wRoad);
           }
         }
+      }
+    }
+
+    // 2 Roadside Skeleton Patrol Clearings at (16, 52) and (-14, 86) — subtle worn earth center
+    for (let i = 0; i < PATROL_CLEARINGS.length; i++) {
+      const pc = PATROL_CLEARINGS[i];
+      if (Math.abs(x - pc.x) < 9.0 && Math.abs(z - pc.z) < 9.0) {
+        const dPc = Math.hypot(x - pc.x, z - pc.z);
+        if (dPc < 6.8) {
+          dirtWeight = Math.max(dirtWeight, (1.0 - smoothstep(4.2, 6.8, dPc)) * 0.85);
+        }
+      }
+    }
+
+    // 3 Sacred Inscription Stone Plinth Aprons (keep a tight 1.6m stone apron, leaving outer ring for Crimson Roses!)
+    for (let i = 0; i < INSCRIPTION_STONES.length; i++) {
+      const st = INSCRIPTION_STONES[i];
+      const dSt = Math.hypot(x - st.x, z - st.z);
+      if (dSt < 1.8) {
+        cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(1.1, 1.8, dSt));
       }
     }
 
@@ -865,10 +1163,20 @@ export function sampleWorld(x, z) {
   let foliageMask = 1.0;
   if (minBuildingDist < 2.25 || roadFoliageClear) foliageMask = 0.0;
   else if (dirtWeight > 0.06 || cobbleWeight > 0.06 || sandWeight > 0.16) foliageMask = 0.0;
-  else if (h < mp.waterY + 0.35) foliageMask = 0.0;
+  else if (h < mp.waterY + 0.12) foliageMask = 0.0;
   else if (x > 45.0 && Math.hypot(x - ZONES.arena.x, z - ZONES.arena.z) < ZONES.arena.fenceR + 1.85) foliageMask = 0.0;
   else if (z < -68.0 && Math.hypot(x - ZONES.shrine.x, z - ZONES.shrine.z) < ZONES.shrine.platformR + 2.2) foliageMask = 0.0;
   else if (z <= -13.0 && z >= -73.5 && Math.abs(x) <= 4.75) foliageMask = 0.0;
+
+  // Ensure Crimson Rose ring zones (r = 1.8m .. 5.2m) around the Plaza & Grove Sacred Stones allow meadow/rose placement
+  for (let i = 0; i < INSCRIPTION_STONES.length; i++) {
+    const st = INSCRIPTION_STONES[i];
+    if (st.id === 'stone_pier') continue;
+    const dSt = Math.hypot(x - st.x, z - st.z);
+    if (dSt >= 1.85 && dSt <= 4.8 && dirtWeight < 0.35 && cobbleWeight < 0.35) {
+      foliageMask = 1.0;
+    }
+  }
 
   const bAo = minBuildingDist < 1.5 ? smoothstep(0.0, 1.5, minBuildingDist) : 1.0;
   const wAo = Math.abs(x) < 3.0 && Math.abs(z) < 3.0 ? smoothstep(1.2, 2.5, Math.hypot(x, z)) : 1.0;
@@ -877,7 +1185,7 @@ export function sampleWorld(x, z) {
 
   return {
     y: h,
-    walkY: Math.max(h, mp.waterY - 0.15),
+    walkY: walkableHeightAt(x, z),
     roadWeight: clamp(dirtWeight, 0, 1),
     cobbleWeight: clamp(cobbleWeight, 0, 1),
     sandWeight: clamp(sandWeight, 0, 1),
@@ -888,7 +1196,7 @@ export function sampleWorld(x, z) {
 }
 
 /**
- * Generates the fast 512x512 RGBA DataTexture `uWorldMask` covering `[-140..+140]m` in < 20ms:
+ * Generates the fast 512x512 RGBA DataTexture `uWorldMask` covering `[-170..+170]m` (`340m × 340m`) in < 25ms:
  * - `R`: Cobblestone / dressed stone weight (`0.0..1.0` linear — zero dirt halo discontinuity!)
  * - `G`: Dirt lane / arena earth weight (`0.0..0.5`) or sandy shoreline (`0.5..1.0`)
  * - `B`: Foliage exclusion mask (`0.0` on buildings/roads/plaza/arena/shrine/water, `1.0` on open meadow)
@@ -897,7 +1205,7 @@ export function sampleWorld(x, z) {
 export function createWorldMaskTexture(size = 512) {
   const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const data = new Uint8Array(size * size * 4);
-  const span = INNER_EXTENT * 2; // 280m (-140..+140)
+  const span = INNER_EXTENT * 2; // 340m (-170..+170)
   const mp = ZONES.millpond;
   const wf = LANDMARKS.waterfall;
 
@@ -905,19 +1213,20 @@ export function createWorldMaskTexture(size = 512) {
   const u32 = new Uint32Array(data.buffer);
   u32.fill(0xffff0000);
 
-  const izMin = Math.max(0, Math.floor(((-106 / span) + 0.5) * size));
-  const izMax = Math.min(size - 1, Math.ceil(((106 / span) + 0.5) * size));
-  const ixMin = Math.max(0, Math.floor(((-92 / span) + 0.5) * size));
-  const ixMax = Math.min(size - 1, Math.ceil(((92 / span) + 0.5) * size));
+  const izMin = Math.max(0, Math.floor(((-166 / span) + 0.5) * size));
+  const izMax = Math.min(size - 1, Math.ceil(((166 / span) + 0.5) * size));
+  const ixMin = Math.max(0, Math.floor(((-166 / span) + 0.5) * size));
+  const ixMax = Math.min(size - 1, Math.ceil(((166 / span) + 0.5) * size));
 
   for (let iz = izMin; iz <= izMax; iz++) {
     const wz = ((iz + 0.5) / size - 0.5) * span;
     const inPondZ = wz > -32.0 && wz < 44.0;
     const inBldgZ = wz > -26.0 && wz < 24.0;
     const inArenaZ = wz > -26.0 && wz < 18.0;
-    const inShrineZ = wz < -68.0 && wz > -104.0;
+    const inShrineZ = wz < -68.0 && wz > -106.0;
     const inStairZ = wz <= -13.0 && wz >= -73.5;
     const inRingZ = Math.abs(wz) < 14.5;
+    const inClearZ = wz > 36.0 && wz < 102.0;
 
     // Filter active road segments for this Z row once per row!
     const activeSegs = [];
@@ -937,13 +1246,22 @@ export function createWorldMaskTexture(size = 512) {
     for (let ix = ixMin; ix <= ixMax; ix++) {
       const wx = ((ix + 0.5) / size - 0.5) * span;
 
-      const inPondX = inPondZ && wx < -28.0 && wx > -92.0;
+      const inPondX = inPondZ && wx < -28.0 && wx > -94.0;
       const inBldgX = inBldgZ && wx > -53.0 && wx < 26.0;
       const inArenaX = inArenaZ && wx > 45.0 && wx < 91.0;
       const inShrineX = inShrineZ && Math.abs(wx) < 17.5;
-      const inRoadX = activeSegs.length > 0 && wx > -52.0 && wx < 52.0;
+      const inRoadX = activeSegs.length > 0 && wx > -56.0 && wx < 56.0;
+      const inClearX = inClearZ && wx > -26.0 && wx < 28.0;
 
-      if (!inPondX && !inBldgX && !inArenaX && !inShrineX && !inRoadX && !(inRingZ && Math.abs(wx) < 14.5)) {
+      if (
+        !inPondX &&
+        !inBldgX &&
+        !inArenaX &&
+        !inShrineX &&
+        !inRoadX &&
+        !inClearX &&
+        !(inRingZ && Math.abs(wx) < 14.5)
+      ) {
         continue;
       }
 
@@ -960,7 +1278,10 @@ export function createWorldMaskTexture(size = 512) {
         const dPond = Math.hypot(dxP, dzP);
         const dPlunge = Math.hypot(wx - (wf.x + 0.6), wz - (wf.z + 1.8)) / 5.5;
         const dWater = Math.min(dPond, dPlunge);
-        if (dWater < 0.96) {
+        const dPierStone = Math.hypot(wx - (-42.0), wz - 18.0);
+        if (dPierStone < 4.5) {
+          sandWeight = Math.max(sandWeight, 1.0 - smoothstep(2.4, 4.5, dPierStone));
+        } else if (dWater < 0.96) {
           isUnderwater = true;
         } else if (dWater <= 1.12 && !(wx > -56.0 && wz < -20.0)) {
           sandWeight = 1.0 - (dWater - 0.96) / 0.16;
@@ -993,6 +1314,16 @@ export function createWorldMaskTexture(size = 512) {
             } else {
               dirtWeight = Math.max(dirtWeight, w);
             }
+          }
+        }
+      }
+
+      if (inClearX) {
+        for (let i = 0; i < PATROL_CLEARINGS.length; i++) {
+          const pc = PATROL_CLEARINGS[i];
+          const dPc = Math.hypot(wx - pc.x, wz - pc.z);
+          if (dPc < 6.8) {
+            dirtWeight = Math.max(dirtWeight, (1.0 - smoothstep(4.2, 6.8, dPc)) * 0.85);
           }
         }
       }
@@ -1055,7 +1386,12 @@ export function createWorldMaskTexture(size = 512) {
       const ao = clamp(0.52 + 0.48 * bAo, 0.45, 1.0);
 
       const rByte = Math.round(clamp(cobbleWeight, 0, 1) * 255);
-      const gByte = dirtWeight > 0.01 ? Math.round(clamp(dirtWeight, 0, 1) * 127) : 0;
+      const gByte =
+        sandWeight > 0.02
+          ? Math.round(128 + clamp(sandWeight, 0, 1) * 127)
+          : dirtWeight > 0.01
+          ? Math.round(clamp(dirtWeight, 0, 1) * 127)
+          : 0;
 
       const idx = (iz * size + ix) * 4;
       data[idx] = rByte;
@@ -1075,5 +1411,6 @@ export function createWorldMaskTexture(size = 512) {
 
   const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
   tex.userData.buildTimeMs = Number((t1 - t0).toFixed(2));
+  tex.userData.worldExtent = INNER_EXTENT;
   return tex;
 }

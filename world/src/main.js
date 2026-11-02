@@ -71,7 +71,7 @@ const PROFILES = {
     dpr: Math.min(window.devicePixelRatio || 1, 2.0),
     aaSamples: 4,
     meadowProfile: 'desktop',
-    maxGrassTufts: 8800,
+    maxGrassTufts: 24000,
   },
   tablet: {
     id: 'tablet',
@@ -79,7 +79,7 @@ const PROFILES = {
     dpr: Math.min(window.devicePixelRatio || 1, 1.5),
     aaSamples: 2,
     meadowProfile: 'tablet',
-    maxGrassTufts: 4500,
+    maxGrassTufts: 14000,
   },
 };
 
@@ -92,7 +92,7 @@ renderer.toneMappingExposure = 1.02;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xd8eef5);
-scene.fog = new THREE.Fog(0xd8eef5, 165, 520);
+scene.fog = new THREE.Fog(0xd8eef5, 185, 560);
 
 const camera = new THREE.PerspectiveCamera(
   50,
@@ -150,6 +150,19 @@ for (const c of village.colliders) {
 
 function populateValleyWildflowerDrifts(meadowInstance) {
   const colonies = [
+    // Zone E: Southern Flower Field Lobby (0, 128) & Winding Southern Road
+    { x: -11.5, z: 132.0, r: 9.5 },
+    { x: 11.5, z: 132.0, r: 9.5 },
+    { x: -14.0, z: 121.0, r: 9.0 },
+    { x: 14.0, z: 121.0, r: 9.0 },
+    { x: -8.5, z: 140.5, r: 8.5 },
+    { x: 8.5, z: 140.5, r: 8.5 },
+    { x: -16.5, z: 102.0, r: 8.5 },
+    { x: 11.5, z: 98.0, r: 8.5 },
+    { x: -24.0, z: 82.0, r: 8.5 },
+    { x: 16.5, z: 76.0, r: 8.5 },
+    { x: -12.5, z: 58.0, r: 8.5 },
+    { x: 26.5, z: 48.0, r: 8.5 },
     // Zone A: Hamlet Well Plaza & Cottage Perimeter Meadows
     { x: -7.5, z: 16.5, r: 7.5 },
     { x: 8.5, z: 17.0, r: 7.5 },
@@ -192,12 +205,15 @@ function populateValleyWildflowerDrifts(meadowInstance) {
 
   keys.forEach((key, sIdx) => {
     const imesh = meadowInstance.flowerMeshes[key];
-    const targetCount = MEADOW_PROFILES[activeProfile]?.counts?.[key] || imesh.count || 200;
-
     if (imesh.material?.uniforms) {
-      imesh.material.uniforms.uFadeStart.value = 92.0;
-      imesh.material.uniforms.uFadeEnd.value = 136.0;
+      imesh.material.uniforms.uFadeStart.value = 118.0;
+      imesh.material.uniforms.uFadeEnd.value = 165.0;
     }
+    // Preserve diegetic Crimson Rose rings around the 3 Sacred Inscription Stones
+    if (key === 'crimsonRose' || imesh.userData?.lockedSacredRings) {
+      return;
+    }
+    const targetCount = MEADOW_PROFILES[activeProfile]?.counts?.[key] || imesh.count || 200;
 
     let placed = 0;
     let attempt = 0;
@@ -1288,10 +1304,37 @@ export const WORLD_SHOTS = {
     id: 'aerial-masterplan',
     tod: 'day',
     mode: 'vista',
-    pos: [-16.0, 112.0, 138.0],
-    target: [0.0, 0.0, -10.0],
-    fov: 48,
+    pos: [-18.0, 128.0, 162.0],
+    target: [0.0, 0.0, 12.0],
+    fov: 50,
     playerPos: [0.0, 14.0, Math.PI],
+  },
+  'day-flower-lobby': {
+    id: 'day-flower-lobby',
+    tod: 'day',
+    mode: 'vista',
+    pos: [0.0, 4.4, 142.0],
+    target: [0.0, 2.2, 82.0],
+    fov: 52,
+    playerPos: [-1.2, 128.0, Math.PI],
+  },
+  'day-south-road-boulders': {
+    id: 'day-south-road-boulders',
+    tod: 'day',
+    mode: 'vista',
+    pos: [-18.5, 4.2, 78.0],
+    target: [6.0, 1.8, 38.0],
+    fov: 52,
+    playerPos: [-4.5, 62.0, Math.PI + 0.15],
+  },
+  'day-sacred-stone-roses': {
+    id: 'day-sacred-stone-roses',
+    tod: 'day',
+    mode: 'vista',
+    pos: [0.4, 2.75, -7.8],
+    target: [0.0, 1.25, -14.0],
+    fov: 50,
+    playerPos: [-1.95, -12.2, 2.35],
   },
 };
 
@@ -1323,13 +1366,13 @@ function updateMeadowFocus(simTime) {
   if (camState.mode === 'player') {
     _meadowFocus.set(player.x + fx * 16.0, player.y, player.z + fz * 16.0);
   } else if (camera.position.y > 60) {
-    _meadowFocus.set(0, 0, 0);
+    _meadowFocus.set(0, 0, 20);
   } else {
-    const fwdOffset = 28.0 + Math.max(0, camera.position.y - 5.0) * 1.55;
+    const fwdOffset = 22.0 + Math.max(0, camera.position.y - 5.0) * 1.35;
     _meadowFocus.set(
-      clamp(camera.position.x + fx * fwdOffset, -96, 96),
+      clamp(camera.position.x + fx * fwdOffset, -158, 158),
       0,
-      clamp(camera.position.z + fz * fwdOffset, -96, 96)
+      clamp(camera.position.z + fz * fwdOffset, -158, 158)
     );
   }
   meadow.update(simTime, _meadowFocus);

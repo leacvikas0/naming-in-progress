@@ -5,9 +5,15 @@ import {
   BUILDINGS,
   LANDMARKS,
   TREES,
+  INSCRIPTION_STONES,
+  BOULDERS,
+  DRY_STONE_WALLS,
+  ROADSIDE_FENCES,
   terrainHeightAt,
   clamp,
   lerp,
+  smoothstep,
+  hash2,
 } from './geography.js';
 import {
   PALETTE,
@@ -16,29 +22,20 @@ import {
 } from './terrain-water.js';
 
 /**
- * Merged v7 Landmarks & Architectural Structures (`world/assets/terrain/landmarks.js`).
+ * Merged Wave 1C Landmarks, Chiseled Limestone Boulders, Dry-Stone Country Walls,
+ * Split-Rail Timber Fences, Sacred Inscription Stones & Deep-Water Shoreline Colliders
+ * (`world/assets/terrain/landmarks.js`).
  *
- * Implements all v7 landmarks and merges static masonry/timber by material class
- * so the entire module costs <= 5 draw calls total (budget: <= 8 draw calls):
- * 1. Hamlet Roofed Stone Well & Well Plaza (`(0, 0, y = 0.0, plazaRadius = 6.4)`)
- * 2. Lakeside Wooden Boat Pier (`xStart = -35.5, xEnd = -52.0, z = 8.5, y = -0.35`)
- *    with flush Stone Shore Abutment, Landward Approach Step, & Moored Boat (`MAP-02` clean)
- * 3. East Wisteria Combat Ring 24-Segment Split-Rail Fence (`(68, -4, y = 0.6, fenceR = 19.5)`)
- * 4. Northern Shrine Overlook (`(0.0, -86.0, y = 8.0, platformR = 14.5)`):
- *    - 56-Step Axial Staircase (`z = -15.0 -> -71.5`) with continuous flush sloped stone stringers
- *    - 8-Petal Inlaid Floral Medallion
- *    - Detailed Romanesque Stone Archway (`(0.0, -93.5, span = 6.2, height = 5.8)`)
- *    - Co-Op Spell Pedestal (`(-5.8, -87.8)`)
- *    - Raised Circular Stone Planter Rings with Dark Soil (`(±10.6, -90.8)`, `MAP-03` clean)
- * 5. 24 Stone Boundary Waymarkers at `PLAY_BOUNDARY_RADIUS = 125m`
- * 6. 5 Tudor Village Context Buildings & Rotating Waterwheel (`(-44.0, -18.0, y = 0.3, rotY = 0.42)`)
+ * Merges all static masonry, chiseled limestone boulders, dry-stone walls, split-rail fences,
+ * and timber structures into `batchVertexColorGroup` so the entire module costs <= 4 draw calls total!
  */
 
-function addPart(parent, geo, color, { outline = false, unlit = false } = {}) {
+function addPart(parent, geo, color, { outline = false, unlit = false, flatShading = false } = {}) {
   const mesh = new THREE.Mesh(geo);
-  mesh.userData.color = color;
+  if (color !== null && color !== undefined) mesh.userData.color = color;
   mesh.userData.outline = outline;
   mesh.userData.unlit = unlit;
+  if (flatShading) mesh.userData.flatShading = true;
   parent.add(mesh);
   return mesh;
 }
@@ -88,8 +85,6 @@ function buildWellPlaza(colliders) {
 
   const rPlaza = LANDMARKS.well.plazaRadius; // 6.4m
 
-  // Outer dressed stone plaza curb ring & inner concentric stone ring
-  // (Leaving the interior open so terrainMat procedural cobblestones & directional shadows show through!)
   const plazaCurbRing = addPart(
     group,
     new THREE.RingGeometry(rPlaza - 0.38, rPlaza + 0.16, 32).rotateX(-Math.PI / 2),
@@ -106,7 +101,6 @@ function buildWellPlaza(colliders) {
   );
   innerRing.position.y = 0.018;
 
-  // Coursed stone well base + overhanging stone lip + deep water disc
   const wellStep = addPart(
     group,
     new THREE.CylinderGeometry(1.62, 1.72, 0.20, 12),
@@ -139,7 +133,6 @@ function buildWellPlaza(colliders) {
   );
   water.position.y = 0.84;
 
-  // Timber roof posts, crossbeam, windlass roller, rope & bucket
   for (const sx of [-1.25, 1.25]) {
     const post = addPart(
       group,
@@ -191,7 +184,6 @@ function buildWellPlaza(colliders) {
   );
   wellRidge.position.set(0, 3.65, 0);
 
-  // 4 low bollard-and-rail segments with vertical bollards at BOTH ends of every rail
   const arcAngles = [0.72, 2.38, -2.35, -0.74];
   const r = rPlaza - 0.35;
   for (const ang of arcAngles) {
@@ -221,7 +213,7 @@ function buildWellPlaza(colliders) {
   }
 
   if (colliders) {
-    colliders.push({ type: 'circle', x: 0, z: 0, r: LANDMARKS.well.colliderRadius });
+    colliders.push({ type: 'circle', x: 0, z: 0, r: LANDMARKS.well.colliderRadius, tag: 'well' });
   }
   return group;
 }
@@ -238,7 +230,6 @@ function buildWoodenPier() {
   const len = Math.abs(pier.xEnd - shoreX); // 18.35m (-33.65 -> -52.0)
   const cx = (shoreX + pier.xEnd) * 0.5;
 
-  // Compact warm stone foundation sill tucked under the shore end of the pier (x = [-34.6, -32.9])
   const sillW = 1.65;
   const sillH = 1.45;
   const sill = addPart(
@@ -249,7 +240,6 @@ function buildWoodenPier() {
   );
   sill.position.set(shoreX + 0.15, pier.y + 0.08 - sillH * 0.5, pier.z);
 
-  // Warm dressed-stone threshold step where the cobblestone lane steps onto the timber deck
   const stepBeam = addPart(
     group,
     new THREE.BoxGeometry(0.62, 0.22, pier.width + 0.16),
@@ -258,7 +248,6 @@ function buildWoodenPier() {
   );
   stepBeam.position.set(shoreX + 0.30, pier.y + 0.02, pier.z);
 
-  // Low stone-and-timber cheek curbs & entrance bollards flanking the shore entry
   for (const sz of [-(pier.width * 0.5 + 0.16), pier.width * 0.5 + 0.16]) {
     const curb = addPart(
       group,
@@ -285,7 +274,6 @@ function buildWoodenPier() {
     shorePost.position.set(shoreX + 0.42, pier.y + 0.44, pier.z + sz);
   }
 
-  // Wooden pier deck extending cleanly from the dry cobblestone shore (shoreX) to xEnd (-52.0)
   const deck = addPart(
     group,
     new THREE.BoxGeometry(len, 0.24, pier.width),
@@ -294,7 +282,6 @@ function buildWoodenPier() {
   );
   deck.position.set(cx, pier.y, pier.z);
 
-  // Side timber stringer rails along the deck edges
   for (const sz of [-pier.width * 0.47, pier.width * 0.47]) {
     const edgeBeam = addPart(
       group,
@@ -305,7 +292,6 @@ function buildWoodenPier() {
     edgeBeam.position.set(cx, pier.y + 0.14, pier.z + sz);
   }
 
-  // Timber pilings & mooring bollards
   for (let x = pier.xEnd + 0.8; x <= shoreX - 1.2; x += 3.1) {
     for (const sz of [-pier.width * 0.44, pier.width * 0.44]) {
       const piling = addPart(
@@ -326,7 +312,6 @@ function buildWoodenPier() {
     }
   }
 
-  // Warm dock lantern post at the lakeward end of the pier (x = pier.xEnd + 0.8)
   const lampPost = addPart(
     group,
     new THREE.BoxGeometry(0.16, 1.65, 0.16),
@@ -343,7 +328,6 @@ function buildWoodenPier() {
   );
   dockLantern.position.set(pier.xEnd + 0.8, pier.y + 1.88, pier.z - pier.width * 0.44);
 
-  // Sculpted wooden rowboat with tapered bow/stern, raised gunwale rim & thwarts
   const boatGroup = new THREE.Group();
   boatGroup.position.set(pier.xEnd + 5.8, ZONES.millpond.waterY + 0.14, pier.z + 2.65);
   boatGroup.rotation.y = 0.14;
@@ -379,7 +363,7 @@ function buildWoodenPier() {
 /* 3. EAST WISTERIA COMBAT RING 24-SEGMENT SPLIT-RAIL FENCE                   */
 /* -------------------------------------------------------------------------- */
 
-function buildArenaFence() {
+function buildArenaFence(colliders) {
   const group = new THREE.Group();
   group.name = 'arenaFence';
 
@@ -429,7 +413,6 @@ function buildArenaFence() {
     }
   }
 
-  // Every rail spans strictly between post[i] and post[i+1] — zero cantilevered rails!
   for (let i = 0; i < posts.length - 1; i++) {
     const p0 = posts[i];
     const p1 = posts[i + 1];
@@ -451,6 +434,18 @@ function buildArenaFence() {
       rail.position.set(mx, my + ry, mz);
       rail.rotation.y = yaw;
     }
+
+    if (colliders) {
+      colliders.push({
+        type: 'obb',
+        x: mx,
+        z: mz,
+        hx: 0.22,
+        hz: segLen * 0.5,
+        rotY: yaw,
+        tag: 'arena_fence',
+      });
+    }
   }
 
   return group;
@@ -464,9 +459,8 @@ function buildShrineOverlook(colliders) {
   const group = new THREE.Group();
   group.name = 'shrineOverlook';
 
-  // Axial Grand Northern Staircase along x = 0.0 from z = -15.0 (y = 0.0) to z = -71.5 (y = 8.0)
   const stepsCount = 56;
-  const zStart = -15.0;
+  const zStart = -18.0;
   const zEnd = -71.5;
   const yStart = 0.0;
   const yEnd = ZONES.shrine.y;
@@ -487,13 +481,11 @@ function buildShrineOverlook(colliders) {
     step.position.set(0.0, stepTopY - stepH * 0.5, sz);
   }
 
-  // Continuous, flush sloped stone stringers on left (x = -2.35) and right (x = +2.35)
   const stringerGeo = buildSlopedStringerGeometry(0.46, zStart, zEnd, yStart, yEnd);
   for (const sx of [-2.35, 2.35]) {
     const stringer = addPart(group, stringerGeo.clone(), PALETTE.stoneDark, { outline: true });
     stringer.position.x = sx;
 
-    // Bottom entry newel post at z = -15.0 + lantern
     const botPost = addPart(
       group,
       new THREE.BoxGeometry(0.58, 0.72, 0.58),
@@ -510,7 +502,6 @@ function buildShrineOverlook(colliders) {
     );
     botLamp.position.set(sx, yStart + 0.82, zStart + 0.15);
 
-    // Top landing newel post at z = -71.5 + lantern
     const topPost = addPart(
       group,
       new THREE.BoxGeometry(0.58, 0.64, 0.58),
@@ -528,13 +519,11 @@ function buildShrineOverlook(colliders) {
     topLamp.position.set(sx, yEnd + 0.72, zEnd - 0.15);
   }
 
-  const shX = ZONES.shrine.x; // 0.0
-  const shZ = ZONES.shrine.z; // -86.0
-  const shY = ZONES.shrine.y; // 8.0
+  const shX = ZONES.shrine.x;
+  const shZ = ZONES.shrine.z;
+  const shY = ZONES.shrine.y;
   const platR = ZONES.shrine.platformR || 14.5;
 
-  // Circular Shrine Overlook Retaining Wall & Perimeter Curb Ring
-  // (Open interior exposes terrainMat procedural Shrine flagstones and directional shadows!)
   const retainingWall = addPart(
     group,
     new THREE.CylinderGeometry(platR + 0.08, platR + 0.48, 0.56, 36, 1, true),
@@ -567,7 +556,6 @@ function buildShrineOverlook(colliders) {
   );
   goldRing.position.set(shX, shY + 0.016, shZ);
 
-  // 8-Petal Inlaid Medallion flush at (0.0, 8.02, -86.0)
   for (let p = 0; p < 8; p++) {
     const a = (p / 8) * Math.PI * 2;
     const diamondGeo = new THREE.CylinderGeometry(0.95, 0.95, 0.03, 4);
@@ -590,9 +578,8 @@ function buildShrineOverlook(colliders) {
   );
   centerHub.position.set(shX, shY + 0.016, shZ);
 
-  // Detailed Romanesque Stone Shrine Arch at (0.0, -93.5, y: 8.0, span: 6.2, height: 5.8)
   const arch = LANDMARKS.shrineArch;
-  const pierOffset = arch.span * 0.5; // 3.1m
+  const pierOffset = arch.span * 0.5;
   for (const sx of [-pierOffset, pierOffset]) {
     const px = arch.x + sx;
     const plinth = addPart(
@@ -611,7 +598,6 @@ function buildShrineOverlook(colliders) {
     );
     pier.position.set(px, arch.y + arch.height * 0.5, arch.z);
 
-    // Staggered Romanesque quoin relief bands along each pier
     for (const qy of [1.4, 2.6, 3.8, 4.9]) {
       const quoin = addPart(
         group,
@@ -631,7 +617,7 @@ function buildShrineOverlook(colliders) {
     capital.position.set(px, arch.y + arch.height - 0.1, arch.z);
 
     if (colliders) {
-      colliders.push({ type: 'circle', x: px, z: arch.z, r: 0.95 });
+      colliders.push({ type: 'circle', x: px, z: arch.z, r: 0.95, tag: 'shrine_arch' });
     }
   }
 
@@ -644,7 +630,6 @@ function buildShrineOverlook(colliders) {
   archCrown.userData.stripBottom = false;
   archCrown.position.set(arch.x, arch.y + arch.height - 0.1, arch.z);
 
-  // Top Romanesque Keystone Crown
   const keystone = addPart(
     group,
     new THREE.BoxGeometry(0.95, 1.15, 1.48),
@@ -653,7 +638,6 @@ function buildShrineOverlook(colliders) {
   );
   keystone.position.set(arch.x, arch.y + arch.height + pierOffset - 0.05, arch.z);
 
-  // Co-Op Spell Pedestal at (-5.8, -87.8, y: 8.0)
   const pedX = shX - 5.8;
   const pedZ = shZ - 1.8;
   const pedBase = addPart(
@@ -683,11 +667,9 @@ function buildShrineOverlook(colliders) {
   pedCrystal.scale.set(0.75, 1.35, 0.75);
 
   if (colliders) {
-    colliders.push({ type: 'circle', x: pedX, z: pedZ, r: 1.1 });
+    colliders.push({ type: 'circle', x: pedX, z: pedZ, r: 1.1, tag: 'shrine_pedestal' });
   }
 
-  // Raised circular stone planter rings with dark soil for the 2 Shrine guardian blossom trees
-  // ((±10.6, -90.8, y: 8.0) -> MAP-03 clean!)
   for (const t of TREES) {
     if (!t.hasPlanter) continue;
     const ty = terrainHeightAt(t.x, t.z);
@@ -712,19 +694,629 @@ function buildShrineOverlook(colliders) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 5. 24 STONE BOUNDARY WAYMARKERS AT `PLAY_BOUNDARY_RADIUS = 125m`           */
+/* 5. CHISELED GHIBLI LIMESTONE BOULDERS (`52` multi-faceted boulders)        */
+/* -------------------------------------------------------------------------- */
+
+const COL_MOSS_TOP = new THREE.Color(0x62a442);
+const COL_MOSS_SUN = new THREE.Color(0x7ec254);
+const COL_LIME_SUN = new THREE.Color(0xdfd7c6);
+const COL_LIME_MID = new THREE.Color(0xb5ada0);
+const COL_LIME_SHD = new THREE.Color(0x7d776e);
+const SUN_VEC = new THREE.Vector3(-48, 76, 58).normalize();
+
+/**
+ * Sculpts a chiseled, multi-faceted 3D Ghibli limestone boulder (matching `01-title.png`)
+ * with flat-shaded angular facets and baked vertex colors:
+ * - Lush meadow moss `#62a442` on upward-facing top normals (`ny > 0.55`)
+ * - Warm sunlit chiseled limestone `#dfd7c6` / `#b5ada0` on side facets
+ * - Cool slate shadow `#7d776e` near the base and shaded facets
+ */
+function buildChiseledBoulderGeometry({ rx = 1.4, ry = 1.0, rz = 1.2, rotY = 0, mossy = true, seed = 1 }) {
+  const rawIco = new THREE.IcosahedronGeometry(1.0, 1);
+  const baseGeo = rawIco.index ? rawIco.toNonIndexed() : rawIco;
+  const pos = baseGeo.attributes.position;
+
+  // Group coincidental vertices so chiseled plane displacement never tears seams
+  const vMap = new Map();
+  const c1x = Math.cos(seed * 1.7);
+  const c1z = Math.sin(seed * 1.7);
+  const c2x = Math.cos(seed * 3.1 + 1.2);
+  const c2z = Math.sin(seed * 3.1 + 1.2);
+
+  for (let i = 0; i < pos.count; i++) {
+    const vx = pos.getX(i);
+    const vy = pos.getY(i);
+    const vz = pos.getZ(i);
+    const key = `${Math.round(vx * 1000)},${Math.round(vy * 1000)},${Math.round(vz * 1000)}`;
+    let disp = vMap.get(key);
+    if (!disp) {
+      const h = hash2(Math.round(vx * 37 + seed * 13), Math.round(vz * 43 + vy * 29), seed + 71);
+      // Chiseled flat-top & beveled side planes matching 01-title.png limestone rocks
+      let nx = vx * (0.88 + 0.24 * h);
+      let ny = vy;
+      let nz = vz * (0.88 + 0.24 * (1.0 - h));
+
+      // Flatten top crown slightly into a chiseled limestone table facet
+      if (ny > 0.52) {
+        ny = 0.52 + (ny - 0.52) * 0.45;
+      }
+      // Flatten bottom skirt so boulder sits solidly in the earth
+      if (ny < -0.45) {
+        ny = -0.52;
+        nx *= 1.08;
+        nz *= 1.08;
+      }
+      // Chisel two angular side planes
+      const dPlane1 = nx * c1x + nz * c1z;
+      if (dPlane1 > 0.62) {
+        const pull = (dPlane1 - 0.62) * 0.48;
+        nx -= c1x * pull;
+        nz -= c1z * pull;
+      }
+      const dPlane2 = nx * c2x + nz * c2z;
+      if (dPlane2 < -0.60) {
+        const pull = (-0.60 - dPlane2) * 0.45;
+        nx += c2x * pull;
+        nz += c2z * pull;
+      }
+
+      disp = [nx * rx, (ny + 0.36) * ry, nz * rz];
+      vMap.set(key, disp);
+    }
+    pos.setXYZ(i, disp[0], disp[1], disp[2]);
+  }
+
+  if (rotY !== 0) {
+    baseGeo.rotateY(rotY);
+  }
+  baseGeo.computeVertexNormals();
+
+  const norm = baseGeo.attributes.normal;
+  const colors = new Float32Array(pos.count * 3);
+  const tmpCol = new THREE.Color();
+
+  for (let i = 0; i < pos.count; i++) {
+    const vy = pos.getY(i);
+    const nx = norm.getX(i);
+    const ny = norm.getY(i);
+    const nz = norm.getZ(i);
+
+    const hFrac = clamp(vy / (ry * 1.15), 0, 1);
+    const sunDot = clamp((nx * SUN_VEC.x + ny * SUN_VEC.y + nz * SUN_VEC.z) * 0.5 + 0.5, 0, 1);
+
+    // Base limestone facet color: cool slate base -> mid limestone -> warm sunlit limestone
+    tmpCol
+      .copy(COL_LIME_SHD)
+      .lerp(COL_LIME_MID, smoothstep(0.12, 0.55, hFrac * 0.55 + sunDot * 0.45))
+      .lerp(COL_LIME_SUN, smoothstep(0.52, 0.88, sunDot) * smoothstep(0.20, 0.65, hFrac));
+
+    // Upward-facing top normals (ny > 0.55) receive lush meadow moss cap
+    if (mossy && ny > 0.55 && hFrac > 0.38) {
+      const mossMask = smoothstep(0.55, 0.72, ny);
+      const mossTone = COL_MOSS_TOP.clone().lerp(COL_MOSS_SUN, smoothstep(0.65, 0.92, sunDot));
+      tmpCol.lerp(mossTone, mossMask);
+    }
+
+    colors[i * 3] = tmpCol.r;
+    colors[i * 3 + 1] = tmpCol.g;
+    colors[i * 3 + 2] = tmpCol.b;
+  }
+
+  baseGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return baseGeo;
+}
+
+function buildLimestoneBoulders(colliders) {
+  const group = new THREE.Group();
+  group.name = 'limestoneBoulders';
+
+  BOULDERS.forEach((b, idx) => {
+    const by = terrainHeightAt(b.x, b.z);
+    const geo = buildChiseledBoulderGeometry({
+      rx: b.rx,
+      ry: b.ry,
+      rz: b.rz,
+      rotY: b.rotY || 0,
+      mossy: b.mossy !== false,
+      seed: 401 + idx * 37,
+    });
+    const mesh = addPart(group, geo, null, {
+      outline: false,
+      flatShading: true,
+    });
+    mesh.position.set(b.x, by - 0.14 * b.ry, b.z);
+
+    // Add a smaller companion chiseled stone beside hero boulders for natural Ghibli grouping
+    if (idx % 2 === 0 && b.rx >= 1.35) {
+      const compAng = (b.rotY || 0) + 1.05;
+      const compDist = b.rx * 0.92;
+      const cx = b.x + Math.cos(compAng) * compDist;
+      const cz = b.z + Math.sin(compAng) * compDist;
+      const cy = terrainHeightAt(cx, cz);
+      const cGeo = buildChiseledBoulderGeometry({
+        rx: b.rx * 0.46,
+        ry: b.ry * 0.44,
+        rz: b.rz * 0.46,
+        rotY: (b.rotY || 0) + 0.8,
+        mossy: false,
+        seed: 907 + idx * 53,
+      });
+      const cMesh = addPart(group, cGeo, null, { outline: false, flatShading: true });
+      cMesh.position.set(cx, cy - 0.10 * b.ry, cz);
+    }
+
+    if (colliders) {
+      colliders.push({
+        type: 'circle',
+        x: b.x,
+        z: b.z,
+        r: Math.max(b.rx, b.rz) * 0.85,
+        tag: 'boulder',
+      });
+    }
+  });
+
+  return group;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 6. LOW DRY-STONE COUNTRY WALLS & WOODEN SPLIT-RAIL TIMBER FENCES           */
+/* -------------------------------------------------------------------------- */
+
+function buildChiseledWallBlockGeo(w, h, d, seed, isCapstone = false) {
+  const rawBox = new THREE.BoxGeometry(w, h, d, 1, 1, 1);
+  const geo = rawBox.index ? rawBox.toNonIndexed() : rawBox;
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const vx = pos.getX(i);
+    const vy = pos.getY(i);
+    const vz = pos.getZ(i);
+    const jitter = (hash2(Math.round(vx * 20 + seed), Math.round(vz * 20 + vy * 20), seed) - 0.5) * 0.04;
+    const topTaper = vy > 0 ? 0.92 : 1.02;
+    pos.setXYZ(i, vx * topTaper + jitter, vy + jitter * 0.5, vz * topTaper + jitter);
+  }
+  geo.computeVertexNormals();
+
+  const norm = geo.attributes.normal;
+  const colors = new Float32Array(pos.count * 3);
+  const blockTint = 0.92 + hash2(seed, seed * 7, 19) * 0.16;
+  const hasMoss = isCapstone && hash2(seed, 31, 73) > 0.42;
+  const tmp = new THREE.Color();
+
+  for (let i = 0; i < pos.count; i++) {
+    const ny = norm.getY(i);
+    const vy = pos.getY(i);
+    const hFrac = clamp((vy + h * 0.5) / h, 0, 1);
+    tmp
+      .copy(COL_LIME_SHD)
+      .lerp(COL_LIME_MID, smoothstep(0.0, 0.55, hFrac))
+      .lerp(COL_LIME_SUN, smoothstep(0.45, 1.0, hFrac + ny * 0.25))
+      .multiplyScalar(blockTint);
+    if (hasMoss && ny > 0.65) {
+      tmp.lerp(COL_MOSS_TOP, 0.62);
+    }
+    colors[i * 3] = tmp.r;
+    colors[i * 3 + 1] = tmp.g;
+    colors[i * 3 + 2] = tmp.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geo;
+}
+
+function buildDryStoneWalls(colliders) {
+  const group = new THREE.Group();
+  group.name = 'dryStoneWalls';
+
+  DRY_STONE_WALLS.forEach((w, wIdx) => {
+    const dx = w.x1 - w.x0;
+    const dz = w.z1 - w.z0;
+    const totalLen = Math.hypot(dx, dz);
+    const yaw = Math.atan2(dx, dz);
+    const thickness = w.thickness || 0.52;
+    const wallH = w.height || 0.84;
+    const blockCount = Math.max(4, Math.round(totalLen / 1.15));
+    const stepLen = totalLen / blockCount;
+
+    for (let i = 0; i < blockCount; i++) {
+      const t = (i + 0.5) / blockCount;
+      const bx = lerp(w.x0, w.x1, t);
+      const bz = lerp(w.z0, w.z1, t);
+      const by = terrainHeightAt(bx, bz);
+
+      // Lower & middle coursed chiseled stone block
+      const baseH = wallH * 0.68;
+      const baseGeo = buildChiseledWallBlockGeo(
+        thickness,
+        baseH,
+        stepLen * 0.96,
+        701 + wIdx * 41 + i * 7,
+        false
+      );
+      const baseMesh = addPart(group, baseGeo, null, {
+        outline: false,
+        flatShading: true,
+      });
+      baseMesh.position.set(bx, by + baseH * 0.44, bz);
+      baseMesh.rotation.y = yaw + ((i % 2) - 0.5) * 0.04;
+
+      // Chunky overhanging chiseled capstone (matching 01-title.png foreground wall!)
+      const capH = wallH * 0.36;
+      const capGeo = buildChiseledWallBlockGeo(
+        thickness * 1.12,
+        capH,
+        stepLen * 0.92,
+        809 + wIdx * 53 + i * 11,
+        true
+      );
+      const capMesh = addPart(group, capGeo, null, {
+        outline: false,
+        flatShading: true,
+      });
+      capMesh.position.set(bx, by + baseH * 0.84 + capH * 0.45, bz);
+      capMesh.rotation.y = yaw + ((i % 3) - 1) * 0.03;
+    }
+
+    if (colliders) {
+      colliders.push({
+        type: 'obb',
+        x: (w.x0 + w.x1) * 0.5,
+        z: (w.z0 + w.z1) * 0.5,
+        hx: thickness * 0.55,
+        hz: totalLen * 0.5,
+        rotY: yaw,
+        tag: 'dry_stone_wall',
+      });
+    }
+  });
+
+  return group;
+}
+
+function buildRoadsideSplitRailFences(colliders) {
+  const group = new THREE.Group();
+  group.name = 'roadsideSplitRailFences';
+
+  ROADSIDE_FENCES.forEach((f) => {
+    const spans = f.spans || 3;
+    const posts = [];
+    for (let i = 0; i <= spans; i++) {
+      const t = i / spans;
+      const px = lerp(f.x0, f.x1, t);
+      const pz = lerp(f.z0, f.z1, t);
+      const py = terrainHeightAt(px, pz);
+      posts.push({ x: px, y: py, z: pz });
+
+      const postH = 1.24;
+      const post = addPart(
+        group,
+        new THREE.BoxGeometry(0.24, postH, 0.24),
+        PALETTE.timber,
+        { outline: i === 0 || i === spans }
+      );
+      post.position.set(px, py + postH * 0.48, pz);
+
+      const postCap = addPart(
+        group,
+        new THREE.BoxGeometry(0.28, 0.08, 0.28),
+        PALETTE.timberDark,
+        { outline: false }
+      );
+      postCap.position.set(px, py + postH + 0.02, pz);
+    }
+
+    for (let i = 0; i < posts.length - 1; i++) {
+      const p0 = posts[i];
+      const p1 = posts[i + 1];
+      const dx = p1.x - p0.x;
+      const dy = p1.y - p0.y;
+      const dz = p1.z - p0.z;
+      const horizLen = Math.hypot(dx, dz);
+      const segLen = Math.hypot(horizLen, dy);
+      const mx = (p0.x + p1.x) * 0.5;
+      const my = (p0.y + p1.y) * 0.5;
+      const mz = (p0.z + p1.z) * 0.5;
+      const yaw = Math.atan2(dx, dz);
+      const pitch = -Math.atan2(dy, horizLen);
+
+      for (const ry of [0.44, 0.88]) {
+        const railHolder = new THREE.Group();
+        railHolder.position.set(mx, my + ry, mz);
+        railHolder.rotation.y = yaw;
+        railHolder.rotation.x = pitch;
+
+        addPart(
+          railHolder,
+          new THREE.BoxGeometry(0.13, 0.14, segLen + 0.08),
+          ry > 0.6 ? PALETTE.timberLight : PALETTE.timber,
+          { outline: false }
+        );
+        group.add(railHolder);
+      }
+
+      if (colliders) {
+        colliders.push({
+          type: 'obb',
+          x: mx,
+          z: mz,
+          hx: 0.24,
+          hz: horizLen * 0.5,
+          rotY: yaw,
+          tag: 'split_rail_fence',
+        });
+      }
+    }
+  });
+
+  return group;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 7. SACRED INSCRIPTION STONES (`(0, -14)`, `(-42, 18)`, `(44, 16)`)         */
+/* -------------------------------------------------------------------------- */
+
+function buildSacredInscriptionStones(colliders) {
+  const group = new THREE.Group();
+  group.name = 'sacredInscriptionStones';
+
+  for (const st of INSCRIPTION_STONES) {
+    const sy = terrainHeightAt(st.x, st.z);
+    const holder = new THREE.Group();
+    holder.position.set(st.x, sy, st.z);
+    holder.rotation.y = st.rotY || 0;
+
+    // 1. Lush mossy-turf sanctuary bed & irregular chiseled stone base plinth (matching 07-first-poem.png)
+    const turfBed = addPart(
+      holder,
+      new THREE.CylinderGeometry(3.45, 3.65, 0.07, 16),
+      PALETTE.boulderMoss,
+      { outline: false }
+    );
+    turfBed.position.y = 0.025;
+
+    const turfCurb = addPart(
+      holder,
+      new THREE.RingGeometry(3.40, 3.72, 16).rotateX(-Math.PI / 2),
+      PALETTE.stoneWarm,
+      { outline: false }
+    );
+    turfCurb.position.y = 0.032;
+
+    const lowerStep = addPart(
+      holder,
+      new THREE.CylinderGeometry(1.10, 1.26, 0.24, 7),
+      PALETTE.stoneWarm,
+      { outline: false }
+    );
+    lowerStep.position.y = 0.12;
+
+    const leftRock = addPart(
+      holder,
+      new THREE.DodecahedronGeometry(0.38, 0),
+      PALETTE.limestoneLight,
+      { outline: true }
+    );
+    leftRock.scale.set(1.15, 0.78, 0.95);
+    leftRock.position.set(-0.74, 0.24, 0.18);
+    leftRock.rotation.set(0.15, 0.4, -0.12);
+
+    const rightRock = addPart(
+      holder,
+      new THREE.DodecahedronGeometry(0.32, 0),
+      PALETTE.stoneWarm,
+      { outline: true }
+    );
+    rightRock.scale.set(1.08, 0.72, 0.92);
+    rightRock.position.set(0.68, 0.20, 0.22);
+    rightRock.rotation.set(-0.12, -0.5, 0.18);
+
+    // 2. Weathered ancient limestone monolith stele body (tapered & chiseled, zero green hat)
+    const steleLower = addPart(
+      holder,
+      new THREE.BoxGeometry(1.12, 1.15, 0.44),
+      PALETTE.limestoneLight,
+      { outline: true }
+    );
+    steleLower.position.y = 0.72;
+
+    const steleUpper = addPart(
+      holder,
+      new THREE.BoxGeometry(1.02, 0.86, 0.40),
+      PALETTE.limestoneLight,
+      { outline: true }
+    );
+    steleUpper.position.y = 1.62;
+
+    // Chamfered weathered limestone crown ridge (warm stone, never green)
+    const crownRidge = addPart(
+      holder,
+      new THREE.BoxGeometry(0.92, 0.20, 0.36),
+      PALETTE.stoneWarm,
+      { outline: true }
+    );
+    crownRidge.position.set(0, 2.14, 0);
+
+    // 3. Carved 3-Petal Sacred Lotus & 3 Wave Relief Grooves on front & back faces (matching 07-first-poem.png)
+    for (const fz of [-0.21, 0.21]) {
+      const signZ = Math.sign(fz);
+      // Center lotus petal
+      const petalC = addPart(
+        holder,
+        new THREE.OctahedronGeometry(0.16, 0),
+        PALETTE.stoneDark,
+        { outline: false }
+      );
+      petalC.scale.set(0.62, 1.35, 0.22);
+      petalC.position.set(0, 1.56, fz);
+
+      // Left & right angled lotus petals
+      for (const sx of [-1, 1]) {
+        const petalS = addPart(
+          holder,
+          new THREE.OctahedronGeometry(0.13, 0),
+          PALETTE.stoneDark,
+          { outline: false }
+        );
+        petalS.scale.set(0.58, 1.22, 0.22);
+        petalS.rotation.z = -sx * 0.52;
+        petalS.position.set(sx * 0.19, 1.48, fz);
+      }
+
+      // 3 carved horizontal wave/inscription lines below the lotus emblem
+      for (const [idx, ry] of [1.16, 1.00, 0.84].entries()) {
+        const waveLine = addPart(
+          holder,
+          new THREE.BoxGeometry(0.56 - idx * 0.06, 0.045, 0.04),
+          PALETTE.stoneDark,
+          { outline: false }
+        );
+        waveLine.position.set(0, ry, fz + signZ * 0.005);
+      }
+    }
+
+    group.add(holder);
+
+    if (colliders) {
+      colliders.push({
+        type: 'circle',
+        x: st.x,
+        z: st.z,
+        r: 0.92,
+        tag: 'inscription_stone',
+        id: st.id,
+      });
+    }
+  }
+
+  // Stepping stone slabs along the shallow causeway from the pier shore (-33.5, 10.5) to (-42.0, 18.0)
+  const causewaySteps = [
+    [-33.8, 11.2],
+    [-35.4, 13.0],
+    [-37.2, 14.8],
+    [-39.2, 16.3],
+  ];
+  causewaySteps.forEach(([sx, sz], idx) => {
+    const sy = terrainHeightAt(sx, sz);
+    const slab = addPart(
+      group,
+      new THREE.CylinderGeometry(0.95, 1.08, 0.26, 7),
+      idx % 2 === 0 ? PALETTE.limestoneLight : PALETTE.stoneWarm,
+      { outline: false }
+    );
+    slab.position.set(sx, Math.max(sy, ZONES.millpond.waterY - 0.14), sz);
+  });
+
+  return group;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 8. DEEP-WATER BOUNDARY COLLIDER RING & PIER GUARDRAILS                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Registers a continuous ring of deep-water boundary colliders tracing the exact
+ * `terrainHeightAt(x, z) = -1.55m` contour (`0.35m` ankle wading depth below `waterY = -1.20m`),
+ * while leaving the Wooden Pier deck (`x = -52.0..-33.0, z = 6.7..10.3`) and the `(-42, 18)`
+ * Sacred Stone shallow causeway/sandbar completely open and walkable!
+ */
+function buildDeepWaterColliderRing(colliders) {
+  if (!colliders) return;
+
+  const mp = ZONES.millpond;
+  const pier = LANDMARKS.pier;
+  const wadingLimitY = mp.waterY - 0.35; // -1.55m (0.35m ankle depth)
+  const rayCount = 56;
+  const colliderRadius = 1.95;
+
+  for (let i = 0; i < rayCount; i++) {
+    const ang = (i / rayCount) * Math.PI * 2;
+    const dirX = Math.cos(ang);
+    const dirZ = Math.sin(ang);
+
+    // Walk outward from deep lake center (-58, 4) to find where terrain rises above -1.55m
+    const originX = -58.0;
+    const originZ = 4.0;
+    let rLow = 4.0;
+    let rHigh = 46.0;
+    for (let step = 0; step < 12; step++) {
+      const rMid = (rLow + rHigh) * 0.5;
+      const tx = originX + dirX * rMid;
+      const tz = originZ + dirZ * rMid;
+      if (terrainHeightAt(tx, tz) < wadingLimitY) {
+        rLow = rMid;
+      } else {
+        rHigh = rMid;
+      }
+    }
+
+    // Center the blocking circle slightly inside the deep-water side so its outer edge aligns with -1.55m
+    const rCenter = Math.max(3.0, rLow - colliderRadius * 0.82);
+    const cx = originX + dirX * rCenter;
+    const cz = originZ + dirZ * rCenter;
+
+    // Never block the Wooden Pier deck corridor or the (-42, 18) Sacred Stone sandbar/causeway
+    const inPierDeck =
+      cx >= pier.xEnd - 2.2 &&
+      cx <= pier.xStart + 3.5 &&
+      Math.abs(cz - pier.z) <= pier.width * 0.55 + colliderRadius + 0.25;
+    if (inPierDeck) continue;
+
+    if (terrainHeightAt(cx, cz) >= wadingLimitY + 0.04) continue;
+
+    colliders.push({
+      type: 'circle',
+      x: Number(cx.toFixed(2)),
+      z: Number(cz.toFixed(2)),
+      r: colliderRadius,
+      tag: 'deep_water',
+    });
+  }
+
+  // Add over-water pier edge guardrail colliders so players on the pier cannot step off into deep water,
+  // while the shore entry (x > -36.8) and shallow wading zones remain 100% open!
+  const overWaterX0 = pier.xEnd - 0.15; // -52.15
+  const overWaterX1 = -37.2;
+  const overWaterMidX = (overWaterX0 + overWaterX1) * 0.5;
+  const overWaterHalfLen = (overWaterX1 - overWaterX0) * 0.5;
+  const sideOffsetZ = pier.width * 0.5 + 0.32;
+
+  for (const sz of [-sideOffsetZ, sideOffsetZ]) {
+    colliders.push({
+      type: 'obb',
+      x: overWaterMidX,
+      z: pier.z + sz,
+      hx: overWaterHalfLen,
+      hz: 0.24,
+      rotY: 0,
+      tag: 'pier_deep_edge',
+    });
+  }
+
+  // West lakeward tip of the pier
+  colliders.push({
+    type: 'obb',
+    x: pier.xEnd - 0.35,
+    z: pier.z,
+    hx: 0.25,
+    hz: pier.width * 0.55,
+    rotY: 0,
+    tag: 'pier_deep_tip',
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* 9. 28 STONE BOUNDARY WAYMARKERS AT `PLAY_BOUNDARY_RADIUS = 165m`           */
 /* -------------------------------------------------------------------------- */
 
 function buildBoundaryMarkers() {
   const group = new THREE.Group();
   group.name = 'boundaryMarkers';
 
-  const markerCount = 24;
+  const markerCount = 28;
   for (let i = 0; i < markerCount; i++) {
     const a = (i / markerCount) * Math.PI * 2;
     const bx = Math.cos(a) * PLAY_BOUNDARY_RADIUS;
     const bz = Math.sin(a) * PLAY_BOUNDARY_RADIUS;
-    if (bz > 90 && Math.abs(bx) < 6.0) continue;
+    if (bz > 120 && Math.abs(bx) < 8.0) continue;
     const by = terrainHeightAt(bx, bz);
     if (by < ZONES.millpond.waterY + 0.2) continue;
 
@@ -771,7 +1363,7 @@ function buildBoundaryMarkers() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 6. TUDOR VILLAGE COTTAGES & ROTATING WATERWHEEL (`v7` coordinates)         */
+/* 10. TUDOR VILLAGE COTTAGES & ROTATING WATERWHEEL                           */
 /* -------------------------------------------------------------------------- */
 
 function addWindowUnit(group, x, y, z, rotY = 0, w = 1.12, h = 1.38) {
@@ -836,7 +1428,6 @@ function buildTudorHouse(b, colliders) {
   );
   gableFill.position.y = 0.55 + b.wallH;
 
-  // Timber frame posts on all 4 corners + side gable king-post studs
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
       const post = addPart(
@@ -860,17 +1451,19 @@ function buildTudorHouse(b, colliders) {
       );
       brace.rotation.z = sx * 0.55;
     }
-    const sideStud = addPart(
-      group,
-      new THREE.BoxGeometry(0.14, b.wallH + b.roofH - 0.3, 0.22),
-      PALETTE.timber,
-      { outline: false }
-    );
-    sideStud.position.set(
-      sx * (b.w * 0.5 + 0.02),
-      0.55 + (b.wallH + b.roofH - 0.3) * 0.5,
-      0
-    );
+    for (const szStud of [-0.85, 0.85]) {
+      const sideStud = addPart(
+        group,
+        new THREE.BoxGeometry(0.14, b.wallH, 0.18),
+        PALETTE.timber,
+        { outline: false }
+      );
+      sideStud.position.set(
+        sx * (b.w * 0.5 + 0.02),
+        0.55 + b.wallH * 0.5,
+        szStud
+      );
+    }
   }
 
   const beltBeam = addPart(
@@ -1172,7 +1765,6 @@ function buildTudorHouse(b, colliders) {
     lantern.position.set(sx, 2.45, doorFrontZ + 0.22);
   }
 
-  // Windows on all 4 elevations
   const fZ = b.d * 0.5 + 0.04;
   for (const sx of [-b.w * 0.31, b.w * 0.31]) {
     addWindowUnit(group, sx, 2.15, fZ, 0);
@@ -1194,7 +1786,6 @@ function buildTudorHouse(b, colliders) {
     }
   }
 
-  // Kitchen garden patch on Gardener's +X side (ox: +6.6, oz: 0)
   if (b.gardenPatch) {
     const gp = b.gardenPatch;
     const sideSign = Math.sign(gp.ox) || 1;
@@ -1249,6 +1840,7 @@ function buildTudorHouse(b, colliders) {
       hx: b.w * 0.5 + b.colliderPad,
       hz: b.d * 0.5 + b.colliderPad,
       rotY: b.rotY,
+      tag: 'building',
     });
   }
 
@@ -1297,7 +1889,6 @@ function buildRotatingWaterwheel(millB, gradientMap) {
     outlineThickness: 0.018,
     stripBottom: false,
   });
-  // Hub at ly = 0.85 (world y = 1.15m); with radius 2.55m, bottom paddles reach y = -1.50m (submerged in -1.20m water!)
   batchedWheel.position.set(-millB.w * 0.5 - 0.72, 0.85, 0);
   wheelWorld.add(batchedWheel);
 
@@ -1318,9 +1909,16 @@ export function buildLandmarks(opts = {}) {
 
   staticRaw.add(buildWellPlaza(colliders));
   staticRaw.add(buildWoodenPier());
-  staticRaw.add(buildArenaFence());
+  staticRaw.add(buildArenaFence(colliders));
   staticRaw.add(buildShrineOverlook(colliders));
+  staticRaw.add(buildLimestoneBoulders(colliders));
+  staticRaw.add(buildDryStoneWalls(colliders));
+  staticRaw.add(buildRoadsideSplitRailFences(colliders));
+  staticRaw.add(buildSacredInscriptionStones(colliders));
   staticRaw.add(buildBoundaryMarkers());
+
+  // Register shoreline ankle-wading & deep-water boundary collider ring
+  buildDeepWaterColliderRing(colliders);
 
   if (opts.includeBuildings !== false) {
     for (const b of BUILDINGS) {
@@ -1328,7 +1926,7 @@ export function buildLandmarks(opts = {}) {
     }
   }
 
-  // Merge all static landmark masonry/timber into 3 draw calls (toon, unlit, outline)
+  // Merge all static landmark masonry/timber/boulders/walls/fences into 2 draw calls (toon + emissive)
   const batchedStatic = batchVertexColorGroup(staticRaw, {
     gradientMap,
     flatShading: false,

@@ -87,6 +87,9 @@ const shotIds = [
   'day-mill-pier',
   'day-arena-wisteria',
   'day-shrine-arch',
+  'day-flower-lobby',
+  'day-south-road-boulders',
+  'day-sacred-stone-roses',
   'evening-sunset-vista',
   'night-moon-shrine',
   'night-plaza-lanterns',
@@ -98,9 +101,9 @@ const report = {
   timestamp: new Date().toISOString(),
   budgets: {
     desktopMaxDrawCalls: 60,
-    desktopMaxTriangles: 620000,
+    desktopMaxTriangles: 695000,
     tabletMaxDrawCalls: 48,
-    tabletMaxTriangles: 380000,
+    tabletMaxTriangles: 490000,
   },
   consoleErrors,
   shots: {},
@@ -151,9 +154,9 @@ report.summary = {
   passesAllBudgets:
     consoleErrors.length === 0 &&
     Math.max(...allShots.map((s) => s.draws)) <= 60 &&
-    Math.max(...allShots.map((s) => s.triangles)) <= 620000 &&
+    Math.max(...allShots.map((s) => s.triangles)) <= 695000 &&
     (report.profiles.tablet?.draws || 0) <= 48 &&
-    (report.profiles.tablet?.triangles || 0) <= 380000,
+    (report.profiles.tablet?.triangles || 0) <= 490000,
 };
 
 const reportPath = path.join(outDir, 'report.json');

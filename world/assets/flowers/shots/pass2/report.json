@@ -1,15 +1,15 @@
 {
   "pass": "pass2",
-  "timestamp": "2026-10-29T13:19:12.821Z",
+  "timestamp": "2026-11-02T13:04:14.257Z",
   "consoleErrors": [],
-  "meadowDrawCalls": 6,
-  "fps": 139,
+  "meadowDrawCalls": 7,
+  "fps": 143,
   "species": {
     "grassTuft": {
       "id": "grassTuft",
       "name": "Meadow Grass Tuft",
-      "triangles": 24,
-      "budget": 24,
+      "triangles": 14,
+      "budget": 28,
       "withinBudget": true
     },
     "bellflower": {
@@ -40,6 +40,13 @@
       "budget": 88,
       "withinBudget": true
     },
+    "crimsonRose": {
+      "id": "crimsonRose",
+      "name": "Crimson Rose Cluster",
+      "triangles": 110,
+      "budget": 112,
+      "withinBudget": true
+    },
     "toonShrub": {
       "id": "toonShrub",
       "name": "Cel-Shaded Village Bush",
@@ -50,32 +57,37 @@
   },
   "profiles": {
     "tablet": {
-      "drawCalls": 6,
-      "grassRadius": 42,
+      "drawCalls": 7,
+      "grassRadius": 58,
+      "flowerRadius": 145,
       "instanceCounts": {
-        "grassTuft": 22000,
-        "bellflower": 220,
-        "daisy": 260,
-        "lupine": 180,
-        "cosmos": 220,
-        "toonShrub": 85
+        "grassTuft": 14000,
+        "bellflower": 180,
+        "daisy": 210,
+        "lupine": 145,
+        "cosmos": 180,
+        "crimsonRose": 96,
+        "toonShrub": 68
       }
     },
     "desktop": {
-      "drawCalls": 6,
-      "grassRadius": 56,
+      "drawCalls": 7,
+      "grassRadius": 76,
+      "flowerRadius": 155,
       "instanceCounts": {
-        "grassTuft": 40000,
-        "bellflower": 340,
-        "daisy": 400,
-        "lupine": 280,
-        "cosmos": 340,
-        "toonShrub": 130
+        "grassTuft": 24000,
+        "bellflower": 320,
+        "daisy": 380,
+        "lupine": 260,
+        "cosmos": 320,
+        "crimsonRose": 120,
+        "toonShrub": 120
       }
     }
   },
   "shots": {
     "grassTuft": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\flowers\\shots\\pass2\\grassTuft.png",
+    "crimsonRose": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\flowers\\shots\\pass2\\crimsonRose.png",
     "bellflower": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\flowers\\shots\\pass2\\bellflower.png",
     "daisy": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\flowers\\shots\\pass2\\daisy.png",
     "lupine": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\flowers\\shots\\pass2\\lupine.png",
