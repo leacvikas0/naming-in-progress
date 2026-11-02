@@ -1,0 +1,5 @@
+**/.wrangler/
+**/.wrangler-cache/
+**/node_modules/
+**/deploy.env
+**/*.log
