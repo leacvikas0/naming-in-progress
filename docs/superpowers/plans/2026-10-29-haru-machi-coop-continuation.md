@@ -14,7 +14,34 @@
 
 ---
 
-## Current State Snapshot on Disk (Updated 2026-10-31 — Ready for Stage 5 Game & App Design)
+## Recovery Checkpoint (2026-11-02 — implementation paused for planning)
+
+This checkpoint preserves the interrupted working tree after commit `447f3a3`. It is not a stage-quality sign-off. The older snapshot below is historical; Stage 5 implementation now exists but remains under review.
+
+- [x] Read the mandatory project contract and outstanding source diffs; preserve the commune, sanctuary stele/lobby/HUD, audio atlas, Eclipse sword/ultimate, and partial lotus work in a recovery commit.
+- [x] Remove unescaped backticks from five GLSL comment lines in `artorious-vfx.js`; these prematurely terminated JavaScript template strings and prevented the module from parsing. No combat-feel changes implemented.
+- [x] Fresh verification: 13 changed JS/MJS files pass `node --check`; combat simulation passes 10/10; co-op room suite passes all 7 groups; `git diff --check` passes.
+  - The co-op test run stubs only outgoing Gemini HTTP requests to avoid the server's model prewarm consuming quota. Local HTTP/WebSocket requests run normally. This does not verify live Gemini.
+- [x] `node world/assets/vfx/verify.mjs pass2-suite` passes against the existing report and 15 PNG files. This checks saved artifacts, not a fresh render or current shader compilation, motion, device performance, or visual quality.
+- [x] Fresh headless smoke: construct Artorious and sword systems, seek all five Artorious modes, update an Eclipse detonation, and confirm all 12 atlas audio files exist. This does not compile GPU shaders or judge visuals.
+- [ ] Complete the lotus mesh integration: `createSacredLotusPetalGeometry` exists, but `_buildMeshes()` still uses `createGlacierCrystalGeometry`; record seeding and bloom choreography still need work.
+- [ ] Fresh in-game images/video for the lotus, Eclipse sword/ultimate, sanctuary stele and UI, on desktop and tablet layouts; follow the mandatory fresh blind critic gate before visual sign-off. Existing screenshot/report files predate the current unfinished source.
+- [ ] Verify the new commune path directly: name/riddle handling, favor progression, proximity checks, resurrection, buff expiry and boss shield behavior. The existing combat tests still exercise older headless proximity-revive and half-health boss-shield behavior, so their green result does not establish these new rules.
+- [ ] Verify microphone cancellation/release and denied-permission behavior. Current release awaits the recorder stop event before stopping tracks; capture and confirm actual timing.
+- [ ] Verify HTTP/WebSocket verdict deduplication: the server broadcasts before returning HTTP, and local HTTP application has no matching event-ID guard; timestamp suppression alone is insufficient evidence.
+- [ ] Resolve server parity with the vision: commune currently uploads recorded audio to local `generateContent`, rather than streaming Gemini Live; the Cloudflare Worker changes relay commune packets but do not implement the local altar/commune HTTP endpoints.
+- [ ] Review server static-file boundaries before sharing/hosting: `.env` is gitignored, but the current static handler resolves arbitrary repository files without a dotfile deny rule. Do not treat gitignore as HTTP protection.
+
+### Combat-feel planning carried forward
+
+- User reports excessive camera shake and the Knight jittering in the air; ordinary attack presses currently trigger camera/FOV impulses, immediate forward steps, and a fourth-hit hop. Isolate camera movement from body/grounding movement in recorded gameplay.
+- User prefers removing shake for most actions and retaining it for selected major events. Proposed direction: no routine attack shake/FOV pumping; brief capped impacts for selected major hits. Exact event list and settings remain proposals.
+- User wants repeated attack presses to increase animation speed while allowing swings to finish. Proposed design: one buffered follow-up, smoothly capped tempo, hit/VFX/audio timing tied to animation progress, and explicit interruption rules. Hold-to-continue remains undecided; current hold input triggers a heavy attack.
+- Planning remains the active scope until the user asks to implement. Do not silently turn the above proposals into approved behavior.
+
+---
+
+## Historical State Snapshot (2026-10-31 — Ready for Stage 5 Game & App Design)
 
 - [x] **Workspace Cleaned & Archived:** Legacy prototype (`game/`, `meadow-kit/`, `viewer/`, old reports) moved cleanly to `_archive/legacy-game/` and `_archive/legacy-prototypes/`.
 - [x] **Stage 1 & Stage 2 Complete (`8ec1469`):**

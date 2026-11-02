@@ -337,15 +337,25 @@ export const SEMANTIC_ANIMATIONS = {
   // Reactions & States
   hit_A: {
     candidates: ['Hit_A'],
-    aliases: ['General_Hit_A'],
+    aliases: ['General_Hit_A', 'hit_a'],
     loop: false,
   },
   hit_B: {
+    candidates: ['Hit_B'],
+    aliases: ['General_Hit_B', 'hit_b'],
+    loop: false,
+  },
+  hit_b: {
     candidates: ['Hit_B'],
     aliases: ['General_Hit_B'],
     loop: false,
   },
   downed: {
+    candidates: ['Death_A', 'Death_B', 'Death_C_Skeletons'],
+    aliases: ['General_Death_A', 'death'],
+    loop: false,
+  },
+  death: {
     candidates: ['Death_A', 'Death_B', 'Death_C_Skeletons'],
     aliases: ['General_Death_A'],
     loop: false,

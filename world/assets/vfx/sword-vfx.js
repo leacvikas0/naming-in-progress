@@ -151,6 +151,22 @@ export const BREATHING_PALETTES = Object.freeze({
     decalBase: '#38bdf8',
     decalEdge: '#fff3a1',
   },
+  eclipse: {
+    id: 'eclipse',
+    label: 'Sun & Tide Eclipse',
+    band0: '#cc2408',
+    band1: '#ff7b14',
+    band2: '#fff3a1',
+    ink: '#160d1f',
+    chipCore: '#ff6a12',
+    chipDeep: '#4a1207',
+    chipMid: '#cc290a',
+    chipLit: '#ff7b14',
+    chipSeam: '#fff3b8',
+    decalDeep: '#1f130e',
+    decalBase: '#d93800',
+    decalEdge: '#ff8819',
+  },
 });
 
 /**
@@ -222,6 +238,15 @@ export const SWING_CONFIGS = Object.freeze({
 function normalizeStyleKey(style) {
   if (!style) return 'none';
   const s = String(style).toLowerCase();
+  if (
+    s === 'eclipse' ||
+    s === 'sun_and_tide' ||
+    s === 'fire_and_water' ||
+    s === 'blessed' ||
+    s === 'dual'
+  ) {
+    return 'eclipse';
+  }
   if (s === 'rime' || s === 'glacial' || s === 'ice' || s === 'frost' || s === 'shatterblow') {
     return 'rime';
   }
@@ -396,10 +421,15 @@ function createBladeSheathMaterial(noiseAtlas, sharedUniforms) {
     uniforms: {
       uNoiseAtlas: { value: noiseAtlas },
       uTime: sharedUniforms.uTime,
+      uDualEclipse: sharedUniforms.uDualEclipse,
       uColorBand0: { value: new THREE.Color(pal.band0) },
       uColorBand1: { value: new THREE.Color(pal.band1) },
       uColorBand2: { value: new THREE.Color(pal.band2) },
       uColorInk: { value: new THREE.Color(pal.ink) },
+      uRimeBand0: sharedUniforms.uRimeBand0,
+      uRimeBand1: sharedUniforms.uRimeBand1,
+      uRimeBand2: sharedUniforms.uRimeBand2,
+      uRimeInk: sharedUniforms.uRimeInk,
     },
     vertexShader: /* glsl */ `
       attribute float aEdgeFactor;
@@ -420,10 +450,15 @@ function createBladeSheathMaterial(noiseAtlas, sharedUniforms) {
     fragmentShader: /* glsl */ `
       uniform sampler2D uNoiseAtlas;
       uniform float uTime;
+      uniform float uDualEclipse;
       uniform vec3 uColorBand0;
       uniform vec3 uColorBand1;
       uniform vec3 uColorBand2;
       uniform vec3 uColorInk;
+      uniform vec3 uRimeBand0;
+      uniform vec3 uRimeBand1;
+      uniform vec3 uRimeBand2;
+      uniform vec3 uRimeInk;
 
       varying vec2 vUv;
       varying float vEdgeFactor;
@@ -445,13 +480,23 @@ function createBladeSheathMaterial(noiseAtlas, sharedUniforms) {
 
         float striation = sin(vEdgeFactor * 10.0 - vUv.y * 8.0 + nSample.b * 3.5) * 0.08;
         float bandScore = (1.0 - vEdgeFactor) * 0.74 + flowWave * 0.28 + striation;
-        vec3 col = uColorBand0;
-        col = mix(col, uColorBand1 * 1.04, step(0.38, bandScore));
-        col = mix(col, uColorBand2 * 1.18, step(0.68, bandScore));
+
+        // Intertwined Sunfire & Glacial Tide wave when uDualEclipse > 0.5
+        float eclipseWave = sin(vUv.x * 10.0 - vUv.y * 6.0 + uTime * 8.0 + (nSample.b - 0.5) * 2.2);
+        float tideMix = uDualEclipse * smoothstep(-0.15, 0.15, eclipseWave);
+        vec3 b0 = mix(uColorBand0, uRimeBand0, tideMix);
+        vec3 b1 = mix(uColorBand1, uRimeBand1, tideMix);
+        vec3 b2 = mix(uColorBand2, uRimeBand2, tideMix);
+        vec3 inkCol = mix(uColorInk, uRimeInk, tideMix);
+
+        vec3 col = b0;
+        col = mix(col, b1 * 1.04, step(0.38, bandScore));
+        col = mix(col, b2 * 1.18, step(0.68, bandScore));
 
         float border = 1.0 - smoothstep(0.45, 0.54, tongueMask);
         float rimInk = 1.0 - smoothstep(0.14, 0.24, ndv);
-        col = mix(col, uColorInk, max(border, rimInk * 0.82));
+        float streamSeam = uDualEclipse * smoothstep(0.10, 0.0, abs(eclipseWave)) * 0.55;
+        col = mix(col, inkCol, max(max(border, rimInk * 0.82), streamSeam));
 
         gl_FragColor = vec4(col, 1.0);
       }
@@ -469,10 +514,15 @@ function createLiveSwordRibbonMaterial(noiseAtlas, sharedUniforms) {
     uniforms: {
       uNoiseAtlas: { value: noiseAtlas },
       uTime: sharedUniforms.uTime,
+      uDualEclipse: sharedUniforms.uDualEclipse,
       uColorBand0: sharedUniforms.uSlashBand0,
       uColorBand1: sharedUniforms.uSlashBand1,
       uColorBand2: sharedUniforms.uSlashBand2,
       uColorInk: sharedUniforms.uSlashInk,
+      uRimeBand0: sharedUniforms.uRimeBand0,
+      uRimeBand1: sharedUniforms.uRimeBand1,
+      uRimeBand2: sharedUniforms.uRimeBand2,
+      uRimeInk: sharedUniforms.uRimeInk,
     },
     vertexShader: /* glsl */ `
       attribute float aSliceAge;
@@ -493,10 +543,15 @@ function createLiveSwordRibbonMaterial(noiseAtlas, sharedUniforms) {
     fragmentShader: /* glsl */ `
       uniform sampler2D uNoiseAtlas;
       uniform float uTime;
+      uniform float uDualEclipse;
       uniform vec3 uColorBand0;
       uniform vec3 uColorBand1;
       uniform vec3 uColorBand2;
       uniform vec3 uColorInk;
+      uniform vec3 uRimeBand0;
+      uniform vec3 uRimeBand1;
+      uniform vec3 uRimeBand2;
+      uniform vec3 uRimeInk;
 
       varying vec2 vUv;
       varying float vSliceAge;
@@ -526,20 +581,29 @@ function createLiveSwordRibbonMaterial(noiseAtlas, sharedUniforms) {
         // Hard alphaTest cutout (strictly >= 0.45, zero transparent glass!)
         if (erodedMask < 0.45) discard;
 
+        // Intertwined Sunfire & Glacial Tide wave when uDualEclipse > 0.5
+        float eclipseWave = sin(u * 10.0 - v * 6.0 + uTime * 8.0 + (n0.b - 0.5) * 2.4);
+        float tideMix = uDualEclipse * smoothstep(-0.14, 0.14, eclipseWave);
+        vec3 b0 = mix(uColorBand0, uRimeBand0, tideMix);
+        vec3 b1 = mix(uColorBand1, uRimeBand1, tideMix);
+        vec3 b2 = mix(uColorBand2, uRimeBand2, tideMix);
+        vec3 inkCol = mix(uColorInk, uRimeInk, tideMix);
+
         // Bold Ukiyo-e concentric flow striations + 3-Band Demon Slayer Breathing Crescent
         // Keeps 75% of the crescent in rich Crimson/Vermilion (or Sapphire/Cerulean) with a tight 22% molten-gold/white outer crest!
         float striation = sin(v * 22.0 + n0.b * 5.8 + u * 9.0) * 0.16;
         float celScore = pow(v, 1.38) * 0.72 + (1.0 - u * 0.45) * 0.12 + (n1.b - 0.5) * 0.22 + striation;
-        vec3 col = uColorBand0;
-        col = mix(col, uColorBand1 * 1.04, step(0.36, celScore));
-        col = mix(col, uColorBand2 * 1.14, step(0.78, celScore));
+        vec3 col = b0;
+        col = mix(col, b1 * 1.04, step(0.36, celScore));
+        col = mix(col, b2 * 1.14, step(0.78, celScore));
 
         // Crisp sumi-ink woodblock border along cutout tongues, internal wave ribs, and outer razor spine
         float cutoutInk = 1.0 - smoothstep(0.45, 0.54, erodedMask);
         float outerRazorInk = smoothstep(0.935, 0.992, v);
         float waveRib1 = smoothstep(0.032, 0.0, abs(celScore - 0.36)) * 0.78;
         float waveRib2 = smoothstep(0.028, 0.0, abs(celScore - 0.78)) * 0.68;
-        col = mix(col, uColorInk, max(max(cutoutInk, outerRazorInk * 0.90), max(waveRib1, waveRib2)));
+        float eclipseSeam = uDualEclipse * smoothstep(0.09, 0.0, abs(eclipseWave)) * 0.68;
+        col = mix(col, inkCol, max(max(cutoutInk, outerRazorInk * 0.90), max(max(waveRib1, waveRib2), eclipseSeam)));
 
         gl_FragColor = vec4(col, 1.0);
       }
@@ -559,15 +623,20 @@ function createShrapnelCrystalMaterial(noiseAtlas, sharedUniforms) {
       uTime: sharedUniforms.uTime,
       uSunDir: sharedUniforms.uSunDir,
       uDaylight: sharedUniforms.uDaylight,
+      uDualEclipse: sharedUniforms.uDualEclipse,
       uColorCore: sharedUniforms.uChipCore,
       uColorDeep: sharedUniforms.uChipDeep,
       uColorMid: sharedUniforms.uChipMid,
       uColorLit: sharedUniforms.uChipLit,
       uColorSeam: sharedUniforms.uChipSeam,
       uColorInk: sharedUniforms.uSlashInk,
+      uRimeChipCore: sharedUniforms.uRimeChipCore,
+      uRimeChipDeep: sharedUniforms.uRimeChipDeep,
+      uRimeChipLit: sharedUniforms.uRimeChipLit,
+      uRimeChipSeam: sharedUniforms.uRimeChipSeam,
     },
     vertexShader: /* glsl */ `
-      attribute vec4 aChipMeta; // x: seed, y: glow, z: isAirborne (0=grounded spire, 1=tangential spark), w: dissolveProgress (0..1)
+      attribute vec4 aChipMeta; // x: seed (negative = rime spire in eclipse mode), y: glow, z: isAirborne (0=grounded spire, 1=tangential spark), w: dissolveProgress (0..1)
       varying vec3 vWorldPos;
       varying vec3 vWorldNormal;
       varying vec3 vLocalPos;
@@ -599,12 +668,17 @@ function createShrapnelCrystalMaterial(noiseAtlas, sharedUniforms) {
       uniform float uTime;
       uniform vec3 uSunDir;
       uniform float uDaylight;
+      uniform float uDualEclipse;
       uniform vec3 uColorCore;
       uniform vec3 uColorDeep;
       uniform vec3 uColorMid;
       uniform vec3 uColorLit;
       uniform vec3 uColorSeam;
       uniform vec3 uColorInk;
+      uniform vec3 uRimeChipCore;
+      uniform vec3 uRimeChipDeep;
+      uniform vec3 uRimeChipLit;
+      uniform vec3 uRimeChipSeam;
 
       varying vec3 vWorldPos;
       varying vec3 vWorldNormal;
@@ -612,10 +686,17 @@ function createShrapnelCrystalMaterial(noiseAtlas, sharedUniforms) {
       varying vec4 vMeta;
 
       void main() {
-        float seed = vMeta.x;
+        float rawSeed = vMeta.x;
+        float seed = abs(rawSeed);
+        float isRimeSpire = uDualEclipse * step(rawSeed, -0.001);
         float glowBoost = vMeta.y;
         float isAirborne = vMeta.z;
         float dissolveProgress = clamp(vMeta.w, 0.0, 1.0);
+
+        vec3 cCore = mix(uColorCore, uRimeChipCore, isRimeSpire);
+        vec3 cDeep = mix(uColorDeep, uRimeChipDeep, isRimeSpire);
+        vec3 cLit = mix(uColorLit, uRimeChipLit, isRimeSpire);
+        vec3 cSeam = mix(uColorSeam, uRimeChipSeam, isRimeSpire);
 
         // 1. Locked V1 Horizontal-Azimuth Optical Thickness & Derivative-Flat Facets
         vec3 dN = cross(dFdx(vWorldPos), dFdy(vWorldPos));
@@ -646,14 +727,14 @@ function createShrapnelCrystalMaterial(noiseAtlas, sharedUniforms) {
         float erodeNoise = (0.56 * r0 + 0.44 * v0) * 0.72 + (1.0 - hLocal) * 0.28;
         if (dissolveProgress > 0.001 && erodeNoise < dissolveProgress) discard;
 
-        vec3 body = mix(uColorLit, uColorDeep, thickness);
-        body = mix(body, uColorSeam, veins * 0.30);
-        body = mix(body, uColorSeam, cracks * 0.28);
+        vec3 body = mix(cLit, cDeep, thickness);
+        body = mix(body, cSeam, veins * 0.30);
+        body = mix(body, cSeam, cracks * 0.28);
 
         // 3. Basal Rime / Ember Surge on Ground-Rooted Spires
         float rimeFbm = texture2D(uNoiseAtlas, vLocalPos.xy * 1.35 + vec2(seed * 0.29, vLocalPos.z * 1.35)).b;
         float rime = smoothstep(0.50, 0.0, hLocal) * (0.5 + 0.5 * rimeFbm) * (1.0 - isAirborne * 0.65);
-        body = mix(body, uColorSeam, clamp(rime, 0.0, 1.0) * 0.56);
+        body = mix(body, cSeam, clamp(rime, 0.0, 1.0) * 0.56);
 
         // 4. Crisp Hewn-Plane Facet Separation
         body *= mix(1.0, 0.64 + 0.80 * ndv, 0.82);
@@ -667,15 +748,15 @@ function createShrapnelCrystalMaterial(noiseAtlas, sharedUniforms) {
         float spec = pow(max(dot(N, H), 0.0), 48.0) * 0.20 * mix(0.5, 1.0, uDaylight);
 
         // 6. Permanent Subsurface Inner Light + Dissolve Fracture Edge
-        vec3 glow = uColorSeam * rimAmount * 0.80;
-        glow += uColorCore * (cracks * 0.62 + veins * 0.28) * 1.45;
-        glow += uColorCore * (0.86 + 0.14 * glowBoost);
+        vec3 glow = cSeam * rimAmount * 0.80;
+        glow += cCore * (cracks * 0.62 + veins * 0.28) * 1.45;
+        glow += cCore * (0.86 + 0.14 * glowBoost);
         glow *= 0.48;
         glow /= (1.0 + glow * 0.35);
 
-        vec3 finalColor = diffuseLit + uColorSeam * spec + glow;
+        vec3 finalColor = diffuseLit + cSeam * spec + glow;
         float dissolveEdge = step(0.001, dissolveProgress) * (1.0 - smoothstep(dissolveProgress, dissolveProgress + 0.08, erodeNoise));
-        finalColor = mix(finalColor, uColorSeam * 1.32, dissolveEdge);
+        finalColor = mix(finalColor, cSeam * 1.32, dissolveEdge);
 
         gl_FragColor = vec4(finalColor, 1.0);
       }
@@ -698,10 +779,14 @@ function createDetonationDecalMaterial(noiseAtlas, sharedUniforms) {
       uTime: sharedUniforms.uTime,
       uSunDir: sharedUniforms.uSunDir,
       uDaylight: sharedUniforms.uDaylight,
+      uDualEclipse: sharedUniforms.uDualEclipse,
       uColorDeep: sharedUniforms.uDecalDeep,
       uColorBase: sharedUniforms.uDecalBase,
       uColorEdge: sharedUniforms.uDecalEdge,
       uColorInk: sharedUniforms.uSlashInk,
+      uRimeDecalDeep: sharedUniforms.uRimeDecalDeep,
+      uRimeDecalBase: sharedUniforms.uRimeDecalBase,
+      uRimeDecalEdge: sharedUniforms.uRimeDecalEdge,
     },
     vertexShader: /* glsl */ `
       attribute vec4 aDecalMeta; // x: age01, y: reach, z: seed, w: intensity
@@ -722,10 +807,14 @@ function createDetonationDecalMaterial(noiseAtlas, sharedUniforms) {
       uniform float uTime;
       uniform vec3 uSunDir;
       uniform float uDaylight;
+      uniform float uDualEclipse;
       uniform vec3 uColorDeep;
       uniform vec3 uColorBase;
       uniform vec3 uColorEdge;
       uniform vec3 uColorInk;
+      uniform vec3 uRimeDecalDeep;
+      uniform vec3 uRimeDecalBase;
+      uniform vec3 uRimeDecalEdge;
 
       varying vec2 vUv;
       varying vec4 vMeta;
@@ -773,16 +862,21 @@ function createDetonationDecalMaterial(noiseAtlas, sharedUniforms) {
         float lambert = clamp(dot(nrm, lightDir), 0.0, 1.0);
         float shade = 0.36 + 0.64 * pow(lambert, 0.80);
 
-        vec3 col = mix(uColorDeep, uColorBase, step(0.46, shade));
-        col = mix(col, uColorEdge, step(0.68, shade));
+        float eclipseSector = uDualEclipse * smoothstep(-0.18, 0.18, sin(ang * 4.0 - r * 3.5 + (n0.b - 0.5) * 1.4));
+        vec3 cDeep = mix(uColorDeep, uRimeDecalDeep, eclipseSector);
+        vec3 cBase = mix(uColorBase, uRimeDecalBase, eclipseSector);
+        vec3 cEdge = mix(uColorEdge, uRimeDecalEdge, eclipseSector);
+
+        vec3 col = mix(cDeep, cBase, step(0.46, shade));
+        col = mix(col, cEdge, step(0.68, shade));
 
         float shockRing = smoothstep(0.06, 0.0, abs(r - 0.80 + (n0.b - 0.5) * 0.06));
         float innerSeam = smoothstep(0.68, 0.92, n1.r) * smoothstep(0.50, 0.78, mask);
-        col = mix(col, uColorBase, innerSeam * 0.55);
-        col = mix(col, uColorEdge * 1.12, shockRing * 0.80);
+        col = mix(col, cBase, innerSeam * 0.55);
+        col = mix(col, cEdge * 1.12, shockRing * 0.80);
 
         float rimShadow = 1.0 - smoothstep(0.45, 0.53, mask);
-        col = mix(col, uColorDeep * 0.84, rimShadow * 0.70);
+        col = mix(col, cDeep * 0.84, rimShadow * 0.70);
 
         gl_FragColor = vec4(col * mix(0.84, 1.0, uDaylight), 1.0);
       }
@@ -820,10 +914,12 @@ export class SwordVfxSystem {
     this.noiseAtlas = getSharedNoiseAtlas();
 
     const defPal = BREATHING_PALETTES.solar;
+    const rimePal = BREATHING_PALETTES.rime;
     this.sharedUniforms = {
       uTime: { value: 0 },
       uSunDir: { value: new THREE.Vector3(0.45, 0.78, 0.42).normalize() },
       uDaylight: { value: 1.0 },
+      uDualEclipse: { value: 0.0 },
       uSlashBand0: { value: new THREE.Color(defPal.band0) },
       uSlashBand1: { value: new THREE.Color(defPal.band1) },
       uSlashBand2: { value: new THREE.Color(defPal.band2) },
@@ -836,6 +932,17 @@ export class SwordVfxSystem {
       uDecalDeep: { value: new THREE.Color(defPal.decalDeep) },
       uDecalBase: { value: new THREE.Color(defPal.decalBase) },
       uDecalEdge: { value: new THREE.Color(defPal.decalEdge) },
+      uRimeBand0: { value: new THREE.Color(rimePal.band0) },
+      uRimeBand1: { value: new THREE.Color(rimePal.band1) },
+      uRimeBand2: { value: new THREE.Color(rimePal.band2) },
+      uRimeInk: { value: new THREE.Color(rimePal.ink) },
+      uRimeChipCore: { value: new THREE.Color(rimePal.chipCore) },
+      uRimeChipDeep: { value: new THREE.Color(rimePal.chipDeep) },
+      uRimeChipLit: { value: new THREE.Color(rimePal.chipLit) },
+      uRimeChipSeam: { value: new THREE.Color(rimePal.chipSeam) },
+      uRimeDecalDeep: { value: new THREE.Color(rimePal.decalDeep) },
+      uRimeDecalBase: { value: new THREE.Color(rimePal.decalBase) },
+      uRimeDecalEdge: { value: new THREE.Color(rimePal.decalEdge) },
     };
 
     this.group = new THREE.Group();
@@ -984,7 +1091,10 @@ export class SwordVfxSystem {
   }
 
   _applyPaletteToUniforms(styleKey, isDetonationPalette = false) {
-    const pal = BREATHING_PALETTES[normalizeStyleKey(styleKey)] || BREATHING_PALETTES.solar;
+    const norm = normalizeStyleKey(styleKey);
+    const pal = BREATHING_PALETTES[norm] || BREATHING_PALETTES.solar;
+    const isEclipse = norm === 'eclipse' || (isDetonationPalette && this.infusionStyle === 'eclipse');
+    this.sharedUniforms.uDualEclipse.value = isEclipse ? 1.0 : 0.0;
     if (!isDetonationPalette) {
       this.sharedUniforms.uSlashBand0.value.set(pal.band0);
       this.sharedUniforms.uSlashBand1.value.set(pal.band1);
@@ -1347,7 +1457,7 @@ export class SwordVfxSystem {
   }
 
   /**
-   * Sets the Knight's active Sword Breathing Style (`'none' | 'rime' | 'solar' | 'tempest'`).
+   * Sets the Knight's active Sword Breathing Style (`'none' | 'rime' | 'solar' | 'tempest' | 'eclipse'`).
    */
   setInfusion(style = 'none', duration = 12) {
     const norm = normalizeStyleKey(style);
@@ -1363,6 +1473,13 @@ export class SwordVfxSystem {
     this.sheathMesh.visible = norm !== 'none';
     this._applyPaletteToUniforms(norm, false);
     return this;
+  }
+
+  /**
+   * Alias for `setInfusion` supporting `setBreathingStyle('eclipse' | 'solar' | 'rime' | 'tempest' | 'none')`.
+   */
+  setBreathingStyle(style = 'none', duration = 12) {
+    return this.setInfusion(style, duration);
   }
 
   /**
@@ -1413,11 +1530,17 @@ export class SwordVfxSystem {
   }
 
   /**
-   * Triggers one of the 3 Physical Detonations at `pos`:
-   * `'shatterblow' | 'solar_flare' | 'thunderchain'`.
+   * Triggers one of the Physical Detonations at `pos`:
+   * `'shatterblow' | 'solar_flare' | 'thunderchain' | 'eclipse'`.
    */
   triggerDetonation(type = 'shatterblow', pos = [0, 0, 0]) {
-    const style = normalizeStyleKey(type);
+    const normType = normalizeStyleKey(type);
+    const style =
+      normType === 'eclipse' || this.infusionStyle === 'eclipse'
+        ? 'eclipse'
+        : normType !== 'none'
+          ? normType
+          : 'rime';
     const px = pos.x ?? pos[0] ?? 0;
     const pz = pos.z ?? pos[2] ?? 0;
     const py = pos.y ?? pos[1] ?? this.getGroundHeight(px, pz);
@@ -1574,6 +1697,7 @@ export class SwordVfxSystem {
     if (this.swingState.active) {
       const sw = this.swingState;
       this._applyPaletteToUniforms(sw.style, false);
+      const isEclipseSwing = sw.style === 'eclipse' || this.infusionStyle === 'eclipse';
 
       if (sw.age <= sw.duration + this.trailLifetime) {
         const drag = 2.4;
@@ -1599,7 +1723,8 @@ export class SwordVfxSystem {
           _dummy.scale.set(sp.size * 0.55, sp.size * 1.45, sp.size * 0.55);
           _dummy.updateMatrix();
           this.shrapnelMesh.setMatrixAt(chipSlot, _dummy.matrix);
-          this.chipMetaAttr.setXYZW(chipSlot, sp.seed, 1.4, 1.0, dissolveProgress);
+          const signedSeed = isEclipseSwing && i % 2 === 1 ? -Math.max(0.05, sp.seed) : sp.seed;
+          this.chipMetaAttr.setXYZW(chipSlot, signedSeed, 1.4, 1.0, dissolveProgress);
           chipSlot++;
         }
       } else {
@@ -1608,12 +1733,16 @@ export class SwordVfxSystem {
       }
     }
 
-    // 2. Evaluate Active Physical Detonation (`shatterblow`, `solar_flare`, `thunderchain`)
+    // 2. Evaluate Active Physical Detonation (`shatterblow`, `solar_flare`, `thunderchain`, `eclipse`)
     if (this.detonationState.active) {
       const det = this.detonationState;
       const u = det.age / Math.max(0.08, det.duration);
       if (u >= 0 && u <= 1.0) {
         this._applyPaletteToUniforms(det.style, true);
+        const isEclipseDet =
+          det.style === 'eclipse' ||
+          det.type === 'eclipse' ||
+          this.infusionStyle === 'eclipse';
         const dx = det.pos.x;
         const dy = det.pos.y;
         const dz = det.pos.z;
@@ -1633,11 +1762,15 @@ export class SwordVfxSystem {
         }
 
         // 2b. 28 Solid 3D Detonation Glacier Spires / Solar Pillar Cinders / Fulgurite Monoliths
-        //     Keep at 100% erupted scale and dissolve via NoiseAtlas fracture erosion!
+        //     In 'eclipse' mode (or when blessed), alternate the 28 radial spires between
+        //     Glacier Ice Spires (negative seed) and Incandescent Magma Spires (positive seed)!
         for (let i = 0; i < this.detonationWedgeRecords.length && chipSlot < MAX_SHRAPNEL; i++) {
           const rec = this.detonationWedgeRecords[i];
           const dissolveProgress = smoothstep(0.48, 0.98, u + rec.stagger);
           if (dissolveProgress >= 0.995) continue;
+
+          const spireSeed =
+            isEclipseDet && i % 2 === 1 ? -Math.max(0.05, rec.seed) : Math.max(0.05, rec.seed);
 
           if (det.type === 'solar_flare' && !rec.isRingWedge) {
             const cDist = rec.radial + rec.vOut * det.age * 0.55;
@@ -1651,7 +1784,7 @@ export class SwordVfxSystem {
             _dummy.scale.set(sc, sc * 1.8, sc);
             _dummy.updateMatrix();
             this.shrapnelMesh.setMatrixAt(chipSlot, _dummy.matrix);
-            this.chipMetaAttr.setXYZW(chipSlot, rec.seed, 1.3 * fadeDet, 1.0, dissolveProgress);
+            this.chipMetaAttr.setXYZW(chipSlot, spireSeed, 1.3 * fadeDet, 1.0, dissolveProgress);
             chipSlot++;
           } else {
             const rSpread =
@@ -1663,14 +1796,15 @@ export class SwordVfxSystem {
             const wy = this.getGroundHeight(wx, wz) - 0.15;
 
             _dummy.position.set(wx, wy, wz);
-            const leanAng = det.type === 'solar_flare' ? rec.lean * 0.45 : rec.lean;
+            const isMagmaSpire = det.type === 'solar_flare' || (isEclipseDet && i % 2 === 0);
+            const leanAng = isMagmaSpire ? rec.lean * 0.52 : rec.lean;
             _pos.set(
               Math.cos(rec.az) * Math.sin(leanAng),
               Math.cos(leanAng),
               Math.sin(rec.az) * Math.sin(leanAng)
             ).normalize();
             _dummy.quaternion.setFromUnitVectors(UP, _pos);
-            const hMult = det.type === 'solar_flare' ? 1.45 : 1.25;
+            const hMult = isMagmaSpire ? 1.42 : 1.25;
             _dummy.scale.set(
               rec.radius * emerge,
               rec.height * hMult * emerge,
@@ -1678,7 +1812,7 @@ export class SwordVfxSystem {
             );
             _dummy.updateMatrix();
             this.shrapnelMesh.setMatrixAt(chipSlot, _dummy.matrix);
-            this.chipMetaAttr.setXYZW(chipSlot, rec.seed, 1.3 * fadeDet, 0.0, dissolveProgress);
+            this.chipMetaAttr.setXYZW(chipSlot, spireSeed, 1.3 * fadeDet, 0.0, dissolveProgress);
             chipSlot++;
           }
         }

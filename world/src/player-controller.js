@@ -13,6 +13,7 @@
 // ============================================================================
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createCharactersKit } from '../assets/characters/index.js';
 import { createVfxKit } from '../assets/vfx/index.js';
 import {
@@ -23,6 +24,9 @@ import {
   SPELLS,
   SPELL_BY_SLOT,
   ACT_DEFINITIONS,
+  ALTAR_STELE_POS,
+  COMMUNE_MAX_DISTANCE,
+  COMMUNE_RESURRECT_DISTANCE,
   selectSoftLockTarget,
   resolveShrineObstacles,
 } from './combat/combat-balance.js';
@@ -30,6 +34,163 @@ import { createEnemyManager } from './combat/enemy-manager.js';
 import { createCampaignLoop } from './combat/campaign-loop.js';
 import { createCombatSfx } from './combat/combat-sfx.js';
 import { createCoopClient } from './net/coop-client.js';
+
+/**
+ * Builds the chiseled 3D Weathered Sanctuary Altar Stele placed in the Town Plaza
+ * at `(x = 2.6, z = 7.2)` consolidated into 1 single vertex-colored Mesh (1 draw call)
+ * with a rotating golden astrolabe ring on the ground. Hidden during `poseForShot`
+ * so `shoot-world.mjs` budgets remain untouched.
+ */
+function createPlazaSanctuarySteleMesh(walkableHeightAt) {
+  const parts = [];
+  const paintPart = (geo, hexColor, isRotRing = 0.0) => {
+    const g = geo.index ? geo.toNonIndexed() : geo.clone();
+    const count = g.attributes.position.count;
+    const colors = new Float32Array(count * 3);
+    const ringFlag = new Float32Array(count);
+    const col = new THREE.Color(hexColor);
+    for (let i = 0; i < count; i++) {
+      colors[i * 3] = col.r;
+      colors[i * 3 + 1] = col.g;
+      colors[i * 3 + 2] = col.b;
+      ringFlag[i] = isRotRing;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    g.setAttribute('aIsRing', new THREE.BufferAttribute(ringFlag, 1));
+    parts.push(g);
+  };
+
+  // 1. Stepped Weathered Octagonal Stone Plinth Base
+  const baseLower = new THREE.CylinderGeometry(0.96, 1.12, 0.22, 8);
+  baseLower.translate(0, 0.11, 0);
+  paintPart(baseLower, '#525b66', 0.0);
+
+  const baseUpper = new THREE.CylinderGeometry(0.72, 0.86, 0.20, 8);
+  baseUpper.translate(0, 0.32, 0);
+  paintPart(baseUpper, '#646f7d', 0.0);
+
+  // 2. Chiseled Weathered Monolith Tablet Body & Dark-Slate Inscribed Core
+  const steleBody = new THREE.BoxGeometry(0.88, 1.78, 0.26);
+  steleBody.translate(0, 1.28, 0);
+  paintPart(steleBody, '#5d6875', 0.0);
+
+  const recessedSlate = new THREE.BoxGeometry(0.66, 1.32, 0.29);
+  recessedSlate.translate(0, 1.28, 0);
+  paintPart(recessedSlate, '#1e2631', 0.0);
+
+  // 3. Arched Wisteria-Stone Pediment Cap & Gold Filigree Accents
+  const pediment = new THREE.BoxGeometry(1.04, 0.22, 0.34);
+  pediment.translate(0, 2.24, 0);
+  paintPart(pediment, '#687382', 0.0);
+
+  const goldTrimTop = new THREE.BoxGeometry(0.92, 0.07, 0.31);
+  goldTrimTop.translate(0, 2.02, 0);
+  paintPart(goldTrimTop, '#f59e0b', 0.0);
+
+  const goldTrimBot = new THREE.BoxGeometry(0.92, 0.07, 0.31);
+  goldTrimBot.translate(0, 0.54, 0);
+  paintPart(goldTrimBot, '#f59e0b', 0.0);
+
+  // 4. Wisteria Blossom Clusters flanking the Stele Crown
+  const wisteriaLeft = new THREE.DodecahedronGeometry(0.22, 0);
+  wisteriaLeft.scale(0.85, 1.35, 0.85);
+  wisteriaLeft.translate(-0.42, 1.98, 0.12);
+  paintPart(wisteriaLeft, '#c084fc', 0.0);
+
+  const wisteriaRight = new THREE.DodecahedronGeometry(0.22, 0);
+  wisteriaRight.scale(0.85, 1.35, 0.85);
+  wisteriaRight.translate(0.42, 1.98, 0.12);
+  paintPart(wisteriaRight, '#c084fc', 0.0);
+
+  // 5. Floating Rotating Golden Astrolabe Ring & Crown Star Jewel (`aIsRing = 1.0`)
+  const crownStar = new THREE.OctahedronGeometry(0.18, 0);
+  crownStar.scale(0.9, 1.45, 0.9);
+  crownStar.translate(0, 2.58, 0);
+  paintPart(crownStar, '#fde047', 1.0);
+
+  const groundRingOuter = new THREE.RingGeometry(1.26, 1.42, 24);
+  groundRingOuter.rotateX(-Math.PI * 0.5);
+  groundRingOuter.translate(0, 0.035, 0);
+  paintPart(groundRingOuter, '#fbbf24', 1.0);
+
+  const groundRingInner = new THREE.RingGeometry(0.98, 1.08, 16);
+  groundRingInner.rotateX(-Math.PI * 0.5);
+  groundRingInner.translate(0, 0.038, 0);
+  paintPart(groundRingInner, '#fde047', 1.0);
+
+  const mergedGeo = mergeGeometries(parts, false);
+  mergedGeo.computeVertexNormals();
+
+  const mat = new THREE.ShaderMaterial({
+    name: 'SanctuaryAltarSteleCelMaterial',
+    transparent: false,
+    depthWrite: true,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    uniforms: {
+      uTime: { value: 0 },
+      uSunDir: { value: new THREE.Vector3(0.45, 0.78, 0.42).normalize() },
+      uInkColor: { value: new THREE.Color('#18131a') },
+    },
+    vertexShader: /* glsl */ `
+      attribute vec3 color;
+      attribute float aIsRing;
+      uniform float uTime;
+      varying vec3 vColor;
+      varying vec3 vWorldNormal;
+      varying vec3 vViewDir;
+      varying float vIsRing;
+
+      void main() {
+        vColor = color;
+        vIsRing = aIsRing;
+        vec3 pos = position;
+        vec3 nrm = normal;
+        if (aIsRing > 0.5) {
+          float ang = uTime * 0.85;
+          float c = cos(ang);
+          float s = sin(ang);
+          pos.xz = mat2(c, -s, s, c) * pos.xz;
+          nrm.xz = mat2(c, -s, s, c) * nrm.xz;
+          if (pos.y > 1.5) {
+            pos.y += sin(uTime * 2.6) * 0.06;
+          }
+        }
+        vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+        vWorldNormal = normalize(mat3(modelMatrix) * nrm);
+        vViewDir = normalize(cameraPosition - worldPos.xyz);
+        gl_Position = projectionMatrix * viewMatrix * worldPos;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uSunDir;
+      uniform vec3 uInkColor;
+      varying vec3 vColor;
+      varying vec3 vWorldNormal;
+      varying vec3 vViewDir;
+      varying float vIsRing;
+
+      void main() {
+        vec3 N = normalize(vWorldNormal);
+        vec3 V = normalize(vViewDir);
+        float ndotl = dot(N, uSunDir) * 0.5 + 0.5;
+        float ndotv = abs(dot(N, V));
+        float cel = step(0.38, ndotl) * 0.32 + step(0.72, ndotl) * 0.36 + 0.52;
+        vec3 shaded = vColor * mix(cel, 1.18, vIsRing);
+        float inkRim = (1.0 - step(0.18, ndotv)) * (1.0 - vIsRing * 0.65);
+        gl_FragColor = vec4(mix(shaded, uInkColor, inkRim * 0.85), 1.0);
+      }
+    `,
+  });
+
+  const mesh = new THREE.Mesh(mergedGeo, mat);
+  mesh.name = 'plazaSanctuaryAltarSteleMesh';
+  mesh.userData.isVfx = true;
+  const sy = walkableHeightAt(ALTAR_STELE_POS.x, ALTAR_STELE_POS.z);
+  mesh.position.set(ALTAR_STELE_POS.x, sy, ALTAR_STELE_POS.z);
+  mesh.rotation.y = 0.18;
+  return mesh;
+}
 
 /**
  * Configures generous local bounding spheres and enables `frustumCulled = true`
@@ -127,7 +288,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     activeSpellSlot: 3,
     spellCooldowns: { frost_lance: 0, shatterlance: 0, cinder_fall: 4.8, storm_lance: 0 },
     banner: {
-      title: '☀️ HINOKAMI SUNFIRE · BLADE IGNITED',
+      title: 'HINOKAMI SUNFIRE · BLADE IGNITED',
       subtitle: 'Strike Sunbranded Enemies with 3rd Hit or Hold LMB for Solar Flare!',
     },
     enemies: [
@@ -183,7 +344,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     activeSpellSlot: 2,
     spellCooldowns: { frost_lance: 1.8, shatterlance: 5.6, cinder_fall: 0, storm_lance: 0 },
     banner: {
-      title: '💎 2 · SHATTERLANCE RAILGUN SPEAR',
+      title: 'II · SHATTERLANCE RAILGUN SPEAR',
       subtitle: '7-Fluted Glacial Great-Lance Converging · Detonates Rime Marks!',
     },
     enemies: [
@@ -219,7 +380,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     activeSpellSlot: 3,
     spellCooldowns: { frost_lance: 0, shatterlance: 2.4, cinder_fall: 6.4, storm_lance: 0 },
     banner: {
-      title: '☀️ 3 · CINDER FALL VOLCANIC ASTEROID',
+      title: 'III · CINDER FALL VOLCANIC ASTEROID',
       subtitle: 'Tectonic Magma Crater Eruption · Sunbrands Pack & Ignites Hinokami Blade',
     },
     enemies: [
@@ -255,7 +416,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     activeSpellSlot: 4,
     spellCooldowns: { frost_lance: 0, shatterlance: 0, cinder_fall: 1.9, storm_lance: 5.1 },
     banner: {
-      title: '⚡ 4 · STORM LANCE · CHAIN FULGURITE',
+      title: 'IV · STORM LANCE · CHAIN FULGURITE',
       subtitle: 'Braided Lightning Spear + 3-Target Chain Arcs + Obsidian Fulgurite Monoliths',
     },
     enemies: [
@@ -292,7 +453,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     spellCooldowns: { frost_lance: 2.2, shatterlance: 0, cinder_fall: 0, storm_lance: 0 },
     touchDemo: { joyX: 0.62, joyY: 0.68, sprinting: true, activeAction: 'attack' },
     banner: {
-      title: '❄️ SHATTERBLOW! · GLACIAL TIDE DETONATION',
+      title: 'SHATTERBLOW! · GLACIAL TIDE DETONATION',
       subtitle: '+65 AoE Cryo Shrapnel Burst · +18% Heart Resonance · Cataclysm Ready!',
     },
     enemies: [
@@ -339,7 +500,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     activeSpellSlot: null,
     spellCooldowns: { frost_lance: 0, shatterlance: 0, cinder_fall: 0, storm_lance: 0 },
     banner: {
-      title: '🌅 SANCTUARY BRAZIER KINDLED',
+      title: 'SANCTUARY BRAZIER KINDLED',
       subtitle: 'Full Party Heal · +35 Golden Ward Shield · Empowered Breathing (+25% DMG)',
     },
     enemies: [],
@@ -365,7 +526,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     activeSpellSlot: 1,
     spellCooldowns: { frost_lance: 3.2, shatterlance: 0, cinder_fall: 1.5, storm_lance: 0 },
     banner: {
-      title: '🛡️ ACT II · TWILIGHT HAMLET DEFENSE',
+      title: 'ACT II · TWILIGHT HAMLET DEFENSE',
       subtitle: '3-Token Attacker AI · Dodge Opaque Ground Telegraph Rings on Cobblestones',
     },
     enemies: [
@@ -446,7 +607,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
       aegisLayers: 2,
     },
     banner: {
-      title: '👑 RIME & SOLAR CATACLYSM! · BONE AEGIS SHATTERED',
+      title: 'RIME & SOLAR CATACLYSM! · BONE AEGIS SHATTERED',
       subtitle: 'Couples Resonance Ultimate Unleashed Against The Hollow Sovereign',
     },
     enemies: [
@@ -506,6 +667,7 @@ export async function createCoopPlayerSystem({
   onHudStateChanged = null,
   onBanner = null,
   onCoopStateChanged = null,
+  onRemoteCommuneVerdict = null,
 } = {}) {
   const kit = createCharactersKit();
   await kit.loadAnimationPacks();
@@ -517,6 +679,10 @@ export async function createCoopPlayerSystem({
   const heroesGroup = new THREE.Group();
   heroesGroup.name = 'coopHeroesDuoGroup';
   rootGroup.add(heroesGroup);
+
+  const createSanctuarySteleMesh = createPlazaSanctuarySteleMesh;
+  const sanctuarySteleMesh = createSanctuarySteleMesh(walkableHeightAt);
+  rootGroup.add(sanctuarySteleMesh);
 
   // 1. Instantiate the 2 Co-Op Heroes (Knight + Mage)
   const [knightChar, mageChar] = await Promise.all([
@@ -725,13 +891,13 @@ export async function createCoopPlayerSystem({
       if (onBanner) {
         if (aegisRaised) {
           onBanner({
-            title: '🛡️ THE HOLLOW SOVEREIGN RAISES BONE AEGIS!',
+            title: 'THE HOLLOW SOVEREIGN RAISES BONE AEGIS!',
             subtitle: 'Break Both Shield Layers with Physical Detonations or Q: Cataclysm',
             kind: 'warning',
           });
         } else if (aegisBroken && !aegisActive) {
           onBanner({
-            title: '💥 BONE AEGIS SHATTERED!',
+            title: 'BONE AEGIS SHATTERED!',
             subtitle: 'The Hollow Sovereign is Staggered and Vulnerable!',
             kind: 'detonation',
           });
@@ -794,6 +960,7 @@ export async function createCoopPlayerSystem({
 
   let activeHeroId = 'Knight';
   let partnerHeroId = 'Mage';
+  let lastAppliedVerdictAt = 0;
 
   // 6. 3-Act Valley Expedition & Synergy Loop (`createCampaignLoop`)
   campaignLoop = createCampaignLoop({
@@ -818,6 +985,118 @@ export async function createCoopPlayerSystem({
       }
     },
   });
+
+  function getHeroDistance() {
+    return Math.hypot(
+      heroStates.Knight.x - heroStates.Mage.x,
+      heroStates.Knight.z - heroStates.Mage.z
+    );
+  }
+
+  function isNearAltarStele() {
+    const leader = heroStates[activeHeroId] || heroStates.Knight;
+    return (
+      Math.hypot(leader.x - ALTAR_STELE_POS.x, leader.z - ALTAR_STELE_POS.z) <=
+      ALTAR_STELE_POS.triggerRadius
+    );
+  }
+
+  function startCommuneChannel(speakerRole = activeHeroId, { broadcast = true } = {}) {
+    ensureCombatUnfrozen();
+    const normSpeaker =
+      String(speakerRole || activeHeroId).toLowerCase() === 'mage' ? 'Mage' : 'Knight';
+    const normPartner = normSpeaker === 'Knight' ? 'Mage' : 'Knight';
+    const dist = getHeroDistance();
+
+    if (dist > COMMUNE_MAX_DISTANCE) {
+      return { tooFar: true, distance: Number(dist.toFixed(2)) };
+    }
+
+    const speakerState = heroStates[normSpeaker];
+    const partnerState = heroStates[normPartner];
+
+    speakerState.praying = true;
+    speakerState.actionState = null;
+    speakerState.actionTimer = 0;
+    speakerState.char.play('cast_spell', { loop: true, fade: 0.12, force: true });
+
+    if (!campaignLoop.combatHeroes[normPartner]?.downed) {
+      partnerState.praying = true;
+      partnerState.actionState = null;
+      partnerState.actionTimer = 0;
+      partnerState.char.play('pray_channel', { loop: true, fade: 0.14, force: true });
+    }
+
+    vfxKit.artoriousVfx?.startChannel?.(speakerState, partnerState);
+    campaignLoop.setCommuneChannelActive(true);
+
+    const cx = (speakerState.x + partnerState.x) * 0.5;
+    const cz = (speakerState.z + partnerState.z) * 0.5;
+    enemyManager.applySacredWardPushback?.({ x: cx, z: cz }, 6.0);
+
+    applyTransform(speakerState);
+    applyTransform(partnerState);
+
+    if (broadcast) {
+      coopClient.sendCommuneState({
+        state: 'channel',
+        speakerRole: normSpeaker,
+        speakerPos: { x: speakerState.x, y: speakerState.y, z: speakerState.z },
+        partnerPos: { x: partnerState.x, y: partnerState.y, z: partnerState.z },
+      });
+    }
+
+    return { tooFar: false, distance: Number(dist.toFixed(2)), speakerRole: normSpeaker };
+  }
+
+  function setCommuneSuspense(active = true, { broadcast = true } = {}) {
+    vfxKit.artoriousVfx?.setSuspense?.(Boolean(active));
+    if (broadcast) {
+      coopClient.sendCommuneState({
+        state: 'suspense',
+        active: Boolean(active),
+        speakerRole: activeHeroId,
+      });
+    }
+  }
+
+  function cancelCommuneChannel({ broadcast = true } = {}) {
+    if (vfxKit.artoriousVfx?.stopChannel) {
+      vfxKit.artoriousVfx.stopChannel();
+    } else {
+      vfxKit.artoriousVfx?.clear?.();
+    }
+    campaignLoop.setCommuneChannelActive(false);
+    heroStates.Knight.praying = false;
+    heroStates.Mage.praying = false;
+    applyTransform(heroStates.Knight);
+    applyTransform(heroStates.Mage);
+    if (broadcast) {
+      coopClient.sendCommuneState({
+        state: 'cancel',
+        speakerRole: activeHeroId,
+      });
+    }
+  }
+
+  function applyCommuneVerdict(judgment = {}, speakerRole = activeHeroId) {
+    ensureCombatUnfrozen();
+    lastAppliedVerdictAt = Date.now();
+    heroStates.Knight.praying = false;
+    heroStates.Mage.praying = false;
+
+    const res = campaignLoop.applyCommuneVerdict(judgment, speakerRole, heroStates);
+    applyTransform(heroStates.Knight);
+    applyTransform(heroStates.Mage);
+
+    const verdict = String(judgment?.verdict || 'smite').toLowerCase();
+    triggerCameraImpulse({
+      intensity: verdict === 'miracle' ? 0.36 : verdict === 'smite' ? 0.32 : 0.22,
+      fovKick: verdict === 'miracle' ? 3.2 : verdict === 'smite' ? 2.6 : 1.8,
+    });
+
+    return res;
+  }
 
   // 7. WebSocket 2-Player Co-Op Client (`createCoopClient`)
   const remotePartnerTarget = {
@@ -907,6 +1186,24 @@ export async function createCoopPlayerSystem({
     onWorldSync: (msg) => {
       campaignLoop.applyRemoteStateSync(msg);
     },
+    onCommuneState: (msg) => {
+      const peerSpeaker = msg.speakerRole || msg.fromRole || partnerHeroId;
+      if (msg.state === 'channel') {
+        startCommuneChannel(peerSpeaker, { broadcast: false });
+      } else if (msg.state === 'suspense') {
+        setCommuneSuspense(msg.active !== false, { broadcast: false });
+      } else if (msg.state === 'cancel') {
+        cancelCommuneChannel({ broadcast: false });
+      }
+    },
+    onCommuneVerdict: (msg) => {
+      // Avoid double-applying if this client already applied the HTTP response within 1.5s
+      if (Date.now() - lastAppliedVerdictAt < 1500) return;
+      const judgment = msg.judgment || msg;
+      const speakerRole = msg.speakerRole || msg.fromRole || partnerHeroId;
+      applyCommuneVerdict(judgment, speakerRole);
+      onRemoteCommuneVerdict?.(judgment, speakerRole);
+    },
   });
 
   // Shared `player` telemetry object mutated in-place for compatibility with `main.js`
@@ -939,8 +1236,7 @@ export async function createCoopPlayerSystem({
   }
 
   function applyTransform(st) {
-    const levRole = st.id === 'Mage' ? 'origin' : 'partner';
-    const levY = vfxKit?.artoriousVfx ? vfxKit.artoriousVfx.getHeroLevitationOffset(levRole) : 0.0;
+    const levY = vfxKit?.artoriousVfx ? vfxKit.artoriousVfx.getHeroLevitationOffset(st.id) : 0.0;
     st.char.group.position.set(st.x, st.y + levY, st.z);
     st.char.group.rotation.y = st.yaw;
   }
@@ -978,6 +1274,7 @@ export async function createCoopPlayerSystem({
     if (enemyManager.frozenShotId) {
       enemyManager.setFrozenForShot(null);
     }
+    sanctuarySteleMesh.visible = true;
     campaignLoop.setIndicatorsHiddenForShot(false, heroStates);
   }
 
@@ -1103,7 +1400,7 @@ export async function createCoopPlayerSystem({
         campaignLoop.addResonance(dodgeRes.resonanceGain || 20);
         combatSfx.playPerfectDodge();
         onBanner?.({
-          title: '⚡ PERFECT DODGE! · TIME DILATION',
+          title: 'PERFECT DODGE · TIME DILATION',
           subtitle: 'Attacker Slowed to 0.30× · Next Strike Empowered (+35% DMG, +20% Resonance)',
           kind: 'blessing',
         });
@@ -1286,7 +1583,7 @@ export async function createCoopPlayerSystem({
             fovKick: 1.8,
           });
           onBanner?.({
-            title: '🛡️ CHIVALRIC INTERCEPT · GOLDEN WARD',
+            title: 'CHIVALRIC INTERCEPT · GOLDEN WARD',
             subtitle: '+35 HP Shield Granted to Both Partners · Marks Detonated',
             kind: 'blessing',
           });
@@ -1299,7 +1596,7 @@ export async function createCoopPlayerSystem({
             fovKick: 1.8,
           });
           onBanner?.({
-            title: '✨ SOUL INFUSE · PARTNER HEALED',
+            title: 'SOUL INFUSE · PARTNER HEALED',
             subtitle: `+${HERO_STATS.Mage.infuseHeal} HP Restored · Knight Blade Ignited`,
             kind: 'blessing',
           });
@@ -1325,7 +1622,7 @@ export async function createCoopPlayerSystem({
           campaignLoop.addResonance(100);
         } else {
           onBanner?.({
-            title: `⚡ HEART RESONANCE CHARGING (${campaignLoop.heartResonance}%)`,
+            title: `HEART RESONANCE CHARGING (${campaignLoop.heartResonance}%)`,
             subtitle: 'Cast Spells & Detonate Elemental Marks to Reach 100% Cataclysm',
             kind: 'act',
           });
@@ -1361,7 +1658,13 @@ export async function createCoopPlayerSystem({
     }
   }
 
-  function setPraying() {}
+  function setPraying(active = false) {
+    if (active) {
+      startCommuneChannel(activeHeroId);
+    } else {
+      cancelCommuneChannel();
+    }
+  }
 
   function swapActiveHero() {
     const prevLeader = heroStates[activeHeroId];
@@ -1412,6 +1715,10 @@ export async function createCoopPlayerSystem({
 
   function update(dt, { keys, joyState, camYaw, camera } = {}) {
     ensureCombatUnfrozen();
+
+    if (sanctuarySteleMesh.material?.uniforms?.uTime) {
+      sanctuarySteleMesh.material.uniforms.uTime.value += dt;
+    }
 
     const leader = heroStates[activeHeroId];
     const partner = heroStates[partnerHeroId];
@@ -1655,6 +1962,15 @@ export async function createCoopPlayerSystem({
       camera,
     });
     vfxKit.update(dt);
+
+    // Apply Artorious levitation offset after vfxKit.update(dt) so both heroes levitate above the shared Lotus Mandala
+    if (vfxKit.artoriousVfx?.active) {
+      knightChar.group.position.y =
+        heroStates.Knight.y + vfxKit.artoriousVfx.getHeroLevitationOffset('Knight');
+      mageChar.group.position.y =
+        heroStates.Mage.y + vfxKit.artoriousVfx.getHeroLevitationOffset('Mage');
+    }
+
     stepCameraImpact(dt);
   }
 
@@ -1708,7 +2024,8 @@ export async function createCoopPlayerSystem({
     mageChar.mixer.timeScale = 1.0;
     mageChar.poseAt(mClip, mTime);
 
-    // Clear all VFX & hide blade sheath and combat indicators so 0 extra draw calls leak
+    // Clear all VFX & hide blade sheath, sanctuary stele, and combat indicators so 0 extra draw calls leak
+    sanctuarySteleMesh.visible = false;
     vfxKit.clear();
     vfxKit.swordVfx.setInfusion('none', 0);
     campaignLoop.setIndicatorsHiddenForShot(true, heroStates);
@@ -1725,6 +2042,7 @@ export async function createCoopPlayerSystem({
    */
   function poseForGameplayShot(gameplayShotId, camera = null) {
     resetCameraImpact();
+    sanctuarySteleMesh.visible = true;
     const spec =
       STAGE5_GAMEPLAY_SHOTS[gameplayShotId] ||
       STAGE5_GAMEPLAY_SHOTS['01-desktop-act1-sunfire-slash'];
@@ -1891,6 +2209,7 @@ export async function createCoopPlayerSystem({
     kit,
     rootGroup,
     heroesGroup,
+    sanctuarySteleMesh,
     arenaEnemiesGroup: enemyManager.rootGroup,
     knight: knightChar,
     mage: mageChar,
@@ -1912,6 +2231,12 @@ export async function createCoopPlayerSystem({
     player,
     triggerAction,
     setPraying,
+    getHeroDistance,
+    isNearAltarStele,
+    startCommuneChannel,
+    setCommuneSuspense,
+    cancelCommuneChannel,
+    applyCommuneVerdict,
     swapActiveHero,
     teleportLeaderAndPartner,
     poseForShot,

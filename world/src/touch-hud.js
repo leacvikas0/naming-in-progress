@@ -4,12 +4,13 @@
 // Xiaomi Pad 7 (3:2 144Hz) Genshin-Style Split Touch Controls:
 // - Left Floating Dynamic Thumbstick with outer-ring Auto-Sprint (>= 78%)
 // - Multi-touch independent Right-Side Camera Orbit zone
-// - Bottom-Right 5-Button Ergonomic Thumb Arc (`right: 24px, bottom: 24px`):
-//     1. Primary `Attack` (`82px`, `data-action="attack"`, Tap = Combo, Hold >= 0.28s = Heavy Finisher)
-//     2. `Dash` (`58px`, `data-action="dash"`)
-//     3. `Skill E` (`62px`, `data-action="skill"`)
-//     4. `Jump` (`52px`, `data-action="jump"`)
-//     5. `Ult Q` (`62px`, `data-action="ultimate"`)
+// - Bottom-Right Ergonomic Thumb Arc (`right: 24px, bottom: 24px`):
+//     1. Primary `Strike` (`82px`, `data-action="attack"`, Tap = Combo, Hold >= 0.28s = Heavy)
+//     2. `Evade` (`58px`, `data-action="dash"`)
+//     3. `Guard` (`62px`, `data-action="skill"`)
+//     4. `Leap` (`52px`, `data-action="jump"`)
+//     5. `Cataclysm` (`62px`, `data-action="ultimate"`)
+//     6. `Commune` (`60px`, `data-action="commune"`, Hold-to-Commune with `/world/assets/ui/commune-medallion.png`)
 // - Mounted 100% inside `#hud` so `toggleHud(false)` hides all UI cleanly for
 //   automated Playwright world verification screenshots.
 // ============================================================================
@@ -18,6 +19,8 @@ export function createTouchHud({
   hudRoot = document.getElementById('hud'),
   onCameraOrbit = null,
   onAction = null,
+  onCommuneStart = null,
+  onCommuneEnd = null,
 } = {}) {
   const styleEl = document.createElement('style');
   styleEl.id = 'touch-hud-styles';
@@ -114,13 +117,13 @@ export function createTouchHud({
       touch-action: none;
     }
 
-    /* Bottom-Right 5-Button Ergonomic Action Arc */
+    /* Bottom-Right Ergonomic Action Arc */
     #touch-action-cluster {
       position: absolute;
       right: 24px;
       bottom: 24px;
-      width: 196px;
-      height: 198px;
+      width: 212px;
+      height: 212px;
       pointer-events: none;
       z-index: 28;
     }
@@ -145,20 +148,20 @@ export function createTouchHud({
       font-family: inherit;
     }
     .touch-action-btn .lbl {
-      font-size: 0.72rem;
+      font-size: 0.70rem;
       font-weight: 800;
       line-height: 1.1;
       color: #1c1917;
     }
     .touch-action-btn .sub {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 0.58rem;
+      font-size: 0.56rem;
       font-weight: 700;
       color: #57534e;
       margin-top: 2px;
     }
 
-    /* 1. Primary Attack (82px, Tap / Hold) */
+    /* 1. Primary Strike / Heavy (82px, Tap / Hold) */
     .touch-action-btn.btn-attack {
       right: 8px;
       bottom: 8px;
@@ -171,7 +174,7 @@ export function createTouchHud({
       font-size: 0.80rem;
     }
 
-    /* 2. Dash (58px, left of Attack) */
+    /* 2. Evade (58px, left of Strike) */
     .touch-action-btn.btn-dash {
       right: 108px;
       bottom: 6px;
@@ -179,7 +182,7 @@ export function createTouchHud({
       height: 58px;
     }
 
-    /* 3. Partner Skill E (62px, upper-left of Attack) */
+    /* 3. Partner Guard Skill E (62px, upper-left of Strike) */
     .touch-action-btn.btn-skill {
       right: 104px;
       bottom: 76px;
@@ -195,7 +198,7 @@ export function createTouchHud({
       color: #0284c7;
     }
 
-    /* 4. Couples Ultimate Q (62px, upper-mid of Arc) */
+    /* 4. Couples Cataclysm Q (62px, upper-mid of Arc) */
     .touch-action-btn.btn-ultimate {
       right: 54px;
       bottom: 128px;
@@ -211,12 +214,39 @@ export function createTouchHud({
       color: #b45309;
     }
 
-    /* 5. Jump (52px, above-right of Attack) */
+    /* 5. Leap (52px, above-right of Strike) */
     .touch-action-btn.btn-jump {
       right: 2px;
       bottom: 102px;
       width: 52px;
       height: 52px;
+    }
+
+    /* 6. Hold-to-Commune Medallion Crest (60px, outer-left arc) */
+    .touch-action-btn.btn-commune {
+      right: 168px;
+      bottom: 52px;
+      width: 60px;
+      height: 60px;
+      background: radial-gradient(circle, rgba(254, 243, 199, 0.95), rgba(24, 20, 22, 0.92));
+      border: 1.5px solid #f59e0b;
+      padding: 4px;
+      overflow: hidden;
+    }
+    .touch-action-btn.btn-commune img {
+      width: 30px;
+      height: 30px;
+      object-fit: contain;
+      pointer-events: none;
+    }
+    .touch-action-btn.btn-commune .lbl {
+      font-size: 0.56rem;
+      color: #fef3c7;
+      margin-top: 1px;
+    }
+    .touch-action-btn.btn-commune.pressed {
+      box-shadow: 0 0 22px rgba(251, 191, 36, 0.85);
+      border-color: #fde047;
     }
 
     @media (prefers-reduced-motion: no-preference) {
@@ -245,25 +275,29 @@ export function createTouchHud({
     <div id="touch-orbit-zone"></div>
 
     <div id="touch-action-cluster">
-      <button type="button" class="touch-action-btn btn-attack" data-action="attack" aria-label="Attack or Hold Heavy Finisher">
-        <span class="lbl">Attack</span>
-        <span class="sub">Tap/Hold</span>
+      <button type="button" class="touch-action-btn btn-attack" data-action="attack" aria-label="Strike or Hold Heavy">
+        <span class="lbl">Strike</span>
+        <span class="sub">Heavy</span>
       </button>
-      <button type="button" class="touch-action-btn btn-dash" data-action="dash" aria-label="Dash Dodge">
-        <span class="lbl">Dash</span>
-        <span class="sub">Evade</span>
+      <button type="button" class="touch-action-btn btn-dash" data-action="dash" aria-label="Evade">
+        <span class="lbl">Evade</span>
+        <span class="sub">Dash</span>
       </button>
-      <button type="button" class="touch-action-btn btn-skill" data-action="skill" aria-label="Partner Skill">
-        <span class="lbl">Skill</span>
+      <button type="button" class="touch-action-btn btn-skill" data-action="skill" aria-label="Guard Partner Skill">
+        <span class="lbl">Guard</span>
         <span class="sub">Ward</span>
       </button>
-      <button type="button" class="touch-action-btn btn-ultimate" data-action="ultimate" aria-label="Couples Resonance Ultimate">
-        <span class="lbl">Ult</span>
+      <button type="button" class="touch-action-btn btn-ultimate" data-action="ultimate" aria-label="Cataclysm Ultimate">
+        <span class="lbl">Cataclysm</span>
         <span class="sub">Burst</span>
       </button>
-      <button type="button" class="touch-action-btn btn-jump" data-action="jump" aria-label="Jump">
-        <span class="lbl">Jump</span>
-        <span class="sub">Leap</span>
+      <button type="button" class="touch-action-btn btn-jump" data-action="jump" aria-label="Leap">
+        <span class="lbl">Leap</span>
+        <span class="sub">Jump</span>
+      </button>
+      <button type="button" class="touch-action-btn btn-commune" data-action="commune" aria-label="Hold to Commune">
+        <img src="/world/assets/ui/commune-medallion.png" alt="" />
+        <span class="lbl">Commune</span>
       </button>
     </div>
   `;
@@ -388,14 +422,23 @@ export function createTouchHud({
   orbitZone.addEventListener('pointerup', endOrbit);
   orbitZone.addEventListener('pointercancel', endOrbit);
 
-  // Action Buttons: Attack (Tap = 'attack', Hold >= 0.28s = 'heavy'), Dash, Skill, Ultimate, Jump
+  // Action Buttons: Strike (Tap = 'attack', Hold >= 0.28s = 'heavy'), Evade, Guard, Cataclysm, Leap, Commune
   let attackHoldTimer = null;
 
   layer.querySelectorAll('.touch-action-btn').forEach((btn) => {
     const action = btn.dataset.action;
     btn.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
+      try {
+        btn.setPointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
       btn.classList.add('pressed');
+      if (action === 'commune') {
+        if (onCommuneStart) onCommuneStart();
+        return;
+      }
       if (action === 'attack') {
         if (onAction) onAction('attack');
         if (attackHoldTimer) clearTimeout(attackHoldTimer);
@@ -410,7 +453,12 @@ export function createTouchHud({
       }
     });
     const releaseBtn = () => {
+      if (!btn.classList.contains('pressed')) return;
       btn.classList.remove('pressed');
+      if (action === 'commune') {
+        if (onCommuneEnd) onCommuneEnd();
+        return;
+      }
       if (action === 'attack' && attackHoldTimer) {
         clearTimeout(attackHoldTimer);
         attackHoldTimer = null;

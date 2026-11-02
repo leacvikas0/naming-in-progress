@@ -90,6 +90,15 @@ export const BREATHING_STYLES = {
     colorHex: '#a855f7',
     detonationId: 'thunderchain',
   },
+  eclipse: {
+    id: 'eclipse',
+    name: 'Sun & Tide Eclipse',
+    mark: 'eclipse',
+    dmgMult: 1.5,
+    duration: 22.0,
+    colorHex: '#fb923c',
+    detonationId: 'solar_flare',
+  },
 };
 
 /* ------------------------------------------------------------------------- */
@@ -205,6 +214,7 @@ export const MARK_TO_DETONATION = {
   rime: DETONATIONS.shatterblow,
   solar: DETONATIONS.solar_flare,
   tempest: DETONATIONS.thunderchain,
+  eclipse: DETONATIONS.solar_flare,
 };
 
 export const FINISHER_SOURCES = new Set([
@@ -716,9 +726,15 @@ export function allocateAttackTokens(enemies, maxTokens = MAX_ATTACK_TOKENS) {
   return holders;
 }
 
+export const COMMUNE_MAX_DISTANCE = 5.0;
+export const COMMUNE_RESURRECT_DISTANCE = 4.8;
+export const POWERUP_TETHER_DISTANCE = 6.5;
+export const ALTAR_STELE_POS = { x: 2.6, z: 7.2, y: 0.0, triggerRadius: 5.0 };
+
 /**
  * Applies a hit (`hitSpec`) to `enemy`, resolves Sword Breathing multipliers,
- * Boss Bone Aegis mitigation/layer-breaking, and Physical Detonations
+ * proximity-linked Commune power-up multipliers (`<= 6.5m`), Boss Bone Aegis
+ * mitigation/layer-breaking, and Physical Detonations
  * (`SHATTERBLOW!`, `SOLAR FLARE!`, `THUNDERCHAIN!`) across `allEnemies`.
  */
 export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = []) {
@@ -749,15 +765,39 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     source === 'heavy' ||
     source === 'intercept';
 
+  // Single-Mandala / Tether Proximity Rule: Knight's Sword Breathing & Mage's Ascended Magic Flow
+  // require staying within 6.5m of your partner when partnerPos is supplied
+  const withinTether =
+    !hitSpec.attackerPos ||
+    !hitSpec.partnerPos ||
+    Math.hypot(
+      (hitSpec.attackerPos.x ?? 0) - (hitSpec.partnerPos.x ?? 0),
+      (hitSpec.attackerPos.z ?? 0) - (hitSpec.partnerPos.z ?? 0)
+    ) <= POWERUP_TETHER_DISTANCE;
+
+  const effectiveInfusion = withinTether ? infusion : 'none';
   const infusedMult =
-    isSwordHit && infusion && infusion !== 'none' ? HERO_STATS.Knight.infusedMult : 1.0;
+    isSwordHit && effectiveInfusion && effectiveInfusion !== 'none'
+      ? effectiveInfusion === 'eclipse'
+        ? BREATHING_STYLES.eclipse.dmgMult
+        : HERO_STATS.Knight.infusedMult
+      : 1.0;
   const empoweredMult =
-    hitSpec.empoweredBreathing && ((isSwordHit && infusion !== 'none') || SPELLS[source])
+    withinTether &&
+    hitSpec.empoweredBreathing &&
+    ((isSwordHit && effectiveInfusion !== 'none') || SPELLS[source])
       ? 1.25
       : 1.0;
   const dodgeMult = hitSpec.perfectDodgeBuff ? 1.35 : 1.0;
+  const communeMult = withinTether
+    ? isSwordHit
+      ? Number(hitSpec.partnerSwordMult || 1.0)
+      : Number(hitSpec.partnerMagicMult || 1.0)
+    : 1.0;
 
-  let rawDirectDmg = Math.round(baseDmg * infusedMult * empoweredMult * dodgeMult);
+  let rawDirectDmg = Math.round(
+    baseDmg * infusedMult * empoweredMult * dodgeMult * communeMult
+  );
 
   // Check if this hit triggers a Physical Detonation on a marked enemy
   const canDetonate = Boolean(hitSpec.detonatesMark || FINISHER_SOURCES.has(source));
@@ -765,22 +805,32 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     enemy.mark && (enemy.markTimer === undefined || enemy.markTimer > 0) ? enemy.mark : null;
 
   let detonationSpec = null;
+  const isEclipseDetonation =
+    canDetonate &&
+    (activeMark === 'eclipse' ||
+      (effectiveInfusion === 'eclipse' && (activeMark === 'rime' || activeMark === 'solar' || isSwordHit)));
+
   if (activeMark && canDetonate && MARK_TO_DETONATION[activeMark]) {
     detonationSpec = MARK_TO_DETONATION[activeMark];
+    enemy.mark = null;
+    enemy.markTimer = 0;
+  } else if (isEclipseDetonation) {
+    detonationSpec = DETONATIONS.solar_flare;
     enemy.mark = null;
     enemy.markTimer = 0;
   }
 
   let aegisBroken = false;
 
-  // If Boss Bone Aegis is active, physical detonations break 1 layer and Couples Ultimate breaks 2 layers
+  // If Boss Bone Aegis is active, physical detonations / Blessing break 1 layer,
+  // and Couples Ultimate / Miracle shatter all layers!
   if (enemy.isBoss && enemy.aegisActive && enemy.aegisLayers > 0) {
-    if (source === 'couples_ultimate') {
+    if (source === 'couples_ultimate' || source === 'divine_miracle') {
       enemy.aegisLayers = 0;
       enemy.aegisActive = false;
       aegisBroken = true;
       enemy.stunTimer = Math.max(enemy.stunTimer || 0, COUPLES_ULTIMATE.stun);
-    } else if (detonationSpec) {
+    } else if (detonationSpec || source === 'divine_blessing') {
       enemy.aegisLayers = Math.max(0, enemy.aegisLayers - 1);
       aegisBroken = true;
       if (enemy.aegisLayers === 0) {
@@ -808,7 +858,10 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
 
   if (detonationSpec) {
     resonanceGain += detonationSpec.resonanceGain;
-    const bonusDmg = Math.round(detonationSpec.bonusDmg * empoweredMult);
+    const bonusBase = isEclipseDetonation
+      ? Math.round((DETONATIONS.solar_flare.bonusDmg + DETONATIONS.shatterblow.bonusDmg) * 0.75)
+      : detonationSpec.bonusDmg;
+    const bonusDmg = Math.round(bonusBase * empoweredMult);
     const affectedIds = [];
 
     const targets =
@@ -831,8 +884,11 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
         affectedIds.push(t.instanceId || t.id || i);
 
         // Apply physical CC (stun, launch, knockback, or inward thunderchain pull)
-        if (detonationSpec.stun) {
-          t.stunTimer = Math.max(t.stunTimer || 0, detonationSpec.stun);
+        const stunDur = isEclipseDetonation
+          ? Math.max(detonationSpec.stun || 0, DETONATIONS.shatterblow.stun)
+          : detonationSpec.stun;
+        if (stunDur) {
+          t.stunTimer = Math.max(t.stunTimer || 0, stunDur);
           t.hasAttackToken = false;
           if (t.aiState === 'windup') {
             t.aiState = 'orbit';

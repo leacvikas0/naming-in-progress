@@ -225,24 +225,32 @@ async function main() {
         detResults[dType] = p.swordVfx.getStats().drawCalls;
       }
 
-      // Verify all Artorious modes (channel, suspense, smite, blessing, miracle)
+      // Verify all Artorious modes (channel, suspense, smite, heal, blessing, miracle)
       const artoriousResults = {};
       p.artoriousVfx.startChannel([59.8, 0.6, -4.0], [59.1, 0.6, -2.05]);
       p.artoriousVfx.setSuspense(true);
       p.artoriousVfx.seek(0.65);
       artoriousResults.channel = p.artoriousVfx.getStats().drawCalls;
+      artoriousResults.channelSigils = p.artoriousVfx.getStats().activeGroundSigils;
 
       p.artoriousVfx.triggerSmite([59.8, 0.6, -4.0]);
       p.artoriousVfx.seek(0.22);
       artoriousResults.smite = p.artoriousVfx.getStats().drawCalls;
 
+      p.artoriousVfx.triggerHeal([59.8, 0.6, -4.0], [59.1, 0.6, -2.05]);
+      p.artoriousVfx.seek(0.50);
+      artoriousResults.heal = p.artoriousVfx.getStats().drawCalls;
+      artoriousResults.healSigils = p.artoriousVfx.getStats().activeGroundSigils;
+
       p.artoriousVfx.triggerBlessing([59.8, 0.6, -4.0], [59.1, 0.6, -2.05]);
       p.artoriousVfx.seek(0.55);
       artoriousResults.blessing = p.artoriousVfx.getStats().drawCalls;
+      artoriousResults.blessingSigils = p.artoriousVfx.getStats().activeGroundSigils;
 
       p.artoriousVfx.triggerMiracle([59.8, 0.6, -4.0], [59.1, 0.6, -2.05]);
       p.artoriousVfx.seek(0.68);
       artoriousResults.miracle = p.artoriousVfx.getStats().drawCalls;
+      artoriousResults.miracleSigils = p.artoriousVfx.getStats().activeGroundSigils;
 
       p.clearAllVfx();
 

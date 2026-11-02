@@ -15,14 +15,14 @@
   </script>
   <style>
     :root {
-      --surface-hud: rgba(250, 248, 243, 0.86);
-      --surface-hud-strong: rgba(250, 248, 243, 0.94);
-      --surface-dark: rgba(24, 20, 22, 0.88);
+      --surface-hud: rgba(250, 248, 243, 0.88);
+      --surface-hud-strong: rgba(250, 248, 243, 0.95);
+      --surface-dark: rgba(24, 20, 22, 0.90);
       --surface-control: rgba(28, 25, 23, 0.065);
       --surface-control-hover: rgba(28, 25, 23, 0.12);
       --surface-accent: #1c1917;
-      --border-hud: rgba(28, 25, 23, 0.11);
-      --border-kbd: rgba(28, 25, 23, 0.16);
+      --border-hud: rgba(28, 25, 23, 0.12);
+      --border-kbd: rgba(28, 25, 23, 0.18);
       --text-primary: #1c1917;
       --text-secondary: #57534e;
       --text-muted: #78716c;
@@ -73,7 +73,7 @@
     }
 
     /* --------------------------------------------------------------------- */
-    /* Top Bar Layout (Left Party/Co-Op, Center Objective/Boss, Right Env)   */
+    /* Top Bar Layout (Left Party/Co-Op, Center Objective/Boss, Right Debug) */
     /* --------------------------------------------------------------------- */
     #top-bar {
       position: absolute;
@@ -97,6 +97,14 @@
 
     .top-col-right {
       align-items: flex-end;
+    }
+
+    /* Hide all developer/debug buttons by default; toggle with F3 */
+    #debug-dev-pill {
+      display: none;
+    }
+    #debug-dev-pill.visible {
+      display: inline-flex;
     }
 
     .top-col-center {
@@ -337,6 +345,13 @@
       color: #6b21a8;
     }
 
+    .breathing-badge[data-style="eclipse"] {
+      background: linear-gradient(90deg, #ffedd5, #e0f2fe);
+      border-color: #f59e0b;
+      color: #9a3412;
+      box-shadow: 0 0 10px rgba(245, 158, 11, 0.28);
+    }
+
     /* --------------------------------------------------------------------- */
     /* Co-Op Room Pill                                                       */
     /* --------------------------------------------------------------------- */
@@ -476,13 +491,15 @@
       flex-direction: column;
       align-items: center;
       gap: 2px;
-      padding: 5px 16px;
+      padding: 6px 18px;
       border-radius: 999px;
-      background: rgba(24, 20, 22, 0.88);
-      border: 1.5px solid rgba(251, 191, 36, 0.72);
+      background: rgba(24, 20, 22, 0.90);
+      border: 1.5px solid rgba(251, 191, 36, 0.78);
       color: #fffbeb;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
       pointer-events: none;
+      max-width: min(680px, 90vw);
+      text-align: center;
     }
 
     #combat-banner.visible {
@@ -498,7 +515,7 @@
     }
 
     #combat-banner-sub {
-      font-size: 0.68rem;
+      font-size: 0.69rem;
       font-weight: 600;
       color: #f5f5f4;
     }
@@ -521,7 +538,37 @@
     }
 
     /* --------------------------------------------------------------------- */
-    /* Bottom-Center 4-Spell & Heart Resonance Deck                          */
+    /* Diegetic Plaza Stele Interaction Prompt                               */
+    /* --------------------------------------------------------------------- */
+    #stele-interact-prompt {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 14px;
+      border-radius: 999px;
+      background: rgba(24, 20, 22, 0.90);
+      border: 1.5px solid #f59e0b;
+      color: #fef3c7;
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.26);
+      cursor: pointer;
+      pointer-events: auto;
+    }
+
+    #stele-interact-prompt.visible {
+      display: inline-flex;
+    }
+
+    #stele-interact-prompt .kbd {
+      background: #f59e0b;
+      border-color: #fde047;
+      color: #1c1917;
+    }
+
+    /* --------------------------------------------------------------------- */
+    /* Bottom-Center 4-Spell, Cataclysm & Hold-to-Commune Deck               */
     /* --------------------------------------------------------------------- */
     #bottom-bar {
       position: absolute;
@@ -536,12 +583,10 @@
       z-index: 22;
     }
 
-    /* On Xiaomi Pad 7 (3:2 Tablet Profile), keep #bottom-bar compact and shifted slightly left
-       so the left thumbstick, center 4-Spell Deck, and right 5-button action arc never overlap */
     #hud.profile-tablet #bottom-bar {
-      left: 46%;
+      left: 45%;
       bottom: 14px;
-      max-width: calc(100vw - 440px);
+      max-width: calc(100vw - 450px);
     }
 
     #hud.profile-tablet .desktop-hints {
@@ -568,7 +613,7 @@
       color: var(--text-primary);
       border-radius: 11px;
       padding: 5px 10px;
-      min-width: 108px;
+      min-width: 104px;
       display: flex;
       align-items: center;
       gap: 7px;
@@ -667,8 +712,8 @@
       background: linear-gradient(135deg, #fffbeb, #fef3c7);
       color: #92400e;
       border-radius: 11px;
-      padding: 5px 11px;
-      min-width: 122px;
+      padding: 5px 10px;
+      min-width: 116px;
       display: flex;
       align-items: center;
       gap: 7px;
@@ -693,6 +738,47 @@
       color: #fde047;
     }
 
+    /* Hold-to-Commune Medallion Button (R) */
+    #commune-r-btn {
+      position: relative;
+      appearance: none;
+      border: 1.5px solid #d97706;
+      background: linear-gradient(135deg, #1c1917, #292524);
+      color: #fef3c7;
+      border-radius: 11px;
+      padding: 4px 10px 4px 7px;
+      min-width: 122px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      font-family: inherit;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    #commune-r-btn .commune-crest-img {
+      width: 26px;
+      height: 26px;
+      object-fit: contain;
+      flex-shrink: 0;
+      pointer-events: none;
+    }
+
+    #commune-r-btn .spell-name {
+      color: #fde047;
+    }
+
+    #commune-r-btn .spell-sub {
+      color: #d6d3d1;
+    }
+
+    #commune-r-btn.channeling {
+      border-color: #fde047;
+      box-shadow: 0 0 18px rgba(251, 191, 36, 0.72);
+      background: linear-gradient(135deg, #451a03, #78350f);
+    }
+
     .desktop-hints {
       padding: 3px 12px;
       gap: 12px;
@@ -705,6 +791,248 @@
       align-items: center;
       gap: 4px;
       white-space: nowrap;
+    }
+
+    /* --------------------------------------------------------------------- */
+    /* Sanctuary Lobby Overlay (#sanctuary-lobby)                            */
+    /* --------------------------------------------------------------------- */
+    #sanctuary-lobby {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(18, 15, 18, 0.62);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      pointer-events: auto;
+      z-index: 45;
+      padding: 16px;
+    }
+
+    #sanctuary-lobby.visible {
+      display: flex;
+    }
+
+    .lobby-card {
+      background: linear-gradient(180deg, rgba(252, 249, 242, 0.97), rgba(244, 238, 226, 0.97));
+      border: 2px solid #d97706;
+      border-radius: 22px;
+      padding: 22px 28px;
+      width: min(470px, 94vw);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.42);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      text-align: center;
+    }
+
+    .lobby-crest-img {
+      width: 84px;
+      height: 84px;
+      object-fit: contain;
+      filter: drop-shadow(0 6px 14px rgba(28, 25, 23, 0.22));
+    }
+
+    .lobby-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      color: #1c1917;
+    }
+
+    .lobby-sub {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      max-width: 380px;
+    }
+
+    .lobby-section {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      text-align: left;
+    }
+
+    .lobby-section-label {
+      font-size: 0.70rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #78350f;
+    }
+
+    .lobby-role-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .lobby-role-btn {
+      appearance: none;
+      border: 1.5px solid rgba(28, 25, 23, 0.18);
+      background: rgba(255, 255, 255, 0.86);
+      border-radius: 12px;
+      padding: 9px 8px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      font-family: inherit;
+    }
+
+    .lobby-role-btn .r-name {
+      font-size: 0.78rem;
+      font-weight: 800;
+      color: #1c1917;
+    }
+
+    .lobby-role-btn .r-desc {
+      font-size: 0.64rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .lobby-role-btn.active {
+      border-color: #d97706;
+      background: linear-gradient(135deg, #fffbeb, #fef3c7);
+      box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.25);
+    }
+
+    .lobby-mic-row {
+      display: flex;
+      gap: 6px;
+      width: 100%;
+    }
+
+    #lobby-mic-select {
+      flex: 1;
+      appearance: none;
+      border: 1.5px solid rgba(28, 25, 23, 0.18);
+      background: #ffffff;
+      color: #1c1917;
+      border-radius: 10px;
+      padding: 7px 10px;
+      font-family: inherit;
+      font-size: 0.74rem;
+      font-weight: 600;
+    }
+
+    #lobby-mic-refresh-btn {
+      appearance: none;
+      border: 1.5px solid rgba(28, 25, 23, 0.18);
+      background: #ffffff;
+      color: #1c1917;
+      border-radius: 10px;
+      padding: 7px 11px;
+      font-family: inherit;
+      font-size: 0.72rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    #lobby-enter-btn {
+      width: 100%;
+      margin-top: 4px;
+      appearance: none;
+      border: 1.5px solid #fde047;
+      background: linear-gradient(135deg, #1c1917, #292524);
+      color: #fde047;
+      border-radius: 999px;
+      padding: 10px 20px;
+      font-family: inherit;
+      font-size: 0.84rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(28, 25, 23, 0.26);
+    }
+
+    /* --------------------------------------------------------------------- */
+    /* Inscribed Sanctuary Stele Modal (#altar-stele-modal)                  */
+    /* --------------------------------------------------------------------- */
+    #altar-stele-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(15, 13, 18, 0.68);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      pointer-events: auto;
+      z-index: 42;
+      padding: 16px;
+    }
+
+    #altar-stele-modal.visible {
+      display: flex;
+    }
+
+    .stele-tablet-card {
+      background: linear-gradient(180deg, rgba(30, 27, 34, 0.96), rgba(20, 18, 24, 0.98));
+      border: 2px solid #d97706;
+      border-radius: 22px;
+      padding: 24px 30px;
+      width: min(500px, 94vw);
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      text-align: center;
+      color: #faf8f3;
+    }
+
+    .stele-tablet-img {
+      width: 96px;
+      height: 96px;
+      object-fit: contain;
+      filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.45));
+    }
+
+    #altar-stele-title {
+      font-size: 1.05rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #fde047;
+    }
+
+    #altar-stele-poem {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.84rem;
+      line-height: 1.55;
+      color: #f5f5f4;
+      font-style: italic;
+      padding: 10px 14px;
+      border-top: 1px solid rgba(251, 191, 36, 0.28);
+      border-bottom: 1px solid rgba(251, 191, 36, 0.28);
+      width: 100%;
+    }
+
+    .stele-hint-sub {
+      font-size: 0.72rem;
+      color: #d6d3d1;
+    }
+
+    #altar-stele-close-btn {
+      appearance: none;
+      border: 1.5px solid #f59e0b;
+      background: rgba(251, 191, 36, 0.14);
+      color: #fde047;
+      border-radius: 999px;
+      padding: 7px 20px;
+      font-family: inherit;
+      font-size: 0.76rem;
+      font-weight: 700;
+      cursor: pointer;
     }
 
     /* --------------------------------------------------------------------- */
@@ -786,14 +1114,13 @@
               <kbd class="kbd">Tab</kbd>
             </button>
             <span id="knight-breathing-badge" class="breathing-badge" data-style="none">
-              ⚔️ Steel Wind
+              Steel Wind
             </span>
-            <span id="stats-readout" role="status" aria-live="off">Ready</span>
           </div>
 
           <div class="hero-bars-stack">
             <div class="hero-bar-row is-leader" id="knight-bar-row">
-              <span class="hero-role-lbl">🛡️ Knight</span>
+              <span class="hero-role-lbl">Knight</span>
               <div class="hp-track">
                 <div class="hp-fill" id="knight-hp-fill"></div>
                 <div class="shield-fill" id="knight-shield-fill"></div>
@@ -801,7 +1128,7 @@
               <span class="hp-num" id="knight-hp-text">220/220</span>
             </div>
             <div class="hero-bar-row" id="mage-bar-row">
-              <span class="hero-role-lbl">✨ Mage</span>
+              <span class="hero-role-lbl">Mage</span>
               <div class="hp-track">
                 <div class="hp-fill mage-hp" id="mage-hp-fill"></div>
                 <div class="shield-fill" id="mage-shield-fill"></div>
@@ -814,7 +1141,7 @@
         <!-- Co-Op Room Pill -->
         <div id="coop-room-pill" class="hud-pill">
           <span class="coop-dot" id="coop-status-dot"></span>
-          <span id="coop-status-label">🤖 Wingman AI</span>
+          <span id="coop-status-label">Wingman AI</span>
           <div class="divider"></div>
           <button type="button" class="btn" id="coop-room-btn" title="Click to change 4-letter Co-Op Room Code">
             Room: <span id="coop-room-code">LOVE</span>
@@ -835,7 +1162,7 @@
         <div id="boss-hud-bar">
           <div class="boss-top-row">
             <span id="boss-name-label">The Hollow Sovereign</span>
-            <span id="boss-aegis-badge">🛡️ Bone Aegis × 2</span>
+            <span id="boss-aegis-badge">Bone Aegis x 2</span>
           </div>
           <div class="boss-hp-track">
             <div id="boss-hp-fill"></div>
@@ -848,9 +1175,9 @@
         </div>
       </div>
 
-      <!-- Top-Right: Time of Day, Profile & Camera Preset -->
+      <!-- Top-Right: Developer Debug Bar (Hidden by Default, Toggle via F3) -->
       <div class="top-col-right">
-        <div class="hud-pill">
+        <div class="hud-pill" id="debug-dev-pill">
           <div class="seg-group" role="group" aria-label="Time of day">
             <button type="button" class="btn active" data-tod="day">Day</button>
             <button type="button" class="btn" data-tod="evening">Dusk</button>
@@ -863,18 +1190,25 @@
           </div>
 
           <select id="view-select" class="view-select" aria-label="Camera view"></select>
+          <span id="stats-readout" role="status" aria-live="off">Ready</span>
         </div>
       </div>
     </div>
 
-    <!-- Bottom-Center: 4-Spell Deck + Couples Resonance Ultimate + Action Hints -->
+    <!-- Bottom-Center: Diegetic Stele Prompt + 4-Spell Deck + Cataclysm + Hold-to-Commune -->
     <div id="bottom-bar">
+      <button type="button" id="stele-interact-prompt">
+        <span>Inscribed Sanctuary Stele · Press</span>
+        <kbd class="kbd">G</kbd>
+        <span>to Read</span>
+      </button>
+
       <div class="spell-deck-pill" id="spell-deck">
         <button type="button" class="spell-slot-btn" data-spell-slot="1" title="1 · Frost Lance (Rime Crest + Glacial Tide Blade)">
           <span class="spell-key-badge">1</span>
           <span class="spell-meta">
-            <span class="spell-name">Frost Lance</span>
-            <span class="spell-sub">❄️ Glacial V-Wall</span>
+            <span class="spell-name">I · Rime</span>
+            <span class="spell-sub">Frost Lance</span>
           </span>
           <span class="spell-cd-overlay" data-cd-slot="1"></span>
         </button>
@@ -882,8 +1216,8 @@
         <button type="button" class="spell-slot-btn" data-spell-slot="2" title="2 · Shatterlance (Railgun Spear · Detonates Marks)">
           <span class="spell-key-badge">2</span>
           <span class="spell-meta">
-            <span class="spell-name">Shatterlance</span>
-            <span class="spell-sub">💎 Railgun Detonate</span>
+            <span class="spell-name">II · Spire</span>
+            <span class="spell-sub">Shatterlance</span>
           </span>
           <span class="spell-cd-overlay" data-cd-slot="2"></span>
         </button>
@@ -891,8 +1225,8 @@
         <button type="button" class="spell-slot-btn" data-spell-slot="3" title="3 · Cinder Fall (Volcanic Meteor · Hinokami Sunfire Blade)">
           <span class="spell-key-badge">3</span>
           <span class="spell-meta">
-            <span class="spell-name">Cinder Fall</span>
-            <span class="spell-sub">☀️ Magma Asteroid</span>
+            <span class="spell-name">III · Cinder</span>
+            <span class="spell-sub">Cinder Fall</span>
           </span>
           <span class="spell-cd-overlay" data-cd-slot="3"></span>
         </button>
@@ -900,36 +1234,97 @@
         <button type="button" class="spell-slot-btn" data-spell-slot="4" title="4 · Storm Lance (Chain Lightning · Thunderclap Wisteria Blade)">
           <span class="spell-key-badge">4</span>
           <span class="spell-meta">
-            <span class="spell-name">Storm Lance</span>
-            <span class="spell-sub">⚡ Chain Fulgurite</span>
+            <span class="spell-name">IV · Storm</span>
+            <span class="spell-sub">Storm Lance</span>
           </span>
           <span class="spell-cd-overlay" data-cd-slot="4"></span>
         </button>
 
-        <button type="button" id="ult-q-btn" title="Q · Couples Resonance Ultimate (Rime & Solar Cataclysm)">
+        <button type="button" id="ult-q-btn" title="Q · Couples Resonance Ultimate (Sun & Tide Eclipse Cataclysm)">
           <span class="spell-key-badge">Q</span>
           <span class="spell-meta">
             <span class="spell-name">Cataclysm</span>
             <span class="spell-sub" id="resonance-pct">25% Resonance</span>
           </span>
         </button>
+
+        <button type="button" id="commune-r-btn" title="Hold R · Commune with the Ancient God of Love">
+          <img class="commune-crest-img" src="/world/assets/ui/commune-medallion.png" alt="" />
+          <span class="spell-meta">
+            <span class="spell-name">Commune</span>
+            <span class="spell-sub" id="commune-sub-lbl">Hold [R]</span>
+          </span>
+        </button>
       </div>
 
       <div class="hud-pill desktop-hints">
         <span class="keybind-item"><kbd class="kbd">WASD</kbd> Move</span>
-        <span class="keybind-item"><kbd class="kbd">LMB / Hold</kbd> Combo / Heavy</span>
-        <span class="keybind-item"><kbd class="kbd">RMB / Shift</kbd> Dash</span>
-        <span class="keybind-item"><kbd class="kbd">E</kbd> Partner Skill</span>
+        <span class="keybind-item"><kbd class="kbd">LMB / Hold</kbd> Strike / Heavy</span>
+        <span class="keybind-item"><kbd class="kbd">RMB / Shift</kbd> Evade</span>
+        <span class="keybind-item"><kbd class="kbd">E</kbd> Guard</span>
         <span class="keybind-item"><kbd class="kbd">1–4</kbd> Spells</span>
+        <span class="keybind-item"><kbd class="kbd">Hold R</kbd> Commune</span>
+        <span class="keybind-item"><kbd class="kbd">G</kbd> Stele</span>
         <span class="keybind-item"><kbd class="kbd">Tab</kbd> Swap</span>
-        <span class="keybind-item"><kbd class="kbd">Alt+1–8</kbd> Views</span>
+      </div>
+    </div>
+
+    <!-- Sanctuary Lobby Overlay (#sanctuary-lobby) -->
+    <div id="sanctuary-lobby">
+      <div class="lobby-card">
+        <img class="lobby-crest-img" src="/world/assets/ui/sanctuary-crest.png" alt="" />
+        <h1 class="lobby-title">Sanctuary of Haru-machi</h1>
+        <p class="lobby-sub">Choose your vow and voice input before stepping into the wisteria valley.</p>
+
+        <div class="lobby-section">
+          <span class="lobby-section-label">Choose Your Vow</span>
+          <div class="lobby-role-grid">
+            <button type="button" class="lobby-role-btn active" data-lobby-role="Knight">
+              <span class="r-name">Knight</span>
+              <span class="r-desc">Sun &amp; Tide Blade</span>
+            </button>
+            <button type="button" class="lobby-role-btn" data-lobby-role="Mage">
+              <span class="r-name">Mage</span>
+              <span class="r-desc">Valley Spellweaver</span>
+            </button>
+            <button type="button" class="lobby-role-btn" data-lobby-role="Random">
+              <span class="r-name">Randomize Fate</span>
+              <span class="r-desc">Let Destiny Choose</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="lobby-section">
+          <span class="lobby-section-label">Sanctuary Voice Microphone (Hold [R] to Commune)</span>
+          <div class="lobby-mic-row">
+            <select id="lobby-mic-select" aria-label="Microphone Input">
+              <option value="">Default System Microphone</option>
+            </select>
+            <button type="button" id="lobby-mic-refresh-btn">Detect Mics</button>
+          </div>
+        </div>
+
+        <button type="button" id="lobby-enter-btn">Enter the Valley</button>
+      </div>
+    </div>
+
+    <!-- Altar Stone Stele Modal (#altar-stele-modal) -->
+    <div id="altar-stele-modal">
+      <div class="stele-tablet-card">
+        <img class="stele-tablet-img" src="/world/assets/ui/altar-tablet.png" alt="" />
+        <h2 id="altar-stele-title">The Weathered Stele of the Unnamed Grove</h2>
+        <div id="altar-stele-poem">
+          <p>Inscribing ancient verse from the sanctuary stone...</p>
+        </div>
+        <p class="stele-hint-sub">Stand within 5m of your beloved and Hold [R] or the Commune Medallion to speak the true name aloud.</p>
+        <button type="button" id="altar-stele-close-btn">Close Tablet [G / Esc]</button>
       </div>
     </div>
 
     <!-- Victory Dawn Overlay (hidden unless act === 'victory_dawn') -->
     <div id="victory-modal">
       <div class="victory-card">
-        <h2>🌅 Dawn Breaks Over Haru-machi</h2>
+        <h2>Dawn Breaks Over Haru-machi</h2>
         <p>The Hollow Sovereign is vanquished and the North Shrine Overlook shines in golden morning light.</p>
         <button type="button" id="replay-expedition-btn">Replay Expedition</button>
       </div>

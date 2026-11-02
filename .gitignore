@@ -8,6 +8,10 @@ _tmp/
 Thumbs.db
 .superpowers/
 
+# Environment secrets and spoiler-protected riddles
+.env
+.env.*
+
 # Experiment scratch (harnesses, renders, GLBs) — write-ups live in docs/experiments/
 /experiments/
 __pycache__/

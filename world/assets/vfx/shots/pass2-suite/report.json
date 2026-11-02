@@ -1,6 +1,6 @@
 {
   "pass": "pass2-suite",
-  "timestamp": "2026-11-01T09:24:16.193Z",
+  "timestamp": "2026-11-01T10:11:08.317Z",
   "passesAllBudgets": true,
   "maxVfxDraws": 6,
   "maxVfxDrawCalls": 6,
@@ -14,7 +14,7 @@
     "artoriousVfx": 4
   },
   "drawCallBudgetMet": true,
-  "maxVfxFrameMs": 0.17,
+  "maxVfxFrameMs": 0.175,
   "frameTimeBudgetMet": true,
   "contractChecks": {
     "zeroIdleGroupVisibility": true,
@@ -28,9 +28,14 @@
     },
     "artoriousResults": {
       "channel": 4,
+      "channelSigils": 1,
       "smite": 4,
+      "heal": 4,
+      "healSigils": 1,
       "blessing": 4,
-      "miracle": 4
+      "blessingSigils": 1,
+      "miracle": 4,
+      "miracleSigils": 1
     }
   },
   "zeroConsoleErrors": true,
@@ -44,7 +49,7 @@
       "idleVfxDrawCalls": 0,
       "vfxDrawCalls": 6,
       "vfxTriangles": 15832,
-      "vfxFrameMs": 0.11,
+      "vfxFrameMs": 0.1,
       "active": true,
       "age": 0.18,
       "drawCalls": 6,
@@ -53,7 +58,7 @@
       "activeDebris": 28,
       "activeParticles": 17,
       "hitstopScale": 1,
-      "noiseAtlasGenMs": 8.6,
+      "noiseAtlasGenMs": 8.2,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\vfx\\shots\\pass2-suite\\01-cast-launch.png"
     },
     "02-mid-eruption-ramp": {
@@ -73,7 +78,7 @@
       "activeDebris": 58,
       "activeParticles": 39,
       "hitstopScale": 1,
-      "noiseAtlasGenMs": 8.6,
+      "noiseAtlasGenMs": 8.2,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\vfx\\shots\\pass2-suite\\02-mid-eruption-ramp.png"
     },
     "03-apex-crown-impact": {
@@ -84,7 +89,7 @@
       "idleVfxDrawCalls": 0,
       "vfxDrawCalls": 6,
       "vfxTriangles": 22406,
-      "vfxFrameMs": 0.15,
+      "vfxFrameMs": 0.16,
       "active": true,
       "age": 0.72,
       "drawCalls": 6,
@@ -93,7 +98,7 @@
       "activeDebris": 135,
       "activeParticles": 93,
       "hitstopScale": 0.08,
-      "noiseAtlasGenMs": 8.6,
+      "noiseAtlasGenMs": 8.2,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\vfx\\shots\\pass2-suite\\03-apex-crown-impact.png"
     },
     "04-standing-glacier-field": {
@@ -104,7 +109,7 @@
       "idleVfxDrawCalls": 0,
       "vfxDrawCalls": 6,
       "vfxTriangles": 14802,
-      "vfxFrameMs": 0.13,
+      "vfxFrameMs": 0.125,
       "active": true,
       "age": 1.35,
       "drawCalls": 6,
@@ -113,7 +118,7 @@
       "activeDebris": 5,
       "activeParticles": 193,
       "hitstopScale": 1,
-      "noiseAtlasGenMs": 8.6,
+      "noiseAtlasGenMs": 8.2,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\vfx\\shots\\pass2-suite\\04-standing-glacier-field.png"
     },
     "05-player-shoulder-camera": {
@@ -124,7 +129,7 @@
       "idleVfxDrawCalls": 0,
       "vfxDrawCalls": 6,
       "vfxTriangles": 21170,
-      "vfxFrameMs": 0.17,
+      "vfxFrameMs": 0.175,
       "active": true,
       "age": 0.85,
       "drawCalls": 6,
@@ -133,7 +138,7 @@
       "activeDebris": 113,
       "activeParticles": 136,
       "hitstopScale": 1,
-      "noiseAtlasGenMs": 8.6,
+      "noiseAtlasGenMs": 8.2,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\vfx\\shots\\pass2-suite\\05-player-shoulder-camera.png"
     },
     "06-twilight-bloom-showcase": {
@@ -144,7 +149,7 @@
       "idleVfxDrawCalls": 0,
       "vfxDrawCalls": 6,
       "vfxTriangles": 19120,
-      "vfxFrameMs": 0.16,
+      "vfxFrameMs": 0.165,
       "active": true,
       "age": 1.1,
       "drawCalls": 6,
@@ -153,7 +158,7 @@
       "activeDebris": 77,
       "activeParticles": 191,
       "hitstopScale": 1,
-      "noiseAtlasGenMs": 8.6,
+      "noiseAtlasGenMs": 8.2,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\vfx\\shots\\pass2-suite\\06-twilight-bloom-showcase.png"
     },
     "07-shatterlance-convergence": {
@@ -218,7 +223,7 @@
       "idleVfxDrawCalls": 0,
       "vfxDrawCalls": 3,
       "vfxTriangles": 3436,
-      "vfxFrameMs": 0.05,
+      "vfxFrameMs": 0.04,
       "active": true,
       "age": 0.24,
       "drawCalls": 3,
@@ -235,7 +240,7 @@
       "idleVfxDrawCalls": 0,
       "vfxDrawCalls": 3,
       "vfxTriangles": 1284,
-      "vfxFrameMs": 0.13,
+      "vfxFrameMs": 0.125,
       "active": true,
       "infusionStyle": "solar",
       "drawCalls": 3,
@@ -254,7 +259,7 @@
       "idleVfxDrawCalls": 0,
       "vfxDrawCalls": 4,
       "vfxTriangles": 3906,
-      "vfxFrameMs": 0.165,
+      "vfxFrameMs": 0.16,
       "active": true,
       "infusionStyle": "rime",
       "drawCalls": 4,
@@ -272,7 +277,7 @@
       "timeSeconds": 0.65,
       "idleVfxDrawCalls": 0,
       "vfxDrawCalls": 4,
-      "vfxTriangles": 2882,
+      "vfxTriangles": 2878,
       "vfxFrameMs": 0.05,
       "active": true,
       "mode": "channel",
@@ -282,7 +287,7 @@
       "activeSkyRibbons": 7,
       "activeMonoliths": 6,
       "activePrismsAndDebris": 22,
-      "activeGroundSigils": 3,
+      "activeGroundSigils": 1,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\vfx\\shots\\pass2-suite\\13-artorious-prayer-sanctuary.png"
     },
     "14-artorious-petty-smite": {
@@ -293,7 +298,7 @@
       "idleVfxDrawCalls": 0,
       "vfxDrawCalls": 4,
       "vfxTriangles": 4774,
-      "vfxFrameMs": 0.065,
+      "vfxFrameMs": 0.06,
       "active": true,
       "mode": "smite",
       "suspense": false,
@@ -312,8 +317,8 @@
       "timeSeconds": 0.68,
       "idleVfxDrawCalls": 0,
       "vfxDrawCalls": 4,
-      "vfxTriangles": 6670,
-      "vfxFrameMs": 0.085,
+      "vfxTriangles": 6666,
+      "vfxFrameMs": 0.095,
       "active": true,
       "mode": "miracle",
       "suspense": false,
@@ -322,7 +327,7 @@
       "activeSkyRibbons": 14,
       "activeMonoliths": 24,
       "activePrismsAndDebris": 42,
-      "activeGroundSigils": 3,
+      "activeGroundSigils": 1,
       "path": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\assets\\vfx\\shots\\pass2-suite\\15-artorious-divine-miracle.png"
     }
   }

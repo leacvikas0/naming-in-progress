@@ -90,6 +90,8 @@ export function createCoopClient(options = {}) {
     onWorldSync = null,
     onRevivePartner = null,
     onActTransition = null,
+    onCommuneState = null,
+    onCommuneVerdict = null,
   } = options;
 
   let roomCode = readInitialRoomCode(options.roomCode);
@@ -174,7 +176,7 @@ export function createCoopClient(options = {}) {
 
   function buildWsUrl(targetRoom) {
     if (explicitWsUrl) {
-      return explicitWsUrl.replace(/\/api\/room\/[^/]+\/websocket/i, `/api/room/${targetRoom}/websocket`);
+      return explicitWsUrl.replace(/\/api\/room\/[^/]+\/websocket/i, `/api\/room/${targetRoom}/websocket`);
     }
     if (typeof window !== 'undefined' && window.location?.host) {
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -193,7 +195,7 @@ export function createCoopClient(options = {}) {
     const seq = ++connectSeq;
     closeCurrentSocket();
 
-    // Check if the current server supports theHaru-machi Co-Op WebSocket upgrade
+    // Check if the current server supports the Haru-machi Co-Op WebSocket upgrade
     const supported = await canServerUpgradeInBrowser();
     if (disposed || seq !== connectSeq) return;
     if (!supported) {
@@ -284,6 +286,14 @@ export function createCoopClient(options = {}) {
         }
         case 'act_transition': {
           onActTransition?.(msg);
+          break;
+        }
+        case 'commune_state': {
+          onCommuneState?.(msg);
+          break;
+        }
+        case 'commune_verdict': {
+          onCommuneVerdict?.(msg);
           break;
         }
         default:
@@ -392,6 +402,40 @@ export function createCoopClient(options = {}) {
     });
   }
 
+  function sendCommuneState(payload = {}) {
+    return sendRaw({
+      ...payload,
+      type: 'commune_state',
+      speakerRole: payload.speakerRole || state.role,
+      timestamp: Date.now(),
+    });
+  }
+
+  function sendCommuneVerdict(payload = {}) {
+    return sendRaw({
+      ...payload,
+      type: 'commune_verdict',
+      speakerRole: payload.speakerRole || state.role,
+      timestamp: Date.now(),
+    });
+  }
+
+  function setPreferredRole(nextRole) {
+    if (nextRole !== 'Knight' && nextRole !== 'Mage') return state.role;
+    state.role = nextRole;
+    if (ws && ws.readyState === 1) {
+      sendRaw({
+        type: 'join',
+        room: roomCode,
+        preferredRole: nextRole,
+        device,
+      });
+    } else {
+      emitRoomState();
+    }
+    return state.role;
+  }
+
   function swapRoles() {
     if (ws && ws.readyState === 1) {
       return sendRaw({ type: 'swap_roles' });
@@ -456,6 +500,7 @@ export function createCoopClient(options = {}) {
     getRoomCode,
     getShareUrl,
     getState,
+    setPreferredRole,
     swapRoles,
     sendHeroState,
     sendSpellCast,
@@ -464,6 +509,8 @@ export function createCoopClient(options = {}) {
     sendWorldSync,
     sendRevivePartner,
     sendActTransition,
+    sendCommuneState,
+    sendCommuneVerdict,
     dispose,
   };
 }

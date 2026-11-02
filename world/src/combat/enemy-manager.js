@@ -316,9 +316,9 @@ export async function createEnemyManager({
       aegisTriggerHpRatio: arch.aegisTriggerHpRatio ?? 0.5,
       aegisLayersMax: arch.aegisLayersMax ?? 2,
       aegisDmgReduction: arch.aegisDmgReduction ?? 0.85,
-      aegisTriggered: false,
-      aegisActive: false,
-      aegisLayers: 0,
+      aegisTriggered: Boolean(arch.isBoss),
+      aegisActive: Boolean(arch.isBoss),
+      aegisLayers: arch.isBoss ? (arch.aegisLayersMax ?? 2) : 0,
       x: clampedPos.x,
       y: groundY,
       z: clampedPos.z,
@@ -881,6 +881,49 @@ export async function createEnemyManager({
     rootGroup.updateMatrixWorld(true);
   }
 
+  /**
+   * 6.0m Sacred Commune Ward: pushes nearby skeletons outward and pauses
+   * windup attacks while the couple is channeling their prayer to Artorious.
+   */
+  function applySacredWardPushback(centerPos, wardRadius = 6.0) {
+    if (!centerPos) return 0;
+    let pushedCount = 0;
+    const cx = centerPos.x ?? 0;
+    const cz = centerPos.z ?? 0;
+
+    for (let i = 0; i < activeEnemies.length; i++) {
+      const e = activeEnemies[i];
+      if (!e || e.dead || !e.active) continue;
+      const dx = e.x - cx;
+      const dz = e.z - cz;
+      const d = Math.hypot(dx, dz);
+      if (d < wardRadius) {
+        const nx = d > 1e-4 ? dx / d : 1.0;
+        const nz = d > 1e-4 ? dz / d : 0.0;
+        const targetDist = wardRadius + 0.35;
+        const nextPos = applyEnemySpatialConstraints(
+          cx + nx * targetDist,
+          cz + nz * targetDist,
+          e.radius
+        );
+        e.x = nextPos.x;
+        e.z = nextPos.z;
+        e.y = walkableHeightAt(e.x, e.z);
+        e.vx = nx * 4.5;
+        e.vz = nz * 4.5;
+        if (e.aiState === 'windup') {
+          e.aiState = 'orbit';
+          e.windupTimer = 0;
+          e.telegraphProgress = 0;
+        }
+        e.cooldownTimer = Math.max(e.cooldownTimer, 0.85);
+        e.group.position.set(e.x, e.y, e.z);
+        pushedCount++;
+      }
+    }
+    return pushedCount;
+  }
+
   return {
     rootGroup,
     poolSlots,
@@ -908,6 +951,7 @@ export async function createEnemyManager({
     applyHitToEnemy,
     applyAreaOrLineHit,
     checkPerfectDodge,
+    applySacredWardPushback,
     setFrozenForShot,
     update,
   };

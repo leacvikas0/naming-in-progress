@@ -246,7 +246,9 @@ export class CoopRoomDO {
       case 'enemy_hit':
       case 'world_sync':
       case 'revive_partner':
-      case 'act_transition': {
+      case 'act_transition':
+      case 'commune_state':
+      case 'commune_verdict': {
         this.relayToPeer(player.clientId, {
           ...msg,
           fromClientId: player.clientId,

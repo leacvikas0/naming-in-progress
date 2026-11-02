@@ -3,6 +3,19 @@
   "model": "gemini-3.8-flash-tts",
   "clips": [
     {
+      "id": "smite_nameless",
+      "verdict": "SMITE",
+      "scoreRange": [
+        1,
+        3
+      ],
+      "whenToPick": "The speaker prays without speaking the Ancient God's true name carved on the stone altar.",
+      "style": "deep, ancient, offended, theatrical god of love scolding a mortal who dared to pray without speaking His true name",
+      "ttsInput": "<sigh> You dare call into my sacred grove without speaking my true name? <short pause> Seek the weathered stone in the plaza, mortal... and until then, eat lightning!",
+      "subtitle": "You dare call into my sacred grove without speaking my true name? Seek the weathered stone in the plaza, mortal... and until then, eat lightning!",
+      "audioUrl": "/world/assets/audio/artorious/smite_nameless.wav"
+    },
+    {
       "id": "smite_silence",
       "verdict": "SMITE",
       "scoreRange": [
@@ -53,6 +66,19 @@
       "ttsInput": "<chuckle> Did your courage just crack mid-prayer? <short pause> Come back when you actually mean it.",
       "subtitle": "Did your courage just crack mid-prayer? Come back when you actually mean it.",
       "audioUrl": "/world/assets/audio/artorious/smite_cringe.wav"
+    },
+    {
+      "id": "heal_gentle",
+      "verdict": "HEAL",
+      "scoreRange": [
+        5,
+        6
+      ],
+      "whenToPick": "Initial valid prayer where the speaker knows the true name and speaks with a gentle heart for their partner, warming the god's heart for the first time.",
+      "style": "deep, warm, begrudgingly touched ancient god of love granting an initial modest healing blessing to a mortal's partner",
+      "ttsInput": "<breath> You know my name, and you speak with a gentle heart. <short pause> I shall mend your beloved's wounds for now... warm my heart further if you seek my true power.",
+      "subtitle": "You know my name, and you speak with a gentle heart. I shall mend your beloved's wounds for now... warm my heart further if you seek my true power.",
+      "audioUrl": "/world/assets/audio/artorious/heal_gentle.wav"
     },
     {
       "id": "bless_sweet",

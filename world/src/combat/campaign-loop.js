@@ -32,6 +32,10 @@ import {
   COUPLES_ULTIMATE,
   ACT_DEFINITIONS,
   ACT_SEQUENCE,
+  COMMUNE_MAX_DISTANCE,
+  COMMUNE_RESURRECT_DISTANCE,
+  POWERUP_TETHER_DISTANCE,
+  ALTAR_STELE_POS,
   selectSoftLockTarget,
 } from './combat-balance.js';
 
@@ -301,6 +305,10 @@ export function createCampaignLoop({
       breathingStyle: 'none',
       breathingTimer: 0,
       empoweredBreathing: false,
+      sunSwornBreathing: false,
+      sunSwornTimer: 0,
+      partnerSwordMult: 1.0,
+      partnerBuffTimer: 0,
       perfectDodgeBuff: false,
       iframeTimer: 0,
       interceptCd: 0,
@@ -314,6 +322,10 @@ export function createCampaignLoop({
       downed: false,
       reviveProgress: 0,
       empoweredBreathing: false,
+      ascendedMagicFlow: false,
+      ascendedMagicTimer: 0,
+      partnerMagicMult: 1.0,
+      partnerBuffTimer: 0,
       perfectDodgeBuff: false,
       iframeTimer: 0,
       infuseCd: 0,
@@ -324,6 +336,14 @@ export function createCampaignLoop({
         storm_lance: 0,
       },
     },
+  };
+
+  // Alias map so `this.state[speakerKey]` works with 'Knight'/'Mage' or 'knight'/'mage'
+  const state = {
+    Knight: combatHeroes.Knight,
+    Mage: combatHeroes.Mage,
+    knight: combatHeroes.Knight,
+    mage: combatHeroes.Mage,
   };
 
   let actIndex = 0;
@@ -337,7 +357,35 @@ export function createCampaignLoop({
   let wingmanSpellIdx = 0;
   let wingmanBoltTimer = 0.75;
   let wingmanBoltIdx = 0;
+  let bothDownedTimer = 0;
+  let communeChannelActive = false;
   let indicatorsHiddenForShot = false;
+
+  function getPartnerDistance(posA, posB) {
+    if (!posA || !posB) return 0;
+    return Math.hypot((posA.x ?? 0) - (posB.x ?? 0), (posA.z ?? 0) - (posB.z ?? 0));
+  }
+
+  function isWithinPowerupTether(posA, posB) {
+    if (!posA || !posB) return true;
+    return getPartnerDistance(posA, posB) <= POWERUP_TETHER_DISTANCE;
+  }
+
+  function canCommuneTogether(heroStates) {
+    const k = heroStates?.Knight || heroStates?.knight;
+    const m = heroStates?.Mage || heroStates?.mage;
+    const dist = getPartnerDistance(k, m);
+    const anyDowned = Boolean(combatHeroes.Knight.downed || combatHeroes.Mage.downed);
+    const bothDowned = Boolean(combatHeroes.Knight.downed && combatHeroes.Mage.downed);
+    const maxDist = anyDowned ? COMMUNE_RESURRECT_DISTANCE : COMMUNE_MAX_DISTANCE;
+    return {
+      allowed: !bothDowned && dist <= maxDist,
+      distance: dist,
+      maxDist,
+      anyDowned,
+      bothDowned,
+    };
+  }
 
   const _tmpStaffTip = new THREE.Vector3();
 
@@ -546,17 +594,297 @@ export function createCampaignLoop({
       combatSfx.playPlayerHit();
     }
     if (h.hp <= 0) {
+      h.hp = 0;
       h.downed = true;
       h.reviveProgress = 0;
       if (targetHeroState?.char?.play) {
-        targetHeroState.char.play('downed', { loop: false, fade: 0.1, force: true });
+        targetHeroState.char.play('death', { loop: false, fade: 0.1, force: true });
       }
       emitBanner(
-        `${heroId.toUpperCase()} IS DOWNED!`,
-        'Stand Within 3.5m for 2.0s or Clear the Wave to Revive',
+        `${heroId.toUpperCase()} HAS FALLEN!`,
+        'Run Within 4.8m of Your Beloved and Hold [R] Commune to Resurrect!',
         'warning'
       );
     }
+  }
+
+  /**
+   * Evaluates and applies the Ancient God of Love's Commune Verdict (`smite`,
+   * `heal`, `blessing`, `miracle`) to the speaker and partner.
+   */
+  function applyCommuneVerdict(judgment = {}, speakerRole = 'Knight', heroStates = null) {
+    const verdict = String(judgment?.verdict || 'smite').toLowerCase();
+    const speakerKey =
+      String(speakerRole || 'Knight').toLowerCase() === 'mage' ? 'Mage' : 'Knight';
+    const partnerKey = speakerKey === 'Knight' ? 'Mage' : 'Knight';
+
+    const speakerHero = state[speakerKey];
+    const partnerHero = state[partnerKey];
+    const speakerEntity =
+      heroStates?.[speakerKey] || heroStates?.[speakerKey.toLowerCase()] || null;
+    const partnerEntity =
+      heroStates?.[partnerKey] || heroStates?.[partnerKey.toLowerCase()] || null;
+
+    const speakerPos = speakerEntity || { x: 2.8, y: 0, z: 14.5 };
+    const partnerPos = partnerEntity || {
+      x: (speakerPos.x ?? 2.8) + 1.8,
+      y: speakerPos.y ?? 0,
+      z: (speakerPos.z ?? 14.5) + 0.5,
+    };
+
+    communeChannelActive = false;
+
+    if (verdict === 'smite') {
+      vfxKit?.artoriousVfx?.triggerSmite?.(speakerPos);
+      speakerHero.shield = 0;
+      speakerHero.shieldTimer = 0;
+      speakerHero.downed = false;
+      // Drop the speaker's HP straight to 1 HP (never 0, always terrifying 1 HP!)
+      state[speakerKey].hp = Math.max(1, Math.min(state[speakerKey].hp, 1));
+
+      if (speakerEntity) {
+        speakerEntity.actionState = 'hit_b';
+        speakerEntity.actionTimer = 0.58;
+        speakerEntity.praying = false;
+        speakerEntity.char?.play?.('hit_b', { loop: false, fade: 0.06, force: true });
+      }
+      if (partnerEntity) {
+        partnerEntity.praying = false;
+      }
+      combatSfx?.playPlayerHit?.();
+      emitBanner(
+        'DIVINE SMITE · 1 HP REMAINING!',
+        judgment?.divine_quote ||
+          judgment?.subtitle ||
+          'Your prayer displeased the Ancient God of Love!',
+        'warning'
+      );
+      onHudStateChanged?.(getStateSnapshot());
+      return { verdict: 'smite', speakerRole: speakerKey, speakerHp: state[speakerKey].hp };
+    }
+
+    if (verdict === 'heal') {
+      const healAmt = Number(judgment?.partner_heal) || 55;
+      const wasDowned = partnerHero.downed;
+      if (partnerHero.downed && judgment?.resurrect_partner !== false) {
+        partnerHero.downed = false;
+        partnerHero.reviveProgress = 0;
+        partnerHero.hp = Math.min(partnerHero.maxHp, healAmt);
+      } else if (!partnerHero.downed) {
+        partnerHero.hp = Math.min(partnerHero.maxHp, partnerHero.hp + healAmt);
+      }
+
+      vfxKit?.artoriousVfx?.triggerHeal?.(speakerPos, partnerPos);
+
+      combatHeroes.Mage.partnerMagicMult = Number(judgment?.partner_magic_mult) || 1.25;
+      combatHeroes.Mage.partnerBuffTimer = Math.max(combatHeroes.Mage.partnerBuffTimer, 15.0);
+      combatHeroes.Knight.partnerSwordMult = Number(judgment?.partner_sword_mult) || 1.20;
+      combatHeroes.Knight.partnerBuffTimer = Math.max(combatHeroes.Knight.partnerBuffTimer, 15.0);
+
+      if (speakerEntity) {
+        speakerEntity.praying = false;
+        speakerEntity.char?.play?.('cheer', { loop: false, fade: 0.1, force: true });
+      }
+      if (partnerEntity) {
+        partnerEntity.praying = false;
+        partnerEntity.char?.play?.(wasDowned ? 'revive' : 'cheer', {
+          loop: false,
+          fade: 0.1,
+          force: true,
+        });
+      }
+
+      addResonance(25);
+      combatSfx?.playShieldChime?.();
+      emitBanner(
+        wasDowned ? 'DIVINE RESURRECTION · BELOVED REVIVED' : 'DIVINE GRACE · BELOVED HEALED',
+        judgment?.divine_quote ||
+          judgment?.subtitle ||
+          `+${healAmt} HP Restored · 15s Tether Power-Up Active`,
+        'blessing'
+      );
+      onHudStateChanged?.(getStateSnapshot());
+      return {
+        verdict: 'heal',
+        partnerRole: partnerKey,
+        partnerHp: partnerHero.hp,
+        resurrected: wasDowned && !partnerHero.downed,
+      };
+    }
+
+    if (verdict === 'blessing') {
+      const healAmt = Number(judgment?.partner_heal) || 80;
+      const wasDowned = partnerHero.downed;
+      partnerHero.downed = false;
+      partnerHero.reviveProgress = 0;
+      partnerHero.hp = Math.min(
+        partnerHero.maxHp,
+        (wasDowned ? 0 : partnerHero.hp) + healAmt
+      );
+
+      speakerHero.downed = false;
+      speakerHero.reviveProgress = 0;
+      speakerHero.hp = Math.min(speakerHero.maxHp, speakerHero.hp + 30);
+
+      vfxKit?.artoriousVfx?.triggerBlessing?.(speakerPos, partnerPos);
+
+      // 22s Ascended Magic Flow on Mage + 22s Sun-Sworn Sword Breathing on Knight
+      combatHeroes.Mage.ascendedMagicFlow = true;
+      combatHeroes.Mage.ascendedMagicTimer = 22.0;
+      combatHeroes.Mage.partnerMagicMult = Number(judgment?.partner_magic_mult) || 1.75;
+      combatHeroes.Mage.partnerBuffTimer = 22.0;
+      combatHeroes.Mage.empoweredBreathing = true;
+
+      combatHeroes.Knight.sunSwornBreathing = true;
+      combatHeroes.Knight.sunSwornTimer = 22.0;
+      combatHeroes.Knight.partnerSwordMult = Number(judgment?.partner_sword_mult) || 1.60;
+      combatHeroes.Knight.partnerBuffTimer = 22.0;
+      combatHeroes.Knight.empoweredBreathing = true;
+
+      setKnightBreathing('eclipse', 22.0);
+
+      if (speakerEntity) {
+        speakerEntity.praying = false;
+        speakerEntity.char?.play?.('cheer', { loop: false, fade: 0.1, force: true });
+      }
+      if (partnerEntity) {
+        partnerEntity.praying = false;
+        partnerEntity.char?.play?.(wasDowned ? 'revive' : 'cheer', {
+          loop: false,
+          fade: 0.1,
+          force: true,
+        });
+      }
+
+      // Crack 1 layer of Boss Bone Aegis if in range
+      if (enemyManager) {
+        enemyManager.applyAreaOrLineHit({
+          origin: speakerPos,
+          radius: 15.0,
+          hitSpec: {
+            source: 'divine_blessing',
+            baseDmg: 95,
+            applyMark: 'eclipse',
+            empoweredBreathing: true,
+            attackerPos: speakerPos,
+          },
+        });
+      }
+
+      addResonance(50);
+      combatSfx?.playShieldChime?.();
+      emitBanner(
+        'SANCTUARY BLESSING · SUN & TIDE ECLIPSE',
+        judgment?.divine_quote ||
+          judgment?.subtitle ||
+          '22s Ascended Magic Flow (1.75x) + Sun & Tide Eclipse Blade (1.60x)',
+        'blessing'
+      );
+      onHudStateChanged?.(getStateSnapshot());
+      return {
+        verdict: 'blessing',
+        partnerHp: partnerHero.hp,
+        speakerHp: speakerHero.hp,
+      };
+    }
+
+    // verdict === 'miracle'
+    const wasKnightDowned = combatHeroes.Knight.downed;
+    const wasMageDowned = combatHeroes.Mage.downed;
+    combatHeroes.Knight.downed = false;
+    combatHeroes.Knight.reviveProgress = 0;
+    combatHeroes.Mage.downed = false;
+    combatHeroes.Mage.reviveProgress = 0;
+
+    combatHeroes.Knight.hp = combatHeroes.Knight.maxHp;
+    combatHeroes.Mage.hp = combatHeroes.Mage.maxHp;
+    combatHeroes.Knight.shield = 40;
+    combatHeroes.Knight.shieldTimer = 25.0;
+    combatHeroes.Mage.shield = 40;
+    combatHeroes.Mage.shieldTimer = 25.0;
+
+    // 30s of God-Tier Ascended Magic Flow (2.2x) + Sun & Tide Eclipse Breathing (1.85x)
+    combatHeroes.Mage.ascendedMagicFlow = true;
+    combatHeroes.Mage.ascendedMagicTimer = 30.0;
+    combatHeroes.Mage.partnerMagicMult = Number(judgment?.partner_magic_mult) || 2.2;
+    combatHeroes.Mage.partnerBuffTimer = 30.0;
+    combatHeroes.Mage.empoweredBreathing = true;
+
+    combatHeroes.Knight.sunSwornBreathing = true;
+    combatHeroes.Knight.sunSwornTimer = 30.0;
+    combatHeroes.Knight.partnerSwordMult = Number(judgment?.partner_sword_mult) || 1.85;
+    combatHeroes.Knight.partnerBuffTimer = 30.0;
+    combatHeroes.Knight.empoweredBreathing = true;
+
+    setKnightBreathing('eclipse', 30.0);
+    heartResonance = 100;
+
+    let enemyCenter = null;
+    if (enemyManager && enemyManager.activeEnemies.length > 0) {
+      const boss = enemyManager.activeEnemies.find((e) => e.isBoss && !e.dead);
+      const refEnemy = boss || enemyManager.activeEnemies[0];
+      if (refEnemy) {
+        enemyCenter = { x: refEnemy.x, y: refEnemy.y || 0, z: refEnemy.z };
+      }
+    }
+
+    vfxKit?.artoriousVfx?.triggerMiracle?.(speakerPos, partnerPos, enemyCenter);
+
+    if (speakerEntity) {
+      speakerEntity.praying = false;
+      speakerEntity.char?.play?.(wasKnightDowned || wasMageDowned ? 'revive' : 'cheer', {
+        loop: false,
+        fade: 0.1,
+        force: true,
+      });
+    }
+    if (partnerEntity) {
+      partnerEntity.praying = false;
+      partnerEntity.char?.play?.(wasKnightDowned || wasMageDowned ? 'revive' : 'cheer', {
+        loop: false,
+        fade: 0.1,
+        force: true,
+      });
+    }
+
+    // Shatter all layers of the Act III Boss's Bone Aegis + deal massive AoE damage to nearby skeletons
+    if (enemyManager) {
+      for (const e of enemyManager.activeEnemies) {
+        if (e && !e.dead && e.isBoss) {
+          e.aegisLayers = 0;
+          e.aegisActive = false;
+          e.stunTimer = Math.max(e.stunTimer || 0, 3.5);
+        }
+      }
+      enemyManager.applyAreaOrLineHit({
+        origin: enemyCenter || speakerPos,
+        radius: 18.0,
+        hitSpec: {
+          source: 'divine_miracle',
+          baseDmg: 260,
+          applyMark: 'eclipse',
+          detonatesMark: true,
+          empoweredBreathing: true,
+          attackerPos: speakerPos,
+        },
+      });
+    }
+
+    combatSfx?.playCouplesUltimate?.();
+    emitBanner(
+      'DIVINE MIRACLE · THE HEAVENS PART FOR YOU BOTH!',
+      judgment?.divine_quote ||
+        judgment?.subtitle ||
+        'Full Restore + 40 Shield · Bone Aegis Shattered · 30s Eclipse Flow · Cataclysm 100%!',
+      'ultimate'
+    );
+    onHudStateChanged?.(getStateSnapshot());
+    return {
+      verdict: 'miracle',
+      knightHp: combatHeroes.Knight.hp,
+      mageHp: combatHeroes.Mage.hp,
+      heartResonance,
+    };
   }
 
   function castSpell(spellIdOrSlot, casterPos, aimYaw, partnerPos = null) {
@@ -570,9 +898,15 @@ export function createCampaignLoop({
       return { onCooldown: true, spell };
     }
 
-    combatHeroes.Mage.spellCooldowns[spell.id] = spell.cd;
+    const withinTether = isWithinPowerupTether(casterPos, partnerPos);
+    const cdMult =
+      combatHeroes.Mage.ascendedMagicFlow && withinTether ? 0.45 : 1.0;
+    combatHeroes.Mage.spellCooldowns[spell.id] = Number((spell.cd * cdMult).toFixed(2));
     addResonance(spell.resonanceGain);
-    setKnightBreathing(spell.infusion, HERO_STATS.Mage.infuseDuration);
+    setKnightBreathing(
+      combatHeroes.Knight.sunSwornBreathing ? 'eclipse' : spell.infusion,
+      Math.max(HERO_STATS.Mage.infuseDuration, combatHeroes.Knight.sunSwornTimer)
+    );
 
     if (combatSfx?.playSpellCast) {
       combatSfx.playSpellCast(spell.id);
@@ -622,19 +956,22 @@ export function createCampaignLoop({
     // Resolve authoritative damage + Elemental Crest mark + Shatterlance detonation
     let hits = [];
     if (enemyManager) {
+      const commonHitSpec = {
+        source: spell.id,
+        baseDmg: spell.dmg,
+        applyMark: spell.mark,
+        detonatesMark: Boolean(spell.detonatesMark),
+        empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
+        partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
+        attackerPos: casterPos,
+        partnerPos,
+      };
       if (spell.id === 'cinder_fall' || spell.id === 'storm_lance') {
         hits = enemyManager.applyAreaOrLineHit({
           origin: targetPos,
           radius: spell.chainRadius || spell.radius || 4.2,
           maxTargets: spell.chainCount ? spell.chainCount + 1 : 99,
-          hitSpec: {
-            source: spell.id,
-            baseDmg: spell.dmg,
-            applyMark: spell.mark,
-            detonatesMark: Boolean(spell.detonatesMark),
-            empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
-            attackerPos: casterPos,
-          },
+          hitSpec: commonHitSpec,
         });
       } else {
         hits = enemyManager.applyAreaOrLineHit({
@@ -642,14 +979,7 @@ export function createCampaignLoop({
           direction: { x: dirX, z: dirZ },
           range: spell.range,
           width: spell.width || 2.6,
-          hitSpec: {
-            source: spell.id,
-            baseDmg: spell.dmg,
-            applyMark: spell.mark,
-            detonatesMark: Boolean(spell.detonatesMark),
-            empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
-            attackerPos: casterPos,
-          },
+          hitSpec: commonHitSpec,
         });
       }
 
@@ -678,6 +1008,17 @@ export function createCampaignLoop({
 
   function performKnightSwing(swingType, knightPos, knightYaw, partnerPos = null) {
     if (combatHeroes.Knight.downed) return null;
+
+    const withinTether = isWithinPowerupTether(knightPos, partnerPos);
+    if (
+      combatHeroes.Knight.sunSwornBreathing &&
+      withinTether &&
+      combatHeroes.Knight.breathingStyle === 'none'
+    ) {
+      setKnightBreathing('eclipse', Math.max(4.0, combatHeroes.Knight.sunSwornTimer));
+    }
+
+    const activeStyle = withinTether ? combatHeroes.Knight.breathingStyle : 'none';
 
     const enemies = enemyManager ? enemyManager.activeEnemies : [];
     const softTarget = selectSoftLockTarget(knightPos, knightYaw, enemies, {
@@ -711,16 +1052,16 @@ export function createCampaignLoop({
         swingType,
         { x: knightPos.x, y: knightPos.y, z: knightPos.z },
         swingYaw,
-        combatHeroes.Knight.breathingStyle
+        activeStyle
       );
     }
     if (combatSfx) {
       if (swingType === 'charged' || swingType === 'heavy' || swingType === 'combo4') {
-        combatSfx.playHeavyFinisher?.(combatHeroes.Knight.breathingStyle);
+        combatSfx.playHeavyFinisher?.(activeStyle);
       } else {
         combatSfx.playSwordSlash?.(
           swingType === 'combo3' ? 2 : swingType === 'combo2' ? 1 : 0,
-          combatHeroes.Knight.breathingStyle
+          activeStyle
         );
       }
     }
@@ -736,10 +1077,12 @@ export function createCampaignLoop({
           source: swingType,
           yaw: swingYaw,
           baseDmg,
-          infusion: combatHeroes.Knight.breathingStyle,
+          infusion: activeStyle,
           empoweredBreathing: combatHeroes.Knight.empoweredBreathing,
+          partnerSwordMult: combatHeroes.Knight.partnerSwordMult,
           perfectDodgeBuff: combatHeroes.Knight.perfectDodgeBuff,
           attackerPos: knightPos,
+          partnerPos,
         },
       });
       combatHeroes.Knight.perfectDodgeBuff = false;
@@ -770,6 +1113,9 @@ export function createCampaignLoop({
   function performMageBoltAttack(comboIndex = 0, mageState, partnerPos = null) {
     if (combatHeroes.Mage.downed || !mageState) return null;
 
+    const withinTether = isWithinPowerupTether(mageState, partnerPos);
+    const ascendedActive = Boolean(combatHeroes.Mage.ascendedMagicFlow && withinTether);
+
     const enemies = enemyManager ? enemyManager.activeEnemies : [];
     const softTarget = selectSoftLockTarget(
       mageState,
@@ -799,11 +1145,18 @@ export function createCampaignLoop({
       mageState.char.group.rotation.y = aimYaw;
     }
 
-    // Fire Starlight Bolt Volley from staff tip (`handSlot.r`)
-    fireMageStaffVolleyVfx(mageState, targetPos, comboIndex);
+    // Fire Starlight Bolt Volley from staff tip (`handSlot.r`):
+    // When Ascended Magic Flow is active (within 6.5m of partner), every tap fires
+    // BOTH the 3-bolt converging starlight fan AND the Starlight Nova Orb!
+    if (ascendedActive) {
+      fireMageStaffVolleyVfx(mageState, targetPos, 2);
+      fireMageStaffVolleyVfx(mageState, targetPos, 3);
+    } else {
+      fireMageStaffVolleyVfx(mageState, targetPos, comboIndex);
+    }
 
     if (combatSfx) {
-      if (comboIndex === 3) {
+      if (comboIndex === 3 || ascendedActive) {
         combatSfx.playHeavyFinisher?.('rime');
       } else {
         combatSfx.playSwordSlash?.(comboIndex, 'rime');
@@ -812,21 +1165,27 @@ export function createCampaignLoop({
 
     let hits = [];
     if (enemyManager) {
-      if (comboIndex === 3) {
-        // Charged Starlight Nova Orb: 42 AoE dmg in 3.5m radius
+      if (ascendedActive || comboIndex === 3) {
+        // Charged Starlight Nova Orb + 3-bolt converging fan when Ascended
         hits = enemyManager.applyAreaOrLineHit({
           origin: softTarget || targetPos,
-          radius: HERO_STATS.Mage.heavyNovaRadius || 3.5,
+          radius: ascendedActive
+            ? (HERO_STATS.Mage.heavyNovaRadius || 3.5) + 1.0
+            : HERO_STATS.Mage.heavyNovaRadius || 3.5,
           hitSpec: {
             source: 'mage_heavy',
-            baseDmg: HERO_STATS.Mage.heavyNovaDmg || 42,
+            baseDmg: ascendedActive
+              ? (HERO_STATS.Mage.heavyNovaDmg || 42) + (HERO_STATS.Mage.boltDmg[2] || 30)
+              : HERO_STATS.Mage.heavyNovaDmg || 42,
             applyMark: 'rime',
             detonatesMark: true,
             empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
+            partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
             attackerPos: mageState,
+            partnerPos,
           },
         });
-        addResonance(10);
+        addResonance(ascendedActive ? 14 : 10);
       } else if (comboIndex === 2 && softTarget) {
         // 3-Bolt Converging Starlight Fan Volley that applies 'rime' mark
         hits = enemyManager.applyAreaOrLineHit({
@@ -838,7 +1197,9 @@ export function createCampaignLoop({
             baseDmg: HERO_STATS.Mage.boltDmg[2] || 30,
             applyMark: 'rime',
             empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
+            partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
             attackerPos: mageState,
+            partnerPos,
           },
         });
         addResonance(7);
@@ -848,7 +1209,9 @@ export function createCampaignLoop({
           baseDmg: HERO_STATS.Mage.boltDmg[comboIndex] || 18,
           applyMark: null,
           empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
+          partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
           attackerPos: mageState,
+          partnerPos,
         });
         if (res) hits.push({ enemy: softTarget, result: res });
         addResonance(5);
@@ -864,7 +1227,7 @@ export function createCampaignLoop({
       }
     }
 
-    return { comboIndex, aimYaw, softTarget, targetPos, hits };
+    return { comboIndex, aimYaw, softTarget, targetPos, hits, ascendedActive };
   }
 
   function performPartnerSkill(activeHeroId, heroStates) {
@@ -997,7 +1360,10 @@ export function createCampaignLoop({
     combatHeroes.Mage.shield = COUPLES_ULTIMATE.shieldGrant;
     combatHeroes.Mage.shieldTimer = COUPLES_ULTIMATE.shieldDuration;
 
-    setKnightBreathing('solar', HERO_STATS.Mage.infuseDuration);
+    setKnightBreathing(
+      'eclipse',
+      Math.max(HERO_STATS.Mage.infuseDuration, combatHeroes.Knight.sunSwornTimer || 16.0)
+    );
     if (combatSfx?.playCouplesUltimate) {
       combatSfx.playCouplesUltimate();
     }
@@ -1057,10 +1423,10 @@ export function createCampaignLoop({
       15.5
     );
 
-    // Beat 1 (t = 0.00s — The Convergence, Freeze & Meteor Lob):
-    // - Mage unleashes Frost Lance (Glacial V-Canyon + Cathedral Crown) + Cinder Fall (Lobbed Volcanic Meteor) + 3-Bolt Starlight Fan Volley!
-    // - Knight unleashes 360° Hinokami Sunfire Whirlwind Spin ('charged')!
-    // - Enemies within 12m are pulled into the Glacier Cathedral epicenter and rooted for 1.2s awaiting the meteor impact!
+    // Beat 1 (t = 0.00s — Combined Fire + Frost Vortex & Sun & Tide Eclipse Whirlwind):
+    // - Mage combines Frost Vortex (Frost Lance) + Volcanic Fire Meteor (Cinder Fall) simultaneously for 2x Double Damage!
+    // - Knight unleashes 360° Sun & Tide Eclipse ('eclipse' Fire & Water mixed) Whirlwind Spin ('charged')!
+    // - Enemies within 12m are pulled into the vortex epicenter and rooted for 1.25s awaiting Beat 2!
     if (vfxKit) {
       vfxKit.frostLance?.cast?.(
         castOrigin,
@@ -1077,7 +1443,7 @@ export function createCampaignLoop({
         'charged',
         { x: knightState.x, y: knightState.y ?? walkableHeightAt(knightState.x, knightState.z), z: knightState.z },
         aimYaw,
-        'solar'
+        'eclipse'
       );
     }
 
@@ -1092,10 +1458,10 @@ export function createCampaignLoop({
 
     let hits = [];
     if (enemyManager) {
-      // Pull & freeze enemies into the Glacier Cathedral epicenter at Beat 1;
-      // If called from headless unit tests (where update(dt) isn't stepped after Q), resolve full damage immediately if vfxKit is absent,
-      // otherwise deal 40 opening freeze damage now and 140 Cataclysm detonation damage at Beat 2 (t = 0.56s) when the meteor slams down!
+      // Combine Fire + Frost Vortex for 2x Double Damage (COUPLES_ULTIMATE.dmg * 2 = 360 total):
+      // In live VFX sessions, Beat 1 deals COUPLES_ULTIMATE.dmg (180) Frost Vortex damage and Beat 2 deals COUPLES_ULTIMATE.dmg (180) Fire + Eclipse Cataclysm damage!
       const isLiveVfxSession = Boolean(vfxKit && vfxKit.cinderFall);
+      const totalDoubleDmg = COUPLES_ULTIMATE.dmg * 2;
       for (const e of enemyManager.activeEnemies) {
         if (!e || e.dead || !e.active) continue;
         const dx = impX - e.x;
@@ -1113,8 +1479,9 @@ export function createCampaignLoop({
         radius: COUPLES_ULTIMATE.radius + 4.0,
         hitSpec: {
           source: 'couples_ultimate',
-          baseDmg: isLiveVfxSession ? 40 : COUPLES_ULTIMATE.dmg,
-          applyMark: 'rime',
+          baseDmg: isLiveVfxSession ? COUPLES_ULTIMATE.dmg : totalDoubleDmg,
+          infusion: 'eclipse',
+          applyMark: 'eclipse',
           detonatesMark: !isLiveVfxSession,
           empoweredBreathing: true,
           attackerPos: knightState,
@@ -1123,8 +1490,8 @@ export function createCampaignLoop({
     }
 
     emitBanner(
-      '👑 RIME & SOLAR CATACLYSM!',
-      'Couples Resonance Ultimate · Glacier + Magma Meteor + Hinokami Whirlwind Cleave!',
+      'SUN & TIDE ECLIPSE CATACLYSM!',
+      'Fire + Frost Vortex Combined (2x DMG) · Hinokami Sunfire & Glacial Tide Blade!',
       'ultimate'
     );
     return { ultimate: true, hits, impactPos: ultimateSequence.impactPos };
@@ -1146,7 +1513,7 @@ export function createCampaignLoop({
 
     // -----------------------------------------------------------------------
     // 1. Populate `groundIndicatorMesh` (Telegraph Rings, Pier Sanctuary Ring,
-    //    Downed Revival Ring, and Guiding Golden Petal Markers)
+    //    Plaza Stele Astrolabe Ring, Downed Revival Ring, and Guiding Petals)
     // -----------------------------------------------------------------------
     let gCount = 0;
     const metaArr = groundInd.metaArray;
@@ -1187,7 +1554,25 @@ export function createCampaignLoop({
       );
     }
 
-    // 1B. West Millpond Pier Sanctuary Brazier Ring
+    // 1B. Town Plaza Weathered Sanctuary Stele Rotating Golden Astrolabe Ring at (2.6, 7.2)
+    {
+      const sy = walkableHeightAt(ALTAR_STELE_POS.x, ALTAR_STELE_POS.z) + 0.045;
+      const stelePulse = 0.48 + 0.18 * Math.sin(elapsed * 2.4);
+      pushGroundInstance(
+        ALTAR_STELE_POS.x,
+        sy,
+        ALTAR_STELE_POS.z,
+        1.75,
+        elapsed * 0.65,
+        0.0,
+        stelePulse,
+        elapsed * 1.8,
+        0.14,
+        PALETTE.sanctuaryGold
+      );
+    }
+
+    // 1B-2. West Millpond Pier Sanctuary Brazier Ring
     if (currentActId === 'interlude_pier' || !combatHeroes.Knight.empoweredBreathing) {
       const pierCenter = ACT_DEFINITIONS.interlude_pier.center;
       const py = walkableHeightAt(pierCenter.x, pierCenter.z) + 0.05;
@@ -1206,7 +1591,7 @@ export function createCampaignLoop({
       );
     }
 
-    // 1C. Downed Hero Revival Ring (radius = 3.5m)
+    // 1C. Downed Hero Commune Resurrection Ring (radius = 4.8m)
     for (const [id, ch] of Object.entries(combatHeroes)) {
       const pos = id === 'Knight' ? knight : mage;
       if (ch.downed && pos) {
@@ -1214,10 +1599,10 @@ export function createCampaignLoop({
           pos.x,
           walkableHeightAt(pos.x, pos.z) + 0.05,
           pos.z,
-          3.5,
+          COMMUNE_RESURRECT_DISTANCE,
           elapsed * 1.6,
           0.0,
-          clamp(ch.reviveProgress, 0.12, 1.0),
+          clamp(ch.reviveProgress, 0.16, 1.0),
           elapsed * 3.0,
           0.12,
           PALETTE.reviveEmerald
@@ -1337,10 +1722,36 @@ export function createCampaignLoop({
             0.25,
             PALETTE.crestTempest
           );
+        } else if (e.mark === 'eclipse') {
+          // Intertwined Fire & Water Eclipse Crest (Cerulean Diamond + Vermilion-Gold Sun-Crest)
+          pushCrestInstance(
+            e.x,
+            crestY,
+            e.z,
+            0.26,
+            0.44,
+            0.26,
+            0.0,
+            spinY,
+            0.0,
+            PALETTE.crestRime
+          );
+          pushCrestInstance(
+            e.x,
+            crestY,
+            e.z,
+            0.44,
+            0.14,
+            0.14,
+            0.35,
+            -spinY * 1.5,
+            0.78,
+            PALETTE.crestSolar
+          );
         }
       }
 
-      // Boss Bone Aegis Orbiting Shields (at <= 50% HP)
+      // Boss Bone Aegis Orbiting Shields
       if (e.isBoss && e.aegisActive && e.aegisLayers > 0) {
         const shieldTotal = e.aegisLayers * 2;
         for (let s = 0; s < shieldTotal; s++) {
@@ -1380,7 +1791,7 @@ export function createCampaignLoop({
     const knight = heroStates?.Knight;
     const mage = heroStates?.Mage;
 
-    // 1. Tick Cooldowns, Shield Timers, I-Frames, Breathing Timer & Tether Surge
+    // 1. Tick Cooldowns, Shield Timers, I-Frames, Commune Power-Up Timers & Tether Surge
     for (const h of Object.values(combatHeroes)) {
       if (h.shieldTimer > 0) {
         h.shieldTimer = Math.max(0, h.shieldTimer - dt);
@@ -1388,6 +1799,30 @@ export function createCampaignLoop({
       }
       if (h.iframeTimer > 0) {
         h.iframeTimer = Math.max(0, h.iframeTimer - dt);
+      }
+      if (h.partnerBuffTimer > 0) {
+        h.partnerBuffTimer = Math.max(0, h.partnerBuffTimer - dt);
+        if (h.partnerBuffTimer <= 0) {
+          if (h.id === 'Knight') h.partnerSwordMult = 1.0;
+          if (h.id === 'Mage') h.partnerMagicMult = 1.0;
+        }
+      }
+    }
+
+    if (combatHeroes.Knight.sunSwornTimer > 0) {
+      combatHeroes.Knight.sunSwornTimer = Math.max(0, combatHeroes.Knight.sunSwornTimer - dt);
+      if (combatHeroes.Knight.sunSwornTimer <= 0) {
+        combatHeroes.Knight.sunSwornBreathing = false;
+      }
+    }
+
+    if (combatHeroes.Mage.ascendedMagicTimer > 0) {
+      combatHeroes.Mage.ascendedMagicTimer = Math.max(
+        0,
+        combatHeroes.Mage.ascendedMagicTimer - dt
+      );
+      if (combatHeroes.Mage.ascendedMagicTimer <= 0) {
+        combatHeroes.Mage.ascendedMagicFlow = false;
       }
     }
 
@@ -1420,14 +1855,22 @@ export function createCampaignLoop({
       }
     }
 
+    // 1A. Sacred 6m Commune Ward Pushback while channeling or in suspense
+    if (
+      (communeChannelActive ||
+        (vfxKit?.artoriousVfx?.active && vfxKit.artoriousVfx.mode === 'channel')) &&
+      enemyManager?.applySacredWardPushback
+    ) {
+      const cx = knight && mage ? (knight.x + mage.x) * 0.5 : (knight?.x ?? mage?.x ?? 0);
+      const cz = knight && mage ? (knight.z + mage.z) * 0.5 : (knight?.z ?? mage?.z ?? 0);
+      enemyManager.applySacredWardPushback({ x: cx, z: cz }, 6.0);
+    }
+
     // 1B. Advance 4-Beat Couples Resonance Ultimate Choreography (`ultimateSequence`)
     if (ultimateSequence.active) {
       ultimateSequence.age += dt;
       if (!ultimateSequence.beat2Fired && ultimateSequence.age >= 0.55) {
         ultimateSequence.beat2Fired = true;
-        // Beat 2 (t = 0.55s, right as Cinder Fall meteor shatters into the Frost Lance cathedral!):
-        // - Mage snaps Storm Lance lightning spear + fulgurite spikes into the crater!
-        // - Knight leaps forward into `combo4` (Jump-Chop Cleave) and triggers Solar Flare Detonation!
         if (vfxKit) {
           vfxKit.stormLance?.cast?.(
             ultimateSequence.castOrigin,
@@ -1455,10 +1898,10 @@ export function createCampaignLoop({
               'combo4',
               { x: knight.x, y: knight.y, z: knight.z },
               ultimateSequence.aimYaw,
-              'solar'
+              'eclipse'
             );
           }
-          vfxKit.swordVfx?.triggerDetonation?.('solar_flare', ultimateSequence.impactPos);
+          vfxKit.swordVfx?.triggerDetonation?.('eclipse', ultimateSequence.impactPos);
         }
         if (enemyManager) {
           enemyManager.applyAreaOrLineHit({
@@ -1466,7 +1909,8 @@ export function createCampaignLoop({
             radius: COUPLES_ULTIMATE.radius + 4.5,
             hitSpec: {
               source: 'couples_ultimate',
-              baseDmg: COUPLES_ULTIMATE.dmg - 40,
+              baseDmg: COUPLES_ULTIMATE.dmg,
+              infusion: 'eclipse',
               detonatesMark: true,
               empoweredBreathing: true,
               attackerPos: knight || ultimateSequence.impactPos,
@@ -1479,8 +1923,8 @@ export function createCampaignLoop({
         if (onDetonation) {
           onDetonation({
             id: 'solar_flare',
-            label: 'RIME & SOLAR CATACLYSM!',
-            bonusDmg: COUPLES_ULTIMATE.dmg,
+            label: 'SUN & TIDE ECLIPSE CATACLYSM!',
+            bonusDmg: COUPLES_ULTIMATE.dmg * 2,
             x: ultimateSequence.impactPos.x,
             y: ultimateSequence.impactPos.y,
             z: ultimateSequence.impactPos.z,
@@ -1492,23 +1936,69 @@ export function createCampaignLoop({
       }
     }
 
-    // 2. Partner Proximity Revive (2.0s within 3.5m)
+    // 2. Downed State & Sincere Resurrection Rules:
+    //    - If BOTH heroes are downed simultaneously, after 3.5s they revive at 60% HP
+    //      at the nearest Sanctuary stone.
+    //    - If ONE hero is downed, they remain on the ground playing 'death' (Death_A)
+    //      until their surviving partner runs within 4.8m and Communes to resurrect them!
     if (knight && mage) {
       const distKM = Math.hypot(knight.x - mage.x, knight.z - mage.z);
-      for (const [id, ch] of Object.entries(combatHeroes)) {
-        const partnerCh = id === 'Knight' ? combatHeroes.Mage : combatHeroes.Knight;
-        const heroState = id === 'Knight' ? knight : mage;
-        if (ch.downed && !partnerCh.downed && distKM <= 3.5) {
-          ch.reviveProgress = Math.min(1.0, ch.reviveProgress + dt / 2.0);
-          if (ch.reviveProgress >= 1.0) {
+      if (combatHeroes.Knight.downed && combatHeroes.Mage.downed) {
+        bothDownedTimer += dt;
+        combatHeroes.Knight.reviveProgress = clamp(bothDownedTimer / 3.5, 0, 1);
+        combatHeroes.Mage.reviveProgress = clamp(bothDownedTimer / 3.5, 0, 1);
+        if (bothDownedTimer >= 3.5) {
+          bothDownedTimer = 0;
+          const sanctuaries = [
+            { x: ALTAR_STELE_POS.x, z: ALTAR_STELE_POS.z + 2.2 },
+            { x: -37.2, z: 8.5 },
+            { x: -0.9, z: -76.5 },
+          ];
+          let nearest = sanctuaries[0];
+          let bestDist = Infinity;
+          for (const s of sanctuaries) {
+            const d = Math.hypot(knight.x - s.x, knight.z - s.z);
+            if (d < bestDist) {
+              bestDist = d;
+              nearest = s;
+            }
+          }
+          knight.x = nearest.x;
+          knight.z = nearest.z;
+          knight.y = walkableHeightAt(knight.x, knight.z);
+          mage.x = nearest.x + 1.8;
+          mage.z = nearest.z + 0.4;
+          mage.y = walkableHeightAt(mage.x, mage.z);
+
+          for (const [id, ch] of Object.entries(combatHeroes)) {
             ch.downed = false;
             ch.reviveProgress = 0;
-            ch.hp = Math.round(ch.maxHp * 0.65);
-            ch.shield = 25;
+            ch.hp = Math.round(ch.maxHp * 0.6);
+            ch.shield = 30;
             ch.shieldTimer = 5.0;
-            heroState.char?.play?.('revive', { loop: false, fade: 0.1, force: true });
-            combatSfx?.playShieldChime?.();
-            emitBanner(`${id.toUpperCase()} REVIVED!`, 'Golden Ward Restored', 'blessing');
+            const st = id === 'Knight' ? knight : mage;
+            st.actionState = null;
+            st.actionTimer = 0;
+            st.char?.play?.('revive', { loop: false, fade: 0.1, force: true });
+          }
+          combatSfx?.playShieldChime?.();
+          emitBanner(
+            'SANCTUARY REBIRTH',
+            'Both Lovers Restored to 60% HP at the Nearest Sanctuary Stone',
+            'blessing'
+          );
+        }
+      } else {
+        bothDownedTimer = 0;
+        for (const [id, ch] of Object.entries(combatHeroes)) {
+          if (ch.downed) {
+            // Pulse emerald revival ring when partner is within 4.8m to signal Commune readiness
+            ch.reviveProgress =
+              distKM <= COMMUNE_RESURRECT_DISTANCE
+                ? 0.58 + 0.32 * Math.sin(elapsed * 4.5)
+                : 0.18;
+          } else {
+            ch.reviveProgress = 0;
           }
         }
       }
@@ -1573,7 +2063,8 @@ export function createCampaignLoop({
       enemyManager &&
       enemyManager.activeEnemies.length > 0 &&
       mage &&
-      !combatHeroes.Mage.downed
+      !combatHeroes.Mage.downed &&
+      !communeChannelActive
     ) {
       wingmanCastTimer -= dt;
       wingmanBoltTimer -= dt;
@@ -1624,14 +2115,17 @@ export function createCampaignLoop({
 
     if (hudDirtyTimer >= 0.12 && onHudStateChanged) {
       hudDirtyTimer = 0;
-      onHudStateChanged(getStateSnapshot());
+      onHudStateChanged(getStateSnapshot(heroStates));
     }
   }
 
-  function getStateSnapshot() {
+  function getStateSnapshot(heroStates = null) {
     const act = ACT_DEFINITIONS[currentActId];
     const boss =
       enemyManager?.activeEnemies?.find((e) => e.isBoss && !e.dead) || null;
+    const dist = heroStates
+      ? getPartnerDistance(heroStates.Knight, heroStates.Mage)
+      : 0;
     return {
       actId: currentActId,
       actName: act?.name || '',
@@ -1643,6 +2137,9 @@ export function createCampaignLoop({
       activeEnemyCount: enemyManager ? enemyManager.activeEnemies.length : 0,
       queuedEnemyCount: enemyManager ? enemyManager.spawnQueue.length : 0,
       heartResonance: Math.round(heartResonance),
+      partnerDistance: Number(dist.toFixed(2)),
+      withinCommuneRange: dist <= COMMUNE_MAX_DISTANCE,
+      withinTetherRange: dist <= POWERUP_TETHER_DISTANCE,
       knight: { ...combatHeroes.Knight },
       mage: {
         ...combatHeroes.Mage,
@@ -1681,6 +2178,10 @@ export function createCampaignLoop({
     combatHeroes.Knight.downed = false;
     combatHeroes.Knight.reviveProgress = 0;
     combatHeroes.Knight.empoweredBreathing = false;
+    combatHeroes.Knight.sunSwornBreathing = false;
+    combatHeroes.Knight.sunSwornTimer = 0;
+    combatHeroes.Knight.partnerSwordMult = 1.0;
+    combatHeroes.Knight.partnerBuffTimer = 0;
     setKnightBreathing('none', 0);
 
     combatHeroes.Mage.hp = combatHeroes.Mage.maxHp;
@@ -1688,10 +2189,16 @@ export function createCampaignLoop({
     combatHeroes.Mage.downed = false;
     combatHeroes.Mage.reviveProgress = 0;
     combatHeroes.Mage.empoweredBreathing = false;
+    combatHeroes.Mage.ascendedMagicFlow = false;
+    combatHeroes.Mage.ascendedMagicTimer = 0;
+    combatHeroes.Mage.partnerMagicMult = 1.0;
+    combatHeroes.Mage.partnerBuffTimer = 0;
     for (const k of Object.keys(combatHeroes.Mage.spellCooldowns)) {
       combatHeroes.Mage.spellCooldowns[k] = 0;
     }
 
+    bothDownedTimer = 0;
+    communeChannelActive = false;
     heartResonance = 25;
     transitionToAct('act1_arena');
   }
@@ -1701,11 +2208,16 @@ export function createCampaignLoop({
     updateIndicatorsInstancedMeshes(heroStates);
   }
 
+  function setCommuneChannelActive(active) {
+    communeChannelActive = Boolean(active);
+  }
+
   return {
     indicatorGroup,
     groundIndicatorMesh: groundInd.mesh,
     crestAndTetherMesh: crestInd.mesh,
     combatHeroes,
+    state,
     tetherSurge,
     get currentActId() {
       return currentActId;
@@ -1725,6 +2237,11 @@ export function createCampaignLoop({
     transitionToAct,
     activatePierSanctuary,
     handlePlayerHit,
+    applyCommuneVerdict,
+    canCommuneTogether,
+    getPartnerDistance,
+    isWithinPowerupTether,
+    setCommuneChannelActive,
     castSpell,
     performKnightSwing,
     performMageBoltAttack,

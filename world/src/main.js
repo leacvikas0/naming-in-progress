@@ -8,6 +8,8 @@
 // - Complete Stage 4 Opaque VFX & *Demon Slayer* Sword Breathing Suite
 // - Hybrid PointerLock + Drag-Orbit PC Controls & Xiaomi Pad 7 (3:2) Touch HUD
 // - Cloudflare / Local WebSocket 2-Player Co-Op Room Pairing (`?room=LOVE`)
+// - Sanctuary Lobby, Plaza Inscribed Stele Riddle (`GET /api/altar`), and
+//   Hold-to-Commune Voice Prayer Flow (`POST /api/commune`)
 // ============================================================================
 
 import * as THREE from 'three';
@@ -65,7 +67,7 @@ const renderer = new THREE.WebGLRenderer({
 const PROFILES = {
   desktop: {
     id: 'desktop',
-    label: '🖥️ Desktop (RX 6700)',
+    label: 'Desktop (RX 6700)',
     dpr: Math.min(window.devicePixelRatio || 1, 2.0),
     aaSamples: 4,
     meadowProfile: 'desktop',
@@ -73,7 +75,7 @@ const PROFILES = {
   },
   tablet: {
     id: 'tablet',
-    label: '📱 Tablet (Xiaomi Pad 7)',
+    label: 'Tablet (Xiaomi Pad 7)',
     dpr: Math.min(window.devicePixelRatio || 1, 1.5),
     aaSamples: 2,
     meadowProfile: 'tablet',
@@ -324,6 +326,7 @@ function resolveCollisions(px, pz, radius) {
 /* ------------------------------------------------------------------------- */
 
 const hudEl = document.getElementById('hud');
+const debugDevPill = document.getElementById('debug-dev-pill');
 const statsEl = document.getElementById('stats-readout');
 const viewSelect = document.getElementById('view-select');
 const hudSwapHeroBtn = document.getElementById('hud-swap-hero-btn');
@@ -358,6 +361,20 @@ const combatBannerSub = document.getElementById('combat-banner-sub');
 
 const ultQBtn = document.getElementById('ult-q-btn');
 const resonancePctEl = document.getElementById('resonance-pct');
+const communeRBtn = document.getElementById('commune-r-btn');
+const communeSubLbl = document.getElementById('commune-sub-lbl');
+
+const steleInteractPrompt = document.getElementById('stele-interact-prompt');
+const altarSteleModal = document.getElementById('altar-stele-modal');
+const altarSteleTitle = document.getElementById('altar-stele-title');
+const altarStelePoem = document.getElementById('altar-stele-poem');
+const altarSteleCloseBtn = document.getElementById('altar-stele-close-btn');
+
+const sanctuaryLobby = document.getElementById('sanctuary-lobby');
+const lobbyMicSelect = document.getElementById('lobby-mic-select');
+const lobbyMicRefreshBtn = document.getElementById('lobby-mic-refresh-btn');
+const lobbyEnterBtn = document.getElementById('lobby-enter-btn');
+
 const victoryModal = document.getElementById('victory-modal');
 const replayExpeditionBtn = document.getElementById('replay-expedition-btn');
 
@@ -377,10 +394,11 @@ function showCombatBanner({ title = '', subtitle = '' } = {}, durationMs = 3600)
 }
 
 const BREATHING_ICON_MAP = {
-  none: '⚔️ Steel Wind',
-  rime: '❄️ Glacial Tide',
-  solar: '☀️ Hinokami Sunfire',
-  tempest: '⚡ Thunderclap Wisteria',
+  none: 'Steel Wind',
+  rime: 'Glacial Tide',
+  solar: 'Hinokami Sunfire',
+  tempest: 'Thunderclap Wisteria',
+  eclipse: 'Sun & Tide Eclipse',
 };
 
 function updateCombatHud(snapshot) {
@@ -473,7 +491,7 @@ function updateCombatHud(snapshot) {
       if (bossAegisBadge) {
         bossAegisBadge.textContent =
           snapshot.boss.aegisActive && snapshot.boss.aegisLayers > 0
-            ? `🛡️ Bone Aegis × ${snapshot.boss.aegisLayers}`
+            ? `Bone Aegis x ${snapshot.boss.aegisLayers}`
             : `${snapshot.boss.hp} / ${snapshot.boss.maxHp} HP`;
       }
     } else {
@@ -495,11 +513,23 @@ function updateCoopPill(roomState) {
   }
   if (coopStatusLabel) {
     coopStatusLabel.textContent = linked
-      ? `🟢 Co-Op Linked (${roomState.role})`
-      : '🤖 Wingman AI';
+      ? `Co-Op Linked (${roomState.role})`
+      : 'Wingman AI';
   }
   if (coopRoomCodeEl && roomState.room) {
     coopRoomCodeEl.textContent = roomState.room;
+  }
+}
+
+function playDivineVerdictVoice(judgment) {
+  const audioUrl = judgment?.audioUrl;
+  if (!audioUrl || typeof Audio === 'undefined') return;
+  try {
+    const voiceAudio = new Audio(audioUrl);
+    voiceAudio.volume = 0.92;
+    voiceAudio.play().catch(() => {});
+  } catch {
+    // ignore autoplay restriction in headless browsers
   }
 }
 
@@ -527,14 +557,376 @@ const coopSystem = await createCoopPlayerSystem({
     updateCombatHud(snapshot);
   },
   onBanner: (bannerObj) => {
-    showCombatBanner(bannerObj, 3800);
+    showCombatBanner(bannerObj, 4200);
   },
   onCoopStateChanged: (roomState) => {
     updateCoopPill(roomState);
   },
+  onRemoteCommuneVerdict: (judgment) => {
+    playDivineVerdictVoice(judgment);
+  },
 });
 
 const player = coopSystem.player;
+
+/* ------------------------------------------------------------------------- */
+/* 7B. Sanctuary Lobby, Altar Stele Riddle & Hold-to-Commune Mic Flow        */
+/* ------------------------------------------------------------------------- */
+
+let selectedLobbyRole = 'Knight';
+let selectedMicDeviceId = '';
+let altarLoadedOnce = false;
+
+async function populateMicDevices(requestPermissionFirst = false) {
+  if (!lobbyMicSelect || typeof navigator === 'undefined' || !navigator.mediaDevices) return;
+  if (requestPermissionFirst && typeof navigator.mediaDevices.getUserMedia === 'function') {
+    try {
+      const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      tempStream.getTracks().forEach((t) => t.stop());
+    } catch {
+      // ignore if user denied or headless
+    }
+  }
+  if (typeof navigator.mediaDevices.enumerateDevices !== 'function') return;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const audioInputs = devices.filter((d) => d.kind === 'audioinput');
+    const prevValue = lobbyMicSelect.value || selectedMicDeviceId;
+    lobbyMicSelect.innerHTML = '<option value="">Default System Microphone</option>';
+    audioInputs.forEach((dev, idx) => {
+      const opt = document.createElement('option');
+      opt.value = dev.deviceId;
+      opt.textContent = dev.label || `Microphone ${idx + 1}`;
+      lobbyMicSelect.appendChild(opt);
+    });
+    if (prevValue) {
+      lobbyMicSelect.value = prevValue;
+    }
+  } catch {
+    // ignore enumeration error
+  }
+}
+
+function shouldAutoSkipLobby() {
+  if (typeof window === 'undefined') return true;
+  if (navigator?.webdriver) return true;
+  if (window.__HEADLESS_TEST__) return true;
+  const search = window.location?.search || '';
+  if (search.includes('shot=') || search.includes('nolobby=1')) return true;
+  return false;
+}
+
+if (sanctuaryLobby) {
+  if (!shouldAutoSkipLobby()) {
+    sanctuaryLobby.classList.add('visible');
+    populateMicDevices(false);
+  }
+}
+
+document.querySelectorAll('[data-lobby-role]').forEach((btn) => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectedLobbyRole = btn.dataset.lobbyRole || 'Knight';
+    document.querySelectorAll('[data-lobby-role]').forEach((b) => {
+      b.classList.toggle('active', b === btn);
+    });
+  });
+});
+
+if (lobbyMicRefreshBtn) {
+  lobbyMicRefreshBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    populateMicDevices(true);
+  });
+}
+
+if (lobbyMicSelect) {
+  lobbyMicSelect.addEventListener('change', () => {
+    selectedMicDeviceId = lobbyMicSelect.value || '';
+  });
+}
+
+if (lobbyEnterBtn) {
+  lobbyEnterBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectedMicDeviceId = lobbyMicSelect?.value || '';
+    const resolvedRole =
+      selectedLobbyRole === 'Random'
+        ? Math.random() < 0.5
+          ? 'Knight'
+          : 'Mage'
+        : selectedLobbyRole === 'Mage'
+          ? 'Mage'
+          : 'Knight';
+    coopSystem.coopClient.setPreferredRole(resolvedRole);
+    if (coopSystem.player.activeHeroId !== resolvedRole) {
+      coopSystem.swapActiveHero();
+    }
+    sanctuaryLobby?.classList.remove('visible');
+  });
+}
+
+async function openAltarSteleModal() {
+  if (!altarSteleModal) return;
+  altarSteleModal.classList.add('visible');
+  if (steleInteractPrompt) steleInteractPrompt.classList.remove('visible');
+
+  if (!altarLoadedOnce) {
+    try {
+      const res = await fetch('/api/altar', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.title && altarSteleTitle) {
+          altarSteleTitle.textContent = data.title;
+        }
+        if (Array.isArray(data.lines) && data.lines.length > 0 && altarStelePoem) {
+          altarStelePoem.innerHTML = '';
+          for (const line of data.lines) {
+            const p = document.createElement('p');
+            p.textContent = line;
+            altarStelePoem.appendChild(p);
+          }
+          altarLoadedOnce = true;
+        }
+      }
+    } catch {
+      // keep default poetic placeholder if offline
+    }
+  }
+}
+
+function closeAltarSteleModal() {
+  altarSteleModal?.classList.remove('visible');
+}
+
+if (steleInteractPrompt) {
+  steleInteractPrompt.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openAltarSteleModal();
+  });
+}
+
+if (altarSteleCloseBtn) {
+  altarSteleCloseBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeAltarSteleModal();
+  });
+}
+
+let communeHoldActive = false;
+let communeInFlight = false;
+let communeStream = null;
+let communeRecorder = null;
+let communeChunks = [];
+let communeMimeType = 'audio/webm';
+
+function stopCommuneMicTracksImmediately() {
+  if (communeStream) {
+    try {
+      communeStream.getTracks().forEach((t) => t.stop());
+    } catch {
+      // ignore
+    }
+    communeStream = null;
+  }
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve) => {
+    if (!blob || blob.size === 0 || typeof FileReader === 'undefined') {
+      resolve('');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const res = typeof reader.result === 'string' ? reader.result : '';
+      const commaIdx = res.indexOf(',');
+      resolve(commaIdx >= 0 ? res.slice(commaIdx + 1) : res);
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function startCommuneHold() {
+  if (communeHoldActive || communeInFlight) return;
+  if (camState.mode === 'vista') {
+    camState.mode = 'player';
+    updateViewButtons();
+  }
+
+  const dist = coopSystem.getHeroDistance();
+  if (dist > 5.0) {
+    showCombatBanner(
+      {
+        title: 'COMMUNE · TOO FAR APART',
+        subtitle: 'Draw closer to your beloved — one lotus circle must hold you both.',
+      },
+      3800
+    );
+    return;
+  }
+
+  const ch = coopSystem.startCommuneChannel(coopSystem.player.activeHeroId);
+  if (ch?.tooFar) {
+    showCombatBanner(
+      {
+        title: 'COMMUNE · TOO FAR APART',
+        subtitle: 'Draw closer to your beloved — one lotus circle must hold you both.',
+      },
+      3800
+    );
+    return;
+  }
+
+  communeHoldActive = true;
+  communeChunks = [];
+  communeRBtn?.classList.add('channeling');
+  if (communeSubLbl) communeSubLbl.textContent = 'Listening...';
+
+  showCombatBanner(
+    {
+      title: 'SANCTUARY COMMUNE · SPEAK YOUR PRAYER',
+      subtitle: 'Speak the Ancient God’s true name and pray for your beloved...',
+    },
+    0
+  );
+
+  if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+    try {
+      const audioConstraints = selectedMicDeviceId
+        ? {
+            deviceId: { exact: selectedMicDeviceId },
+            echoCancellation: true,
+            noiseSuppression: true,
+          }
+        : { echoCancellation: true, noiseSuppression: true };
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+      if (!communeHoldActive) {
+        // Released before getUserMedia resolved: stop tracks immediately!
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
+      communeStream = stream;
+      if (typeof MediaRecorder !== 'undefined') {
+        const preferredTypes = [
+          'audio/webm;codecs=opus',
+          'audio/webm',
+          'audio/ogg;codecs=opus',
+          'audio/mp4',
+        ];
+        let chosenType = '';
+        for (const t of preferredTypes) {
+          if (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(t)) {
+            chosenType = t;
+            break;
+          }
+        }
+        communeMimeType = chosenType ? chosenType.split(';')[0] : 'audio/webm';
+        communeRecorder = chosenType
+          ? new MediaRecorder(stream, { mimeType: chosenType })
+          : new MediaRecorder(stream);
+        communeRecorder.addEventListener('dataavailable', (ev) => {
+          if (ev.data && ev.data.size > 0) {
+            communeChunks.push(ev.data);
+          }
+        });
+        communeRecorder.start(120);
+      }
+    } catch {
+      // Fallback cleanly if microphone permission is denied or unavailable in headless browser
+      stopCommuneMicTracksImmediately();
+    }
+  }
+}
+
+async function finishCommuneHold() {
+  if (!communeHoldActive) return;
+  communeHoldActive = false;
+  communeInFlight = true;
+  communeRBtn?.classList.remove('channeling');
+  if (communeSubLbl) communeSubLbl.textContent = 'Judging...';
+
+  // Stop MediaRecorder and IMMEDIATELY stop all microphone tracks so Bluetooth
+  // earphones never stay stuck in degraded hands-free communication mode!
+  let recordedBlob = null;
+  if (communeRecorder && communeRecorder.state !== 'inactive') {
+    await new Promise((resolve) => {
+      communeRecorder.addEventListener('stop', resolve, { once: true });
+      try {
+        communeRecorder.stop();
+      } catch {
+        resolve();
+      }
+    });
+  }
+  communeRecorder = null;
+  stopCommuneMicTracksImmediately();
+
+  if (communeChunks.length > 0 && typeof Blob !== 'undefined') {
+    recordedBlob = new Blob(communeChunks, { type: communeMimeType });
+  }
+  communeChunks = [];
+
+  coopSystem.setCommuneSuspense(true);
+  showCombatBanner(
+    {
+      title: 'THE ANCIENT GOD OF LOVE LISTENS...',
+      subtitle: 'The sacred lotus mandala quickens as your prayer ascends',
+    },
+    0
+  );
+
+  const speakerRole = coopSystem.player.activeHeroId || 'Knight';
+  const partnerRole = speakerRole === 'Knight' ? 'Mage' : 'Knight';
+  const snap = coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates);
+  const speakerHero = speakerRole === 'Knight' ? snap.knight : snap.mage;
+  const partnerHero = partnerRole === 'Knight' ? snap.knight : snap.mage;
+
+  try {
+    const audioBase64 = recordedBlob ? await blobToBase64(recordedBlob) : '';
+    const res = await fetch('/api/commune', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        room: coopSystem.coopClient.getRoomCode(),
+        speakerRole,
+        partnerRole,
+        audioBase64,
+        mimeType: communeMimeType,
+        gameState: {
+          actId: snap.actId,
+          distance: coopSystem.getHeroDistance(),
+          speakerHp: speakerHero?.hp ?? 100,
+          speakerMaxHp: speakerHero?.maxHp ?? 100,
+          partnerHp: partnerHero?.hp ?? 100,
+          partnerMaxHp: partnerHero?.maxHp ?? 100,
+          partnerDowned: Boolean(partnerHero?.downed),
+        },
+      }),
+    });
+
+    const packet = await res.json();
+    const judgment = packet?.judgment || packet || { verdict: 'smite' };
+    playDivineVerdictVoice(judgment);
+    coopSystem.applyCommuneVerdict(judgment, speakerRole);
+  } catch {
+    const fallbackJudgment = {
+      verdict: 'smite',
+      clip_id: 'smite_nameless',
+      audioUrl: '/world/assets/audio/artorious/smite_nameless.wav',
+      divine_quote:
+        'You dare call into my sacred grove without speaking my true name? Seek the weathered stone in the plaza!',
+    };
+    playDivineVerdictVoice(fallbackJudgment);
+    coopSystem.applyCommuneVerdict(fallbackJudgment, speakerRole);
+  } finally {
+    communeInFlight = false;
+    if (communeSubLbl) communeSubLbl.textContent = 'Hold [R]';
+  }
+}
 
 const touchHud = createTouchHud({
   hudRoot: document.getElementById('hud'),
@@ -558,7 +950,31 @@ const touchHud = createTouchHud({
     }
     coopSystem.triggerAction(actionType);
   },
+  onCommuneStart: () => {
+    startCommuneHold();
+  },
+  onCommuneEnd: () => {
+    finishCommuneHold();
+  },
 });
+
+if (communeRBtn) {
+  communeRBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    try {
+      communeRBtn.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    startCommuneHold();
+  });
+  const endCommuneBtn = (e) => {
+    e.stopPropagation();
+    finishCommuneHold();
+  };
+  communeRBtn.addEventListener('pointerup', endCommuneBtn);
+  communeRBtn.addEventListener('pointercancel', endCommuneBtn);
+}
 
 if (hudSwapHeroBtn) {
   hudSwapHeroBtn.addEventListener('click', () => {
@@ -714,6 +1130,11 @@ export function applyTimeOfDay(modeOrT) {
       sunDir: skyState.activeLightDir,
       daylight: skyState.daylight,
     });
+  }
+  if (coopSystem?.sanctuarySteleMesh?.material?.uniforms?.uSunDir) {
+    coopSystem.sanctuarySteleMesh.material.uniforms.uSunDir.value.copy(
+      skyState.activeLightDir
+    );
   }
   if (coopSystem?.campaignLoop?.crestAndTetherMesh?.material?.uniforms?.uSunDir) {
     coopSystem.campaignLoop.crestAndTetherMesh.material.uniforms.uSunDir.value.copy(
@@ -994,6 +1415,9 @@ export function setView(id) {
 export function setShot(shotId) {
   const s = WORLD_SHOTS[shotId] || WORLD_SHOTS['day-plaza'];
   autoCycleTod = false;
+  sanctuaryLobby?.classList.remove('visible');
+  closeAltarSteleModal();
+  if (steleInteractPrompt) steleInteractPrompt.classList.remove('visible');
   applyTimeOfDay(s.tod);
 
   camState.mode = 'vista';
@@ -1032,6 +1456,9 @@ export function setGameplayShot(gameplayShotId) {
     STAGE5_GAMEPLAY_SHOTS['01-desktop-act1-sunfire-slash'];
 
   autoCycleTod = false;
+  sanctuaryLobby?.classList.remove('visible');
+  closeAltarSteleModal();
+  if (steleInteractPrompt) steleInteractPrompt.classList.remove('visible');
   if (spec.profile && spec.profile !== activeProfile) {
     setProfile(spec.profile);
   }
@@ -1188,6 +1615,17 @@ function applyCameraOrbitDelta(dx, dy) {
 }
 
 window.addEventListener('keydown', (e) => {
+  if (e.key === 'F3') {
+    e.preventDefault();
+    debugDevPill?.classList.toggle('visible');
+    return;
+  }
+
+  if (e.key === 'Escape' && altarSteleModal?.classList.contains('visible')) {
+    closeAltarSteleModal();
+    return;
+  }
+
   const k = e.key.toLowerCase();
   if (k === 'tab') {
     e.preventDefault();
@@ -1196,6 +1634,20 @@ window.addEventListener('keydown', (e) => {
   }
   const wasPressed = keys.has(k);
   keys.add(k);
+
+  if (!wasPressed && k === 'g') {
+    if (altarSteleModal?.classList.contains('visible')) {
+      closeAltarSteleModal();
+    } else if (coopSystem.isNearAltarStele()) {
+      openAltarSteleModal();
+    }
+    return;
+  }
+
+  if (!wasPressed && k === 'r') {
+    startCommuneHold();
+    return;
+  }
 
   // Alt + 1..8 switches camera presets; bare 1..4 casts Spells 1..4!
   if (e.altKey) {
@@ -1257,6 +1709,9 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   const k = e.key.toLowerCase();
   keys.delete(k);
+  if (k === 'r') {
+    finishCommuneHold();
+  }
 });
 
 canvas.addEventListener('mousedown', (e) => {
@@ -1454,6 +1909,14 @@ function animate() {
       camYaw: camState.yaw,
       camera,
     });
+
+    if (steleInteractPrompt) {
+      const showStelePrompt =
+        coopSystem.isNearAltarStele() &&
+        !altarSteleModal?.classList.contains('visible') &&
+        !sanctuaryLobby?.classList.contains('visible');
+      steleInteractPrompt.classList.toggle('visible', showStelePrompt);
+    }
   } else if (coopSystem?.vfxKit && !coopSystem.enemyManager?.frozenShotId) {
     coopSystem.vfxKit.update(dt);
   }
@@ -1514,6 +1977,10 @@ window.__WORLD__ = {
   VIEWS,
   WORLD_SHOTS,
   STAGE5_GAMEPLAY_SHOTS,
+  openAltarSteleModal,
+  closeAltarSteleModal,
+  startCommuneHold,
+  finishCommuneHold,
   setView,
   setCameraOrbit,
   setShot,

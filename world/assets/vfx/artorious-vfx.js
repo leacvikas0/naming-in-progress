@@ -105,6 +105,9 @@ export const ARTORIOUS_VFX_DEFAULTS = Object.freeze({
   smiteLifetime: 0.52,
   smiteFadeTime: 1.08,
 
+  healDuration: 1.35,
+  healFadeTime: 1.05,
+
   blessingDuration: 1.45,
   blessingFadeTime: 1.15,
 
@@ -113,27 +116,27 @@ export const ARTORIOUS_VFX_DEFAULTS = Object.freeze({
 
   // Radii & Heights
   channelOrbitRadius: 2.1,
-  channelSigilRadius: 3.9,
+  channelSigilRadius: 4.15,
   smiteScarRadius: 4.35,
-  miracleSigilRadius: 5.85,
+  miracleSigilRadius: 5.95,
   skyHeight: 18.0,
   smiteSkyHeight: 22.0,
 
-  // Celestial Gold, Alabaster-Sapphire & Wisteria-Cyan Palette (via THREE.Color)
-  colorMiracleInk: '#1e3a8a', // royal sapphire-ink border
-  colorMiracleAmber: '#d97706', // rich solar amber outer band
-  colorMiracleGoldMid: '#fbbf24', // radiant gold mid
-  colorMiracleCore: '#fffbeb', // white-gold core
+  // Blooming Lotus of Love Palette (Warm Peach-Gold Heart -> Sakura Rose-Pink -> Orchid-Lilac Tips)
+  colorMiracleInk: '#4a044e', // deep plum-berry cel ink border
+  colorMiracleAmber: '#fb7185', // luminous coral-rose outer band
+  colorMiracleGoldMid: '#fda4af', // warm sakura-peach mid
+  colorMiracleCore: '#fff7ed', // incandescent cream-gold heart core
 
-  colorCathCore: '#b45309', // deep amber-gold core
-  colorCathMid: '#f59e0b', // warm solar mid
-  colorCathFacet: '#fef08a', // luminous gold-ivory facets
-  colorCathRim: '#fffbeb', // white-gold alabaster rim
-  colorAzureVein: '#38bdf8', // celestial azure veins
-  colorCathInk: '#172554', // deep royal sapphire silhouette ink
+  colorCathCore: '#f43f5e', // rich crimson-rose petal shadow
+  colorCathMid: '#f472b6', // luminous sakura rose-pink mid belly
+  colorCathFacet: '#fde68a', // warm golden-cream inner lotus heart
+  colorCathRim: '#fff1f2', // glowing alabaster-blush petal rim
+  colorAzureVein: '#c084fc', // dreamy orchid-lilac upper petal & wind ribbon
+  colorCathInk: '#3b0764', // deep plum-wisteria silhouette ink
 
-  colorPetalInk: '#3b0764', // deep wisteria ink
-  colorPetalMid: '#e879f9', // luminous wisteria-rose petal mid
+  colorPetalInk: '#4a044e', // deep berry-wine petal ink
+  colorPetalMid: '#f472b6', // luminous sakura-rose drifting petal
 
   // Petty Smite Rose-Gold, Crimson & Obsidian-Wine Palette (via THREE.Color)
   colorSmiteInk: '#1f0918', // dark wine ink border
@@ -148,8 +151,94 @@ export const ARTORIOUS_VFX_DEFAULTS = Object.freeze({
 });
 
 /* ------------------------------------------------------------------------- */
-/* 1. Closed Double-Wound Camera-Aligned Ribbon Geometry (`side: FrontSide`) */
+/* 1. Closed Double-Wound Camera-Aligned Ribbon & 3D Cupped Lotus Petal Geo  */
 /* ------------------------------------------------------------------------- */
+
+/**
+ * Builds a closed, outward-wound (`THREE.FrontSide`) 3D Sculpted Cupped Lotus Petal
+ * with a narrow stem base (`y = 0`), a lush broad cupped belly (`y = 0.35..0.72`),
+ * a central midrib crease, a graceful outward bloom arch, and a pointed lotus tip (`y = 1.0`).
+ */
+export function createSacredLotusPetalGeometry({
+  radialSegments = 12,
+  heightSegments = 14,
+} = {}) {
+  const cols = Math.max(6, radialSegments);
+  const rows = Math.max(6, heightSegments);
+  const positions = [];
+  const uvs = [];
+  const indices = [];
+
+  for (let r = 0; r <= rows; r++) {
+    const v = r / rows; // 0 (base) -> 1 (pointed lotus tip)
+    // Lush lotus petal silhouette: narrow base, wide rounded belly at v ~ 0.48, pointed tip at v = 1
+    const widthProfile =
+      Math.sin(Math.pow(v, 0.66) * Math.PI) * (1.0 + 0.32 * Math.sin(v * Math.PI));
+    const halfWidth = Math.max(0.015, widthProfile * 0.92);
+    // Thickness tapers from base to tip
+    const halfThick = Math.max(0.012, (1.0 - v * 0.68) * 0.16 * (0.45 + 0.55 * Math.sin(v * Math.PI)));
+    // Graceful outward lotus curve as the petal rises
+    const outwardCurve = Math.pow(v, 1.48) * 0.38;
+
+    for (let c = 0; c < cols; c++) {
+      const theta = (c / cols) * TAU; // around the petal cross-section
+      const cosT = Math.cos(theta); // -1..1 across petal width (X)
+      const sinT = Math.sin(theta); // -1..1 between inner concave face (+Z) and outer convex back (-Z)
+
+      const x = cosT * halfWidth;
+      // Cupped dish curvature across width + central midrib ridge
+      const cupDish = (1.0 - cosT * cosT) * 0.22 * Math.sin(v * Math.PI);
+      const midrib = Math.exp(-cosT * cosT * 10.0) * 0.045 * (sinT >= 0 ? 1.0 : -1.2);
+      const z = sinT * halfThick - cupDish + midrib - outwardCurve;
+      const y = v;
+
+      positions.push(x, y, z);
+      uvs.push(cosT * 0.5 + 0.5, v);
+    }
+  }
+
+  const baseCenterIdx = positions.length / 3;
+  positions.push(0, 0, 0);
+  uvs.push(0.5, 0);
+
+  const tipCenterIdx = positions.length / 3;
+  positions.push(0, 1.0, -0.38);
+  uvs.push(0.5, 1.0);
+
+  for (let r = 0; r < rows; r++) {
+    const rowA = r * cols;
+    const rowB = (r + 1) * cols;
+    for (let c = 0; c < cols; c++) {
+      const nextC = (c + 1) % cols;
+      const a = rowA + c;
+      const b = rowA + nextC;
+      const d = rowB + c;
+      const e = rowB + nextC;
+      // Counter-clockwise outward winding for FrontSide
+      indices.push(a, d, b);
+      indices.push(b, d, e);
+    }
+  }
+
+  // Bottom cap
+  for (let c = 0; c < cols; c++) {
+    const nextC = (c + 1) % cols;
+    indices.push(baseCenterIdx, c, nextC);
+  }
+  // Top tip cap
+  const topRow = rows * cols;
+  for (let c = 0; c < cols; c++) {
+    const nextC = (c + 1) % cols;
+    indices.push(topRow + c, tipCenterIdx, topRow + nextC);
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
 
 export function createOpaqueRibbonGeometry(nodes = 48) {
   const steps = Math.max(4, Math.round(nodes));
@@ -427,7 +516,7 @@ function createMonolithMaterial(noiseAtlas, sharedUniforms, config) {
       uTime: sharedUniforms.uTime,
       uSunDir: sharedUniforms.uSunDir,
       uDaylight: sharedUniforms.uDaylight,
-      // Celestial Gold & Alabaster-Sapphire Cathedral Palette
+      // Blooming Sacred Lotus Petal Palette (Cream-Gold Base -> Sakura-Rose Belly -> Orchid-Lilac Tip)
       uColorCathCore: { value: new THREE.Color(config.colorCathCore) },
       uColorCathMid: { value: new THREE.Color(config.colorCathMid) },
       uColorCathFacet: { value: new THREE.Color(config.colorCathFacet) },
@@ -443,7 +532,7 @@ function createMonolithMaterial(noiseAtlas, sharedUniforms, config) {
       uColorObsidianInk: { value: new THREE.Color(config.colorObsidianInk) },
     },
     vertexShader: /* glsl */ `
-      attribute vec4 aMonolithMeta; // x: seed, y: charge, z: dissolveProgress (0..1), w: paletteMode (0=gold, 1=smite)
+      attribute vec4 aMonolithMeta; // x: seed, y: charge, z: dissolveProgress (0..1), w: paletteMode (0=lotus, 1=smite)
       varying vec3 vWorldPos;
       varying vec3 vWorldNormal;
       varying vec3 vLocalPos;
@@ -501,10 +590,11 @@ function createMonolithMaterial(noiseAtlas, sharedUniforms, config) {
         float dissolveProgress = clamp(vMeta.z, 0.0, 1.0);
         float isSmite = step(0.5, vMeta.w);
 
-        // 1. Derivative-Flat Facet Normal + Locked V1 Horizontal-Azimuth Optical Thickness
+        // 1. Smooth Cupped Lotus Normal (in Lotus Mode) vs Derivative-Flat Facet Normal (in Smite Mode)
         vec3 dN = cross(dFdx(vWorldPos), dFdy(vWorldPos));
-        vec3 N = length(dN) > 1e-8 ? normalize(dN) : normalize(vWorldNormal);
-        if (dot(N, vWorldNormal) < 0.0) N = -N;
+        vec3 flatN = length(dN) > 1e-8 ? normalize(dN) : normalize(vWorldNormal);
+        if (dot(flatN, vWorldNormal) < 0.0) flatN = -flatN;
+        vec3 N = normalize(mix(normalize(vWorldNormal), flatN, isSmite > 0.5 ? 0.92 : 0.25));
 
         vec3 V = normalize(cameraPosition - vWorldPos);
         vec3 horizN = normalize(vec3(N.x, 0.0, N.z) + vec3(1e-5, 0.0, 0.0));
@@ -526,35 +616,39 @@ function createMonolithMaterial(noiseAtlas, sharedUniforms, config) {
         float sparkEdge = step(0.001, dissolveProgress) * (1.0 - smoothstep(dissolveProgress, dissolveProgress + 0.075, erodeVal));
 
         if (isSmite < 0.5) {
-          // Mode 0: Celestial Gold & Alabaster-Sapphire Cathedral / Astrolabe Obelisks
-          // Clean 4-band derivative-flat cel facet contrast (zero noisy Voronoi cell scribbles!)
-          float thickness = horizNdv * 0.56 + ndl * 0.44;
-          col = uColorCathCore;
-          col = mix(col, uColorCathMid, step(0.34, thickness));
-          col = mix(col, uColorCathFacet, step(0.64, thickness));
-          col = mix(col, uColorCathRim * 1.16, step(0.84, thickness));
+          // Mode 0: Blooming 3D Sacred Lotus Petals (God of Love Reference Palette)
+          // Base (hLocal = 0..0.38): Incandescent Cream-Gold Heart (uColorCathFacet + uColorCathRim)
+          // Belly (hLocal = 0.35..0.76): Luminous Sakura Rose-Pink (uColorCathMid + uColorCathCore)
+          // Upper Tip (hLocal = 0.72..1.0): Dreamy Orchid-Lilac (uColorAzureVein) with Alabaster-Blush Rim!
+          float centerRib = exp(-vLocalPos.x * vLocalPos.x * 6.5);
+          float petalEdgeDist = clamp(abs(vLocalPos.x) * 1.15, 0.0, 1.0);
 
-          // Warm subsurface solar-gold inner glow + basal celestial azure rime & white-gold tip crest
-          float subsurface = smoothstep(0.28, 0.86, horizNdv) * (1.0 - hLocal * 0.42) * 0.30;
-          col = mix(col, uColorCathMid * 1.12, subsurface);
+          vec3 baseHeartCol = mix(uColorCathFacet * 1.15, uColorCathRim * 1.28, centerRib * 0.7 + 0.3);
+          vec3 midSakuraCol = mix(uColorCathCore, uColorCathMid * 1.14, step(0.36, ndl * 0.55 + horizNdv * 0.45));
+          vec3 tipLilacCol = mix(uColorCathMid, uColorAzureVein * 1.16, smoothstep(0.56, 0.94, hLocal));
 
-          float basalRime = smoothstep(0.26, 0.0, hLocal) * (0.55 + 0.45 * smoothstep(0.35, 0.78, nSample.g));
-          float tipCrest = smoothstep(0.74, 0.98, hLocal);
-          float facetEdge = smoothstep(0.76, 0.94, horizNdv) * smoothstep(0.15, 0.90, hLocal) * 0.38;
+          col = mix(baseHeartCol, midSakuraCol, smoothstep(0.14, 0.48, hLocal));
+          col = mix(col, tipLilacCol, smoothstep(0.54, 0.92, hLocal));
 
-          float azureGlow = clamp(basalRime * 0.75 * min(1.2, charge), 0.0, 1.0);
-          col = mix(col, mix(uColorAzureVein, uColorCathFacet, 0.45) * 1.12, azureGlow);
-          col = mix(col, uColorCathRim * 1.22, clamp(tipCrest * 0.65 + facetEdge, 0.0, 1.0));
+          // Delicate botanical lotus veins & glowing golden heart ribs
+          float veinWave = sin(vLocalPos.x * 18.0 - hLocal * 8.0) * 0.5 + 0.5;
+          float veinHighlight = smoothstep(0.72, 0.96, veinWave) * (1.0 - hLocal * 0.55) * 0.35;
+          float basalSunburst = smoothstep(0.46, 0.04, hLocal) * (0.65 + 0.35 * centerRib);
+          col = mix(col, uColorCathRim * 1.26, clamp(basalSunburst * 0.72 + veinHighlight, 0.0, 1.0));
 
-          // Glowing Gold-Azure Spark Edge along dissolving threshold
-          col = mix(col, mix(uColorAzureVein, uColorCathRim, 0.65) * 1.38, sparkEdge);
+          // Crisp Alabaster-Pink Petal Margin Highlight + Tip Glow
+          float marginGlow = smoothstep(0.62, 0.94, petalEdgeDist) * smoothstep(0.18, 0.92, hLocal);
+          float tipGlow = smoothstep(0.82, 0.99, hLocal);
+          col = mix(col, mix(uColorAzureVein, uColorCathRim, 0.65) * 1.24, clamp(marginGlow * 0.58 + tipGlow * 0.65, 0.0, 1.0));
 
-          // Crisp Royal Sapphire Ink Silhouette Rim for unmistakable physical weight over sand
-          float inkRim = 1.0 - smoothstep(0.18, 0.30, ndv);
-          col = mix(col, uColorCathInk, inkRim * (1.0 - sparkEdge));
+          // Glowing Sakura-Gold Spark Edge along dissolving threshold
+          col = mix(col, mix(uColorCathMid, uColorCathRim, 0.65) * 1.38, sparkEdge);
+
+          // Crisp Plum-Berry Cel Silhouette Rim
+          float inkRim = 1.0 - smoothstep(0.15, 0.27, ndv);
+          col = mix(col, uColorCathInk, inkRim * (1.0 - sparkEdge) * 0.85);
         } else {
           // Mode 1: Petty Smite Obsidian-Rose & Gold Fulgurite Spikes
-          // Clean 3-band dark vitrified obsidian facets with rose-gold root surge & tip spark
           float score = clamp(ndl * 0.52 + horizNdv * 0.48, 0.0, 1.0);
           col = uColorObsidianPlum;
           col = mix(col, uColorObsidianMid, step(0.30, score));
@@ -571,10 +665,8 @@ function createMonolithMaterial(noiseAtlas, sharedUniforms, config) {
           vec3 smiteVeinCol = mix(uColorSmiteMid * 1.14, uColorSmiteCore * 1.28, smoothstep(0.42, 0.86, electricMask));
           col = mix(col, smiteVeinCol, smoothstep(0.18, 0.54, electricMask));
 
-          // Crimson-Rose & Gold Spark Edge along dissolving threshold
           col = mix(col, mix(uColorSmiteMid, uColorSmiteCore, 0.55) * 1.38, sparkEdge);
 
-          // Crisp Pitch Wine-Obsidian Ink Silhouette Rim
           float inkRim = 1.0 - smoothstep(0.15, 0.26, ndv);
           col = mix(col, uColorObsidianInk, inkRim * (1.0 - max(electricMask * 0.45, sparkEdge)));
         }
@@ -681,15 +773,15 @@ function createPrismsAndDebrisMaterial(noiseAtlas, sharedUniforms, config) {
         vec3 col;
 
         if (kind < 0.5) {
-          // Kind 0: 3D Octahedral Celestial Starlight Prism
-          col = mix(uColorAzureVein, uColorMiracleGoldMid * 1.12, step(0.38, facetScore));
-          col = mix(col, uColorMiracleCore * 1.28, step(0.68, facetScore));
+          // Kind 0: 3D Drifting Golden-Blush Lotus Spark Mote
+          col = mix(uColorMiracleGoldMid, uColorMiracleCore * 1.24, step(0.36, facetScore));
+          col = mix(col, uColorAzureVein * 1.18, step(0.74, facetScore));
           col = mix(col, uColorMiracleCore * 1.35, sparkEdge);
           float inkRim = 1.0 - smoothstep(0.15, 0.28, ndv);
           col = mix(col, uColorMiracleInk, inkRim * (1.0 - sparkEdge));
         } else if (kind < 1.5) {
-          // Kind 1: Floating Golden Wisteria Petal
-          col = mix(uColorPetalMid, uColorMiracleGoldMid * 1.14, step(0.42, facetScore + vUv.y * 0.25));
+          // Kind 1: Floating Sakura-Rose & Lilac Lotus Petal
+          col = mix(uColorPetalMid, uColorAzureVein * 1.14, step(0.42, facetScore + vUv.y * 0.25));
           col = mix(col, uColorMiracleCore * 1.25, step(0.74, facetScore + vUv.y * 0.25));
           col = mix(col, uColorMiracleCore * 1.35, sparkEdge);
           float inkRim = 1.0 - smoothstep(0.14, 0.26, ndv);
@@ -726,7 +818,7 @@ function createGroundSigilMaterial(noiseAtlas, sharedUniforms, config) {
       uTime: sharedUniforms.uTime,
       uSunDir: sharedUniforms.uSunDir,
       uDaylight: sharedUniforms.uDaylight,
-      // Celestial Sun-Rose & Compass Rose Mandala Palette
+      // Blooming Sacred Lotus Mandala & Sakura-Lilac Wind Ribbon Palette
       uColorCathInk: { value: new THREE.Color(config.colorCathInk) },
       uColorCathCore: { value: new THREE.Color(config.colorCathCore) },
       uColorCathMid: { value: new THREE.Color(config.colorCathMid) },
@@ -741,7 +833,7 @@ function createGroundSigilMaterial(noiseAtlas, sharedUniforms, config) {
       uColorSmiteCore: { value: new THREE.Color(config.colorSmiteCore) },
     },
     vertexShader: /* glsl */ `
-      attribute vec4 aSigilMeta; // x: age01, y: reach, z: seed, w: signedCharge (+ = mandala, - = smite scar)
+      attribute vec4 aSigilMeta; // x: age01, y: reach, z: seed, w: signedCharge (+ = lotus mandala, - = smite scar)
       varying vec2 vUv;
       varying vec4 vMeta;
       varying vec3 vWorldPos;
@@ -813,62 +905,55 @@ function createGroundSigilMaterial(noiseAtlas, sharedUniforms, config) {
         float erodeFade = 1.0 - smoothstep(0.68, 1.0, age + (1.0 - n0.b) * 0.18);
 
         if (isSmite < 0.5) {
-          // 12-Pointed Celestial Sun-Rose & Compass Rose Sanctuary Mandala (crisp geometric astrolabe, zero cow-print noise!)
-          float rotA = ang - uTime * (0.38 + seed * 0.12);
-          float rotB = ang + uTime * 0.52;
+          // Blooming 8-Petal Sacred Lotus Flower Mandala + Swirling Sakura-Lilac Wind-Ribbon Rings
+          float rotLotus = ang - uTime * 0.22;
+          float rotInner = ang + uTime * 0.28 + 0.3927; // offset by PI/8 for layered 16-point lotus corolla
 
-          // 12-pointed outer Sun-Rose star & 6-pointed inner Compass Rose
-          float star12Wave = cos(rotA * 12.0);
-          float star12Reach = 0.78 + 0.14 * star12Wave;
-          float star12Filigree = smoothstep(0.052, 0.0, abs(r - star12Reach));
+          // 1. Inner 8-Pointed Blooming Lotus Flower (r = 0.0 .. 0.54)
+          float petalWave8 = pow(abs(cos(rotLotus * 4.0)), 0.72);
+          float innerPetalWave8 = pow(abs(cos(rotInner * 4.0)), 0.85);
+          float lotusTipReach = 0.22 + 0.31 * petalWave8;
+          float subPetalReach = 0.18 + 0.25 * innerPetalWave8;
 
-          float compassWave = cos(rotB * 6.0);
-          float compassReach = 0.48 + 0.12 * compassWave;
-          float compassFiligree = smoothstep(0.048, 0.0, abs(r - compassReach));
+          float primaryLotusFill = smoothstep(lotusTipReach + 0.03, lotusTipReach - 0.06, r);
+          float primaryLotusOutline = smoothstep(0.038, 0.0, abs(r - lotusTipReach));
+          float secondaryLotusFill = smoothstep(subPetalReach + 0.025, subPetalReach - 0.05, r);
+          float centerHeart = smoothstep(0.22, 0.06, r);
 
-          // Concentric astrolabe rings, radial spokes & 24 rune ticks
-          float outerRing = smoothstep(0.055, 0.0, abs(r - 0.92));
-          float zodiacBand = smoothstep(0.115, 0.02, abs(r - 0.78));
-          float midRing = smoothstep(0.046, 0.0, abs(r - 0.63));
-          float innerRing = smoothstep(0.046, 0.0, abs(r - 0.32));
-          float centerMedallion = smoothstep(0.28, 0.18, r);
-          float runeTicks =
-            smoothstep(0.55, 0.90, cos(rotB * 24.0)) *
-            smoothstep(0.09, 0.0, abs(r - 0.78));
-          float radialSpokes =
-            smoothstep(0.84, 0.97, cos(rotA * 12.0)) *
-            smoothstep(0.92, 0.24, r);
+          // 2. Sweeping Outer Sakura & Orchid-Lilac Wind-Ribbon Arcs (r = 0.52 .. 0.96)
+          float spiralA = sin(ang * 3.0 - r * 8.5 + uTime * 2.2);
+          float spiralB = sin(ang * 4.0 - r * 10.5 - uTime * 1.7 + 1.4);
+          float windArcInner =
+            smoothstep(0.32, 0.88, spiralA) *
+            smoothstep(0.11, 0.01, abs(r - 0.66));
+          float windArcOuter =
+            smoothstep(0.28, 0.86, spiralB) *
+            smoothstep(0.12, 0.01, abs(r - 0.86));
+          float crescentRing =
+            smoothstep(0.042, 0.0, abs(r - 0.56)) *
+            smoothstep(-0.2, 0.65, sin(ang * 4.0 + uTime * 1.5));
 
-          // Open-work astrolabe mask so valley ground breathes cleanly between concentric rings
-          float geomMask = max(
-            max(max(outerRing, midRing), max(innerRing, centerMedallion * 0.92)),
-            max(max(star12Filigree, compassFiligree), max(zodiacBand * 0.88, radialSpokes * 0.90))
-          );
+          // Combine open-work Lotus + Swirling Wind-Ribbons so warm ground breathes cleanly between arcs
+          float lotusMask = max(max(primaryLotusFill * 0.96, secondaryLotusFill * 0.90), primaryLotusOutline);
+          float windRibbonMask = max(max(windArcInner, windArcOuter), crescentRing);
+          float geomMask = max(lotusMask, windRibbonMask);
           float totalMask = geomMask * erodeFade;
 
           if (totalMask < 0.45) discard;
 
-          // Clean geometric 3-band Royal Sapphire & Solar Gold Astrolabe Base
-          float radialBand = step(0.52, cos(rotA * 12.0) * 0.5 + 0.5);
-          vec3 baseCol = mix(uColorCathInk, uColorCathCore, step(0.58, r) * radialBand);
-          baseCol = mix(baseCol, uColorCathMid, centerMedallion * 0.75);
+          // Warm Cream-Gold Lotus Heart -> Luminous Sakura-Rose Petals -> Orchid-Lilac Wind Ribbons
+          vec3 lotusCol = mix(uColorCathCore, uColorCathMid * 1.12, smoothstep(0.48, 0.20, r));
+          lotusCol = mix(lotusCol, uColorCathFacet * 1.18, smoothstep(0.36, 0.12, r));
+          lotusCol = mix(lotusCol, uColorCathRim * 1.28, centerHeart);
+          lotusCol = mix(lotusCol, uColorCathRim * 1.22, primaryLotusOutline * 0.75);
 
-          float filigreeIntensity = clamp(
-            (max(max(outerRing, midRing), max(innerRing, star12Filigree)) +
-              compassFiligree * 0.94 +
-              runeTicks * 0.88 +
-              radialSpokes * 0.82) * min(1.2, charge),
-            0.0,
-            1.0
-          );
+          vec3 ribbonCol = mix(uColorCathMid * 1.10, uColorAzureVein * 1.18, smoothstep(0.58, 0.90, r));
+          ribbonCol = mix(ribbonCol, uColorCathRim * 1.24, smoothstep(0.72, 0.95, max(spiralA, spiralB)) * 0.65);
 
-          float azureAccent = clamp((compassFiligree * 0.92 + innerRing * 0.85 + runeTicks * 0.68), 0.0, 1.0);
-          vec3 col = mix(baseCol * mix(0.88, 1.0, uDaylight), uColorAzureVein * 1.08, smoothstep(0.28, 0.70, azureAccent));
-          col = mix(col, uColorCathFacet * 1.14, smoothstep(0.26, 0.58, filigreeIntensity));
-          col = mix(col, uColorCathRim * 1.24, smoothstep(0.70, 0.94, filigreeIntensity));
+          vec3 col = mix(lotusCol, ribbonCol, step(0.52, r) * step(lotusMask, windRibbonMask + 0.1));
 
           float border = 1.0 - smoothstep(0.45, 0.54, totalMask);
-          col = mix(col, uColorCathInk, border);
+          col = mix(col, uColorCathInk, border * 0.82);
 
           gl_FragColor = vec4(col, 1.0);
         } else {
@@ -1216,6 +1301,19 @@ export class ArtoriousVfxSystem {
     return this;
   }
 
+  triggerHeal(origin, partnerPos = null) {
+    this._setPositions(origin, partnerPos, null);
+    this.mode = 'heal';
+    this.suspense = false;
+    this.isLooping = false;
+    this.active = true;
+    this.age = 0;
+    this.totalDuration = this.config.healDuration + this.config.healFadeTime;
+    this.group.visible = true;
+    this.seek(0.02);
+    return this;
+  }
+
   triggerBlessing(origin, partnerPos = null) {
     this._setPositions(origin, partnerPos, null);
     this.mode = 'blessing';
@@ -1273,6 +1371,8 @@ export class ArtoriousVfxSystem {
         const c = this.config;
         if (this.mode === 'smite') {
           this.totalDuration = c.smiteLifetime + c.smiteFadeTime;
+        } else if (this.mode === 'heal') {
+          this.totalDuration = c.healDuration + c.healFadeTime;
         } else if (this.mode === 'blessing') {
           this.totalDuration = c.blessingDuration + c.blessingFadeTime;
         } else if (this.mode === 'miracle') {
@@ -1309,6 +1409,8 @@ export class ArtoriousVfxSystem {
       this._evaluateSmite(timeSeconds);
     } else if (this.mode === 'channel') {
       this._evaluateChannel(timeSeconds);
+    } else if (this.mode === 'heal') {
+      this._evaluateHeal(timeSeconds);
     } else {
       this._evaluateMiracleOrBlessing(timeSeconds, this.mode === 'miracle');
     }
@@ -1324,6 +1426,11 @@ export class ArtoriousVfxSystem {
     const px = this.hasPartner ? this.partnerPos.x : ox;
     const pz = this.hasPartner ? this.partnerPos.z : oz;
     const py = this.hasPartner ? this.partnerPos.y : oy;
+
+    // Shared sanctuary center on the ground between the couple (`cx, cz`)
+    const cx = this.hasPartner ? (ox + px) * 0.5 : ox;
+    const cz = this.hasPartner ? (oz + pz) * 0.5 : oz;
+    const cy = this.getGroundHeight(cx, cz);
 
     const emerge = smoothstep(0.0, 0.32, t);
     const orbitSpeed = this.suspense ? 3.4 : 1.55;
@@ -1427,21 +1534,40 @@ export class ArtoriousVfxSystem {
     this.monolithsMesh.instanceMatrix.needsUpdate = true;
     this.monolithMetaAttr.needsUpdate = true;
 
-    // DC 3: 22 Ascending Starlight Prisms & Golden Wisteria Petals rising around the levitating speaker
+    // DC 3: 22 Ascending Starlight Prisms & Golden Wisteria Petals
+    //       Slots 0..7 swirl closely around the levitating ankles/waist of the praying couple
+    //       so their floating posture feels magical & weightless without any flat disc stuck to their soles!
     let dSlot = 0;
     for (let i = 0; i < 22; i++) {
       const rec = this.debrisRecords[i];
-      const swirlAng = rec.ang + t * (1.55 + (i % 3) * 0.35);
-      const rad = 0.85 + (rec.orbitRadius * 0.42);
-      const localH = ((rec.heightOffset + t * rec.climbSpeed * 1.25) % 4.6) * emerge;
-      const dx = ox + Math.cos(swirlAng) * rad;
-      const dz = oz + Math.sin(swirlAng) * rad;
-      const dy = oy + this._originLevY * 0.5 + 0.25 + localH;
+      let dx;
+      let dz;
+      let dy;
+      const swirlAng = rec.ang + t * (i < 8 ? 2.65 + (i % 3) * 0.45 : 1.55 + (i % 3) * 0.35);
+
+      if (i < 8) {
+        const usePartner = this.hasPartner && i >= 4;
+        const ax = usePartner ? px : ox;
+        const az = usePartner ? pz : oz;
+        const ay = usePartner ? py : oy;
+        const aLev = usePartner ? this._partnerLevY : this._originLevY;
+        const closeRad = 0.42 + (i % 2) * 0.16;
+        const closeH = ((rec.heightOffset + t * 1.15) % 0.92) * emerge;
+        dx = ax + Math.cos(swirlAng) * closeRad;
+        dz = az + Math.sin(swirlAng) * closeRad;
+        dy = ay + aLev - 0.04 + closeH;
+      } else {
+        const rad = 0.85 + rec.orbitRadius * 0.42;
+        const localH = ((rec.heightOffset + t * rec.climbSpeed * 1.25) % 4.6) * emerge;
+        dx = ox + Math.cos(swirlAng) * rad;
+        dz = oz + Math.sin(swirlAng) * rad;
+        dy = oy + this._originLevY * 0.5 + 0.25 + localH;
+      }
 
       _dummy.position.set(dx, dy, dz);
       _euler.set(t * rec.spinX * 0.5, swirlAng + t * rec.spinY * 0.5, t * rec.spinZ * 0.5);
       _dummy.quaternion.setFromEuler(_euler);
-      const sc = rec.size * 0.84 * emerge;
+      const sc = rec.size * (i < 8 ? 0.78 : 0.84) * emerge;
       if (rec.isPetal) {
         _dummy.scale.set(sc * 1.15, sc * 0.38, sc * 0.78);
       } else {
@@ -1456,34 +1582,166 @@ export class ArtoriousVfxSystem {
     this.prismsAndDebrisMesh.instanceMatrix.needsUpdate = true;
     this.debrisMetaAttr.needsUpdate = true;
 
-    // DC 4: Ground Compass Sigil + Floating Mid-Air Levitation Halo Rings directly under their floating boots!
+    // DC 4: Strictly ONE single shared Sanctuary Mandala (`sSlot = 0`, `count = 1`) flat on the ground (`y = cy + 0.042`)
+    //       centered between the couple (`cx, cz`), requiring them to stand close by to pray together!
     let sSlot = 0;
-    // Slot 0: Ground Sanctuary Compass Mandala anchored on the dirt below
-    _dummy.position.set(ox, oy + 0.042, oz);
+    _dummy.position.set(cx, cy + 0.042, cz);
     _dummy.quaternion.setFromAxisAngle(UP, 0.0);
-    _dummy.scale.set(3.25, 1.0, 3.25);
+    _dummy.scale.set(c.channelSigilRadius, 1.0, c.channelSigilRadius);
     _dummy.updateMatrix();
     this.groundSigilMesh.setMatrixAt(sSlot, _dummy.matrix);
     this.sigilMetaAttr.setXYZW(sSlot, 0.0, emerge, 0.31, this.suspense ? 1.28 : 1.08);
     sSlot++;
 
-    // Slot 1: Floating Mid-Air Prayer Halo Ring directly beneath the levitating speaker's boots!
-    _dummy.position.set(ox, oy + this._originLevY - 0.03, oz);
-    _dummy.quaternion.setFromAxisAngle(UP, -0.45);
-    _dummy.scale.set(1.65, 1.0, 1.65);
-    _dummy.updateMatrix();
-    this.groundSigilMesh.setMatrixAt(sSlot, _dummy.matrix);
-    this.sigilMetaAttr.setXYZW(sSlot, 0.0, emerge, 0.64, 1.26);
-    sSlot++;
+    this.groundSigilMesh.count = sSlot;
+    this.groundSigilMesh.instanceMatrix.needsUpdate = true;
+    this.sigilMetaAttr.needsUpdate = true;
 
-    if (this.hasPartner) {
-      // Slot 2: Floating Mid-Air Partner Halo Ring beneath the levitating partner's boots!
-      _dummy.position.set(px, py + this._partnerLevY - 0.03, pz);
-      _dummy.quaternion.setFromAxisAngle(UP, 0.52);
-      _dummy.scale.set(1.45, 1.0, 1.45);
+    this._hitstopScale = 1.0;
+    this._shakeOffset.set(0, 0, 0);
+  }
+
+  _evaluateHeal(t) {
+    const c = this.config;
+    const fadeU = saturate((t - c.healDuration) / Math.max(0.1, c.healFadeTime));
+
+    const ox = this.origin.x;
+    const oz = this.origin.z;
+    const oy = this.origin.y;
+    const px = this.hasPartner ? this.partnerPos.x : ox;
+    const pz = this.hasPartner ? this.partnerPos.z : oz;
+    const py = this.hasPartner ? this.partnerPos.y : oy;
+
+    // In Haru-machi you pray to heal your partner: center the healing spiral on `partnerPos` (or `origin` if solo)!
+    const hx = this.hasPartner ? px : ox;
+    const hz = this.hasPartner ? pz : oz;
+    const hy = this.hasPartner ? py : oy;
+
+    // Shared sanctuary ground center between both partners
+    const cx = this.hasPartner ? (ox + px) * 0.5 : ox;
+    const cz = this.hasPartner ? (oz + pz) * 0.5 : oz;
+    const cy = this.getGroundHeight(cx, cz);
+
+    const skyReach = smoothstep(0.0, 0.22, t);
+    const ribbonErode = smoothstep(0.12, 0.94, fadeU);
+
+    // 0. Partner Healing Levitation: Lifts the healed partner `+0.75m` into the air with a gentle sine bob,
+    //    lowering smoothly as `fadeU` progresses!
+    const riseEnv = outQuint(Math.min(1.0, t / 0.24)) * (1.0 - smoothstep(0.18, 0.95, fadeU));
+    this._partnerLevY = (0.75 + Math.sin(t * 3.4 + 0.6) * 0.07) * riseEnv;
+    this._originLevY = (0.75 + Math.sin(t * 3.4) * 0.07) * riseEnv;
+
+    // DC 1 (`skyRibbonsMesh`): 6 warm ascending Celestial Emerald-Azure & Sun-Gold Healing Ribbons
+    //      (`styleId = 2.0` and `0.0`, `helixRadius = 0.28..0.42`, `width = 0.16..0.22`)
+    //      spiraling gracefully around the healed partner from `y = ground + 0.1m` up to `y = ground + 9.5m`!
+    let rSlot = 0;
+    if (ribbonErode < 0.995) {
+      const strandNorms = [-0.84, 0.84, -0.58, 0.58, -0.36, 0.36];
+      for (let k = 0; k < 6; k++) {
+        const ang = (k / 6) * TAU + 0.35;
+        const baseRad = 0.32 + (k % 2) * 0.08;
+        const rx = hx + Math.cos(ang) * baseRad;
+        const rz = hz + Math.sin(ang) * baseRad;
+        const styleId = k % 2 === 0 ? 2.0 : 0.0;
+        const helixRadius = lerp(0.28, 0.42, k / 5);
+        const width = lerp(0.16, 0.22, (k % 3) / 2);
+
+        this.startPosAttr.setXYZ(rSlot, rx, hy + 0.1, rz);
+        this.endPosAttr.setXYZ(rSlot, rx, hy + 9.5, rz);
+        this.ribbonMetaAttr.setXYZW(rSlot, strandNorms[k], 3.1 + k * 2.7, width, skyReach);
+        this.ribbonStyleAttr.setXYZW(rSlot, styleId, ribbonErode, helixRadius, 0.0);
+        rSlot++;
+      }
+    }
+    this.skyRibbonsMesh.count = rSlot;
+    this.startPosAttr.needsUpdate = true;
+    this.endPosAttr.needsUpdate = true;
+    this.ribbonMetaAttr.needsUpdate = true;
+    this.ribbonStyleAttr.needsUpdate = true;
+
+    // DC 2 (`monolithsMesh`): 8 small, jewel-like chiseled crystals (`scaleR = 0.22, scaleY = 0.65`)
+    //      rising in an intimate healing crown (`r = 1.65m`) around the partner and dissolving via
+    //      Voronoi fracture erosion at 100% scale (ZERO shrinking or floor sinking!)
+    let mSlot = 0;
+    for (let i = 0; i < 8; i++) {
+      const rec = this.astrolabeRecords[i];
+      const stagger = i * 0.012;
+      const tLocal = t - stagger;
+      if (tLocal <= 0) continue;
+
+      const dissolveProgress = smoothstep(0.08, 0.96, fadeU + (i % 3) * 0.04);
+      if (dissolveProgress >= 0.995) continue;
+
+      const emerge = outQuint(Math.min(1.0, tLocal / 0.16));
+      const crystalCharge = 1.24 * (1.0 - smoothstep(0.0, 0.55, fadeU));
+      const ang = rec.baseAng + 0.18;
+      const crownR = 1.65;
+      const mx = hx + Math.cos(ang) * crownR;
+      const mz = hz + Math.sin(ang) * crownR;
+      const my = this.getGroundHeight(mx, mz) - 0.10;
+
+      _dummy.position.set(mx, my, mz);
+      _pos.set(
+        Math.cos(ang) * Math.sin(0.28),
+        Math.cos(0.28),
+        Math.sin(ang) * Math.sin(0.28)
+      ).normalize();
+      _dummy.quaternion.setFromUnitVectors(UP, _pos);
+      // Keep at 100% erupted scale (`scaleR = 0.22, scaleY = 0.65`) — zero shrinking on dissolution!
+      _dummy.scale.set(0.22 * emerge, 0.65 * emerge, 0.22 * emerge);
+      _dummy.updateMatrix();
+      this.monolithsMesh.setMatrixAt(mSlot, _dummy.matrix);
+      this.monolithMetaAttr.setXYZW(mSlot, rec.seed, crystalCharge, dissolveProgress, 0.0);
+      mSlot++;
+    }
+    this.monolithsMesh.count = mSlot;
+    this.monolithsMesh.instanceMatrix.needsUpdate = true;
+    this.monolithMetaAttr.needsUpdate = true;
+
+    // DC 3 (`prismsAndDebrisMesh`): 28 rising octahedral starlight prisms & wisteria petals
+    //      swirling closely around the healed partner's body!
+    let dSlot = 0;
+    for (let i = 0; i < 28; i++) {
+      const rec = this.debrisRecords[i];
+      const dissolveProgress = smoothstep(0.20, 0.96, fadeU + rec.dissolveStagger);
+      if (dissolveProgress >= 0.995) continue;
+
+      const swirlAng = rec.ang + t * (2.25 + (i % 3) * 0.40);
+      const rad = i < 8 ? 0.38 + (i % 2) * 0.16 : 0.62 + (i % 5) * 0.22;
+      const localH = ((rec.heightOffset + t * rec.climbSpeed * 1.15) % (i < 8 ? 1.15 : 4.2)) * skyReach;
+      const dx = hx + Math.cos(swirlAng) * rad;
+      const dz = hz + Math.sin(swirlAng) * rad;
+      const dy = hy + (i < 8 ? this._partnerLevY - 0.04 : 0.28) + localH;
+
+      _dummy.position.set(dx, dy, dz);
+      _euler.set(t * rec.spinX * 0.55, swirlAng + t * rec.spinY * 0.55, t * rec.spinZ * 0.55);
+      _dummy.quaternion.setFromEuler(_euler);
+      const sc = rec.size * 0.92 * skyReach;
+      if (rec.isPetal) {
+        _dummy.scale.set(sc * 1.16, sc * 0.38, sc * 0.78);
+      } else {
+        _dummy.scale.set(sc * 0.90, sc * 1.35, sc * 0.90);
+      }
+      _dummy.updateMatrix();
+      this.prismsAndDebrisMesh.setMatrixAt(dSlot, _dummy.matrix);
+      this.debrisMetaAttr.setXYZW(dSlot, rec.seed, 1.22, dissolveProgress, rec.isPetal ? 1.0 : 0.0);
+      dSlot++;
+    }
+    this.prismsAndDebrisMesh.count = dSlot;
+    this.prismsAndDebrisMesh.instanceMatrix.needsUpdate = true;
+    this.debrisMetaAttr.needsUpdate = true;
+
+    // DC 4 (`groundSigilMesh`): 1 shared Sanctuary Mandala flat on the ground (`sSlot = 0`, `count = 1`)
+    //      encompassing both partners (`r = 3.85m`)
+    let sSlot = 0;
+    if (fadeU < 0.99) {
+      const reach = smoothstep(0.0, 0.22, t);
+      _dummy.position.set(cx, cy + 0.042, cz);
+      _dummy.quaternion.setFromAxisAngle(UP, 0.0);
+      _dummy.scale.set(3.85, 1.0, 3.85);
       _dummy.updateMatrix();
       this.groundSigilMesh.setMatrixAt(sSlot, _dummy.matrix);
-      this.sigilMetaAttr.setXYZW(sSlot, 0.0, emerge, 0.89, 1.12);
+      this.sigilMetaAttr.setXYZW(sSlot, fadeU, reach, 0.37, 1.22);
       sSlot++;
     }
     this.groundSigilMesh.count = sSlot;
@@ -1731,10 +1989,10 @@ export class ArtoriousVfxSystem {
     const skyReach = smoothstep(0.0, 0.22, t);
     const ribbonErode = smoothstep(0.15, 0.92, fadeU);
 
-    // 0. Divine Ascension Levitation: Raise both characters high into the air (+1.05m in Blessing, +1.28m in Miracle)
+    // 0. Divine Ascension Levitation: Raise both characters high into the air (+1.05m in Blessing, +1.24m in Miracle)
     //    and float them smoothly back down as the blessing/miracle concludes!
     const riseEnv = outQuint(Math.min(1.0, t / 0.28)) * (1.0 - smoothstep(0.22, 0.95, fadeU));
-    const peakLift = isFullMiracle ? 1.24 : 1.02;
+    const peakLift = isFullMiracle ? 1.24 : 1.05;
     this._originLevY = (peakLift + Math.sin(t * 3.2) * 0.08) * riseEnv;
     this._partnerLevY = this.hasPartner
       ? (peakLift * 0.94 + Math.sin(t * 3.2 + 0.75) * 0.08) * riseEnv
@@ -1842,6 +2100,8 @@ export class ArtoriousVfxSystem {
     this.monolithMetaAttr.needsUpdate = true;
 
     // DC 3: 42 Solid 3D Octahedral Starlight Prisms & Floating Golden Wisteria Petals
+    //       Slots 0..7 swirl closely around the levitating ankles & waist of both partners
+    //       so their floating ascension feels weightless & magical without flat discs under their boots!
     let dSlot = 0;
     const prismCount = isFullMiracle ? MAX_PRISMS_AND_DEBRIS : 28;
     for (let i = 0; i < prismCount; i++) {
@@ -1849,17 +2109,34 @@ export class ArtoriousVfxSystem {
       const dissolveProgress = smoothstep(0.25, 0.96, fadeU + rec.dissolveStagger);
       if (dissolveProgress >= 0.995) continue;
 
-      const swirlAng = rec.ang + t * (1.45 + (i % 3) * 0.35);
-      const rad = (1.85 + rec.orbitRadius * 0.85) * scaleMult;
-      const localH = ((rec.heightOffset + t * rec.climbSpeed * 1.15) % 6.2) * skyReach;
-      const dx = cx + Math.cos(swirlAng) * rad;
-      const dz = cz + Math.sin(swirlAng) * rad;
-      const dy = this.getGroundHeight(dx, dz) + 0.45 + localH;
+      let dx;
+      let dz;
+      let dy;
+      const swirlAng = rec.ang + t * (i < 8 ? 2.55 + (i % 3) * 0.42 : 1.45 + (i % 3) * 0.35);
+
+      if (i < 8) {
+        const usePartner = this.hasPartner && i >= 4;
+        const ax = usePartner ? px : ox;
+        const az = usePartner ? pz : oz;
+        const ay = usePartner ? py : oy;
+        const aLev = usePartner ? this._partnerLevY : this._originLevY;
+        const closeRad = 0.44 + (i % 2) * 0.16;
+        const closeH = ((rec.heightOffset + t * 1.2) % 1.05) * skyReach;
+        dx = ax + Math.cos(swirlAng) * closeRad;
+        dz = az + Math.sin(swirlAng) * closeRad;
+        dy = ay + aLev - 0.05 + closeH;
+      } else {
+        const rad = (1.85 + rec.orbitRadius * 0.85) * scaleMult;
+        const localH = ((rec.heightOffset + t * rec.climbSpeed * 1.15) % 6.2) * skyReach;
+        dx = cx + Math.cos(swirlAng) * rad;
+        dz = cz + Math.sin(swirlAng) * rad;
+        dy = this.getGroundHeight(dx, dz) + 0.45 + localH;
+      }
 
       _dummy.position.set(dx, dy, dz);
       _euler.set(t * rec.spinX * 0.6, swirlAng + t * rec.spinY * 0.6, t * rec.spinZ * 0.6);
       _dummy.quaternion.setFromEuler(_euler);
-      const sc = rec.size * 1.05 * skyReach;
+      const sc = rec.size * (i < 8 ? 0.88 : 1.05) * skyReach;
       if (rec.isPetal) {
         _dummy.scale.set(sc * 1.18, sc * 0.38, sc * 0.80);
       } else {
@@ -1874,7 +2151,8 @@ export class ArtoriousVfxSystem {
     this.prismsAndDebrisMesh.instanceMatrix.needsUpdate = true;
     this.debrisMetaAttr.needsUpdate = true;
 
-    // DC 4: Grand Ground Sanctuary Mandala + Twin Mid-Air Ascension Halo Platforms directly beneath their floating boots!
+    // DC 4: Strictly ONE single shared Grand Sanctuary Mandala (`sSlot = 0`, `count = 1`) flat on the ground (`y = cy + 0.042`)
+    //       centered between the couple (`cx, cz`), while the characters levitate cleanly in mid-air above it!
     let sSlot = 0;
     if (fadeU < 0.99) {
       const reach = smoothstep(0.0, 0.24, t);
@@ -1887,26 +2165,6 @@ export class ArtoriousVfxSystem {
       this.groundSigilMesh.setMatrixAt(sSlot, _dummy.matrix);
       this.sigilMetaAttr.setXYZW(sSlot, fadeU, reach, 0.23, 1.28);
       sSlot++;
-
-      // Slot 1: Floating Mid-Air Ascension Halo Platform beneath the speaker's levitating boots!
-      _dummy.position.set(ox, oy + Math.max(0.05, this._originLevY - 0.03), oz);
-      _dummy.quaternion.setFromAxisAngle(UP, 0.42);
-      _dummy.scale.set(1.80, 1.0, 1.80);
-      _dummy.updateMatrix();
-      this.groundSigilMesh.setMatrixAt(sSlot, _dummy.matrix);
-      this.sigilMetaAttr.setXYZW(sSlot, fadeU, reach, 0.61, 1.26);
-      sSlot++;
-
-      if (this.hasPartner) {
-        // Slot 2: Floating Mid-Air Ascension Halo Platform beneath the partner's levitating boots!
-        _dummy.position.set(px, py + Math.max(0.05, this._partnerLevY - 0.03), pz);
-        _dummy.quaternion.setFromAxisAngle(UP, -0.42);
-        _dummy.scale.set(1.80, 1.0, 1.80);
-        _dummy.updateMatrix();
-        this.groundSigilMesh.setMatrixAt(sSlot, _dummy.matrix);
-        this.sigilMetaAttr.setXYZW(sSlot, fadeU, reach, 0.89, 1.26);
-        sSlot++;
-      }
     }
     this.groundSigilMesh.count = sSlot;
     this.groundSigilMesh.instanceMatrix.needsUpdate = true;

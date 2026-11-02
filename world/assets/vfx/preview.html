@@ -635,20 +635,20 @@
         '14-artorious-petty-smite': {
           id: '14-artorious-petty-smite',
           system: 'artoriousVfx',
-          label: '14. Artorious Petty Smite (t = 0.22s) — 24Hz Rose-Crimson & Gold Thunder-Spear, 14 Fulgurite Fangs & Lichtenberg Scar',
+          label: '14. Artorious Petty Smite on Knight (t = 0.22s) — 24Hz Rose-Crimson & Gold Thunder-Spear, 14 Fulgurite Fangs & Lichtenberg Scar',
           tod: 'evening',
           time: 0.22,
           pos: [65.2, 3.35, 1.85],
-          target: [59.8, 1.80, -3.85],
+          target: [59.3, 1.65, -2.55],
           fov: 47,
           artoriousOptions: {
             mode: 'smite',
-            origin: [...DEFAULT_MAGE_POS],
+            origin: [...DEFAULT_KNIGHT_POS],
             partnerPos: null,
           },
           poses: {
-            mage: { clip: 'hit_B', time: 0.24, dy: 0.14, pitch: -0.18 },
-            knight: { clip: 'hit_A', time: 0.18 },
+            mage: { clip: 'cheer', time: 0.42, dy: 0.0, pitch: 0.0 },
+            knight: { clip: 'hit_B', time: 0.24 },
             skelW: { clip: 'Idle_Combat', time: 0.40, dy: 0.0, pitch: 0.0 },
             skelM: { clip: 'Idle_Combat', time: 0.55, dy: 0.0, pitch: 0.0 },
           },
@@ -744,11 +744,12 @@
             const hop = timeSeconds >= 0.05 && timeSeconds <= 0.52
               ? Math.sin(((timeSeconds - 0.05) / 0.47) * Math.PI) * 0.14
               : 0;
-            mageChar.group.position.y = BASE_MAGE_Y + hop;
-            mageChar.group.rotation.z = hop * 0.65;
-            mageChar.poseAt(timeSeconds < 0.05 ? 'cast_spell' : 'hit_B', timeSeconds < 0.05 ? timeSeconds : Math.min(0.68, hitT * 1.15));
-            knightChar.poseAt('block', timeSeconds * 0.8);
+            knightChar.group.position.y = kPos[1] + hop;
+            knightChar.group.rotation.z = hop * 0.65;
+            knightChar.poseAt(timeSeconds < 0.05 ? 'cheer' : 'hit_B', timeSeconds < 0.05 ? timeSeconds : Math.min(0.68, hitT * 1.15));
+            mageChar.poseAt('cheer', timeSeconds * 0.9);
           } else {
+            knightChar.group.rotation.z = 0;
             mageChar.poseAt('cast_spell', timeSeconds * 0.85);
             knightChar.poseAt('cheer', timeSeconds * 0.90);
           }
@@ -765,10 +766,11 @@
 
         seekActiveSystem(def, timeSeconds);
         if (def.system === 'artoriousVfx') {
-          const mLev = artoriousVfx.getHeroLevitationOffset('origin');
-          const kLev = artoriousVfx.getHeroLevitationOffset('partner');
+          const mode = def.artoriousOptions?.mode || 'miracle';
+          const mLev = mode === 'smite' ? 0 : artoriousVfx.getHeroLevitationOffset('origin');
+          const kLev = mode === 'smite' ? artoriousVfx.getHeroLevitationOffset('origin') : artoriousVfx.getHeroLevitationOffset('partner');
           mageChar.group.position.y = BASE_MAGE_Y + mLev + (poses?.mage?.dy || 0);
-          knightChar.group.position.y = kPos[1] + kLev;
+          knightChar.group.position.y = kPos[1] + kLev + (poses ? 0 : (mode === 'smite' && timeSeconds >= 0.05 && timeSeconds <= 0.52 ? Math.sin(((timeSeconds - 0.05) / 0.47) * Math.PI) * 0.14 : 0));
           if (!poses) {
             const shk = artoriousVfx.getCameraShakeOffset();
             camera.position.set(def.pos[0] + shk.x, def.pos[1] + shk.y, def.pos[2] + shk.z);
@@ -828,6 +830,8 @@
           } else if (opts.mode === 'channel') {
             artoriousVfx.startChannel(opts.origin, opts.partnerPos);
             artoriousVfx.setSuspense(Boolean(opts.suspense));
+          } else if (opts.mode === 'heal') {
+            artoriousVfx.triggerHeal(opts.origin, opts.partnerPos);
           } else if (opts.mode === 'blessing') {
             artoriousVfx.triggerBlessing(opts.origin, opts.partnerPos);
           } else {
