@@ -286,8 +286,9 @@ function resolveCollisions(px, pz, radius) {
     } else if (c.type === 'obb') {
       const hx = c.hx ?? c.halfW ?? 4.0;
       const hz = c.hz ?? c.halfD ?? 4.0;
-      const cos = Math.cos(-c.rotY);
-      const sin = Math.sin(-c.rotY);
+      const rotY = c.rotY || 0;
+      const cos = Math.cos(rotY);
+      const sin = Math.sin(rotY);
       const lx = (x - c.x) * cos - (z - c.z) * sin;
       const lz = (x - c.x) * sin + (z - c.z) * cos;
       const cx = clamp(lx, -hx, hx);
@@ -310,10 +311,8 @@ function resolveCollisions(px, pz, radius) {
         const push = radius - d;
         const lxNew = lx + nx * push;
         const lzNew = lz + nz * push;
-        const wCos = Math.cos(c.rotY);
-        const wSin = Math.sin(c.rotY);
-        x = c.x + lxNew * wCos - lzNew * wSin;
-        z = c.z + lxNew * wSin + lzNew * wCos;
+        x = c.x + lxNew * cos + lzNew * sin;
+        z = c.z - lxNew * sin + lzNew * cos;
       }
     }
   }

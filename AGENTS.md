@@ -4,7 +4,8 @@
 > 1. [`SOUL.md`](file:///C:/Users/silen/projects/kilo-3d-kit/SOUL.md) — The game vision, hardware targets (`RX 6700` Desktop + `Xiaomi Pad 7` Tablet), romantic Gemini Live voice-judged mechanics ("Artorious, God of Love"), expanded valley + toroidal boundary wrap rule, and the strict **5-Stage Build Order**.
 > 2. [`METHODOLOGY.md`](file:///C:/Users/silen/projects/kilo-3d-kit/METHODOLOGY.md) — The non-negotiable 3D blockout rule, truly blind `/10` critic protocol (never prime critics, inspect PNGs before code), and 2-Pass Parallel Subagent Asset Workflow.
 > 3. [`GIT-DISCIPLINE.md`](file:///C:/Users/silen/projects/kilo-3d-kit/GIT-DISCIPLINE.md) — Clean root structure, git worktree isolation, atomic commit checkpoints, and plan tracking.
-> 4. [`docs/superpowers/plans/2026-10-29-haru-machi-coop-continuation.md`](file:///C:/Users/silen/projects/kilo-3d-kit/docs/superpowers/plans/2026-10-29-haru-machi-coop-continuation.md) — The active step-by-step continuation plan and current state on disk.
+> 4. [`docs/superpowers/plans/2026-11-02-haru-machi-locked-master-plan.md`](file:///C:/Users/silen/projects/kilo-3d-kit/docs/superpowers/plans/2026-11-02-haru-machi-locked-master-plan.md) — The active locked 5-Wave Master Execution Plan (Zero-Spoiler, Uncontaminated) and verbatim design prompts.
+> 5. [`docs/superpowers/plans/2026-10-29-haru-machi-coop-continuation.md`](file:///C:/Users/silen/projects/kilo-3d-kit/docs/superpowers/plans/2026-10-29-haru-machi-coop-continuation.md) — Historical stage progression and recovery checklist.
 
 ---
 
