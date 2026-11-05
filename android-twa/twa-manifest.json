@@ -1,0 +1,43 @@
+{
+  "packageId": "dev.harumachi.coop",
+  "host": "haru-machi-coop.workers.dev",
+  "name": "Haru-machi",
+  "launcherName": "Haru-machi",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "themeColor": "#EADEC8",
+  "navigationColor": "#1C1917",
+  "navigationColorDark": "#1C1917",
+  "navigationDividerColor": "#1C1917",
+  "navigationDividerColorDark": "#1C1917",
+  "backgroundColor": "#1C1917",
+  "enableNotifications": false,
+  "startUrl": "/world/index.html",
+  "iconUrl": "https://haru-machi-coop.workers.dev/world/assets/ui/sanctuary-crest.png",
+  "maskableIconUrl": "https://haru-machi-coop.workers.dev/world/assets/ui/sanctuary-crest.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./haru-machi-release-key.keystore",
+    "alias": "haru-machi-key"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://haru-machi-coop.workers.dev/world/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": false,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://haru-machi-coop.workers.dev/world/",
+  "minSdkVersion": 24,
+  "targetViewport": {
+    "device": "Xiaomi Pad 7",
+    "resolution": "3200x2136 (3:2 aspect ratio, 2560x1440 / 1600x1068 CSS landscape)",
+    "gpu": "Qualcomm Adreno 732 (Snapdragon 7+ Gen 3)"
+  }
+}

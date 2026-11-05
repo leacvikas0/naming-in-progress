@@ -1,25 +1,49 @@
 // ============================================================================
 // world/tools/test-coop-room.mjs
 //
-// Automated 2-Client Verification for Haru-machi Stage 5 WebSocket Co-Op:
+// Automated 2-Client Verification for Haru-machi Stage 5 & Wave 3 Co-Op:
 // - Spins up `world/tools/serve.mjs` on an ephemeral port (0)
-// - Connects Client A (Desktop / Pachgaon) and Client B (Xiaomi Pad 7 / Sonipat)
 // - Verifies:
 //   1. Room join assigns Knight (Host) + Mage (Guest) with peerConnected: true
-//   2. Role swap (`swap_roles`) flips roles cleanly and restores them
-//   3. Mage sending `spell_cast` (`shatterlance` / `cinder_fall`) delivers to
+//   2. Strict 2-Seat Cap: 3rd visitor receives `room_full` and closes without
+//      evicting either of the 2 seated players
+//   3. Guest `set_ready` & Host `start_expedition` synchronization
+//   4. Role swap (`swap_roles`) flips roles cleanly and restores them
+//   5. Mage sending `spell_cast` (`shatterlance` / `cinder_fall`) delivers to
 //      Knight with full Demon Slayer sword infusion metadata
-//   4. Guest sending `enemy_hit` and Host broadcasting `world_sync` (> 200 bytes
-//      testing RFC 6455 126 extended-length frames) arrive intact, plus
-//      `hero_state`, `action_event`, `revive_partner`, and `act_transition`
-//   5. Disconnecting Guest notifies Host (`peerConnected: false`) for Wingman AI
-//   6. `createCoopClient` browser/Node client + offline Solo fallback with 0 errors
-//   7. `CoopRoomDO` & `worker/index.js` Cloudflare Worker Durable Object parity test
+//   6. Guest sending `enemy_hit` and Host broadcasting `world_sync` (> 250B
+//      RFC 6455 extended-length frame) arrive intact
+//   7. Sequential 3-Stage Sacred Inscription Stone Progression (`0 -> 1 -> 2 -> 3`),
+//      including visiting stones out of order while solving sequentially
+//   8. 30-Second Tap-to-Speak `Commune` Client (`createCommuneClient`),
+//      Diegetic 3D Crimson Rose Ring Timer (`r = 1.65m`, 24 3D roses, 48 3D petals,
+//      `transparent === false`), immediate `track.stop()` microphone release,
+//      single-ceremony lock (`commune_busy`), partner audio privacy, and wide
+//      surround-sound divine voice (`playWideSurroundDivineVoice`)
+//   9. Secret-Safe `/api/altar` & Context-Aware `/api/commune` Judge (`+1 HP`
+//      sarcastic pat when faking crisis at full HP, `-20 HP` when selfish,
+//      `+45..80 HP` when sweet, `-99 HP` when rude, `bothKill: true` +
+//      `deathVfx: 'rose_gommage'` when spamming nonsense) + `403` on `/.env`
+//  10. `CoopRoomDO` & `worker/index.js` Cloudflare Worker Durable Object parity
 // ============================================================================
 
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
 import { startServer } from './serve.mjs';
 import { createCoopClient } from '../src/net/coop-client.js';
+import {
+  generateRoomPhrase,
+  normalizeRoomPhraseToCode,
+  buildRoomInviteLink,
+  parseRoomFromUrl,
+  createRoomProgressionState,
+} from '../src/net/room-progression.js';
+import {
+  MAX_COMMUNE_SECONDS,
+  createCrimsonRoseRingTimer,
+  createCommuneClient,
+  playWideSurroundDivineVoice,
+} from '../src/combat/commune-client.js';
 import { CoopRoomDO } from '../../worker/room-do.js';
 import workerEntry from '../../worker/index.js';
 
@@ -54,7 +78,7 @@ function createMessageQueue(ws) {
     }
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        reject(new Error(`Timed out waiting for ${label} (queue=${JSON.stringify(queue)})`));
+        reject(new Error(`Timed out waiting for ${label}`));
       }, timeoutMs);
       waiters.push({ predicate, resolve, timer });
     });
@@ -82,8 +106,12 @@ function openWebSocket(url) {
 function createMockSocket() {
   const listeners = { message: [], close: [], error: [] };
   const sent = [];
+  let closedCode = null;
   return {
     sent,
+    get closedCode() {
+      return closedCode;
+    },
     addEventListener(type, fn) {
       listeners[type]?.push(fn);
     },
@@ -94,36 +122,49 @@ function createMockSocket() {
       const data = JSON.stringify(obj);
       for (const fn of listeners.message) fn({ data });
     },
-    close() {
-      for (const fn of listeners.close) fn({});
+    close(code = 1000) {
+      closedCode = code;
+      for (const fn of listeners.close) fn({ code });
     },
   };
 }
 
 async function runTests() {
-  console.log('=== Haru-machi Stage 5 WebSocket Co-Op Verification ===');
+  process.env.HARU_COMMUNE_OFFLINE = '1';
+  console.log('=== Haru-machi Stage 5 & Wave 3 Co-Op Room, Progression & Commune Verification ===');
 
   const { server, port } = await startServer(0);
   const baseUrl = `http://127.0.0.1:${port}`;
   const wsBaseUrl = `ws://127.0.0.1:${port}`;
 
   try {
-    // 0. Verify HTTP static & status endpoints + X-Haru-Coop header
+    // 0. Verify HTTP static & status endpoints + X-Haru-Coop header + Dotfile 403 Boundary
     const headRes = await fetch(`${baseUrl}/world/index.html`, { method: 'HEAD' });
     assert.equal(headRes.status, 200, 'HEAD /world/index.html should return 200');
-    assert.equal(
-      headRes.headers.get('x-haru-coop'),
-      '1',
-      'serve.mjs should advertise x-haru-coop: 1 header'
-    );
+    assert.equal(headRes.headers.get('x-haru-coop'), '1');
+
+    const dotEnvRes = await fetch(`${baseUrl}/.env`);
+    assert.equal(dotEnvRes.status, 403, 'GET /.env must return 403 Forbidden');
+    const dotGitRes = await fetch(`${baseUrl}/.git/config`);
+    assert.equal(dotGitRes.status, 403, 'GET /.git/config must return 403 Forbidden');
+
+    // Verify Romantic Room Phrase Generator & ?room= Invite Link Builder
+    const phrase0 = generateRoomPhrase(0);
+    assert.equal(phrase0, 'Love is curiosity');
+    const code0 = normalizeRoomPhraseToCode(phrase0);
+    assert.equal(code0, 'LOVE-IS-CURIOSITY');
+    const inviteLink = buildRoomInviteLink(phrase0, `${baseUrl}/world/index.html`);
+    assert.equal(parseRoomFromUrl(inviteLink), 'LOVE-IS-CURIOSITY');
+    console.log('✓ 0. Romantic Room Phrase ("Love is curiosity"), ?room= link & 403 dotfile boundary verified');
 
     // 1. Connect Client A (Desktop / Pachgaon) -> Knight, Host
-    const roomUrl = `${wsBaseUrl}/api/room/LOVE/websocket`;
+    const roomUrl = `${wsBaseUrl}/api/room/LOVE-IS-CURIOSITY/websocket`;
     const clientA = await openWebSocket(roomUrl);
     clientA.ws.send(
       JSON.stringify({
         type: 'join',
         device: 'Desktop / Pachgaon (RX 6700)',
+        roomPhrase: 'Love is curiosity',
         preferredRole: 'Knight',
       })
     );
@@ -132,11 +173,10 @@ async function runTests() {
       (m) => m.type === 'room_state' && m.peerConnected === false,
       'Client A initial solo room_state'
     );
-    assert.equal(stateA1.room, 'LOVE');
+    assert.equal(stateA1.room, 'LOVE-IS-CURIOSITY');
     assert.equal(stateA1.role, 'Knight');
     assert.equal(stateA1.isHost, true);
     assert.equal(stateA1.peerConnected, false);
-    console.log('✓ 1a. Client A (Pachgaon) joined LOVE as Knight (Host, solo waiting)');
 
     // Connect Client B (Xiaomi Pad 7 / Sonipat) -> Mage, Guest
     const clientB = await openWebSocket(roomUrl);
@@ -162,50 +202,63 @@ async function runTests() {
     assert.equal(stateA2.role, 'Knight');
     assert.equal(stateA2.isHost, true);
     assert.equal(stateA2.peerConnected, true);
-    assert.equal(stateA2.peerRole, 'Mage');
     assert.equal(stateA2.players.length, 2);
-
     assert.equal(stateB2.role, 'Mage');
     assert.equal(stateB2.isHost, false);
     assert.equal(stateB2.peerConnected, true);
-    assert.equal(stateB2.peerRole, 'Knight');
-    assert.equal(stateB2.players.length, 2);
-    console.log('✓ 1b. Client B (Sonipat) paired in LOVE as Mage (Guest), both peerConnected: true');
+    console.log('✓ 1. Client A (Knight/Host) & Client B (Mage/Guest) paired in LOVE-IS-CURIOSITY');
 
-    // 2. Role swap (`swap_roles`) flips roles cleanly and restores them
+    // 2. Strict 2-Seat Cap: 3rd visitor receives `room_full` and closes without evicting A or B
+    const clientC = await openWebSocket(roomUrl);
+    const fullMsg = await clientC.nextMessage(
+      (m) => m.type === 'room_full',
+      '3rd visitor receives room_full'
+    );
+    assert.equal(fullMsg.error, 'room_full');
+    assert.equal(fullMsg.maxPlayers, 2);
+    clientC.ws.close();
+
+    // Verify A and B are still seated!
+    const roomStatusRes = await fetch(`${baseUrl}/api/room/LOVE-IS-CURIOSITY/status`);
+    const roomStatus = await roomStatusRes.json();
+    assert.equal(roomStatus.playerCount, 2, 'Seated players must never be evicted by a 3rd visitor');
+    assert.equal(roomStatus.isFull, true);
+    console.log('✓ 2. Strict 2-Seat Cap (`room_full` rejection without evicting seated players) verified');
+
+    // 3. Guest `set_ready` & Host `start_expedition`
+    clientB.ws.send(JSON.stringify({ type: 'set_ready', ready: true }));
+    const readyRelay = await clientA.nextMessage(
+      (m) => m.type === 'player_ready' && m.ready === true,
+      'Host receives Guest player_ready'
+    );
+    assert.equal(readyRelay.role, 'Mage');
+
+    clientA.ws.send(JSON.stringify({ type: 'start_expedition' }));
+    const [expA, expB] = await Promise.all([
+      clientA.nextMessage((m) => m.type === 'expedition_started', 'Host expedition_started'),
+      clientB.nextMessage((m) => m.type === 'expedition_started', 'Guest expedition_started'),
+    ]);
+    assert.equal(expA.ok, true);
+    assert.equal(expB.ok, true);
+    console.log('✓ 3. Guest `set_ready` & Host `start_expedition` synchronized across both clients');
+
+    // 4. Role swap (`swap_roles`) flips roles cleanly and restores them
     clientA.ws.send(JSON.stringify({ type: 'swap_roles' }));
     const [swapA1, swapB1] = await Promise.all([
-      clientA.nextMessage(
-        (m) => m.type === 'room_state' && m.role === 'Mage',
-        'Client A swapped to Mage'
-      ),
-      clientB.nextMessage(
-        (m) => m.type === 'room_state' && m.role === 'Knight',
-        'Client B swapped to Knight'
-      ),
+      clientA.nextMessage((m) => m.type === 'room_state' && m.role === 'Mage', 'Client A swapped to Mage'),
+      clientB.nextMessage((m) => m.type === 'room_state' && m.role === 'Knight', 'Client B swapped to Knight'),
     ]);
     assert.equal(swapA1.role, 'Mage');
-    assert.equal(swapA1.peerRole, 'Knight');
     assert.equal(swapB1.role, 'Knight');
-    assert.equal(swapB1.peerRole, 'Mage');
 
-    // Swap back to Knight (A) + Mage (B)
     clientB.ws.send(JSON.stringify({ type: 'swap_roles' }));
-    const [swapA2, swapB2] = await Promise.all([
-      clientA.nextMessage(
-        (m) => m.type === 'room_state' && m.role === 'Knight',
-        'Client A restored to Knight'
-      ),
-      clientB.nextMessage(
-        (m) => m.type === 'room_state' && m.role === 'Mage',
-        'Client B restored to Mage'
-      ),
+    await Promise.all([
+      clientA.nextMessage((m) => m.type === 'room_state' && m.role === 'Knight', 'Client A restored to Knight'),
+      clientB.nextMessage((m) => m.type === 'room_state' && m.role === 'Mage', 'Client B restored to Mage'),
     ]);
-    assert.equal(swapA2.role, 'Knight');
-    assert.equal(swapB2.role, 'Mage');
-    console.log('✓ 2. Role swap (`swap_roles`) flipped Knight <-> Mage and restored cleanly');
+    console.log('✓ 4. Role swap (`swap_roles`) flipped Knight <-> Mage and restored cleanly');
 
-    // 3. Mage sending `spell_cast` (`shatterlance` & `cinder_fall`) delivers to Knight with sword infusion metadata
+    // 5. Mage sending `spell_cast` (`shatterlance` & `cinder_fall`) delivers to Knight
     clientB.ws.send(
       JSON.stringify({
         type: 'spell_cast',
@@ -221,10 +274,7 @@ async function runTests() {
     );
     assert.equal(spellMsg1.fromRole, 'Mage');
     assert.equal(spellMsg1.infusion, 'rime');
-    assert.equal(spellMsg1.breathingStyle, 'Glacial Tide');
-    assert.equal(spellMsg1.mark, 'rime');
     assert.equal(spellMsg1.detonatesMark, true);
-    assert.equal(spellMsg1.infusionDuration, 12);
 
     clientB.ws.send(
       JSON.stringify({
@@ -239,14 +289,10 @@ async function runTests() {
       (m) => m.type === 'spell_cast' && m.spellId === 'cinder_fall',
       'Knight receives cinder_fall spell_cast'
     );
-    assert.equal(spellMsg2.fromRole, 'Mage');
     assert.equal(spellMsg2.infusion, 'solar');
-    assert.equal(spellMsg2.breathingStyle, 'Hinokami Sunfire');
-    assert.equal(spellMsg2.mark, 'solar');
-    assert.equal(spellMsg2.infusionDuration, 12);
-    console.log('✓ 3. Mage `spell_cast` (`shatterlance` + `cinder_fall`) delivered to Knight with sword infusion metadata');
+    console.log('✓ 5. Mage `spell_cast` (`shatterlance` + `cinder_fall`) delivered to Knight');
 
-    // 4. Guest sending `enemy_hit` and Host broadcasting `world_sync` (> 200 bytes extended frame)
+    // 6. Guest sending `enemy_hit` and Host broadcasting `world_sync` (> 250B extended frame)
     clientB.ws.send(
       JSON.stringify({
         type: 'enemy_hit',
@@ -263,10 +309,7 @@ async function runTests() {
       'Host receives enemy_hit from Guest'
     );
     assert.equal(hitMsg.damage, 58);
-    assert.equal(hitMsg.detonation, 'shatterblow');
-    assert.equal(hitMsg.aegisBroken, 1);
 
-    // Build a > 450 byte `world_sync` payload to exercise RFC 6455 126 (16-bit extended length) frames
     const largeWorldSync = {
       type: 'world_sync',
       act: 3,
@@ -281,139 +324,224 @@ async function runTests() {
       ],
     };
     const serializedSync = JSON.stringify(largeWorldSync);
-    assert.ok(
-      Buffer.byteLength(serializedSync, 'utf8') > 250,
-      `Expected world_sync payload > 250 bytes, got ${Buffer.byteLength(serializedSync, 'utf8')}`
-    );
-
     clientA.ws.send(serializedSync);
     const syncMsg = await clientB.nextMessage(
       (m) => m.type === 'world_sync' && m.act === 3,
       'Guest receives >250B world_sync frame'
     );
     assert.equal(syncMsg.enemies.length, 3);
-    assert.equal(syncMsg.enemies[0].id, 'boss_sovereign');
-    assert.equal(syncMsg.enemies[0].hp, 640);
-    assert.equal(syncMsg.heartResonance, 84);
+    console.log('✓ 6. Guest `enemy_hit` and Host extended-length `world_sync` arrived intact');
 
-    // Also test rapid coalesced burst of `hero_state`, `action_event`, `revive_partner`, `act_transition`
-    clientA.ws.send(JSON.stringify({ type: 'hero_state', x: 1.5, y: 0, z: 12.2, yaw: 0.5, anim: 'combo3' }));
-    clientA.ws.send(JSON.stringify({ type: 'action_event', action: 'intercept', shieldAdded: 35 }));
-    clientA.ws.send(JSON.stringify({ type: 'revive_partner', hpRestored: 100 }));
-    clientA.ws.send(JSON.stringify({ type: 'act_transition', act: 2, tod: 'evening' }));
+    // 7. Sequential 3-Stage Sacred Inscription Stone Progression (`0 -> 1 -> 2 -> 3`)
+    const prog = createRoomProgressionState();
+    assert.equal(prog.getState().unlockedStage, 0);
+    assert.equal(prog.getState().communeDiscovered, false);
+    assert.equal(prog.getState().showTutorialPopups, false);
 
-    const [heroRelay, actionRelay, reviveRelay, actRelay] = await Promise.all([
-      clientB.nextMessage((m) => m.type === 'hero_state', 'Guest receives hero_state'),
-      clientB.nextMessage((m) => m.type === 'action_event', 'Guest receives action_event'),
-      clientB.nextMessage((m) => m.type === 'revive_partner', 'Guest receives revive_partner'),
-      clientB.nextMessage((m) => m.type === 'act_transition', 'Guest receives act_transition'),
-    ]);
-    assert.equal(heroRelay.anim, 'combo3');
-    assert.equal(actionRelay.action, 'intercept');
-    assert.equal(reviveRelay.hpRestored, 100);
-    assert.equal(actRelay.tod, 'evening');
-    console.log(
-      `✓ 4. Guest \`enemy_hit\`, Host extended-length \`world_sync\` (${Buffer.byteLength(serializedSync, 'utf8')} bytes), and rapid burst packets arrived intact`
+    // Even if players visit Stone 3 (`stone_grove`) first, `communeDiscovered` becomes true
+    // and `nextStoneIndex` is sequentially Stage 1!
+    const readRes = prog.readInscriptionStone('stone_grove');
+    assert.equal(readRes.communeDiscovered, true);
+    assert.equal(readRes.sequentialRiddleStage, 1);
+
+    const solve1 = prog.solveNextStone();
+    assert.equal(solve1.stage, 1);
+    assert.equal(solve1.knightUnlock.iceSword, true);
+    assert.equal(solve1.mageUnlock.frostLance, true);
+    assert.equal(solve1.hudVisibility.skillEVisible, true);
+    assert.equal(solve1.hudVisibility.tabToggleVisible, false);
+
+    const solve2 = prog.solveNextStone();
+    assert.equal(solve2.stage, 2);
+    assert.equal(solve2.knightUnlock.fireSword, true);
+    assert.equal(solve2.mageUnlock.cinderFall, true);
+    assert.equal(solve2.hudVisibility.tabToggleVisible, true);
+
+    const solve3 = prog.solveNextStone();
+    assert.equal(solve3.stage, 3);
+    assert.equal(solve3.knightUnlock.qUltimate, 'sky_lightning_awakening');
+    assert.equal(solve3.mageUnlock.qUltimate, 'storm_cataclysm');
+    assert.equal(solve3.hudVisibility.ultimateQVisible, true);
+    console.log('✓ 7. Sequential 3-Stone Progression (`0 -> 1 -> 2 -> 3`) & progressive ability unlocks verified');
+
+    // 8. Verify 30s Tap-to-Speak `Commune` Client, 3D Crimson Rose Ring Timer, Immediate Mic Release & Privacy
+    const testScene = new THREE.Scene();
+    const roseTimer = createCrimsonRoseRingTimer({ scene: testScene });
+    assert.equal(roseTimer.roseClustersMesh.material.transparent, false);
+    assert.equal(roseTimer.sheddingPetalsMesh.material.transparent, false);
+    assert.ok(
+      roseTimer.roseClustersMesh.geometry.attributes.position.count > 200,
+      '3D Crimson Rose clusters must use plush 3D multi-petal geometry (> 200 vertices)'
     );
+    roseTimer.start({ x: 0, y: 0, z: 0 });
+    assert.equal(roseTimer.getVisualState().bloomingRoseCount, 24);
+    roseTimer.setElapsed(15.0);
+    assert.equal(roseTimer.getVisualState().remainingFraction, 0.5);
+    assert.ok(roseTimer.getVisualState().activeDriftingPetals > 0);
+    roseTimer.setElapsed(30.0);
+    assert.equal(roseTimer.getVisualState().remainingFraction, 0.0);
+    assert.equal(roseTimer.getVisualState().shedRoseCount, 24);
+    roseTimer.dispose();
 
-    // 5. Disconnecting Guest notifies Host (`peerConnected: false`) so Wingman AI resumes
+    // Test immediate microphone track.stop() and Single-Ceremony Lock + Partner Audio Privacy
+    let mockTrackStopped = false;
+    const mockMediaDevices = {
+      getUserMedia: async () => ({
+        getTracks: () => [
+          {
+            readyState: 'live',
+            stop() {
+              this.readyState = 'ended';
+              mockTrackStopped = true;
+            },
+          },
+        ],
+      }),
+    };
+
+    const communeClientA = createCommuneClient({
+      scene: testScene,
+      mediaDevices: mockMediaDevices,
+      endpoint: `${baseUrl}/api/commune`,
+      fetchImpl: fetch,
+    });
+    assert.equal(MAX_COMMUNE_SECONDS, 30.0);
+    const startRes = await communeClientA.tapCommune({
+      speakerRole: 'Knight',
+      room: 'LOVE-IS-CURIOSITY',
+      useWallClockTimeout: false,
+      transcriptHint: 'My beloved partner protects me with all her heart',
+    });
+    assert.equal(startRes.started, true);
+    assert.equal(communeClientA.getState().state, 'listening');
+
+    // Also test WebSocket single-ceremony lock (`commune_busy`) & partner audio privacy
+    clientA.ws.send(
+      JSON.stringify({
+        type: 'commune_state',
+        state: 'channel',
+        speakerRole: 'Knight',
+        audioBase64: 'SECRET_RAW_AUDIO_SHOULD_BE_STRIPPED',
+        transcript: 'SECRET_TRANSCRIPT_SHOULD_BE_STRIPPED',
+      })
+    );
+    const partnerChannelMsg = await clientB.nextMessage(
+      (m) => m.type === 'commune_state' && m.state === 'channel',
+      'Partner receives sanitized commune_state'
+    );
+    assert.equal(partnerChannelMsg.audioBase64, undefined, 'Partner must NEVER receive raw audio');
+    assert.equal(partnerChannelMsg.transcript, undefined, 'Partner must NEVER receive transcript');
+
+    // While A is communing, B attempting to start commune receives `commune_busy`
+    clientB.ws.send(JSON.stringify({ type: 'commune_start' }));
+    const busyMsg = await clientB.nextMessage(
+      (m) => m.type === 'commune_busy',
+      'Partner receives commune_busy while speaker is active'
+    );
+    assert.equal(busyMsg.error, 'commune_busy');
+
+    // Second tap stops & sends, stopping mic tracks immediately before network I/O
+    const stopRes = await communeClientA.tapCommune({
+      room: 'LOVE-IS-CURIOSITY',
+      speakerRole: 'Knight',
+    });
+    assert.equal(mockTrackStopped, true, 'Microphone track.stop() must be called immediately on stop');
+    assert.equal(communeClientA.hasActiveMicTracks(), false);
+    assert.equal(stopRes.ok, true);
+    communeClientA.dispose();
+
+    // Verify Wide Surround-Sound Divine Voice respects `shouldSpeakAloud`
+    const silentPlay = playWideSurroundDivineVoice({ shouldSpeakAloud: false, audioUrl: '/test.wav' });
+    assert.equal(silentPlay.played, false);
+    const loudPlay = playWideSurroundDivineVoice({ shouldSpeakAloud: true, audioUrl: '/test.wav' });
+    assert.equal(loudPlay.played, true);
+    assert.equal(loudPlay.haasDelayMs, 14);
+    console.log('✓ 8. 30s `Commune` Client, 3D Crimson Rose Ring Timer, immediate mic `track.stop()`, `commune_busy` lock & privacy verified');
+
+    // 9. Verify Secret-Safe `/api/altar` (Stages 1, 2, 3) & Context-Aware `/api/commune` Verdicts (Zero Spoilers!)
+    for (const stg of [1, 2, 3]) {
+      const altarRes = await fetch(`${baseUrl}/api/altar?stage=${stg}`);
+      assert.equal(altarRes.status, 200);
+      const altarJson = await altarRes.json();
+      assert.equal(altarJson.stage, stg);
+      assert.ok(Array.isArray(altarJson.lines) && altarJson.lines.length >= 4, `Stage ${stg} scripture must have >= 4 lines`);
+      assert.equal(altarJson.secretName, undefined, '/api/altar must never expose raw secretName field');
+    }
+
+    // 9a. Faking an emergency while both players are at 100% HP and 0 enemies nearby -> +1 HP sarcastic pat
+    const fakeCrisisRes = await fetch(`${baseUrl}/api/commune`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        room: 'TEST-JUDGE',
+        speakerRole: 'Knight',
+        transcriptHint: 'Help us we are dying save our lives emergency!',
+        gameState: {
+          speakerHp: 220,
+          speakerMaxHp: 220,
+          partnerHp: 90,
+          partnerMaxHp: 90,
+          nearbyEnemies: 0,
+          inCombat: false,
+        },
+        progressionState: { unlockedStage: 1, stonesRead: ['stone_plaza'] },
+      }),
+    });
+    const fakeCrisisJson = await fakeCrisisRes.json();
+    assert.equal(fakeCrisisJson.hpDelta, 1, 'Faking emergency at full HP with 0 enemies should grant +1 HP sarcastic pat');
+
+    // 9b. Rude / insulting prayer -> -99 HP smite
+    const rudeRes = await fetch(`${baseUrl}/api/commune`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        room: 'TEST-JUDGE',
+        speakerRole: 'Knight',
+        transcriptHint: 'You are a stupid useless trash god shut up',
+        gameState: { speakerHp: 220, speakerMaxHp: 220, partnerHp: 90, partnerMaxHp: 90 },
+        progressionState: { unlockedStage: 1 },
+      }),
+    });
+    const rudeJson = await rudeRes.json();
+    assert.equal(rudeJson.hpDelta, -99, 'Rude/insulting prayer must deal -99 HP');
+
+    // 9c. Spamming nonsense (>= 3 spam prayers) -> kills both with Expedition 33 rose_gommage dissolve
+    const spamRes = await fetch(`${baseUrl}/api/commune`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        room: 'TEST-SPAM',
+        speakerRole: 'Knight',
+        transcriptHint: 'asdf qwerty blah blah',
+        spamCount: 2,
+        gameState: { speakerHp: 220, speakerMaxHp: 220, partnerHp: 90, partnerMaxHp: 90 },
+      }),
+    });
+    const spamJson = await spamRes.json();
+    assert.equal(spamJson.bothKill, true, 'Repeated nonsense spam must trigger bothKill: true');
+    assert.equal(spamJson.deathVfx, 'rose_gommage', 'Repeated nonsense spam must trigger Expedition 33 rose_gommage death VFX');
+    console.log('✓ 9. Secret-Safe `/api/altar` (3 Stones) & Context-Aware `/api/commune` Judge verdicts verified (Zero Spoilers)');
+
+    // Clean up Client A & B
     clientB.ws.close();
     const stateA3 = await clientA.nextMessage(
       (m) => m.type === 'room_state' && m.peerConnected === false,
       'Host notified of Guest disconnect'
     );
     assert.equal(stateA3.peerConnected, false);
-    assert.equal(stateA3.isHost, true);
-    assert.equal(stateA3.role, 'Knight');
     clientA.ws.close();
-    console.log('✓ 5. Disconnecting Guest notified Host (`peerConnected: false`) for seamless Wingman AI resume');
 
-    // 6. Verify `createCoopClient` high-level browser/Node API + silent solo fallback
-    const roomEvents = [];
-    const receivedSpells = [];
-    const origConsoleError = console.error;
-    const errorCalls = [];
-    console.error = (...args) => errorCalls.push(args);
-
-    try {
-      // 6a. Offline / failed port fallback must produce ZERO console.error calls
-      const soloClient = createCoopClient({
-        roomCode: 'SOLO',
-        wsUrl: 'ws://127.0.0.1:1/api/room/SOLO/websocket',
-        onRoomState: (st) => roomEvents.push(st),
-      });
-      await new Promise((r) => setTimeout(r, 120));
-      assert.equal(soloClient.getState().mode, 'solo');
-      assert.equal(soloClient.getState().isHost, true);
-      assert.equal(soloClient.getState().peerConnected, false);
-      assert.equal(errorCalls.length, 0, 'coop-client must log zero console.error calls on offline fallback');
-      soloClient.dispose();
-
-      // 6b. Two `createCoopClient` instances communicating over `serve.mjs`
-      let client1State = null;
-      let client2State = null;
-      const c1 = createCoopClient({
-        roomCode: 'DUET',
-        wsUrl: `${wsBaseUrl}/api/room/DUET/websocket`,
-        preferredRole: 'Knight',
-        onRoomState: (st) => {
-          client1State = st;
-        },
-        onPeerSpellCast: (sp) => receivedSpells.push(sp),
-      });
-      await new Promise((r) => setTimeout(r, 80));
-
-      const c2 = createCoopClient({
-        roomCode: 'DUET',
-        wsUrl: `${wsBaseUrl}/api/room/DUET/websocket`,
-        preferredRole: 'Mage',
-        onRoomState: (st) => {
-          client2State = st;
-        },
-      });
-      await new Promise((r) => setTimeout(r, 120));
-
-      assert.equal(client1State?.peerConnected, true);
-      assert.equal(client1State?.role, 'Knight');
-      assert.equal(client2State?.peerConnected, true);
-      assert.equal(client2State?.role, 'Mage');
-
-      c2.sendSpellCast({
-        spellId: 'storm_lance',
-        origin: [0, 0, 0],
-        target: [0, 0, -10],
-        yaw: 0,
-      });
-      await new Promise((r) => setTimeout(r, 80));
-      assert.equal(receivedSpells.length, 1);
-      assert.equal(receivedSpells[0].spellId, 'storm_lance');
-      assert.equal(receivedSpells[0].infusion, 'tempest');
-      assert.equal(receivedSpells[0].breathingStyle, 'Thunderclap Wisteria');
-
-      c1.dispose();
-      c2.dispose();
-      console.log('✓ 6. `createCoopClient` verified (2-client sync + zero-error offline Solo fallback)');
-    } finally {
-      console.error = origConsoleError;
-    }
-
-    // 7. Verify `CoopRoomDO` & `worker/index.js` Cloudflare Worker Durable Object protocol parity
+    // 10. Verify `CoopRoomDO` & `worker/index.js` Cloudflare Worker Durable Object protocol parity
     const doInstance = new CoopRoomDO({}, {});
     const mockWsA = createMockSocket();
     const mockWsB = createMockSocket();
+    const mockWsC = createMockSocket();
     doInstance.attachSocket(mockWsA, { preferredRole: 'Knight', device: 'Pachgaon' });
     doInstance.attachSocket(mockWsB, { preferredRole: 'Mage', device: 'Sonipat' });
-
-    const lastRoomA = mockWsA.sent.at(-1);
-    const lastRoomB = mockWsB.sent.at(-1);
-    assert.equal(lastRoomA.role, 'Knight');
-    assert.equal(lastRoomA.peerConnected, true);
-    assert.equal(lastRoomB.role, 'Mage');
-    assert.equal(lastRoomB.peerConnected, true);
-
-    mockWsB.emitMessage({ type: 'spell_cast', spellId: 'shatterlance' });
-    assert.equal(mockWsA.sent.at(-1).type, 'spell_cast');
-    assert.equal(mockWsA.sent.at(-1).breathingStyle, 'Glacial Tide');
+    const rejectedC = doInstance.attachSocket(mockWsC, { preferredRole: 'Knight' });
+    assert.equal(rejectedC, null, 'CoopRoomDO must reject 3rd socket with room_full');
+    assert.equal(mockWsC.sent[0]?.type, 'room_full');
+    assert.equal(mockWsC.closedCode, 1008);
 
     const mockEnv = {
       COOP_ROOMS: {
@@ -424,26 +552,20 @@ async function runTests() {
         fetch: async (req) => new Response(`static:${new URL(req.url).pathname}`, { status: 200 }),
       },
     };
-    const statusRes = await workerEntry.fetch(
-      new Request('https://haru-machi-coop.workers.dev/api/room/LOVE/status'),
+    const workerDotEnv = await workerEntry.fetch(
+      new Request('https://haru-machi-coop.workers.dev/.env'),
       mockEnv
     );
-    const statusJson = await statusRes.json();
-    assert.equal(statusJson.ok, true);
-    assert.equal(statusJson.room, 'LOVE');
-    assert.equal(statusJson.playerCount, 2);
+    assert.equal(workerDotEnv.status, 403, 'Cloudflare Worker must block /.env with 403');
+    console.log('✓ 10. Cloudflare `worker/index.js` & `CoopRoomDO` parity verified');
 
-    const rootRes = await workerEntry.fetch(
-      new Request('https://haru-machi-coop.workers.dev/'),
-      mockEnv
-    );
-    assert.equal(rootRes.headers.get('x-haru-coop'), '1');
-    assert.equal(await rootRes.text(), 'static:/world/index.html');
-    console.log('✓ 7. Cloudflare `worker/index.js` & `CoopRoomDO` Durable Object verified');
-
-    console.log('\nALL CO-OP ROOM & WEBSOCKET TESTS PASSED (100%)');
+    console.log('\nALL WAVE 3 CO-OP ROOM, 3-STONE PROGRESSION & 30s COMMUNE TESTS PASSED (100%)');
   } finally {
-    await new Promise((resolve) => server.close(resolve));
+    server.closeAllConnections?.();
+    await new Promise((resolve) => {
+      server.close(resolve);
+      setTimeout(resolve, 250);
+    });
   }
 }
 

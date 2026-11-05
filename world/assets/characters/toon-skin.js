@@ -389,6 +389,13 @@ export function makeSkinnedOutlineMaterial({
   sheetMode = false,
   useVertexParams = false,
 } = {}) {
+  const verdictUniforms = {
+    uGroundClipY: { value: -9999.0 },
+    uDissolveProgress: { value: 0.0 },
+    uDissolveBaseY: { value: 0.0 },
+    uMonochromeOverride: { value: 0.0 },
+  };
+
   const mat = new THREE.ShaderMaterial({
     name: 'CharacterSkinnedOutlineMaterial',
     uniforms: {
@@ -398,6 +405,10 @@ export function makeSkinnedOutlineMaterial({
       uSuppressEyeUv: { value: suppressEyeUv ? 1.0 : 0.0 },
       uSheetMode: { value: sheetMode ? 1.0 : 0.0 },
       uUseVertexParams: { value: useVertexParams ? 1.0 : 0.0 },
+      uGroundClipY: verdictUniforms.uGroundClipY,
+      uDissolveProgress: verdictUniforms.uDissolveProgress,
+      uDissolveBaseY: verdictUniforms.uDissolveBaseY,
+      uMonochromeOverride: verdictUniforms.uMonochromeOverride,
     },
     vertexShader: /* glsl */ `
       #include <common>
@@ -413,6 +424,9 @@ export function makeSkinnedOutlineMaterial({
       uniform float uSheetMode;
       uniform float uUseVertexParams;
 
+      varying vec3 vVerdictWorldPos;
+      varying float vVerdictScreenX;
+
       void main() {
         #include <uv_vertex>
         vec3 objectNormal = length(aOutlineNormal) > 0.001 ? aOutlineNormal : vec3(normal);
@@ -426,6 +440,11 @@ export function makeSkinnedOutlineMaterial({
         #include <begin_vertex>
         #include <morphtarget_vertex>
         #include <skinning_vertex>
+
+        vVerdictWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        vec3 charRootWorld = modelMatrix[3].xyz;
+        vec3 camRightWorld = normalize(vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]));
+        vVerdictScreenX = dot(vVerdictWorldPos - charRootWorld, camRightWorld);
 
         float t = uUseVertexParams > 0.5 ? aOutlineParams.x : uOutlineThickness;
         float zBias = uUseVertexParams > 0.5 ? aOutlineParams.y : uOutlineDepthBias;
@@ -466,8 +485,62 @@ export function makeSkinnedOutlineMaterial({
     `,
     fragmentShader: /* glsl */ `
       uniform vec3 uOutlineColor;
+      uniform float uGroundClipY;
+      uniform float uDissolveProgress;
+      uniform float uDissolveBaseY;
+      uniform float uMonochromeOverride;
+      varying vec3 vVerdictWorldPos;
+      varying float vVerdictScreenX;
+
+      float hashVerdict31(vec3 p) {
+        p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+        p += dot(p, p.yxz + 33.33);
+        return fract((p.x + p.y) * p.z);
+      }
+
+      float smoothNoiseVerdict31(vec3 p) {
+        vec3 i = floor(p);
+        vec3 f = fract(p);
+        vec3 u = f * f * (3.0 - 2.0 * f);
+        return mix(
+          mix(
+            mix(hashVerdict31(i + vec3(0, 0, 0)), hashVerdict31(i + vec3(1, 0, 0)), u.x),
+            mix(hashVerdict31(i + vec3(0, 1, 0)), hashVerdict31(i + vec3(1, 1, 0)), u.x),
+            u.y
+          ),
+          mix(
+            mix(hashVerdict31(i + vec3(0, 0, 1)), hashVerdict31(i + vec3(1, 0, 1)), u.x),
+            mix(hashVerdict31(i + vec3(0, 1, 1)), hashVerdict31(i + vec3(1, 1, 1)), u.x),
+            u.y
+          ),
+          u.z
+        );
+      }
+
       void main() {
-        gl_FragColor = vec4(uOutlineColor, 1.0);
+        if (vVerdictWorldPos.y < uGroundClipY) discard;
+
+        vec3 outCol = uOutlineColor;
+        if (uDissolveProgress > 0.001) {
+          float hNorm = clamp((vVerdictWorldPos.y - uDissolveBaseY) / 1.72, 0.0, 1.0);
+          float leftToRight = clamp((vVerdictScreenX + 0.82) / 1.54, 0.0, 1.0);
+          vec3 samplePos = vec3(vVerdictScreenX * 2.4, vVerdictWorldPos.y * 5.2, vVerdictWorldPos.z * 3.2);
+          float n1 = smoothNoiseVerdict31(samplePos);
+          float n2 = smoothNoiseVerdict31(samplePos * 2.3 + vec3(3.7, 1.9, 5.1));
+          float noiseVal = n1 * 0.65 + n2 * 0.35;
+          float erodeVal = leftToRight * 0.78 + (1.0 - hNorm) * 0.08 + noiseVal * 0.14;
+          if (erodeVal < uDissolveProgress * 1.06) discard;
+          if (erodeVal < uDissolveProgress * 1.06 + 0.14) {
+            outCol = vec3(0.78, 0.008, 0.036);
+          } else {
+            float l = dot(outCol, vec3(0.2126, 0.7152, 0.0722));
+            outCol = vec3(l);
+          }
+        } else if (uMonochromeOverride > 0.001) {
+          float l = dot(outCol, vec3(0.2126, 0.7152, 0.0722));
+          outCol = mix(outCol, vec3(l), clamp(uMonochromeOverride, 0.0, 1.0));
+        }
+        gl_FragColor = vec4(outCol, 1.0);
       }
     `,
     side: sheetMode && !useVertexParams ? THREE.DoubleSide : THREE.BackSide,
@@ -478,6 +551,7 @@ export function makeSkinnedOutlineMaterial({
 
   mat.defines = { USE_UV: '' };
   mat.userData.isOutlineMaterial = true;
+  mat.userData.verdictUniforms = verdictUniforms;
   return mat;
 }
 
@@ -573,21 +647,100 @@ export function createCharacterToonMaterial(sourceMaterial, options = {}) {
   const rimStrength = options.rimStrength ?? preset.rimStrength ?? 0.20;
   const isAdventurer = options.isAdventurer !== false && roleKey !== 'skeleton';
 
+  const verdictUniforms = {
+    uGroundClipY: { value: -9999.0 },
+    uDissolveProgress: { value: 0.0 },
+    uDissolveBaseY: { value: 0.0 },
+    uMonochromeOverride: { value: 0.0 },
+  };
+
   toonMat.onBeforeCompile = (shader) => {
     shader.uniforms.uRimColor = { value: rimColor };
     shader.uniforms.uRimStrength = { value: rimStrength };
     shader.uniforms.uIsAdventurer = { value: isAdventurer ? 1.0 : 0.0 };
+    shader.uniforms.uGroundClipY = verdictUniforms.uGroundClipY;
+    shader.uniforms.uDissolveProgress = verdictUniforms.uDissolveProgress;
+    shader.uniforms.uDissolveBaseY = verdictUniforms.uDissolveBaseY;
+    shader.uniforms.uMonochromeOverride = verdictUniforms.uMonochromeOverride;
+
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        /* glsl */ `
+        #include <common>
+        varying vec3 vVerdictWorldPos;
+        varying float vVerdictScreenX;
+        `
+      )
+      .replace(
+        '#include <project_vertex>',
+        /* glsl */ `
+        #include <project_vertex>
+        vVerdictWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        vec3 charRootWorld = modelMatrix[3].xyz;
+        vec3 camRightWorld = normalize(vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]));
+        vVerdictScreenX = dot(vVerdictWorldPos - charRootWorld, camRightWorld);
+        `
+      );
 
     shader.fragmentShader =
       /* glsl */ `
       uniform vec3 uRimColor;
       uniform float uRimStrength;
       uniform float uIsAdventurer;
+      uniform float uGroundClipY;
+      uniform float uDissolveProgress;
+      uniform float uDissolveBaseY;
+      uniform float uMonochromeOverride;
+      varying vec3 vVerdictWorldPos;
+      varying float vVerdictScreenX;
+
+      float hashVerdictToon31(vec3 p) {
+        p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+        p += dot(p, p.yxz + 33.33);
+        return fract((p.x + p.y) * p.z);
+      }
+
+      float smoothNoiseVerdictToon31(vec3 p) {
+        vec3 i = floor(p);
+        vec3 f = fract(p);
+        vec3 u = f * f * (3.0 - 2.0 * f);
+        return mix(
+          mix(
+            mix(hashVerdictToon31(i + vec3(0, 0, 0)), hashVerdictToon31(i + vec3(1, 0, 0)), u.x),
+            mix(hashVerdictToon31(i + vec3(0, 1, 0)), hashVerdictToon31(i + vec3(1, 1, 0)), u.x),
+            u.y
+          ),
+          mix(
+            mix(hashVerdictToon31(i + vec3(0, 0, 1)), hashVerdictToon31(i + vec3(1, 0, 1)), u.x),
+            mix(hashVerdictToon31(i + vec3(0, 1, 1)), hashVerdictToon31(i + vec3(1, 1, 1)), u.x),
+            u.y
+          ),
+          u.z
+        );
+      }
       ` + shader.fragmentShader;
 
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <opaque_fragment>',
       /* glsl */ `
+      if (vVerdictWorldPos.y < uGroundClipY) discard;
+
+      float verdictDissolveRim = 0.0;
+      if (uDissolveProgress > 0.001) {
+        // Left-to-Right Wind Petal Erosion: wind sweeps from screen-left (vVerdictScreenX < 0) to screen-right (vVerdictScreenX > 0),
+        // turning the character's body into crimson rose petals along a sweeping wind-streaked front!
+        float hNorm = clamp((vVerdictWorldPos.y - uDissolveBaseY) / 1.72, 0.0, 1.0);
+        float leftToRight = clamp((vVerdictScreenX + 0.82) / 1.54, 0.0, 1.0);
+        vec3 samplePos = vec3(vVerdictScreenX * 2.4, vVerdictWorldPos.y * 5.2, vVerdictWorldPos.z * 3.2);
+        float n1 = smoothNoiseVerdictToon31(samplePos);
+        float n2 = smoothNoiseVerdictToon31(samplePos * 2.3 + vec3(3.7, 1.9, 5.1));
+        float noiseVal = n1 * 0.65 + n2 * 0.35;
+        float erodeVal = leftToRight * 0.78 + (1.0 - hNorm) * 0.08 + noiseVal * 0.14;
+        if (erodeVal < uDissolveProgress * 1.06) discard;
+        verdictDissolveRim = 1.0 - smoothstep(uDissolveProgress * 1.06, uDissolveProgress * 1.06 + 0.14, erodeVal);
+      }
+
       #ifdef USE_MAP
         // Unlit glowing yellow eyes for Skeletons merged into the unified SkinnedMesh
         if (vMapUv.x < -0.5) {
@@ -606,16 +759,71 @@ export function createCharacterToonMaterial(sourceMaterial, options = {}) {
       float lumaMask = smoothstep(0.015, 0.18, baseLuma);
       vec3 tintedRim = mix(diffuseColor.rgb * 1.45, uRimColor, 0.55);
       outgoingLight += tintedRim * (rim * uRimStrength * (0.25 + 0.75 * lumaMask));
+
+      if (uDissolveProgress > 0.001) {
+        // Keep the dying character's remaining body stark B&W monochrome (so red cape/shield don't glow red),
+        // and ignite the active left-to-right wind transformation seam in vivid blood-crimson!
+        float lumaD = dot(outgoingLight, vec3(0.2126, 0.7152, 0.0722));
+        vec3 starkBwBody = vec3(lumaD);
+        vec3 rubyRim = vec3(0.84, 0.008, 0.038);
+        outgoingLight = mix(starkBwBody, rubyRim, verdictDissolveRim);
+      } else if (uMonochromeOverride > 0.001) {
+        float monoOut = dot(outgoingLight, vec3(0.2126, 0.7152, 0.0722));
+        outgoingLight = mix(outgoingLight, vec3(monoOut), clamp(uMonochromeOverride, 0.0, 1.0));
+      }
       #include <opaque_fragment>
       `
     );
   };
-  toonMat.customProgramCacheKey = () => `char-toon-v2-${roleKey}-${isAdventurer ? 1 : 0}`;
+  toonMat.customProgramCacheKey = () => `char-toon-v4-lr-wind-${roleKey}-${isAdventurer ? 1 : 0}`;
 
   toonMat.userData.isToonUpgraded = true;
   toonMat.userData.roleKey = roleKey;
   toonMat.userData.flattenedMap = flatMap;
+  toonMat.userData.verdictUniforms = verdictUniforms;
   return toonMat;
+}
+
+/**
+ * Updates Divine Verdict ground-plane clip (`uGroundClipY`), upward petal dissolve
+ * (`uDissolveProgress`, `uDissolveBaseY`), and Smite survivor monochrome override
+ * (`uMonochromeOverride`) across all toon & outline materials on a character root or instance.
+ */
+export function setCharacterVerdictShaderState(
+  rootOrChar,
+  {
+    groundClipY = -9999.0,
+    dissolveProgress = 0.0,
+    dissolveBaseY = 0.0,
+    monochromeOverride = 0.0,
+  } = {}
+) {
+  const root = rootOrChar?.group || rootOrChar?.modelRoot || rootOrChar;
+  if (!root || typeof root.traverse !== 'function') return;
+
+  const clipY = Number.isFinite(groundClipY) ? groundClipY : -9999.0;
+  const dissP = THREE.MathUtils.clamp(Number(dissolveProgress) || 0, 0, 1);
+  const dissBaseY = Number.isFinite(dissolveBaseY) ? dissolveBaseY : 0.0;
+  const mono = THREE.MathUtils.clamp(Number(monochromeOverride) || 0, 0, 1);
+
+  const applyToMat = (mat) => {
+    if (!mat) return;
+    const vu = mat.userData?.verdictUniforms || mat.uniforms;
+    if (!vu) return;
+    if (vu.uGroundClipY) vu.uGroundClipY.value = clipY;
+    if (vu.uDissolveProgress) vu.uDissolveProgress.value = dissP;
+    if (vu.uDissolveBaseY) vu.uDissolveBaseY.value = dissBaseY;
+    if (vu.uMonochromeOverride) vu.uMonochromeOverride.value = mono;
+  };
+
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.material) return;
+    if (Array.isArray(obj.material)) {
+      obj.material.forEach(applyToMat);
+    } else {
+      applyToMat(obj.material);
+    }
+  });
 }
 
 /**

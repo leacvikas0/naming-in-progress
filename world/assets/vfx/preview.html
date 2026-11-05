@@ -140,9 +140,11 @@
       <button data-shot="11-sword-sunfire-slash">11. Hinokami Slash</button>
       <button data-shot="12-sword-glacial-detonation">12. Glacial Detonation</button>
       <button data-shot="13-artorious-prayer-sanctuary">13. Prayer Sanctuary</button>
-      <button data-shot="14-artorious-petty-smite">14. Petty Smite</button>
+      <button data-shot="14-artorious-petty-smite">14. Rose Gommage Death</button>
       <button data-shot="15-artorious-divine-miracle">15. Divine Miracle</button>
       <button data-shot="16-mage-bolt-volley">16. Mage Bolt Volley</button>
+      <button data-shot="17-aim-arrow-frost-lance">17. Aim Arrow (Frost)</button>
+      <button data-shot="18-aim-arrow-cinder-fall">18. Aim Arrow (Cinder)</button>
     </div>
 
     <script type="module">
@@ -167,6 +169,7 @@
         createSwordVfxSystem,
         createMageBoltSystem,
         createArtoriousVfxSystem,
+        createAimArrowSystem,
       } from './index.js';
 
       const canvas = document.getElementById('scene');
@@ -271,7 +274,7 @@
 
       actorsGroup.add(mageChar.group, knightChar.group, skelWarrior.group, skelMage.group);
 
-      // 4. Instantiate All Stage 4 VFX Systems (4 Spells + Live Bone-Tracked Sword VFX + Mage Bolts + Artorious VFX)
+      // 4. Instantiate All Stage 4 VFX Systems (4 Spells + Live Bone-Tracked Sword VFX + Mage Bolts + Artorious VFX + Aim Arrow)
       const frostLance = createFrostLanceSystem({
         scene,
         getGroundHeight: walkableHeightAt,
@@ -309,6 +312,11 @@
         getGroundHeight: walkableHeightAt,
       });
 
+      const aimArrow = createAimArrowSystem({
+        scene,
+        getGroundHeight: walkableHeightAt,
+      });
+
       const allSystems = {
         frostLance,
         shatterlance,
@@ -317,6 +325,7 @@
         swordVfx,
         mageBolt,
         artoriousVfx,
+        aimArrow,
       };
 
       const CAST_ORIGIN = new THREE.Vector3(60.8, walkableHeightAt(60.8, -4.0), -4.0);
@@ -331,6 +340,7 @@
         swordVfx.clear();
         mageBolt.clear();
         artoriousVfx.clear();
+        aimArrow.clear();
       }
 
       function applyTimeOfDayMode(todMode, simTime = 1.0) {
@@ -376,6 +386,7 @@
         swordVfx.setLighting(lightingCfg);
         mageBolt.setLighting(lightingCfg);
         artoriousVfx.setLighting(lightingCfg);
+        aimArrow.setLighting(lightingCfg);
       }
 
       // 5. The Deterministic Multi-Beat & Multi-System Verification Shots
@@ -635,12 +646,12 @@
         '14-artorious-petty-smite': {
           id: '14-artorious-petty-smite',
           system: 'artoriousVfx',
-          label: '14. Artorious Petty Smite on Knight (t = 0.22s) — 24Hz Rose-Crimson & Gold Thunder-Spear, 14 Fulgurite Fangs & Lichtenberg Scar',
+          label: '14. Clair Obscur: Expedition 33 Crimson Rose-Bloom & 180+ Petal Dissolve (t = 0.36s)',
           tod: 'evening',
-          time: 0.22,
-          pos: [65.2, 3.35, 1.85],
-          target: [59.3, 1.65, -2.55],
-          fov: 47,
+          time: 0.36,
+          pos: [64.4, 3.15, 1.55],
+          target: [59.3, 1.45, -2.25],
+          fov: 45,
           artoriousOptions: {
             mode: 'smite',
             origin: [...DEFAULT_KNIGHT_POS],
@@ -648,7 +659,7 @@
           },
           poses: {
             mage: { clip: 'cheer', time: 0.42, dy: 0.0, pitch: 0.0 },
-            knight: { clip: 'hit_B', time: 0.24 },
+            knight: { clip: 'hit_B', time: 0.28 },
             skelW: { clip: 'Idle_Combat', time: 0.40, dy: 0.0, pitch: 0.0 },
             skelM: { clip: 'Idle_Combat', time: 0.55, dy: 0.0, pitch: 0.0 },
           },
@@ -656,7 +667,7 @@
         '15-artorious-divine-miracle': {
           id: '15-artorious-divine-miracle',
           system: 'artoriousVfx',
-          label: '15. Artorious Divine Miracle (t = 0.68s) — 24-Spire Celestial Gold Cathedral Crown, Sky-Parting Columns & Sanctuary Mandala',
+          label: '15. Artorious Divine Miracle (t = 0.68s) — 32-Petal Warm Ivory-Gold 3D Sacred Lotus Cradle & Sky Columns',
           tod: 'evening',
           time: 0.68,
           pos: [67.2, 3.95, 3.15],
@@ -696,6 +707,50 @@
             skelM: { clip: 'Idle_Combat', time: 0.55, dy: 0.0, pitch: 0.0 },
           },
         },
+        '17-aim-arrow-frost-lance': {
+          id: '17-aim-arrow-frost-lance',
+          system: 'aimArrow',
+          label: '17. Terrain-Conforming Aim Arrow — Frost Lance Mode (Fixed 14.5m Glacial Cyan-White & Cerulean SDF)',
+          tod: 'day',
+          time: 0.45,
+          pos: [55.2, 5.45, 1.85],
+          target: [68.4, 0.95, -4.0],
+          fov: 48,
+          aimOptions: {
+            origin: [60.4, walkableHeightAt(60.4, -4.0), -4.0],
+            direction: [1.0, 0.0, 0.0],
+            mode: 'frost_lance',
+            distance: 14.5,
+          },
+          poses: {
+            mage: { clip: 'cast_spell', time: 0.40 },
+            knight: { clip: 'Idle_Combat', time: 0.35 },
+            skelW: { clip: 'Idle_Combat', time: 0.40, dy: 0.0, pitch: 0.0 },
+            skelM: { clip: 'Idle_Combat', time: 0.55, dy: 0.0, pitch: 0.0 },
+          },
+        },
+        '18-aim-arrow-cinder-fall': {
+          id: '18-aim-arrow-cinder-fall',
+          system: 'aimArrow',
+          label: '18. Terrain-Conforming Aim Arrow — Cinder Fall Mode (Variable 11.8m Solar Amber-Crimson & Impact Reticle)',
+          tod: 'day',
+          time: 0.45,
+          pos: [55.8, 5.85, 2.45],
+          target: [67.8, 0.95, -4.0],
+          fov: 48,
+          aimOptions: {
+            origin: [60.4, walkableHeightAt(60.4, -4.0), -4.0],
+            direction: [1.0, 0.0, 0.0],
+            mode: 'cinder_fall',
+            distance: 11.8,
+          },
+          poses: {
+            mage: { clip: 'cast_spell', time: 0.44 },
+            knight: { clip: 'Idle_Combat', time: 0.35 },
+            skelW: { clip: 'Idle_Combat', time: 0.40, dy: 0.0, pitch: 0.0 },
+            skelM: { clip: 'Idle_Combat', time: 0.55, dy: 0.0, pitch: 0.0 },
+          },
+        },
       };
 
       let playing = false;
@@ -714,6 +769,8 @@
           mageBolt.seek(timeSeconds, def.boltConfig);
         } else if (def.system === 'artoriousVfx') {
           artoriousVfx.seek(timeSeconds, def.artoriousOptions);
+        } else if (def.system === 'aimArrow') {
+          aimArrow.seek(timeSeconds, def.aimOptions);
         } else {
           frostLance.seek(timeSeconds);
         }
@@ -818,11 +875,13 @@
         if (def.system === 'shatterlance') {
           shatterlance.cast(CAST_ORIGIN, CAST_DIR, { range: 14.3, seed: 1.0 });
         } else if (def.system === 'cinderFall') {
-          cinderFall.cast(CAST_ORIGIN, CAST_DIR, { range: 14.0, seed: 1.0 });
+          cinderFall.cast(CAST_ORIGIN, CAST_DIR, { distance: 14.0, seed: 1.0 });
         } else if (def.system === 'stormLance') {
           stormLance.cast(CAST_ORIGIN, CAST_DIR, { range: 14.3, seed: 1.0 });
         } else if (def.system === 'mageBolt') {
           mageBolt.fireComboVolley(def.boltConfig);
+        } else if (def.system === 'aimArrow') {
+          aimArrow.show(def.aimOptions);
         } else if (def.system === 'artoriousVfx') {
           const opts = def.artoriousOptions || {};
           if (opts.mode === 'smite') {
@@ -956,6 +1015,7 @@
         swordVfx,
         mageBolt,
         artoriousVfx,
+        aimArrow,
         knightChar,
         mageChar,
         scene,

@@ -1,57 +1,57 @@
 {
   "pass": "pass2",
-  "timestamp": "2026-11-02T13:04:14.257Z",
+  "timestamp": "2026-11-02T15:57:07.283Z",
   "consoleErrors": [],
   "meadowDrawCalls": 7,
-  "fps": 143,
+  "fps": 132,
   "species": {
     "grassTuft": {
       "id": "grassTuft",
       "name": "Meadow Grass Tuft",
-      "triangles": 14,
+      "triangles": 28,
       "budget": 28,
-      "withinBudget": true
-    },
-    "bellflower": {
-      "id": "bellflower",
-      "name": "Violet Campanula Cluster",
-      "triangles": 96,
-      "budget": 96,
-      "withinBudget": true
-    },
-    "daisy": {
-      "id": "daisy",
-      "name": "Meadow Daisy Cluster",
-      "triangles": 88,
-      "budget": 88,
-      "withinBudget": true
-    },
-    "lupine": {
-      "id": "lupine",
-      "name": "Lavender Lupine Spike",
-      "triangles": 109,
-      "budget": 110,
-      "withinBudget": true
-    },
-    "cosmos": {
-      "id": "cosmos",
-      "name": "Rose-Pink Cosmos Cluster",
-      "triangles": 88,
-      "budget": 88,
       "withinBudget": true
     },
     "crimsonRose": {
       "id": "crimsonRose",
       "name": "Crimson Rose Cluster",
-      "triangles": 110,
-      "budget": 112,
+      "triangles": 598,
+      "budget": 560,
+      "withinBudget": false
+    },
+    "bellflower": {
+      "id": "bellflower",
+      "name": "Violet Campanula Cluster",
+      "triangles": 301,
+      "budget": 460,
+      "withinBudget": true
+    },
+    "daisy": {
+      "id": "daisy",
+      "name": "Meadow Daisy Cluster",
+      "triangles": 417,
+      "budget": 480,
+      "withinBudget": true
+    },
+    "lupine": {
+      "id": "lupine",
+      "name": "Lavender Lupine Spike",
+      "triangles": 352,
+      "budget": 520,
+      "withinBudget": true
+    },
+    "cosmos": {
+      "id": "cosmos",
+      "name": "Rose-Pink Cosmos Cluster",
+      "triangles": 387,
+      "budget": 480,
       "withinBudget": true
     },
     "toonShrub": {
       "id": "toonShrub",
       "name": "Cel-Shaded Village Bush",
-      "triangles": 140,
-      "budget": 140,
+      "triangles": 486,
+      "budget": 560,
       "withinBudget": true
     }
   },

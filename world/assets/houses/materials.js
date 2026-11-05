@@ -5,26 +5,26 @@ import * as THREE from 'three';
  */
 
 export const PALETTE = {
-  ink: 0x2a1a12,
-  stucco: 0xf4e7cc,
-  timber: 0xb07a45,
-  stone: 0xd9d4c6,
-  roof: 0xe8542c,
+  ink: 0x342318,
+  stucco: 0xefe2c6,
+  timber: 0x9c6838,
+  stone: 0xd4cec0,
+  roof: 0xc24928,
   glass: 0x2f6fc4,
-  shutter: 0x4b87c8,
-  grass: 0x7cb35a,
+  shutter: 0x467cb8,
+  grass: 0x72a850,
 };
 
 export const ROOF_TILE_HEX = [
-  0xd94722,
-  0xe85a2c,
-  0xc93c1c,
-  0xf06a34,
-  0xd24a28,
-  0xdd5326,
+  0xb84222,
+  0xc64e2c,
+  0xa4361c,
+  0xcf5632,
+  0xb23e24,
+  0xc04926,
 ];
 
-export function makeGradientMap(steps = [0.36, 0.58, 0.8, 1.0]) {
+export function makeGradientMap(steps = [0.32, 0.56, 0.80, 1.0]) {
   const data = new Uint8Array(steps.length * 4);
   steps.forEach((s, i) => {
     const v = Math.round(THREE.MathUtils.clamp(s, 0, 1) * 255);
@@ -42,7 +42,7 @@ export function makeGradientMap(steps = [0.36, 0.58, 0.8, 1.0]) {
  * View-space inverted-hull outline shader material.
  * Supports per-vertex `aOutline` thickness when static hulls are merged.
  */
-export function makeOutlineMaterial(thickness = 0.018, color = PALETTE.ink) {
+export function makeOutlineMaterial(thickness = 0.012, color = PALETTE.ink) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uThickness: { value: thickness },
@@ -68,7 +68,7 @@ export function makeOutlineMaterial(thickness = 0.018, color = PALETTE.ink) {
   });
 }
 
-export function addOutline(mesh, thickness = 0.018, color = PALETTE.ink) {
+export function addOutline(mesh, thickness = 0.012, color = PALETTE.ink) {
   if (!mesh || !mesh.geometry) return null;
   const outline = new THREE.Mesh(mesh.geometry, makeOutlineMaterial(thickness, color));
   outline.name = `${mesh.name || 'mesh'}-outline`;
@@ -80,7 +80,7 @@ export function addOutline(mesh, thickness = 0.018, color = PALETTE.ink) {
 }
 
 export function createMaterials(tex) {
-  const gradientMap = makeGradientMap([0.36, 0.58, 0.8, 1.0]);
+  const gradientMap = makeGradientMap([0.32, 0.56, 0.80, 1.0]);
   const toon = (opts = {}) => new THREE.MeshToonMaterial({ gradientMap, ...opts });
   const flat = (opts = {}) => new THREE.MeshToonMaterial({ gradientMap, ...opts });
 
@@ -114,15 +114,68 @@ export function createMaterials(tex) {
   const emberMid = new THREE.MeshBasicMaterial({ color: 0xff5a12, toneMapped: false });
   emberMid.userData.noOutline = true;
 
+  const attachHouseChiaroscuro = (mat, isRoofOrSolid = false) => {
+    mat.customProgramCacheKey = () => (isRoofOrSolid ? 'house-roof-v2' : 'house-wall-v2');
+    mat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          '#include <common>',
+          `#include <common>
+          varying vec3 vHouseWorldPos;
+          varying vec3 vHouseWorldNormal;`
+        )
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+          vec4 hwPos = modelMatrix * vec4(position, 1.0);
+          vHouseWorldPos = hwPos.xyz;
+          vHouseWorldNormal = normalize(mat3(modelMatrix) * normal);`
+        );
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          '#include <common>',
+          `#include <common>
+          varying vec3 vHouseWorldPos;
+          varying vec3 vHouseWorldNormal;`
+        )
+        .replace(
+          '#include <color_fragment>',
+          `#include <color_fragment>
+          {
+            vec3 hwp = vHouseWorldPos;
+            vec3 hwn = normalize(vHouseWorldNormal);
+            vec3 sunD = normalize(vec3(-0.62, 0.72, -0.31));
+            float ndl = dot(hwn, sunD) * 0.5 + 0.5;
+            float isWall = 1.0 - smoothstep(0.45, 0.75, abs(hwn.y));
+            // Crisp directional wall chiaroscuro (sunlit West/North faces warm, shaded East/South faces cool slate-umber)
+            vec3 dirTint = mix(vec3(0.76, 0.78, 0.88), vec3(1.04, 1.02, 0.98), smoothstep(0.32, 0.64, ndl));
+            diffuseColor.rgb *= mix(vec3(1.0), dirTint, isWall * 0.85);
+            ${
+              isRoofOrSolid
+                ? ''
+                : `// Ground-plinth contact AO & crisp roof-eave overhang shadow band under 1st/2nd-story eaves
+            float groundAO = mix(0.74, 1.0, smoothstep(0.0, 0.68, hwp.y));
+            float eaveBand1 = smoothstep(2.65, 3.25, hwp.y) * (1.0 - smoothstep(3.38, 3.65, hwp.y)) * isWall;
+            float eaveBand2 = smoothstep(4.75, 5.35, hwp.y) * (1.0 - smoothstep(5.48, 5.75, hwp.y)) * isWall;
+            float eaveShd = max(eaveBand1, eaveBand2) * mix(0.42, 0.24, smoothstep(0.4, 0.7, ndl));
+            diffuseColor.rgb *= groundAO;
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.56, 0.58, 0.70), eaveShd);`
+            }
+          }`
+        );
+    };
+    return mat;
+  };
+
   // Consolidated vertex-color bucket materials so an entire building (or 5-building village)
   // batches into <= 12 draw calls total.
   const buckets = {
-    stucco: toon({ map: tex.stucco, color: 0xffffff, vertexColors: true }),
-    stone: toon({ map: tex.stone, color: 0xffffff, vertexColors: true }),
-    stoneLight: toon({ map: tex.stoneLight, color: 0xffffff, vertexColors: true }),
-    wood: toon({ map: tex.wood, color: 0xffffff, vertexColors: true }),
-    doorWood: toon({ map: tex.doorWood, color: 0xffffff, vertexColors: true }),
-    solidToon: toon({ color: 0xffffff, vertexColors: true }),
+    stucco: attachHouseChiaroscuro(toon({ map: tex.stucco, color: 0xffffff, vertexColors: true }), false),
+    stone: attachHouseChiaroscuro(toon({ map: tex.stone, color: 0xffffff, vertexColors: true }), false),
+    stoneLight: attachHouseChiaroscuro(toon({ map: tex.stoneLight, color: 0xffffff, vertexColors: true }), false),
+    wood: attachHouseChiaroscuro(toon({ map: tex.wood, color: 0xffffff, vertexColors: true }), false),
+    doorWood: attachHouseChiaroscuro(toon({ map: tex.doorWood, color: 0xffffff, vertexColors: true }), false),
+    solidToon: attachHouseChiaroscuro(toon({ color: 0xffffff, vertexColors: true }), true),
     glass,
     conservatoryGlass,
     solidBasic: new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, toneMapped: false }),
@@ -147,6 +200,7 @@ export function createMaterials(tex) {
     timber: bindBucket(toon({ map: tex.wood }), buckets.wood),
     timberDark: bindBucket(toon({ map: tex.wood, color: 0xb9895f }), buckets.wood),
     timberLight: bindBucket(toon({ map: tex.wood, color: 0xe3bd8d }), buckets.wood),
+    sailCanvas: bindBucket(toon({ map: tex.stucco, color: 0xfffdf6 }), buckets.stucco),
     shutterBlue: bindBucket(toon({ color: 0x4b87c8 }), buckets.solidToon),
     shutterBlueDark: bindBucket(toon({ color: 0x3568a2 }), buckets.solidToon),
     stone: bindBucket(toon({ map: tex.stone }), buckets.stone),

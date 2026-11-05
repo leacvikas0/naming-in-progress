@@ -1,21 +1,50 @@
 // ============================================================================
 // world/src/player-controller.js
 //
-// Stage 4 & 5 Live World Integration:
+// Stage 4 & 5 / Wave 2B Live World Integration:
 // - Co-Op Hero Duo (`Knight` + `Mage`) with 100% Native Skeletal Animations
-// - Complete Stage 4 Opaque VFX & *Demon Slayer* Sword Breathing Suite (`createVfxKit`)
-// - Pooled 6-Skeleton + Boss Sovereign Enemy Manager (`createEnemyManager`, <= 5 visible)
-// - 3-Act Valley Expedition & Shared 2-InstancedMesh Combat Indicators (`createCampaignLoop`)
-// - WebAudio Synthesized Combat SFX (`createCombatSfx`)
-// - Cloudflare / Local WebSocket 2-Player Co-Op Client (`createCoopClient`)
-// - Deterministic `poseForShot(shotId)` (0 VFX/Indicator draws for `shoot-world.mjs`)
-//   and `poseForGameplayShot(gameplayShotId)` (8 live Stage 5 combat & UI plates).
+//   played from `startTime: 0` with `hopVy: 0` (zero mid-air jitter, zero cut swings).
+// - 1-Input Swing Buffer, Smooth Mash Speed Ramp (`1.00x -> 1.30x`), and
+//   Contact-Frame Hit Detection (`contactFrac: 0.40..0.46`), with zero routine
+//   camera shake on normal attacks.
+// - Knight Kit: 4-hit combo, Hold Shield Block (80% DR + protects Mage), `Tab`
+//   `ice`/`fire` toggle, `E` Power Sword (`13s` active / `18s` cooldown = `5s`
+//   downtime), `Q` Sky-Lightning Awakening (`10s` `2.0x` damage), XP leveling.
+// - Mage Kit (90 HP fragile glass cannon): 3-bolt soft-lock combo, Hold
+//   stationary `Shatterlance` (max 3 consecutive before automatic fallback to
+//   normal bolts), `Tab` `frost_lance`/`cinder_fall` toggle, `Hold E`/`Release E`
+//   terrain-conforming Spellbook Aim Arrow (`14.5m` vs `3..16m`, `8.5s` cd),
+//   and `Q` `6.0s` stationary vulnerable Storm Cataclysm.
 // ============================================================================
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createCharactersKit } from '../assets/characters/index.js';
+import * as ToonSkin from '../assets/characters/toon-skin.js';
 import { createVfxKit } from '../assets/vfx/index.js';
+
+function setCharacterVerdictShaderState(charRootOrInstance, state = {}) {
+  if (typeof ToonSkin.setCharacterVerdictShaderState === 'function') {
+    return ToonSkin.setCharacterVerdictShaderState(charRootOrInstance, state);
+  }
+  const root = charRootOrInstance?.group || charRootOrInstance?.modelRoot || charRootOrInstance;
+  if (!root || typeof root.traverse !== 'function') return;
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.material) return;
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (const mat of mats) {
+      const u = mat?.userData?.verdictUniforms || mat?.uniforms;
+      if (!u) continue;
+      if (state.groundClipY !== undefined && u.uGroundClipY) u.uGroundClipY.value = state.groundClipY;
+      if (state.dissolveProgress !== undefined && u.uDissolveProgress)
+        u.uDissolveProgress.value = state.dissolveProgress;
+      if (state.dissolveBaseY !== undefined && u.uDissolveBaseY)
+        u.uDissolveBaseY.value = state.dissolveBaseY;
+      if (state.monochromeOverride !== undefined && u.uMonochromeOverride)
+        u.uMonochromeOverride.value = state.monochromeOverride;
+    }
+  });
+}
 import {
   clamp,
   shortestAngleDiff,
@@ -30,17 +59,20 @@ import {
   selectSoftLockTarget,
   resolveShrineObstacles,
 } from './combat/combat-balance.js';
+import {
+  KNIGHT_COMBO_SPECS,
+  MAGE_COMBO_SPECS,
+  MAGE_CHARGED_SHATTERLANCE_SPEC,
+  createCombatActionAimController,
+} from './combat/combat-action-aim.js';
 import { createEnemyManager } from './combat/enemy-manager.js';
 import { createCampaignLoop } from './combat/campaign-loop.js';
 import { createCombatSfx } from './combat/combat-sfx.js';
 import { createCoopClient } from './net/coop-client.js';
+import { SACRED_INSCRIPTION_STONES } from './net/room-progression.js';
 
-/**
- * Builds the chiseled 3D Weathered Sanctuary Altar Stele placed in the Town Plaza
- * at `(x = 2.6, z = 7.2)` consolidated into 1 single vertex-colored Mesh (1 draw call)
- * with a rotating golden astrolabe ring on the ground. Hidden during `poseForShot`
- * so `shoot-world.mjs` budgets remain untouched.
- */
+export { KNIGHT_COMBO_SPECS, MAGE_COMBO_SPECS, MAGE_CHARGED_SHATTERLANCE_SPEC };
+
 function createPlazaSanctuarySteleMesh(walkableHeightAt) {
   const parts = [];
   const paintPart = (geo, hexColor, isRotRing = 0.0) => {
@@ -60,16 +92,14 @@ function createPlazaSanctuarySteleMesh(walkableHeightAt) {
     parts.push(g);
   };
 
-  // 1. Stepped Weathered Octagonal Stone Plinth Base
   const baseLower = new THREE.CylinderGeometry(0.96, 1.12, 0.22, 8);
   baseLower.translate(0, 0.11, 0);
   paintPart(baseLower, '#525b66', 0.0);
 
-  const baseUpper = new THREE.CylinderGeometry(0.72, 0.86, 0.20, 8);
+  const baseUpper = new THREE.CylinderGeometry(0.72, 0.86, 0.2, 8);
   baseUpper.translate(0, 0.32, 0);
   paintPart(baseUpper, '#646f7d', 0.0);
 
-  // 2. Chiseled Weathered Monolith Tablet Body & Dark-Slate Inscribed Core
   const steleBody = new THREE.BoxGeometry(0.88, 1.78, 0.26);
   steleBody.translate(0, 1.28, 0);
   paintPart(steleBody, '#5d6875', 0.0);
@@ -78,7 +108,6 @@ function createPlazaSanctuarySteleMesh(walkableHeightAt) {
   recessedSlate.translate(0, 1.28, 0);
   paintPart(recessedSlate, '#1e2631', 0.0);
 
-  // 3. Arched Wisteria-Stone Pediment Cap & Gold Filigree Accents
   const pediment = new THREE.BoxGeometry(1.04, 0.22, 0.34);
   pediment.translate(0, 2.24, 0);
   paintPart(pediment, '#687382', 0.0);
@@ -91,7 +120,6 @@ function createPlazaSanctuarySteleMesh(walkableHeightAt) {
   goldTrimBot.translate(0, 0.54, 0);
   paintPart(goldTrimBot, '#f59e0b', 0.0);
 
-  // 4. Wisteria Blossom Clusters flanking the Stele Crown
   const wisteriaLeft = new THREE.DodecahedronGeometry(0.22, 0);
   wisteriaLeft.scale(0.85, 1.35, 0.85);
   wisteriaLeft.translate(-0.42, 1.98, 0.12);
@@ -102,7 +130,6 @@ function createPlazaSanctuarySteleMesh(walkableHeightAt) {
   wisteriaRight.translate(0.42, 1.98, 0.12);
   paintPart(wisteriaRight, '#c084fc', 0.0);
 
-  // 5. Floating Rotating Golden Astrolabe Ring & Crown Star Jewel (`aIsRing = 1.0`)
   const crownStar = new THREE.OctahedronGeometry(0.18, 0);
   crownStar.scale(0.9, 1.45, 0.9);
   crownStar.translate(0, 2.58, 0);
@@ -192,11 +219,6 @@ function createPlazaSanctuarySteleMesh(walkableHeightAt) {
   return mesh;
 }
 
-/**
- * Configures generous local bounding spheres and enables `frustumCulled = true`
- * on a unified character's `SkinnedMesh` pair so off-screen characters cost 0
- * draw calls when outside the camera frustum.
- */
 function enableCharacterFrustumCulling(charInstance, sphereRadius = 3.2) {
   if (!charInstance || !charInstance.modelRoot) return;
   const localSphere = new THREE.Sphere(new THREE.Vector3(0, 1.0, 0), sphereRadius);
@@ -211,9 +233,6 @@ function enableCharacterFrustumCulling(charInstance, sphereRadius = 3.2) {
   });
 }
 
-/**
- * Deterministic architectural shot pose table for `window.__WORLD__.setShot(shotId)`.
- */
 export const SHOT_CHARACTER_POSES = {
   'day-plaza': {
     knight: { x: 0.85, z: 11.5, rotY: 0.38, clip: 'Idle_Combat', time: 0.35 },
@@ -281,11 +300,26 @@ export const SHOT_CHARACTER_POSES = {
     skeletonWarrior: { x: 56.2, z: -4.6, rotY: -1.45, clip: 'Idle_Combat', time: 0.40 },
     skeletonMage: { x: 58.4, z: -1.2, rotY: -1.45, clip: 'Idle_Combat', time: 0.60 },
   },
+  'evening-flower-lobby': {
+    knight: { x: -1.15, z: 128.0, rotY: Math.PI + 0.15, clip: 'wave', time: 0.45 },
+    mage: { x: 1.15, z: 128.0, rotY: Math.PI - 0.15, clip: 'cheer', time: 0.52 },
+    skeletonWarrior: { x: -13.5, z: 86.0, rotY: 0.25, clip: 'Idle_Combat', time: 0.40 },
+    skeletonMage: { x: 15.8, z: 52.0, rotY: -0.35, clip: 'Idle_Combat', time: 0.60 },
+  },
+  'night-flower-lobby': {
+    knight: { x: -1.15, z: 128.0, rotY: Math.PI + 0.15, clip: 'wave', time: 0.45 },
+    mage: { x: 1.15, z: 128.0, rotY: Math.PI - 0.15, clip: 'cheer', time: 0.52 },
+    skeletonWarrior: { x: -13.5, z: 86.0, rotY: 0.25, clip: 'Idle_Combat', time: 0.40 },
+    skeletonMage: { x: 15.8, z: 52.0, rotY: -0.35, clip: 'Idle_Combat', time: 0.60 },
+  },
+  'evening-plaza': {
+    knight: { x: 0.85, z: 11.5, rotY: 0.42, clip: 'Idle_Combat', time: 0.35 },
+    mage: { x: 3.15, z: 11.9, rotY: -0.38, clip: 'cast_spell', time: 0.52 },
+    skeletonWarrior: { x: 56.2, z: -4.6, rotY: -1.45, clip: 'Idle_Combat', time: 0.40 },
+    skeletonMage: { x: 58.4, z: -1.2, rotY: -1.45, clip: 'Idle_Combat', time: 0.60 },
+  },
 };
 
-/**
- * Deterministic Stage 5 Gameplay & UI Showcase Plates (`shoot-stage5-gameplay.mjs`).
- */
 export const STAGE5_GAMEPLAY_SHOTS = {
   '01-desktop-act1-sunfire-slash': {
     id: '01-desktop-act1-sunfire-slash',
@@ -299,7 +333,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     actStageTag: 'Act I',
     objectiveText: 'East Wisteria Clearing — Wave 1/2 · Wisteria Scouts',
     knight: { x: 72.65, z: -3.80, rotY: Math.PI * 0.5, clip: 'combo3', time: 0.36, hp: 208, shield: 0 },
-    mage: { x: 70.35, z: -2.65, rotY: 1.42, clip: 'cast_spell', time: 0.48, hp: 180, shield: 0 },
+    mage: { x: 70.35, z: -2.65, rotY: 1.42, clip: 'cast_spell', time: 0.48, hp: 90, shield: 0 },
     breathingStyle: 'solar',
     breathingTimer: 11.4,
     heartResonance: 64,
@@ -307,7 +341,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     spellCooldowns: { frost_lance: 0, shatterlance: 0, cinder_fall: 4.8, storm_lance: 0 },
     banner: {
       title: 'HINOKAMI SUNFIRE · BLADE IGNITED',
-      subtitle: 'Strike Sunbranded Enemies with 3rd Hit or Hold LMB for Solar Flare!',
+      subtitle: 'Strike Sunbranded Enemies with 3rd Hit for Solar Flare!',
     },
     enemies: [
       { slotIndex: 0, archetype: 'warrior', x: 75.10, z: -3.80, rotY: -1.35, clip: 'hit_A', time: 0.18, mark: 'solar' },
@@ -355,7 +389,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     actStageTag: 'Act I',
     objectiveText: 'East Wisteria Clearing — Wave 2/2 · Wisteria Warband',
     knight: { x: 64.2, z: -5.95, rotY: 1.48, clip: 'combo1', time: 0.35, hp: 196, shield: 20 },
-    mage: { x: 59.8, z: -4.0, rotY: Math.PI * 0.5, clip: 'cast_spell', time: 0.38, hp: 180, shield: 20 },
+    mage: { x: 59.8, z: -4.0, rotY: Math.PI * 0.5, clip: 'cast_spell', time: 0.38, hp: 90, shield: 20 },
     breathingStyle: 'rime',
     breathingTimer: 12.0,
     heartResonance: 78,
@@ -391,7 +425,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     actStageTag: 'Act I',
     objectiveText: 'East Wisteria Clearing — Wave 2/2 · Wisteria Warband',
     knight: { x: 70.4, z: -2.15, rotY: 1.48, clip: 'cheer', time: 0.42, hp: 210, shield: 0 },
-    mage: { x: 68.2, z: -1.65, rotY: 1.42, clip: 'cast_spell', time: 0.54, hp: 180, shield: 0 },
+    mage: { x: 68.2, z: -1.65, rotY: 1.42, clip: 'cast_spell', time: 0.54, hp: 90, shield: 0 },
     breathingStyle: 'solar',
     breathingTimer: 11.8,
     heartResonance: 86,
@@ -427,7 +461,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     actStageTag: 'Act I',
     objectiveText: 'East Wisteria Clearing — Wave 2/2 · Wisteria Warband',
     knight: { x: 63.8, z: -1.75, rotY: 1.48, clip: 'combo1', time: 0.36, hp: 220, shield: 35 },
-    mage: { x: 59.8, z: -4.0, rotY: Math.PI * 0.5, clip: 'cast_shoot', time: 0.36, hp: 180, shield: 35 },
+    mage: { x: 59.8, z: -4.0, rotY: Math.PI * 0.5, clip: 'cast_shoot', time: 0.36, hp: 90, shield: 35 },
     breathingStyle: 'tempest',
     breathingTimer: 11.6,
     heartResonance: 92,
@@ -463,7 +497,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     actStageTag: 'Act I · Pad 7',
     objectiveText: 'Xiaomi Pad 7 (3:2) Split Touch · Glacial Shatterblow Detonation',
     knight: { x: 72.75, z: -3.80, rotY: Math.PI * 0.5, clip: 'combo3', time: 0.38, hp: 220, shield: 35 },
-    mage: { x: 70.45, z: -2.65, rotY: 1.42, clip: 'cheer', time: 0.45, hp: 180, shield: 35 },
+    mage: { x: 70.45, z: -2.65, rotY: 1.42, clip: 'cheer', time: 0.45, hp: 90, shield: 35 },
     breathingStyle: 'rime',
     breathingTimer: 10.5,
     heartResonance: 100,
@@ -511,7 +545,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     actStageTag: 'Interlude',
     objectiveText: 'West Millpond Pier Sanctuary — Empowered Breathing Unlocked',
     knight: { x: -38.8, z: 9.2, rotY: -0.65, clip: 'cheer', time: 0.52, hp: 220, shield: 35 },
-    mage: { x: -36.4, z: 8.1, rotY: -1.25, clip: 'wave', time: 0.48, hp: 180, shield: 35 },
+    mage: { x: -36.4, z: 8.1, rotY: -1.25, clip: 'wave', time: 0.48, hp: 90, shield: 35 },
     breathingStyle: 'solar',
     breathingTimer: 12.0,
     heartResonance: 85,
@@ -537,7 +571,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     actStageTag: 'Act II',
     objectiveText: 'Twilight Hamlet Well Plaza — Wave 1/1 · Twilight Vanguard',
     knight: { x: -1.35, z: 6.8, rotY: Math.PI + 0.12, clip: 'combo2', time: 0.34, hp: 204, shield: 35 },
-    mage: { x: 2.35, z: 6.9, rotY: Math.PI - 0.25, clip: 'cast_spell', time: 0.46, hp: 180, shield: 35 },
+    mage: { x: 2.35, z: 6.9, rotY: Math.PI - 0.25, clip: 'cast_spell', time: 0.46, hp: 90, shield: 35 },
     breathingStyle: 'solar',
     breathingTimer: 10.2,
     heartResonance: 90,
@@ -545,7 +579,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     spellCooldowns: { frost_lance: 3.2, shatterlance: 0, cinder_fall: 1.5, storm_lance: 0 },
     banner: {
       title: 'ACT II · TWILIGHT HAMLET DEFENSE',
-      subtitle: '3-Token Attacker AI · Dodge Opaque Ground Telegraph Rings on Cobblestones',
+      subtitle: '3-Token Attacker AI · Defend the Well Plaza',
     },
     enemies: [
       {
@@ -611,7 +645,7 @@ export const STAGE5_GAMEPLAY_SHOTS = {
     actStageTag: 'Act III · Boss',
     objectiveText: 'Starlit North Shrine Overlook — The Hollow Sovereign',
     knight: { x: -2.25, z: -83.0, rotY: Math.PI - 0.35, clip: 'charged', time: 0.42, hp: 220, shield: 50 },
-    mage: { x: 2.95, z: -82.8, rotY: Math.PI + 0.42, clip: 'burst_aoe', time: 0.52, hp: 180, shield: 50 },
+    mage: { x: 2.95, z: -82.8, rotY: Math.PI + 0.42, clip: 'burst_aoe', time: 0.52, hp: 90, shield: 50 },
     breathingStyle: 'solar',
     breathingTimer: 12.0,
     heartResonance: 100,
@@ -672,6 +706,237 @@ export const STAGE5_GAMEPLAY_SHOTS = {
       },
     },
   },
+
+  '09-divine-prayer-eclipse-throw': {
+    id: '09-divine-prayer-eclipse-throw',
+    profile: 'desktop',
+    viewport: { width: 1600, height: 900 },
+    tod: 'day',
+    pos: [43.2, 4.15, 6.2],
+    target: [66.5, 4.95, -3.8],
+    fov: 50,
+    actId: 'act1_arena',
+    actStageTag: 'Phase 1 · Prayer',
+    objectiveText: 'Court of Dark Flowers — 4.0m Circle Prayer & 6.5m Airborne Enemy Throw',
+    knight: { x: 51.2, z: -3.4, rotY: 0.92, clip: 'pray_channel', time: 0.18, hp: 68, shield: 0 },
+    mage: { x: 52.6, z: -1.0, rotY: 1.05, clip: 'cast_spell', time: 0.22, hp: 26, shield: 0 },
+    breathingStyle: 'none',
+    breathingTimer: 0,
+    heartResonance: 75,
+    activeSpellSlot: null,
+    spellCooldowns: { frost_lance: 0, shatterlance: 0, cinder_fall: 0, storm_lance: 0 },
+    eclipseState: { weight: 1.0, compression: 1.0, windTimeScale: 0.35 },
+    smiteMonochrome: 0.0,
+    banner: {
+      title: 'COURT OF BLOODY DARK FLOWERS · SPEAK YOUR VOW',
+      subtitle: 'Enemies Launched Off Their Feet (0.15x Slow-Mo) · Wind Slowed to 0.35x',
+    },
+    enemies: [
+      {
+        slotIndex: 0,
+        archetype: 'warrior',
+        x: 58.6,
+        z: -6.8,
+        dy: 3.35,
+        rotY: -1.35,
+        rotX: -0.78,
+        rotZ: 0.46,
+        clip: 'hit_B',
+        time: 0.34,
+        mixerTimeScale: 0.15,
+      },
+      {
+        slotIndex: 1,
+        archetype: 'warrior',
+        x: 63.8,
+        z: 1.4,
+        dy: 3.55,
+        rotY: -1.75,
+        rotX: -0.74,
+        rotZ: -0.48,
+        clip: 'hit_B',
+        time: 0.38,
+        mixerTimeScale: 0.15,
+      },
+    ],
+    vfx: {
+      system: 'artoriousVfx',
+      mode: 'channel',
+      origin: [51.2, 0, -3.4],
+      partnerPos: [52.6, 0, -1.0],
+      time: 1.25,
+    },
+  },
+
+  '10-divine-briar-jail-lattice': {
+    id: '10-divine-briar-jail-lattice',
+    profile: 'desktop',
+    viewport: { width: 1600, height: 900 },
+    tod: 'day',
+    pos: [0.3, 2.35, 16.4],
+    target: [0.0, 2.75, -14.0],
+    fov: 50,
+    actId: 'act2_plaza',
+    actStageTag: 'Phase 2A · Beat 1',
+    objectiveText: 'Iris Manor Briar Sanctuary — Wide Asymmetric Multi-Gauge Root & Wild-Rose Net (1.98s)',
+    knight: { x: -0.82, z: 9.2, rotY: 0.25, clip: 'pray_channel', time: 0.48, hp: 72, shield: 0 },
+    mage: { x: 0.82, z: 9.2, rotY: -0.28, clip: 'cast_spell', time: 0.48, hp: 28, shield: 0 },
+    breathingStyle: 'eclipse',
+    breathingTimer: 30.0,
+    heartResonance: 100,
+    activeSpellSlot: null,
+    spellCooldowns: { frost_lance: 0, shatterlance: 0, cinder_fall: 0, storm_lance: 0 },
+    eclipseState: { weight: 1.0, compression: 1.0, windTimeScale: 0.35 },
+    smiteMonochrome: 0.0,
+    banner: {
+      title: 'DIVINE BLESSING · BRIAR ROSE SANCTUARY',
+      subtitle: '36 Asymmetric Brown-Root & Wild-Rose Briar Vines Weave a Wide Net Around Both Lovers',
+    },
+    enemies: [],
+    vfx: {
+      system: 'artoriousVfx',
+      mode: 'blessing',
+      origin: [-0.82, 0, 9.2],
+      partnerPos: [0.82, 0, 9.2],
+      time: 1.98,
+    },
+  },
+
+  '10a-divine-briar-net-creeping': {
+    id: '10a-divine-briar-net-creeping',
+    profile: 'desktop',
+    viewport: { width: 1600, height: 900 },
+    tod: 'day',
+    pos: [0.3, 2.35, 16.4],
+    target: [0.0, 2.75, -14.0],
+    fov: 50,
+    actId: 'act2_plaza',
+    actStageTag: 'Phase 2A · Beat 1A',
+    objectiveText: 'Iris Manor Briar Sanctuary — Slow Staggered Root Creep & Net Weaving (0.96s)',
+    knight: { x: -0.82, z: 9.2, rotY: 0.25, clip: 'pray_channel', time: 0.48, hp: 72, shield: 0 },
+    mage: { x: 0.82, z: 9.2, rotY: -0.28, clip: 'cast_spell', time: 0.48, hp: 28, shield: 0 },
+    breathingStyle: 'eclipse',
+    breathingTimer: 30.0,
+    heartResonance: 100,
+    activeSpellSlot: null,
+    spellCooldowns: { frost_lance: 0, shatterlance: 0, cinder_fall: 0, storm_lance: 0 },
+    eclipseState: { weight: 1.0, compression: 1.0, windTimeScale: 0.35 },
+    smiteMonochrome: 0.0,
+    banner: {
+      title: 'DIVINE BLESSING · ROOTS CREEPING & LACING',
+      subtitle: 'Thick Gnarled Brown Roots & Thin Tendrils Climb Asymmetrically Before Whipping Shut',
+    },
+    enemies: [],
+    vfx: {
+      system: 'artoriousVfx',
+      mode: 'blessing',
+      origin: [-0.82, 0, 9.2],
+      partnerPos: [0.82, 0, 9.2],
+      time: 0.96,
+    },
+  },
+
+  '11-divine-underground-flower-slump': {
+    id: '11-divine-underground-flower-slump',
+    profile: 'desktop',
+    viewport: { width: 1600, height: 900 },
+    tod: 'day',
+    pos: [0.3, 2.25, 16.0],
+    target: [0.0, 1.95, -14.0],
+    fov: 50,
+    actId: 'act2_plaza',
+    actStageTag: 'Phase 2A · Beat 3',
+    objectiveText: 'Underground Resurrection (2.65s..4.25s) — Quiet Crimson Flower Slump & Smooth HP Fill',
+    knight: { x: -0.82, z: 9.2, rotY: 0.25, clip: 'pray_channel', time: 0.48, hp: 156, shield: 0, undergroundHidden: true },
+    mage: { x: 0.82, z: 9.2, rotY: -0.28, clip: 'cast_spell', time: 0.48, hp: 58, shield: 0, undergroundHidden: true },
+    breathingStyle: 'eclipse',
+    breathingTimer: 30.0,
+    heartResonance: 100,
+    activeSpellSlot: null,
+    spellCooldowns: { frost_lance: 0, shatterlance: 0, cinder_fall: 0, storm_lance: 0 },
+    eclipseState: { weight: 1.0, compression: 1.0, windTimeScale: 0.35 },
+    smiteMonochrome: 0.0,
+    banner: {
+      title: 'DIVINE RESURRECTION · UNDERGROUND FLOWER SLUMP',
+      subtitle: 'Kept Underground 1.6s Beneath Fallen Crimson Roses While HP Fills Smoothly to 100%',
+    },
+    enemies: [],
+    vfx: {
+      system: 'artoriousVfx',
+      mode: 'blessing',
+      origin: [-0.82, 0, 9.2],
+      partnerPos: [0.82, 0, 9.2],
+      time: 3.45,
+    },
+  },
+
+  '12-divine-smite-bw-petal-dissolve': {
+    id: '12-divine-smite-bw-petal-dissolve',
+    profile: 'desktop',
+    viewport: { width: 1600, height: 900 },
+    tod: 'day',
+    pos: [0.3, 2.35, 16.0],
+    target: [0.0, 2.85, -14.0],
+    fov: 50,
+    actId: 'act2_plaza',
+    actStageTag: 'Phase 2C · Smite',
+    objectiveText: 'Divine Smite (0.0x Dead Wind) — Stark B&W World & Selective Blood-Crimson Petal Dissolve',
+    knight: { x: -0.85, z: 9.2, rotY: 0.25, clip: 'hit_B', time: 0.42, hp: 0, shield: 0, dissolveProgress: 0.78 },
+    mage: { x: 0.78, z: 9.3, rotY: -0.45, clip: 'downed', time: 0.26, hp: 9, shield: 0, monochromeOverride: 1.0 },
+    breathingStyle: 'none',
+    breathingTimer: 0,
+    heartResonance: 0,
+    activeSpellSlot: null,
+    spellCooldowns: { frost_lance: 0, shatterlance: 0, cinder_fall: 0, storm_lance: 0 },
+    eclipseState: { weight: 1.0, compression: 1.0, windTimeScale: 0.0 },
+    smiteMonochrome: 1.0,
+    banner: {
+      title: 'DIVINE SMITE · BELOVED DISSOLVED INTO CRIMSON PETALS',
+      subtitle: 'All Valley Wind Frozen Dead (0.0x) · Partner Dissolves (0 HP) · Speaker Reduced to 10% HP',
+    },
+    enemies: [],
+    vfx: {
+      system: 'artoriousVfx',
+      mode: 'smite',
+      origin: [-0.85, 0, 9.2],
+      partnerPos: [0.78, 0, 9.3],
+      time: 1.40,
+    },
+  },
+
+  '12a-divine-smite-dying-mid-dissolve': {
+    id: '12a-divine-smite-dying-mid-dissolve',
+    profile: 'desktop',
+    viewport: { width: 1600, height: 900 },
+    tod: 'day',
+    pos: [0.3, 2.35, 16.0],
+    target: [0.0, 2.85, -14.0],
+    fov: 50,
+    actId: 'act2_plaza',
+    actStageTag: 'Phase 2C · Smite Dying',
+    objectiveText: 'Divine Smite Dying Mid-Dissolve — Partner Collapsing & Eroding Into Crimson Petals',
+    knight: { x: -0.85, z: 9.2, rotY: 0.25, clip: 'death', time: 0.34, hp: 0, shield: 0, dissolveProgress: 0.38 },
+    mage: { x: 0.78, z: 9.3, rotY: -0.45, clip: 'downed', time: 0.26, hp: 9, shield: 0, monochromeOverride: 1.0 },
+    breathingStyle: 'none',
+    breathingTimer: 0,
+    heartResonance: 0,
+    activeSpellSlot: null,
+    spellCooldowns: { frost_lance: 0, shatterlance: 0, cinder_fall: 0, storm_lance: 0 },
+    eclipseState: { weight: 1.0, compression: 1.0, windTimeScale: 0.0 },
+    smiteMonochrome: 1.0,
+    banner: {
+      title: 'DIVINE SMITE · BELOVED DYING & ERODING INTO PETALS',
+      subtitle: 'Stark B&W World · Dying Partner Eroding Top-Down Into 240 Blood-Crimson Rose Petals',
+    },
+    enemies: [],
+    vfx: {
+      system: 'artoriousVfx',
+      mode: 'smite',
+      origin: [-0.85, 0, 9.2],
+      partnerPos: [0.78, 0, 9.3],
+      time: 0.88,
+    },
+  },
 };
 
 export async function createCoopPlayerSystem({
@@ -698,8 +963,7 @@ export async function createCoopPlayerSystem({
   heroesGroup.name = 'coopHeroesDuoGroup';
   rootGroup.add(heroesGroup);
 
-  const createSanctuarySteleMesh = createPlazaSanctuarySteleMesh;
-  const sanctuarySteleMesh = createSanctuarySteleMesh(walkableHeightAt);
+  const sanctuarySteleMesh = createPlazaSanctuarySteleMesh(walkableHeightAt);
   sanctuarySteleMesh.visible = false;
   rootGroup.add(sanctuarySteleMesh);
 
@@ -726,8 +990,8 @@ export async function createCoopPlayerSystem({
   heroesGroup.add(knightChar.group);
   heroesGroup.add(mageChar.group);
 
-  // 1B. Smooth 2nd-Order Spring-Damper + Low-Frequency Trauma Camera Impact
-  //     (stiffness = 165, damping = 16, 18 Hz & 27 Hz phased sine, 0.28s fovKick ease, zero Math.random()!)
+  // 1B. Damped Camera Impact (reserved strictly for major cataclysms, miracles & smites;
+  //     NEVER triggered on routine normal attacks, bolts, shield blocks, or E skills!)
   const cameraImpact = {
     stiffness: 165,
     damping: 16,
@@ -745,6 +1009,8 @@ export async function createCoopPlayerSystem({
     fovKickPeak: 0,
     fovKickTimer: 0,
     fovKickDuration: 0.28,
+    routineImpulseCount: 0,
+    cataclysmImpulseCount: 0,
   };
 
   function resetCameraImpact() {
@@ -766,7 +1032,13 @@ export async function createCoopPlayerSystem({
     dirX = undefined,
     dirZ = undefined,
     fovKick = 1.2,
+    kind = 'cataclysm',
   } = {}) {
+    if (kind === 'routine' || kind === 'normal_attack') {
+      return;
+    }
+    cameraImpact.cataclysmImpulseCount += 1;
+
     const leaderYaw = heroStates?.[activeHeroId]?.yaw ?? initialPos.yaw ?? 0;
     const rawDx = dirX !== undefined ? dirX : Math.sin(leaderYaw);
     const rawDz = dirZ !== undefined ? dirZ : Math.cos(leaderYaw);
@@ -774,18 +1046,18 @@ export async function createCoopPlayerSystem({
     const nx = rawDx / dLen;
     const nz = rawDz / dLen;
 
-    const cleanIntensity = clamp(Number(intensity) || 0, 0, 0.65);
-    const impulseSpeed = cleanIntensity * 8.4;
+    const cleanIntensity = clamp(Number(intensity) || 0, 0, 0.55);
+    const impulseSpeed = cleanIntensity * 7.2;
 
     cameraImpact.vx += nx * impulseSpeed;
-    cameraImpact.vy += cleanIntensity * 4.0;
+    cameraImpact.vy += cleanIntensity * 3.5;
     cameraImpact.vz += nz * impulseSpeed;
 
-    cameraImpact.trauma = clamp(cameraImpact.trauma + cleanIntensity * 1.15, 0, 0.65);
+    cameraImpact.trauma = clamp(cameraImpact.trauma + cleanIntensity * 0.95, 0, 0.55);
     cameraImpact.lastDirX = nx;
     cameraImpact.lastDirZ = nz;
 
-    const cleanFov = clamp(Number(fovKick) || 0, 0, 3.6);
+    const cleanFov = clamp(Number(fovKick) || 0, 0, 3.0);
     if (cleanFov > 0) {
       cameraImpact.fovKickPeak = Math.max(cameraImpact.fovOffset, cleanFov);
       cameraImpact.fovKickDuration = 0.28;
@@ -835,8 +1107,8 @@ export async function createCoopPlayerSystem({
     const env = cameraImpact.trauma * cameraImpact.trauma * 0.42;
 
     const waveLat = Math.sin(t * w1) * 0.65 + Math.sin(t * w2 + 1.15) * 0.35;
-    const waveVert = Math.cos(t * w1 + 0.7) * 0.60 + Math.sin(t * w2 + 2.4) * 0.40;
-    const waveFwd = Math.sin(t * w1 + 1.9) * 0.50;
+    const waveVert = Math.cos(t * w1 + 0.7) * 0.6 + Math.sin(t * w2 + 2.4) * 0.4;
+    const waveFwd = Math.sin(t * w1 + 1.9) * 0.5;
 
     const perpX = -cameraImpact.lastDirZ;
     const perpZ = cameraImpact.lastDirX;
@@ -876,9 +1148,7 @@ export async function createCoopPlayerSystem({
   const vfxKit = createVfxKit({
     scene,
     getGroundHeight: walkableHeightAt,
-    onApexImpact: () => {
-      triggerCameraImpulse({ intensity: 0.22, fovKick: 2.2 });
-    },
+    onApexImpact: () => {},
   });
   vfxKit.swordVfx.attachToKnight(knightChar);
 
@@ -894,10 +1164,12 @@ export async function createCoopPlayerSystem({
     kit,
     walkableHeightAt,
     resolveCollisions,
+    onEnemyKilled: (enemy) => {
+      campaignLoop?.awardKnightKillXp?.(enemy);
+    },
     onDetonation: (det) => {
       localHitstopTimer = 0.07;
       knightChar.mixer.timeScale = 0.05;
-      triggerCameraImpulse({ intensity: 0.32, fovKick: 3.0 });
       if (onBanner && det) {
         onBanner({
           title: `${det.label} · +${det.bonusDmg} AoE BURST`,
@@ -906,7 +1178,7 @@ export async function createCoopPlayerSystem({
         });
       }
     },
-    onBossAegisChanged: ({ aegisActive, aegisLayers, aegisRaised, aegisBroken }) => {
+    onBossAegisChanged: ({ aegisActive, aegisRaised, aegisBroken }) => {
       if (onBanner) {
         if (aegisRaised) {
           onBanner({
@@ -951,6 +1223,10 @@ export async function createCoopPlayerSystem({
       actionTimer: 0,
       comboIndex: 0,
       comboResetTimer: 0,
+      mashTimeScale: 1.0,
+      bufferedAttack: false,
+      shieldBlocking: false,
+      selectedElement: 'ice',
       dashDirX: 0,
       dashDirZ: 0,
       praying: false,
@@ -970,6 +1246,11 @@ export async function createCoopPlayerSystem({
       actionTimer: 0,
       comboIndex: 0,
       comboResetTimer: 0,
+      mashTimeScale: 1.0,
+      bufferedAttack: false,
+      consecutiveChargedCount: 0,
+      selectedElement: 'ice',
+      selectedSpell: 'frost_lance',
       dashDirX: 0,
       dashDirZ: 0,
       praying: false,
@@ -980,6 +1261,7 @@ export async function createCoopPlayerSystem({
   let activeHeroId = 'Knight';
   let partnerHeroId = 'Mage';
   let lastAppliedVerdictAt = 0;
+  let lastKnownCamPitch = 0.14;
 
   // 6. 3-Act Valley Expedition & Synergy Loop (`createCampaignLoop`)
   campaignLoop = createCampaignLoop({
@@ -994,7 +1276,6 @@ export async function createCoopPlayerSystem({
     onDetonation: (det) => {
       localHitstopTimer = 0.07;
       knightChar.mixer.timeScale = 0.05;
-      triggerCameraImpulse({ intensity: 0.32, fovKick: 3.0 });
       if (onBanner && det) {
         onBanner({
           title: `${det.label} · +${det.bonusDmg} AoE BURST`,
@@ -1005,6 +1286,207 @@ export async function createCoopPlayerSystem({
     },
   });
 
+  // 6B. Wave 2B Action Buffer, Mash Ramp, Contact-Frame Hit Detection & Spellbook Aim Controller
+  const actionAim = createCombatActionAimController({
+    walkableHeightAt,
+    onSwingStarted: (swing, hCtrl) => {
+      const st = heroStates[swing.heroId];
+      if (!st) return;
+      st.comboIndex = swing.comboIndex;
+      st.comboResetTimer = hCtrl.comboResetTimer;
+      st.mashTimeScale = swing.mashTimeScale;
+      st.bufferedAttack = hCtrl.bufferedAttack;
+
+      // Soft-lock orientation at swing start so the character faces the target
+      const partner = heroStates[swing.heroId === 'Knight' ? 'Mage' : 'Knight'];
+      const maxRange =
+        swing.heroId === 'Knight'
+          ? 7.5
+          : swing.kind === 'charged'
+            ? SPELLS.shatterlance.range
+            : HERO_STATS.Mage.boltRange;
+      const softTarget = selectSoftLockTarget(
+        st,
+        st.yaw,
+        enemyManager.activeEnemies,
+        { maxRange, partnerPos: partner }
+      );
+      if (softTarget) {
+        st.yaw = Math.atan2(softTarget.x - st.x, softTarget.z - st.z);
+      }
+
+      if (swing.stepDist > 0 && !swing.stationary) {
+        advanceHeroStep(st, swing.stepDist);
+      }
+      // Strictly zero hopVy on all combo swings (fixes 4th-hit mid-air jitter)
+      if (st.grounded) {
+        st.vy = 0;
+      }
+      applyTransform(st);
+
+      startOneShotAction(st, swing.clip, swing.duration, {
+        startTime: 0,
+        timeScale: swing.timeScale,
+        fade: 0.06,
+      });
+
+      coopClient.sendActionEvent({
+        role: swing.heroId,
+        action: swing.kind === 'charged' ? 'mage_heavy' : swing.clip,
+        x: st.x,
+        y: st.y,
+        z: st.z,
+        yaw: st.yaw,
+      });
+    },
+    onContactHit: (swing, hCtrl) => {
+      const st = heroStates[swing.heroId];
+      const partner = heroStates[swing.heroId === 'Knight' ? 'Mage' : 'Knight'];
+      if (!st) return;
+      st.bufferedAttack = hCtrl.bufferedAttack;
+      st.mashTimeScale = hCtrl.mashTimeScale;
+
+      if (swing.heroId === 'Knight') {
+        const swingRes = campaignLoop.performKnightSwing(
+          swing.clip,
+          st,
+          st.yaw,
+          partner
+        );
+        if (swingRes?.swingYaw !== undefined) {
+          st.yaw = swingRes.swingYaw;
+          applyTransform(st);
+        }
+      } else if (swing.kind === 'charged') {
+        campaignLoop.combatHeroes.Mage.consecutiveChargedCount =
+          hCtrl.consecutiveChargedCount;
+        st.consecutiveChargedCount = hCtrl.consecutiveChargedCount;
+        campaignLoop.castSpell('shatterlance', st, st.yaw, partner, {
+          ignoreCooldown: true,
+        });
+      } else {
+        campaignLoop.combatHeroes.Mage.consecutiveChargedCount = 0;
+        st.consecutiveChargedCount = 0;
+        campaignLoop.performMageBoltAttack(swing.comboIndex, st, partner);
+      }
+
+      syncSharedPlayerFromLeader();
+      onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
+    },
+    onSwingFinished: (swing, hCtrl) => {
+      const st = heroStates[swing.heroId];
+      if (!st) return;
+      st.bufferedAttack = hCtrl.bufferedAttack;
+      st.mashTimeScale = hCtrl.mashTimeScale;
+    },
+    onShieldBlockChanged: (blocking) => {
+      heroStates.Knight.shieldBlocking = blocking;
+      campaignLoop.setKnightShieldBlocking(blocking);
+      if (blocking) {
+        heroStates.Knight.actionState = 'block';
+        heroStates.Knight.actionTimer = 999;
+        heroStates.Knight.char.play('block', {
+          loop: true,
+          fade: 0.08,
+          startTime: 0,
+          timeScale: 1.0,
+          force: true,
+        });
+        onBanner?.({
+          title: 'SHIELD BLOCK · FRONTAL BULWARK',
+          subtitle: '80% Incoming Damage Reduction · Protecting the Mage Behind You',
+          kind: 'blessing',
+        });
+      } else if (heroStates.Knight.actionState === 'block') {
+        heroStates.Knight.actionState = null;
+        heroStates.Knight.actionTimer = 0;
+      }
+    },
+    onElementToggled: (payload) => {
+      campaignLoop.toggleHeroElement(payload.heroId);
+      if (payload.heroId === 'Knight') {
+        heroStates.Knight.selectedElement = payload.element;
+        onBanner?.({
+          title:
+            payload.element === 'fire'
+              ? 'ATTUNED ELEMENT · HINOKAMI SUNFIRE'
+              : 'ATTUNED ELEMENT · GLACIAL TIDE',
+          subtitle:
+            payload.element === 'fire'
+              ? 'Press [E] to Ignite Fire Sword (Bonus Strike + Persistent Burn DoT)'
+              : 'Press [E] to Ignite Ice Sword (Slows Enemy Speed, Attack & Damage)',
+          kind: 'act',
+        });
+      } else {
+        heroStates.Mage.selectedSpell = payload.spellId;
+        heroStates.Mage.selectedElement = payload.element;
+        onBanner?.({
+          title:
+            payload.spellId === 'cinder_fall'
+              ? 'SPELLBOOK [E] · CINDER FALL METEOR'
+              : 'SPELLBOOK [E] · FROST LANCE GLACIER',
+          subtitle:
+            payload.spellId === 'cinder_fall'
+              ? 'Hold [E] to Aim Meteor Distance (3..16m) · Release [E] to Cast (8.5s CD)'
+              : 'Hold [E] to Aim Glacier Line (14.5m) · Release [E] to Cast (8.5s CD)',
+          kind: 'act',
+        });
+      }
+    },
+    onAimChanged: (aim, phase) => {
+      const aimArrow = vfxKit?.aimArrow;
+      if (!aimArrow) return;
+      const arrowPayload = {
+        ...aim,
+        mode: aim.spellId,
+        style: aim.spellId === 'cinder_fall' ? 'fire' : 'ice',
+      };
+      if (phase === 'hide') {
+        aimArrow.hide?.();
+      } else if (phase === 'show') {
+        if (typeof aimArrow.show === 'function') {
+          aimArrow.show(arrowPayload);
+        } else if (typeof aimArrow.setAim === 'function') {
+          aimArrow.setAim(arrowPayload);
+        }
+      } else {
+        if (typeof aimArrow.updateAim === 'function') {
+          aimArrow.updateAim(arrowPayload);
+        } else if (typeof aimArrow.setAim === 'function') {
+          aimArrow.setAim(arrowPayload);
+        } else if (typeof aimArrow.show === 'function') {
+          aimArrow.show(arrowPayload);
+        }
+      }
+    },
+    onAimCast: (castPayload) => {
+      const mageState = heroStates.Mage;
+      const knightState = heroStates.Knight;
+      mageState.yaw = castPayload.yaw;
+      applyTransform(mageState);
+      startOneShotAction(mageState, 'cast_spell', 0.62, {
+        startTime: 0,
+        timeScale: 1.0,
+        fade: 0.08,
+      });
+      const res = campaignLoop.performPartnerSkill('Mage', heroStates, {
+        spellId: castPayload.spellId,
+        yaw: castPayload.yaw,
+        distance: castPayload.distance,
+        targetPos: castPayload.targetPos,
+      });
+      coopClient.sendSpellCast({
+        spellId: castPayload.spellId,
+        origin: { x: mageState.x, y: mageState.y, z: mageState.z },
+        yaw: mageState.yaw,
+        distance: castPayload.distance,
+        targetPos: castPayload.targetPos,
+      });
+      onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
+      return res;
+    },
+  });
+
   function getHeroDistance() {
     return Math.hypot(
       heroStates.Knight.x - heroStates.Mage.x,
@@ -1012,27 +1494,93 @@ export async function createCoopPlayerSystem({
     );
   }
 
-  function isNearAltarStele() {
+  function getNearestInscriptionStone(maxRadius = ALTAR_STELE_POS.triggerRadius || 4.5) {
     const leader = heroStates[activeHeroId] || heroStates.Knight;
-    return (
-      Math.hypot(leader.x - ALTAR_STELE_POS.x, leader.z - ALTAR_STELE_POS.z) <=
-      ALTAR_STELE_POS.triggerRadius
-    );
+    let best = null;
+    let bestDist = maxRadius;
+    for (const stone of SACRED_INSCRIPTION_STONES) {
+      const d = Math.hypot(leader.x - stone.position.x, leader.z - stone.position.z);
+      if (d <= bestDist) {
+        bestDist = d;
+        best = { ...stone, distance: Number(d.toFixed(2)) };
+      }
+    }
+    if (!best) {
+      const dLegacy = Math.hypot(leader.x - ALTAR_STELE_POS.x, leader.z - ALTAR_STELE_POS.z);
+      if (dLegacy <= bestDist) {
+        best = {
+          ...SACRED_INSCRIPTION_STONES[0],
+          distance: Number(dLegacy.toFixed(2)),
+        };
+      }
+    }
+    return best;
   }
 
-  function startCommuneChannel(speakerRole = activeHeroId, { broadcast = true } = {}) {
+  function isNearAltarStele() {
+    return Boolean(getNearestInscriptionStone());
+  }
+
+  const communeChannel = {
+    active: false,
+    speakerRole: activeHeroId,
+  };
+
+  function isPlayerControlLocked() {
+    return Boolean(campaignLoop.isControlLocked?.() || communeChannel.active);
+  }
+
+  function startCommuneChannel(
+    speakerRole = activeHeroId,
+    { broadcast = true, camera = null, force = false } = {}
+  ) {
     ensureCombatUnfrozen();
     const normSpeaker =
       String(speakerRole || activeHeroId).toLowerCase() === 'mage' ? 'Mage' : 'Knight';
     const normPartner = normSpeaker === 'Knight' ? 'Mage' : 'Knight';
-    const dist = getHeroDistance();
 
-    if (dist > COMMUNE_MAX_DISTANCE) {
-      return { tooFar: true, distance: Number(dist.toFixed(2)) };
+    const gate = campaignLoop.canCommuneTogether(heroStates);
+    if (!force && !gate.allowed) {
+      if (gate.reason === 'too_far') {
+        onBanner?.({
+          title: 'STAND WITHIN 4.0m TO PRAY',
+          subtitle: `Move closer to your beloved (${gate.distance.toFixed(1)}m / 4.0m max) to open the Court of Dark Flowers.`,
+          kind: 'warning',
+        });
+      } else if (gate.reason === 'combat_hp_too_high') {
+        onBanner?.({
+          title: 'DIVINE PRAYER LOCKED IN COMBAT',
+          subtitle:
+            'In battle, the God of Love answers only when a lover is Downed or below 35% HP!',
+          kind: 'warning',
+        });
+      } else {
+        onBanner?.({
+          title: 'CANNOT CHANNEL PRAYER',
+          subtitle: 'Both lovers have fallen — awaiting Sanctuary Stone rebirth.',
+          kind: 'warning',
+        });
+      }
+      return {
+        allowed: false,
+        tooFar: gate.reason === 'too_far',
+        reason: gate.reason,
+        distance: Number(gate.distance.toFixed(2)),
+        maxDist: gate.maxDist,
+        speakerRole: normSpeaker,
+      };
     }
+
+    if (heroStates.Knight.shieldBlocking) {
+      actionAim.releaseHeavy('Knight');
+    }
+    actionAim.cancelSkillAim();
 
     const speakerState = heroStates[normSpeaker];
     const partnerState = heroStates[normPartner];
+
+    communeChannel.active = true;
+    communeChannel.speakerRole = normSpeaker;
 
     speakerState.praying = true;
     speakerState.actionState = null;
@@ -1046,12 +1594,16 @@ export async function createCoopPlayerSystem({
       partnerState.char.play('pray_channel', { loop: true, fade: 0.14, force: true });
     }
 
-    vfxKit.artoriousVfx?.startChannel?.(speakerState, partnerState);
+    vfxKit.artoriousVfx?.startChannel?.(speakerState, partnerState, { camera });
     campaignLoop.setCommuneChannelActive(true);
 
     const cx = (speakerState.x + partnerState.x) * 0.5;
     const cz = (speakerState.z + partnerState.z) * 0.5;
-    enemyManager.applySacredWardPushback?.({ x: cx, z: cz }, 6.0);
+    if (typeof enemyManager.applyPrayerAirborneThrow === 'function') {
+      enemyManager.applyPrayerAirborneThrow({ x: cx, z: cz }, 6.5);
+    } else {
+      enemyManager.applySacredWardPushback?.({ x: cx, z: cz }, 6.5);
+    }
 
     applyTransform(speakerState);
     applyTransform(partnerState);
@@ -1065,7 +1617,14 @@ export async function createCoopPlayerSystem({
       });
     }
 
-    return { tooFar: false, distance: Number(dist.toFixed(2)), speakerRole: normSpeaker };
+    return {
+      allowed: true,
+      tooFar: false,
+      reason: null,
+      distance: Number(gate.distance.toFixed(2)),
+      maxDist: gate.maxDist,
+      speakerRole: normSpeaker,
+    };
   }
 
   function setCommuneSuspense(active = true, { broadcast = true } = {}) {
@@ -1080,6 +1639,7 @@ export async function createCoopPlayerSystem({
   }
 
   function cancelCommuneChannel({ broadcast = true } = {}) {
+    communeChannel.active = false;
     if (vfxKit.artoriousVfx?.stopChannel) {
       vfxKit.artoriousVfx.stopChannel();
     } else {
@@ -1088,6 +1648,23 @@ export async function createCoopPlayerSystem({
     campaignLoop.setCommuneChannelActive(false);
     heroStates.Knight.praying = false;
     heroStates.Mage.praying = false;
+    knightChar.group.visible = true;
+    mageChar.group.visible = true;
+    if (vfxKit?.swordVfx?.group) {
+      vfxKit.swordVfx.group.visible = true;
+    }
+    setCharacterVerdictShaderState(knightChar, {
+      groundClipY: -9999,
+      dissolveProgress: 0,
+      dissolveBaseY: 0,
+      monochromeOverride: 0,
+    });
+    setCharacterVerdictShaderState(mageChar, {
+      groundClipY: -9999,
+      dissolveProgress: 0,
+      dissolveBaseY: 0,
+      monochromeOverride: 0,
+    });
     applyTransform(heroStates.Knight);
     applyTransform(heroStates.Mage);
     if (broadcast) {
@@ -1101,6 +1678,7 @@ export async function createCoopPlayerSystem({
   function applyCommuneVerdict(judgment = {}, speakerRole = activeHeroId) {
     ensureCombatUnfrozen();
     lastAppliedVerdictAt = Date.now();
+    communeChannel.active = false;
     heroStates.Knight.praying = false;
     heroStates.Mage.praying = false;
 
@@ -1110,8 +1688,9 @@ export async function createCoopPlayerSystem({
 
     const verdict = String(judgment?.verdict || 'smite').toLowerCase();
     triggerCameraImpulse({
-      intensity: verdict === 'miracle' ? 0.36 : verdict === 'smite' ? 0.32 : 0.22,
-      fovKick: verdict === 'miracle' ? 3.2 : verdict === 'smite' ? 2.6 : 1.8,
+      intensity: verdict === 'miracle' ? 0.32 : verdict === 'smite' ? 0.28 : 0.18,
+      fovKick: verdict === 'miracle' ? 2.8 : verdict === 'smite' ? 2.2 : 1.4,
+      kind: 'cataclysm',
     });
 
     return res;
@@ -1155,13 +1734,14 @@ export async function createCoopPlayerSystem({
       const spellId = msg.spellId || msg.spell || 'frost_lance';
       const caster = heroStates.Mage;
       const yaw = msg.yaw ?? caster.yaw;
-      startOneShotAction(caster, 'cast_spell', 0.62, { timeScale: 1.2, fade: 0.08 });
-      campaignLoop.castSpell(spellId, msg.origin || caster, yaw, heroStates.Knight);
-      triggerCameraImpulse({
-        intensity: 0.22,
-        dirX: Math.sin(yaw),
-        dirZ: Math.cos(yaw),
-        fovKick: 2.2,
+      startOneShotAction(caster, 'cast_spell', 0.62, {
+        startTime: 0,
+        timeScale: 1.0,
+        fade: 0.08,
+      });
+      campaignLoop.castSpell(spellId, msg.origin || caster, yaw, heroStates.Knight, {
+        distance: msg.distance,
+        targetPos: msg.targetPos,
       });
     },
     onPeerAction: (msg) => {
@@ -1172,13 +1752,19 @@ export async function createCoopPlayerSystem({
         msg.action === 'combo1' ||
         msg.action === 'combo2' ||
         msg.action === 'combo3' ||
-        msg.action === 'combo4' ||
-        msg.action === 'charged'
+        msg.action === 'combo4'
       ) {
-        startOneShotAction(st, msg.action, 0.54, { timeScale: 1.38, fade: 0.07 });
+        startOneShotAction(st, msg.action, 0.56, {
+          startTime: 0,
+          timeScale: 1.0,
+          fade: 0.07,
+        });
         if (role === 'Knight') {
           campaignLoop.performKnightSwing(msg.action, st, msg.yaw ?? st.yaw, heroStates.Mage);
         }
+      } else if (msg.action === 'block' || msg.action === 'shield_block') {
+        campaignLoop.setKnightShieldBlocking(true);
+        st.char.play('block', { loop: true, fade: 0.08, startTime: 0, force: true });
       } else if (
         msg.action === 'mage_attack1' ||
         msg.action === 'mage_attack2' ||
@@ -1193,13 +1779,26 @@ export async function createCoopPlayerSystem({
               : msg.action === 'mage_attack2'
                 ? 1
                 : 0;
-        startOneShotAction(st, msg.action, 0.50, { timeScale: 1.45, fade: 0.07 });
-        campaignLoop.performMageBoltAttack(cIdx, st, heroStates.Knight);
+        startOneShotAction(st, msg.action === 'mage_heavy' ? 'cast_spell' : msg.action, 0.52, {
+          startTime: 0,
+          timeScale: 1.0,
+          fade: 0.07,
+        });
+        if (cIdx === 3) {
+          campaignLoop.castSpell('shatterlance', st, msg.yaw ?? st.yaw, heroStates.Knight, {
+            ignoreCooldown: true,
+          });
+        } else {
+          campaignLoop.performMageBoltAttack(cIdx, st, heroStates.Knight);
+        }
       } else if (msg.action === 'skill') {
         campaignLoop.performPartnerSkill(role, heroStates);
       } else if (msg.action === 'ultimate') {
-        campaignLoop.addResonance(100);
-        campaignLoop.performCouplesUltimate(heroStates);
+        if (role === 'Knight') {
+          campaignLoop.performKnightUltimate(heroStates);
+        } else {
+          campaignLoop.performMageStormCataclysm(heroStates);
+        }
       }
     },
     onWorldSync: (msg) => {
@@ -1208,7 +1807,7 @@ export async function createCoopPlayerSystem({
     onCommuneState: (msg) => {
       const peerSpeaker = msg.speakerRole || msg.fromRole || partnerHeroId;
       if (msg.state === 'channel') {
-        startCommuneChannel(peerSpeaker, { broadcast: false });
+        startCommuneChannel(peerSpeaker, { broadcast: false, force: true });
       } else if (msg.state === 'suspense') {
         setCommuneSuspense(msg.active !== false, { broadcast: false });
       } else if (msg.state === 'cancel') {
@@ -1216,7 +1815,6 @@ export async function createCoopPlayerSystem({
       }
     },
     onCommuneVerdict: (msg) => {
-      // Avoid double-applying if this client already applied the HTTP response within 1.5s
       if (Date.now() - lastAppliedVerdictAt < 1500) return;
       const judgment = msg.judgment || msg;
       const speakerRole = msg.speakerRole || msg.fromRole || partnerHeroId;
@@ -1225,7 +1823,6 @@ export async function createCoopPlayerSystem({
     },
   });
 
-  // Shared `player` telemetry object mutated in-place for compatibility with `main.js`
   const player = {
     x: initialPos.x,
     z: initialPos.z,
@@ -1268,6 +1865,7 @@ export async function createCoopPlayerSystem({
     st.char.play(nextLoco, {
       loop: !isOnce,
       fade: isOnce ? 0.08 : 0.14,
+      startTime: 0,
       timeScale: nextLoco === 'sprint' ? 1.22 : 1.0,
     });
   }
@@ -1276,7 +1874,7 @@ export async function createCoopPlayerSystem({
     st,
     clipKey,
     duration,
-    { startTime = undefined, timeScale = 1.0, fade = 0.07 } = {}
+    { startTime = 0, timeScale = 1.0, fade = 0.07 } = {}
   ) {
     st.actionState = clipKey;
     st.actionTimer = duration;
@@ -1297,13 +1895,11 @@ export async function createCoopPlayerSystem({
     campaignLoop.setIndicatorsHiddenForShot(false, heroStates);
   }
 
-  /**
-   * Casts one of the 4 Signature Spells (`1: frost_lance`, `2: shatterlance`,
-   * `3: cinder_fall`, `4: storm_lance`). Works seamlessly whether the player
-   * is currently controlling Mage OR commanding Mage as their Wingman while playing Knight!
-   */
-  function triggerSpell(slotOrId) {
+  function triggerSpell(slotOrId, options = {}) {
     ensureCombatUnfrozen();
+    if (isPlayerControlLocked()) {
+      return { blockedByControlLock: true };
+    }
     const spell =
       typeof slotOrId === 'number'
         ? SPELL_BY_SLOT[slotOrId]
@@ -1314,7 +1910,6 @@ export async function createCoopPlayerSystem({
     const knightState = heroStates.Knight;
     const leader = heroStates[activeHeroId];
 
-    // Determine aim direction from active leader or soft-locked enemy
     const softTarget = selectSoftLockTarget(
       leader,
       leader.yaw,
@@ -1322,53 +1917,38 @@ export async function createCoopPlayerSystem({
       { maxRange: spell.range, partnerPos: knightState }
     );
 
-    let aimYaw = leader.yaw;
-    if (softTarget) {
+    let aimYaw = options.yaw ?? leader.yaw;
+    if (softTarget && options.yaw === undefined) {
       aimYaw = Math.atan2(softTarget.x - mageState.x, softTarget.z - mageState.z);
     }
 
-    const res = campaignLoop.castSpell(spell.id, mageState, aimYaw, knightState);
+    const res = campaignLoop.castSpell(spell.id, mageState, aimYaw, knightState, options);
     if (!res || res.onCooldown) return res;
 
     mageState.yaw = res.targetYaw ?? aimYaw;
     applyTransform(mageState);
     const castClip = spell.slot === 2 || spell.slot === 4 ? 'cast_shoot' : 'cast_spell';
-    startOneShotAction(mageState, castClip, 0.62, { timeScale: 1.24, fade: 0.08 });
-
-    triggerCameraImpulse({
-      intensity: 0.22,
-      dirX: Math.sin(mageState.yaw),
-      dirZ: Math.cos(mageState.yaw),
-      fovKick: 2.2,
+    startOneShotAction(mageState, castClip, 0.62, {
+      startTime: 0,
+      timeScale: 1.0,
+      fade: 0.08,
     });
 
     coopClient.sendSpellCast({
       spellId: spell.id,
       origin: { x: mageState.x, y: mageState.y, z: mageState.z },
       yaw: mageState.yaw,
+      distance: res.distance,
       targetPos: res.targetPos,
     });
 
-    onHudStateChanged?.(campaignLoop.getStateSnapshot());
+    onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
     return res;
   }
 
   function launchMageFrostLance() {
     return triggerSpell(1);
   }
-
-  const KNIGHT_COMBO_SPECS = [
-    { clip: 'combo1', startTime: 0.10, timeScale: 1.25, duration: 0.48, stepDist: 0.24 },
-    { clip: 'combo2', startTime: 0.28, timeScale: 1.15, duration: 0.48, stepDist: 0.26 },
-    { clip: 'combo3', startTime: 0.42, timeScale: 1.15, duration: 0.50, stepDist: 0.32 },
-    { clip: 'combo4', startTime: 0.52, timeScale: 1.20, duration: 0.54, stepDist: 0.85, hopVy: 3.6 },
-  ];
-
-  const MAGE_COMBO_SPECS = [
-    { clip: 'mage_attack1', startTime: 0.04, timeScale: 1.45, duration: 0.46 },
-    { clip: 'mage_attack2', startTime: 0.04, timeScale: 1.45, duration: 0.46 },
-    { clip: 'mage_attack3', startTime: 0.12, timeScale: 1.50, duration: 0.52 },
-  ];
 
   function advanceHeroStep(st, dist) {
     if (!dist || dist <= 0) return;
@@ -1391,13 +1971,86 @@ export async function createCoopPlayerSystem({
     }
   }
 
-  function triggerAction(actionType) {
+  function toggleElement(heroId = activeHeroId) {
+    if (isPlayerControlLocked()) return { blockedByControlLock: true };
+    return actionAim.toggleElement(heroId);
+  }
+
+  function startSkillAim(opts = {}) {
+    if (isPlayerControlLocked()) return { blockedByControlLock: true };
+    const mageState = heroStates.Mage;
+    return actionAim.startSkillAim({
+      origin: opts.origin || { x: mageState.x, y: mageState.y, z: mageState.z },
+      yaw: opts.yaw ?? mageState.yaw,
+      pitch: opts.pitch ?? lastKnownCamPitch,
+      distance: opts.distance,
+      touchTarget: opts.touchTarget,
+      spellId: opts.spellId || heroStates.Mage.selectedSpell,
+    });
+  }
+
+  function updateSkillAim(opts = {}) {
+    return actionAim.updateSkillAim(opts);
+  }
+
+  function releaseSkillAim(opts = null) {
+    if (isPlayerControlLocked()) {
+      actionAim.cancelSkillAim();
+      return { blockedByControlLock: true };
+    }
+    return actionAim.releaseSkillAim(opts);
+  }
+
+  function triggerAction(actionType, actionOptions = {}) {
     ensureCombatUnfrozen();
     const leader = heroStates[activeHeroId];
     const partner = heroStates[partnerHeroId];
 
+    // 100% Control Lockout during Prayer, 2.5s Blessing/Resurrection, and 2.8s Smite
+    if (isPlayerControlLocked()) {
+      return { blockedByControlLock: true };
+    }
+
+    // Disallow actions while Mage is frozen in her 6.0s vulnerable Storm Cataclysm channel
+    if (
+      leader.id === 'Mage' &&
+      campaignLoop.combatHeroes.Mage.stormCataclysmActive &&
+      actionType !== 'toggleElement'
+    ) {
+      return { blockedByStormCataclysm: true };
+    }
+
+    if (actionType === 'toggleElement' || actionType === 'toggle_element' || actionType === 'tab') {
+      return toggleElement(actionOptions.heroId || activeHeroId);
+    }
+
+    if (actionType === 'skillAimStart' || actionType === 'skill_aim_start') {
+      if (activeHeroId === 'Mage') {
+        return startSkillAim(actionOptions);
+      }
+      return triggerAction('skill', actionOptions);
+    }
+
+    if (actionType === 'skillAimRelease' || actionType === 'skill_aim_release') {
+      if (activeHeroId === 'Mage') {
+        return releaseSkillAim(actionOptions);
+      }
+      return null;
+    }
+
+    if (
+      actionType === 'shield_block_end' ||
+      actionType === 'heavy_release' ||
+      actionType === 'release_heavy'
+    ) {
+      return actionAim.releaseHeavy(activeHeroId);
+    }
+
     if (actionType === 'jump') {
       if (leader.grounded) {
+        if (leader.id === 'Knight' && leader.shieldBlocking) {
+          actionAim.releaseHeavy('Knight');
+        }
         leader.vy = 7.4;
         leader.grounded = false;
         leader.actionState = null;
@@ -1408,10 +2061,17 @@ export async function createCoopPlayerSystem({
     }
 
     if (actionType === 'dash') {
+      if (leader.id === 'Knight' && leader.shieldBlocking) {
+        actionAim.releaseHeavy('Knight');
+      }
       leader.dashDirX = Math.sin(leader.yaw);
       leader.dashDirZ = Math.cos(leader.yaw);
-      startOneShotAction(leader, 'dash', 0.32, { timeScale: 1.35, fade: 0.06 });
-      campaignLoop.combatHeroes[activeHeroId].iframeTimer = 0.30;
+      startOneShotAction(leader, 'dash', 0.32, {
+        startTime: 0,
+        timeScale: 1.25,
+        fade: 0.06,
+      });
+      campaignLoop.combatHeroes[activeHeroId].iframeTimer = 0.3;
 
       const dodgeRes = enemyManager.checkPerfectDodge(leader);
       if (dodgeRes.triggered) {
@@ -1420,7 +2080,7 @@ export async function createCoopPlayerSystem({
         combatSfx.playPerfectDodge();
         onBanner?.({
           title: 'PERFECT DODGE · TIME DILATION',
-          subtitle: 'Attacker Slowed to 0.30× · Next Strike Empowered (+35% DMG, +20% Resonance)',
+          subtitle: 'Attacker Slowed to 0.30× · Next Strike Empowered (+35% DMG)',
           kind: 'blessing',
         });
       }
@@ -1432,249 +2092,192 @@ export async function createCoopPlayerSystem({
         z: leader.z,
         yaw: leader.yaw,
       });
-      onHudStateChanged?.(campaignLoop.getStateSnapshot());
+      onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
       return;
     }
 
     if (actionType === 'attack') {
-      if (leader.id === 'Knight') {
-        if (leader.comboResetTimer > 0) {
-          leader.comboIndex = (leader.comboIndex + 1) % 4;
-        } else {
-          leader.comboIndex = 0;
-        }
-        leader.comboResetTimer = 1.20;
-
-        const cSpec = KNIGHT_COMBO_SPECS[leader.comboIndex] || KNIGHT_COMBO_SPECS[0];
-        const swingRes = campaignLoop.performKnightSwing(cSpec.clip, leader, leader.yaw, partner);
-        if (swingRes?.swingYaw !== undefined) {
-          leader.yaw = swingRes.swingYaw;
-        }
-        advanceHeroStep(leader, cSpec.stepDist);
-        if (cSpec.hopVy) {
-          leader.vy = cSpec.hopVy;
-          leader.grounded = false;
-        }
-        applyTransform(leader);
-
-        startOneShotAction(leader, cSpec.clip, cSpec.duration, {
-          startTime: cSpec.startTime,
-          timeScale: cSpec.timeScale,
-          fade: 0.06,
-        });
-
-        const isHeavyComboHit = leader.comboIndex >= 2;
-        triggerCameraImpulse({
-          intensity: isHeavyComboHit ? 0.16 : 0.07,
-          dirX: Math.sin(leader.yaw),
-          dirZ: Math.cos(leader.yaw),
-          fovKick: isHeavyComboHit ? 1.8 : 0.8,
-        });
-
-        coopClient.sendActionEvent({
-          role: 'Knight',
-          action: cSpec.clip,
-          x: leader.x,
-          y: leader.y,
-          z: leader.z,
-          yaw: leader.yaw,
-        });
-      } else {
-        if (leader.comboResetTimer > 0) {
-          leader.comboIndex = (leader.comboIndex + 1) % 3;
-        } else {
-          leader.comboIndex = 0;
-        }
-        leader.comboResetTimer = 1.15;
-
-        const mSpec = MAGE_COMBO_SPECS[leader.comboIndex] || MAGE_COMBO_SPECS[0];
-        campaignLoop.performMageBoltAttack(leader.comboIndex, leader, partner);
-        applyTransform(leader);
-
-        startOneShotAction(leader, mSpec.clip, mSpec.duration, {
-          startTime: mSpec.startTime,
-          timeScale: mSpec.timeScale,
-          fade: 0.06,
-        });
-
-        triggerCameraImpulse({
-          intensity: 0.07,
-          dirX: Math.sin(leader.yaw),
-          dirZ: Math.cos(leader.yaw),
-          fovKick: 0.8,
-        });
-
-        coopClient.sendActionEvent({
-          role: 'Mage',
-          action: mSpec.clip,
-          x: leader.x,
-          y: leader.y,
-          z: leader.z,
-          yaw: leader.yaw,
-        });
-      }
+      const res = actionAim.pressAttack(leader.id);
+      leader.bufferedAttack = res.bufferedAttack;
+      leader.mashTimeScale = res.mashTimeScale;
       syncSharedPlayerFromLeader();
-      onHudStateChanged?.(campaignLoop.getStateSnapshot());
-      return;
+      onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
+      return res;
     }
 
-    if (actionType === 'heavy' || actionType === 'charged') {
-      if (leader.id === 'Knight') {
-        const swingRes = campaignLoop.performKnightSwing('charged', leader, leader.yaw, partner);
-        if (swingRes?.swingYaw !== undefined) {
-          leader.yaw = swingRes.swingYaw;
-        }
-        advanceHeroStep(leader, 0.35);
-        applyTransform(leader);
-
-        startOneShotAction(leader, 'charged', 0.58, {
-          startTime: 0.0,
-          timeScale: 1.15,
-          fade: 0.07,
-        });
-
-        triggerCameraImpulse({
-          intensity: 0.16,
-          dirX: Math.sin(leader.yaw),
-          dirZ: Math.cos(leader.yaw),
-          fovKick: 1.8,
-        });
-
-        coopClient.sendActionEvent({
-          role: 'Knight',
-          action: 'charged',
-          x: leader.x,
-          y: leader.y,
-          z: leader.z,
-          yaw: leader.yaw,
-        });
-      } else {
-        campaignLoop.performMageBoltAttack(3, leader, partner);
-        applyTransform(leader);
-
-        startOneShotAction(leader, 'mage_heavy', 0.56, {
-          startTime: 0.35,
-          timeScale: 1.55,
-          fade: 0.07,
-        });
-
-        triggerCameraImpulse({
-          intensity: 0.16,
-          dirX: Math.sin(leader.yaw),
-          dirZ: Math.cos(leader.yaw),
-          fovKick: 1.8,
-        });
-
-        coopClient.sendActionEvent({
-          role: 'Mage',
-          action: 'mage_heavy',
-          x: leader.x,
-          y: leader.y,
-          z: leader.z,
-          yaw: leader.yaw,
-        });
+    if (
+      actionType === 'heavy' ||
+      actionType === 'charged' ||
+      actionType === 'shield_block'
+    ) {
+      const res = actionAim.pressHeavy(leader.id);
+      if (leader.id === 'Mage') {
+        leader.consecutiveChargedCount = res.consecutiveChargedCount;
+        campaignLoop.combatHeroes.Mage.consecutiveChargedCount =
+          res.consecutiveChargedCount;
       }
       syncSharedPlayerFromLeader();
-      onHudStateChanged?.(campaignLoop.getStateSnapshot());
-      return;
+      onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
+      return res;
     }
 
     if (actionType === 'skill') {
-      const res = campaignLoop.performPartnerSkill(activeHeroId, heroStates);
-      if (res && !res.onCooldown) {
-        if (activeHeroId === 'Knight') {
+      if (activeHeroId === 'Knight') {
+        const res = campaignLoop.performPartnerSkill('Knight', heroStates, actionOptions);
+        if (res && !res.onCooldown) {
           applyTransform(leader);
           vfxKit.swordVfx.triggerSwing(
-            'intercept',
+            'combo1',
             leader,
             leader.yaw,
             campaignLoop.combatHeroes.Knight.breathingStyle
           );
-          startOneShotAction(leader, 'stab', 0.46, {
-            startTime: 0.10,
-            timeScale: 1.45,
+          startOneShotAction(leader, 'pray_channel', 0.48, {
+            startTime: 0,
+            timeScale: 1.15,
             fade: 0.06,
           });
-          triggerCameraImpulse({
-            intensity: 0.16,
-            dirX: Math.sin(leader.yaw),
-            dirZ: Math.cos(leader.yaw),
-            fovKick: 1.8,
-          });
           onBanner?.({
-            title: 'CHIVALRIC INTERCEPT · GOLDEN WARD',
-            subtitle: '+35 HP Shield Granted to Both Partners · Marks Detonated',
+            title:
+              res.element === 'fire'
+                ? 'POWER SWORD · HINOKAMI SUNFIRE (13s)'
+                : 'POWER SWORD · GLACIAL TIDE (13s)',
+            subtitle:
+              res.element === 'fire'
+                ? `13.0s Active / ${res.totalCooldown}s CD (${res.downtime}s Downtime) · Bonus Fire Strike + Burn DoT`
+                : `13.0s Active / ${res.totalCooldown}s CD (${res.downtime}s Downtime) · Slows Enemy Speed, Attack & Damage`,
             kind: 'blessing',
           });
-        } else {
-          startOneShotAction(leader, 'cast_spell', 0.60, { timeScale: 1.22, fade: 0.08 });
-          triggerCameraImpulse({
-            intensity: 0.16,
-            dirX: Math.sin(leader.yaw),
-            dirZ: Math.cos(leader.yaw),
-            fovKick: 1.8,
-          });
-          onBanner?.({
-            title: 'SOUL INFUSE · PARTNER HEALED',
-            subtitle: `+${HERO_STATS.Mage.infuseHeal} HP Restored · Knight Blade Ignited`,
-            kind: 'blessing',
+          coopClient.sendActionEvent({
+            role: 'Knight',
+            action: 'skill',
+            x: leader.x,
+            y: leader.y,
+            z: leader.z,
+            yaw: leader.yaw,
           });
         }
-        coopClient.sendActionEvent({
-          role: activeHeroId,
-          action: 'skill',
-          x: leader.x,
-          y: leader.y,
-          z: leader.z,
-          yaw: leader.yaw,
-        });
+        syncSharedPlayerFromLeader();
+        onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
+        return res;
       }
-      syncSharedPlayerFromLeader();
-      onHudStateChanged?.(campaignLoop.getStateSnapshot());
-      return;
+
+      // Mage E: if already aiming, release; otherwise cast immediately at default/soft-lock range
+      if (actionAim.aimState.active) {
+        return releaseSkillAim(actionOptions);
+      }
+      startSkillAim(actionOptions);
+      return releaseSkillAim(actionOptions);
     }
 
     if (actionType === 'ultimate') {
-      if (campaignLoop.heartResonance < 100) {
-        // Top up to 100% if already >= 65% in solo play, or notify charging
-        if (campaignLoop.heartResonance >= 65) {
-          campaignLoop.addResonance(100);
-        } else {
-          onBanner?.({
-            title: `HEART RESONANCE CHARGING (${campaignLoop.heartResonance}%)`,
-            subtitle: 'Cast Spells & Detonate Elemental Marks to Reach 100% Cataclysm',
-            kind: 'act',
+      if (activeHeroId === 'Knight') {
+        const res = campaignLoop.performKnightUltimate(heroStates);
+        if (res && !res.onCooldown) {
+          startOneShotAction(heroStates.Knight, 'pray_channel', 0.72, {
+            startTime: 0,
+            timeScale: 1.0,
+            fade: 0.08,
           });
-          return;
+          triggerCameraImpulse({
+            intensity: 0.24,
+            dirX: Math.sin(leader.yaw),
+            dirZ: Math.cos(leader.yaw),
+            fovKick: 2.0,
+            kind: 'cataclysm',
+          });
+          coopClient.sendActionEvent({
+            role: 'Knight',
+            action: 'ultimate',
+            x: leader.x,
+            y: leader.y,
+            z: leader.z,
+          });
+          onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
         }
+        return res;
       }
-      campaignLoop.performCouplesUltimate(heroStates);
-      startOneShotAction(heroStates.Knight, 'charged', 0.75, {
-        startTime: 0.0,
-        timeScale: 1.15,
-        fade: 0.08,
-      });
-      startOneShotAction(heroStates.Mage, 'burst_aoe', 0.75, { timeScale: 1.12, fade: 0.08 });
-      triggerCameraImpulse({
-        intensity: 0.32,
-        dirX: Math.sin(leader.yaw),
-        dirZ: Math.cos(leader.yaw),
-        fovKick: 3.0,
-      });
-      coopClient.sendActionEvent({
-        role: activeHeroId,
-        action: 'ultimate',
-        x: leader.x,
-        y: leader.y,
-        z: leader.z,
-      });
-      onHudStateChanged?.(campaignLoop.getStateSnapshot());
-      return;
+
+      // Mage Q: 6.0s Stationary Vulnerable Storm Cataclysm
+      const res = campaignLoop.performMageStormCataclysm(heroStates);
+      if (res && !res.onCooldown) {
+        heroStates.Mage.actionState = 'burst_aoe';
+        heroStates.Mage.actionTimer = 6.0;
+        heroStates.Mage.char.play('burst_aoe', {
+          loop: true,
+          fade: 0.08,
+          startTime: 0,
+          timeScale: 1.0,
+          force: true,
+        });
+        triggerCameraImpulse({
+          intensity: 0.26,
+          dirX: Math.sin(leader.yaw),
+          dirZ: Math.cos(leader.yaw),
+          fovKick: 2.2,
+          kind: 'cataclysm',
+        });
+        coopClient.sendActionEvent({
+          role: 'Mage',
+          action: 'ultimate',
+          x: leader.x,
+          y: leader.y,
+          z: leader.z,
+        });
+        onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
+      }
+      return res;
     }
 
     if (actionType === 'cast') {
-      triggerSpell(1);
+      return triggerSpell(1);
     }
+  }
+
+  // Browser input hooks for `Tab` element toggle (keeping `Alt+Tab` for hero swap),
+  // `Hold E` / `Release E` Spellbook Aim Arrow, and `mouseup` Shield Block release.
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (isPlayerControlLocked()) return;
+        const k = (e.key || '').toLowerCase();
+        if (k === 'tab' && !e.altKey) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          toggleElement(activeHeroId);
+          return;
+        }
+        if (k === 'e' && !e.repeat && activeHeroId === 'Mage') {
+          e.stopImmediatePropagation();
+          startSkillAim();
+        }
+      },
+      true
+    );
+
+    window.addEventListener(
+      'keyup',
+      (e) => {
+        const k = (e.key || '').toLowerCase();
+        if (k === 'e' && activeHeroId === 'Mage' && actionAim.aimState.active) {
+          releaseSkillAim();
+        }
+      },
+      true
+    );
+
+    window.addEventListener('mouseup', () => {
+      if (heroStates.Knight.shieldBlocking) {
+        actionAim.releaseHeavy('Knight');
+      }
+    });
+
+    window.addEventListener('pointerup', () => {
+      if (heroStates.Knight.shieldBlocking) {
+        actionAim.releaseHeavy('Knight');
+      }
+    });
   }
 
   function setPraying(active = false) {
@@ -1686,8 +2289,13 @@ export async function createCoopPlayerSystem({
   }
 
   function swapActiveHero() {
+    if (isPlayerControlLocked()) return activeHeroId;
     const prevLeader = heroStates[activeHeroId];
     prevLeader.praying = false;
+    if (prevLeader.id === 'Knight' && prevLeader.shieldBlocking) {
+      actionAim.releaseHeavy('Knight');
+    }
+    actionAim.cancelSkillAim();
     activeHeroId = activeHeroId === 'Knight' ? 'Mage' : 'Knight';
     partnerHeroId = activeHeroId === 'Knight' ? 'Mage' : 'Knight';
     syncSharedPlayerFromLeader();
@@ -1695,7 +2303,7 @@ export async function createCoopPlayerSystem({
     if (onHeroSwapped) {
       onHeroSwapped(activeHeroId, partnerHeroId);
     }
-    onHudStateChanged?.(campaignLoop.getStateSnapshot());
+    onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
     return activeHeroId;
   }
 
@@ -1732,8 +2340,12 @@ export async function createCoopPlayerSystem({
     syncSharedPlayerFromLeader();
   }
 
-  function update(dt, { keys, joyState, camYaw, camera } = {}) {
+  function update(dt, { keys, joyState, camYaw = 0, camPitch = undefined, camera } = {}) {
     ensureCombatUnfrozen();
+
+    if (typeof camPitch === 'number') {
+      lastKnownCamPitch = camPitch;
+    }
 
     if (sanctuarySteleMesh.material?.uniforms?.uTime) {
       sanctuarySteleMesh.material.uniforms.uTime.value += dt;
@@ -1741,8 +2353,23 @@ export async function createCoopPlayerSystem({
 
     const leader = heroStates[activeHeroId];
     const partner = heroStates[partnerHeroId];
+    const controlLocked = isPlayerControlLocked();
 
-    // Local 70ms animation-mixer hitstop recovery on Knight
+    // Advance 1-input swing buffer, mash speed ramp, and contact-frame hit detection
+    if (!controlLocked) {
+      actionAim.update(dt);
+      leader.bufferedAttack = actionAim.heroes[leader.id].bufferedAttack;
+      leader.mashTimeScale = actionAim.heroes[leader.id].mashTimeScale;
+
+      if (actionAim.aimState.active && activeHeroId === 'Mage') {
+        actionAim.updateSkillAim({
+          origin: { x: heroStates.Mage.x, y: heroStates.Mage.y, z: heroStates.Mage.z },
+          yaw: camYaw || heroStates.Mage.yaw,
+          pitch: lastKnownCamPitch,
+        });
+      }
+    }
+
     if (localHitstopTimer > 0) {
       localHitstopTimer = Math.max(0, localHitstopTimer - dt);
       if (localHitstopTimer <= 0) {
@@ -1750,8 +2377,7 @@ export async function createCoopPlayerSystem({
       }
     }
 
-    // Sync leader position if mutated externally by `main.js`
-    if (Math.hypot(player.x - leader.x, player.z - leader.z) > 0.05) {
+    if (!controlLocked && Math.hypot(player.x - leader.x, player.z - leader.z) > 0.05) {
       leader.x = player.x;
       leader.z = player.z;
       leader.y = walkableHeightAt(leader.x, leader.z);
@@ -1762,31 +2388,39 @@ export async function createCoopPlayerSystem({
       leader.comboResetTimer = Math.max(0, leader.comboResetTimer - dt);
     }
 
-    // 1. Gather Keyboard + Touch Joystick input
+    // 1. Gather Keyboard + Touch Joystick input (zeroed during control lockout!)
     let fwd = 0;
     let right = 0;
-    if (keys) {
-      if (keys.has('w') || keys.has('arrowup')) fwd += 1;
-      if (keys.has('s') || keys.has('arrowdown')) fwd -= 1;
-      if (keys.has('d') || keys.has('arrowright')) right += 1;
-      if (keys.has('a') || keys.has('arrowleft')) right -= 1;
-    }
-    if (joyState && joyState.magnitude > 0.08) {
-      fwd += joyState.y;
-      right += joyState.x;
+    if (!controlLocked) {
+      if (keys) {
+        if (keys.has('w') || keys.has('arrowup')) fwd += 1;
+        if (keys.has('s') || keys.has('arrowdown')) fwd -= 1;
+        if (keys.has('d') || keys.has('arrowright')) right += 1;
+        if (keys.has('a') || keys.has('arrowleft')) right -= 1;
+      }
+      if (joyState && joyState.magnitude > 0.08) {
+        fwd += joyState.y;
+        right += joyState.x;
+      }
     }
 
     const rawMag = Math.hypot(fwd, right);
-    const moveMag = clamp(rawMag, 0, 1);
+    const moveMag = controlLocked ? 0 : clamp(rawMag, 0, 1);
     const isSprinting =
-      Boolean(keys && keys.has('shift')) || Boolean(joyState && joyState.sprinting);
+      !controlLocked &&
+      (Boolean(keys && keys.has('shift')) || Boolean(joyState && joyState.sprinting));
 
     let didWrap = false;
 
     // 2. Update Active Hero (Leader)
-    if (leader.actionTimer > 0) {
+    const isMageStationaryCast =
+      leader.id === 'Mage' &&
+      (campaignLoop.combatHeroes.Mage.stormCataclysmActive ||
+        actionAim.heroes.Mage.activeSwing?.stationary);
+
+    if (leader.actionTimer > 0 && !leader.shieldBlocking) {
       leader.actionTimer = Math.max(0, leader.actionTimer - dt);
-      if (leader.actionState === 'dash') {
+      if (leader.actionState === 'dash' && !controlLocked) {
         const dashSpeed = player.speed * 2.05;
         let next = resolveCollisions(
           leader.x + leader.dashDirX * dashSpeed * dt,
@@ -1806,12 +2440,23 @@ export async function createCoopPlayerSystem({
         leader.z = next.z;
         didWrap = next.wrapped;
       }
-      if (leader.actionTimer <= 0) {
+      if (leader.actionTimer <= 0 && !campaignLoop.combatHeroes.Mage.stormCataclysmActive) {
         leader.actionState = null;
       }
     }
 
-    if (moveMag > 1e-3 && leader.actionState !== 'dash') {
+    if (
+      !controlLocked &&
+      moveMag > 1e-3 &&
+      leader.actionState !== 'dash' &&
+      !isMageStationaryCast
+    ) {
+      if (leader.id === 'Mage') {
+        actionAim.notifyHeroMoved('Mage');
+        leader.consecutiveChargedCount = 0;
+        campaignLoop.combatHeroes.Mage.consecutiveChargedCount = 0;
+      }
+
       const nx = right / (rawMag || 1);
       const nz = fwd / (rawMag || 1);
       const fx = Math.sin(camYaw);
@@ -1821,12 +2466,12 @@ export async function createCoopPlayerSystem({
       const moveX = fx * nz + rx * nx;
       const moveZ = fz * nz + rz * nx;
 
-      const prayMult = leader.praying ? 0.38 : 1.0;
-      const actionMult = leader.actionState ? 0.35 : 1.0;
+      const blockMult = leader.shieldBlocking ? 0.35 : 1.0;
+      const actionMult = leader.actionState && !leader.shieldBlocking ? 0.35 : 1.0;
       const spd =
         player.speed *
         (isSprinting ? player.sprintMult : moveMag < 0.55 ? 0.56 : 1.0) *
-        prayMult *
+        blockMult *
         actionMult;
 
       let next = resolveCollisions(
@@ -1857,7 +2502,14 @@ export async function createCoopPlayerSystem({
       leader.y = floorY;
       leader.vy = 0;
       leader.grounded = true;
-    } else if (keys && keys.has(' ') && leader.grounded && !leader.praying) {
+    } else if (
+      !controlLocked &&
+      keys &&
+      keys.has(' ') &&
+      leader.grounded &&
+      !leader.praying &&
+      !isMageStationaryCast
+    ) {
       triggerAction('jump');
     }
 
@@ -1881,7 +2533,15 @@ export async function createCoopPlayerSystem({
       }
     }
 
-    if (leader.grounded && !leader.actionState && !leader.praying && leader.landTimer <= 0) {
+    if (
+      !controlLocked &&
+      !campaignLoop.combatHeroes[leader.id]?.downed &&
+      leader.grounded &&
+      !leader.actionState &&
+      !leader.shieldBlocking &&
+      !leader.praying &&
+      leader.landTimer <= 0
+    ) {
       if (moveMag < 0.08) {
         playHeroLocomotionClip(leader, 'idle');
       } else if (isSprinting) {
@@ -1893,20 +2553,6 @@ export async function createCoopPlayerSystem({
       }
     }
 
-    applyTransform(leader);
-    leader.char.update(dt);
-    syncSharedPlayerFromLeader();
-
-    // Broadcast active hero state to co-op room at 20Hz
-    coopClient.sendHeroState({
-      role: activeHeroId,
-      x: leader.x,
-      y: leader.y,
-      z: leader.z,
-      yaw: leader.yaw,
-      clip: leader.char.anim.currentKey,
-    });
-
     // 3. Update Co-Op Partner (Remote Peer Interpolation OR Solo Wingman Follow AI)
     if (partner.actionTimer > 0) {
       partner.actionTimer = Math.max(0, partner.actionTimer - dt);
@@ -1916,35 +2562,40 @@ export async function createCoopPlayerSystem({
     }
 
     const isPeerLinked = Boolean(coopClient.getState().peerConnected && remotePartnerTarget.active);
+    const blessingActive = Boolean(campaignLoop.isDivineBlessingActive?.());
     if (isPeerLinked) {
-      partner.x += (remotePartnerTarget.x - partner.x) * Math.min(1, 12 * dt);
-      partner.z += (remotePartnerTarget.z - partner.z) * Math.min(1, 12 * dt);
-      partner.y = walkableHeightAt(partner.x, partner.z);
-      partner.yaw += shortestAngleDiff(remotePartnerTarget.yaw, partner.yaw) * Math.min(1, 12 * dt);
-    } else {
-      const wingOffsetAngle = leader.yaw - 2.1; // Right-rear wingman slot
-      const targetWingX = leader.x + Math.sin(wingOffsetAngle) * 2.15;
-      const targetWingZ = leader.z + Math.cos(wingOffsetAngle) * 2.15;
+      if (!controlLocked) {
+        partner.x += (remotePartnerTarget.x - partner.x) * Math.min(1, 12 * dt);
+        partner.z += (remotePartnerTarget.z - partner.z) * Math.min(1, 12 * dt);
+        partner.y = walkableHeightAt(partner.x, partner.z);
+        partner.yaw += shortestAngleDiff(remotePartnerTarget.yaw, partner.yaw) * Math.min(1, 12 * dt);
+      }
+    } else if (!controlLocked && !campaignLoop.combatHeroes[partner.id]?.downed) {
+      const wingOffsetAngle = leader.yaw - 2.1;
+      const wingOffsetDist = blessingActive ? 1.45 : 2.15;
+      const targetWingX = leader.x + Math.sin(wingOffsetAngle) * wingOffsetDist;
+      const targetWingZ = leader.z + Math.cos(wingOffsetAngle) * wingOffsetDist;
       const dxW = targetWingX - partner.x;
       const dzW = targetWingZ - partner.z;
       const distW = Math.hypot(dxW, dzW);
 
-      if (didWrap || distW > 18.0) {
+      if (didWrap || distW > 18.0 || (blessingActive && distW > 3.6)) {
         partner.x = targetWingX;
         partner.z = targetWingZ;
         partner.y = walkableHeightAt(partner.x, partner.z);
         partner.yaw = leader.yaw;
         playHeroLocomotionClip(partner, 'idle');
-      } else if (distW > 0.65 && !partner.actionState && !leader.praying) {
+      } else if (distW > (blessingActive ? 0.45 : 0.65) && !partner.actionState && !leader.praying) {
         const dirX = dxW / distW;
         const dirZ = dzW / distW;
-        const partnerSpd =
-          distW > 4.2
+        const partnerSpd = blessingActive
+          ? player.speed * player.sprintMult * 1.25
+          : distW > 4.2
             ? player.speed * player.sprintMult
             : distW > 1.75
               ? player.speed * 1.02
               : player.speed * 0.56;
-        const step = Math.min(distW - 0.45, partnerSpd * dt);
+        const step = Math.min(distW - (blessingActive ? 0.25 : 0.45), partnerSpd * dt);
         const nextP = resolveCollisions(
           partner.x + dirX * step,
           partner.z + dirZ * step,
@@ -1955,7 +2606,7 @@ export async function createCoopPlayerSystem({
         partner.y = walkableHeightAt(partner.x, partner.z);
 
         const pTargetYaw = Math.atan2(dirX, dirZ);
-        partner.yaw += shortestAngleDiff(pTargetYaw, partner.yaw) * Math.min(1, 11 * dt);
+        partner.yaw += shortestAngleDiff(pTargetYaw, partner.yaw) * Math.min(1, 14 * dt);
 
         if (distW > 4.2 || (isSprinting && moveMag > 0.2)) {
           playHeroLocomotionClip(partner, 'sprint');
@@ -1971,9 +2622,6 @@ export async function createCoopPlayerSystem({
       }
     }
 
-    applyTransform(partner);
-    partner.char.update(dt);
-
     // 4. Update 3-Act Campaign Loop, Pooled Enemy AI, Stage 4 Opaque VFX Kit & Spring Camera Impact
     campaignLoop.update(dt, {
       heroStates,
@@ -1982,25 +2630,143 @@ export async function createCoopPlayerSystem({
     });
     vfxKit.update(dt);
 
-    // Apply Artorious levitation offset after vfxKit.update(dt) so both heroes levitate above the shared Lotus Mandala
-    if (vfxKit.artoriousVfx?.active) {
-      knightChar.group.position.y =
-        heroStates.Knight.y + vfxKit.artoriousVfx.getHeroLevitationOffset('Knight');
-      mageChar.group.position.y =
-        heroStates.Mage.y + vfxKit.artoriousVfx.getHeroLevitationOffset('Mage');
+    applyTransform(leader);
+    applyTransform(partner);
+    leader.char.update(dt);
+    partner.char.update(dt);
+    syncSharedPlayerFromLeader();
+
+    coopClient.sendHeroState({
+      role: activeHeroId,
+      x: leader.x,
+      y: leader.y,
+      z: leader.z,
+      yaw: leader.yaw,
+      clip: leader.char.anim.currentKey,
+    });
+
+    // 4B. Sync Underground Visibility, Sword VFX Sheath, and Character Ground-Clip / Dissolve Shaders
+    const vfx = vfxKit.artoriousVfx;
+    const vSeq = campaignLoop.verdictSequence;
+    const kLevY = vfx?.active ? vfx.getHeroLevitationOffset('Knight') : 0.0;
+    const mLevY = vfx?.active ? vfx.getHeroLevitationOffset('Mage') : 0.0;
+    knightChar.group.position.y = heroStates.Knight.y + kLevY;
+    mageChar.group.position.y = heroStates.Mage.y + mLevY;
+
+    const isUnderground = Boolean(
+      vfx?.isHeroUndergroundHidden?.() ||
+        (vSeq?.active &&
+          vSeq.kind === 'blessing' &&
+          vSeq.elapsed >= 2.65 &&
+          vSeq.elapsed < 4.25)
+    );
+
+    if (isUnderground) {
+      knightChar.group.visible = false;
+      mageChar.group.visible = false;
+      if (vfxKit.swordVfx?.group) {
+        vfxKit.swordVfx.group.visible = false;
+      }
+    } else {
+      knightChar.group.visible = true;
+      mageChar.group.visible = true;
+      if (vfxKit.swordVfx?.group) {
+        vfxKit.swordVfx.group.visible = true;
+      }
+    }
+
+    const kSmiteDissolvedDead =
+      vSeq?.kind === 'smite' &&
+      vSeq?.dissolveRole === 'Knight' &&
+      campaignLoop.combatHeroes.Knight.downed;
+    const mSmiteDissolvedDead =
+      vSeq?.kind === 'smite' &&
+      vSeq?.dissolveRole === 'Mage' &&
+      campaignLoop.combatHeroes.Mage.downed;
+
+    if (vSeq?.active && vSeq.kind === 'smite') {
+      const dissProg =
+        vfx?.getCharacterDissolveProgress?.() ||
+        clamp((vSeq.elapsed - 0.15) / 2.0, 0, 1);
+      const kIsVictim = vSeq.dissolveRole === 'Knight';
+      const mIsVictim = vSeq.dissolveRole === 'Mage';
+      setCharacterVerdictShaderState(knightChar, {
+        groundClipY: -9999,
+        dissolveProgress: kIsVictim ? dissProg : 0,
+        dissolveBaseY: heroStates.Knight.y,
+        monochromeOverride: kIsVictim ? 0 : 1.0,
+      });
+      setCharacterVerdictShaderState(mageChar, {
+        groundClipY: -9999,
+        dissolveProgress: mIsVictim ? dissProg : 0,
+        dissolveBaseY: heroStates.Mage.y,
+        monochromeOverride: mIsVictim ? 0 : 1.0,
+      });
+    } else if (kSmiteDissolvedDead || mSmiteDissolvedDead) {
+      if (kSmiteDissolvedDead) knightChar.group.visible = false;
+      if (mSmiteDissolvedDead) mageChar.group.visible = false;
+      setCharacterVerdictShaderState(knightChar, {
+        groundClipY: -9999,
+        dissolveProgress: kSmiteDissolvedDead ? 1.0 : 0,
+        dissolveBaseY: heroStates.Knight.y,
+        monochromeOverride: 0,
+      });
+      setCharacterVerdictShaderState(mageChar, {
+        groundClipY: -9999,
+        dissolveProgress: mSmiteDissolvedDead ? 1.0 : 0,
+        dissolveBaseY: heroStates.Mage.y,
+        monochromeOverride: 0,
+      });
+    } else if (kLevY < -0.02 || mLevY < -0.02) {
+      setCharacterVerdictShaderState(knightChar, {
+        groundClipY: walkableHeightAt(heroStates.Knight.x, heroStates.Knight.z) - 0.02,
+        dissolveProgress: 0,
+        dissolveBaseY: heroStates.Knight.y,
+        monochromeOverride: 0,
+      });
+      setCharacterVerdictShaderState(mageChar, {
+        groundClipY: walkableHeightAt(heroStates.Mage.x, heroStates.Mage.z) - 0.02,
+        dissolveProgress: 0,
+        dissolveBaseY: heroStates.Mage.y,
+        monochromeOverride: 0,
+      });
+    } else {
+      setCharacterVerdictShaderState(knightChar, {
+        groundClipY: -9999,
+        dissolveProgress: 0,
+        dissolveBaseY: 0,
+        monochromeOverride: 0,
+      });
+      setCharacterVerdictShaderState(mageChar, {
+        groundClipY: -9999,
+        dissolveProgress: 0,
+        dissolveBaseY: 0,
+        monochromeOverride: 0,
+      });
     }
 
     stepCameraImpact(dt);
   }
 
-  /**
-   * Deterministically positions and poses the Knight, Mage, and East Arena
-   * Skeletons for automated architectural verification screenshots (`setShot`),
-   * hiding all VFX and combat indicators so `shoot-world.mjs` stays strictly
-   * within `tablet <= 48` and `desktop <= 60` draw calls.
-   */
   function poseForShot(shotId, fallbackPlayerPos = null, camera = null) {
     resetCameraImpact();
+    communeChannel.active = false;
+    knightChar.group.visible = true;
+    mageChar.group.visible = true;
+    if (vfxKit.swordVfx?.group) vfxKit.swordVfx.group.visible = true;
+    setCharacterVerdictShaderState(knightChar, {
+      groundClipY: -9999,
+      dissolveProgress: 0,
+      dissolveBaseY: 0,
+      monochromeOverride: 0,
+    });
+    setCharacterVerdictShaderState(mageChar, {
+      groundClipY: -9999,
+      dissolveProgress: 0,
+      dissolveBaseY: 0,
+      monochromeOverride: 0,
+    });
+
     const preset = SHOT_CHARACTER_POSES[shotId] || SHOT_CHARACTER_POSES['day-plaza'];
 
     const kx = preset.knight?.x ?? (fallbackPlayerPos ? fallbackPlayerPos[0] : 1.5);
@@ -2043,7 +2809,6 @@ export async function createCoopPlayerSystem({
     mageChar.mixer.timeScale = 1.0;
     mageChar.poseAt(mClip, mTime);
 
-    // Clear all VFX & hide blade sheath, sanctuary stele, and combat indicators so 0 extra draw calls leak
     sanctuarySteleMesh.visible = false;
     vfxKit.clear();
     vfxKit.swordVfx.setInfusion('none', 0);
@@ -2055,18 +2820,14 @@ export async function createCoopPlayerSystem({
     syncSharedPlayerFromLeader();
   }
 
-  /**
-   * Deterministically stages one of the 8 Stage 5 Gameplay & UI Showcase Plates
-   * (`STAGE5_GAMEPLAY_SHOTS`) for `shoot-stage5-gameplay.mjs`.
-   */
   function poseForGameplayShot(gameplayShotId, camera = null) {
     resetCameraImpact();
-    sanctuarySteleMesh.visible = true;
+    communeChannel.active = false;
+    sanctuarySteleMesh.visible = false;
     const spec =
       STAGE5_GAMEPLAY_SHOTS[gameplayShotId] ||
       STAGE5_GAMEPLAY_SHOTS['01-desktop-act1-sunfire-slash'];
 
-    // 1. Pose Knight & Mage
     const kSpec = spec.knight;
     const kState = heroStates.Knight;
     kState.x = kSpec.x;
@@ -2098,7 +2859,6 @@ export async function createCoopPlayerSystem({
     rootGroup.updateMatrixWorld(true);
     syncSharedPlayerFromLeader();
 
-    // 2. Sync Campaign Act State & Populate Pooled Enemies + Active Combat Indicators
     campaignLoop.applyRemoteStateSync({
       actId: spec.actId || 'act1_arena',
       actTriggered: true,
@@ -2142,9 +2902,9 @@ export async function createCoopPlayerSystem({
             spawned.group.scale.setScalar(eSpec.scale);
           }
           spawned.group.position.set(spawned.x, spawned.y, spawned.z);
-          spawned.group.rotation.y = spawned.yaw;
+          spawned.group.rotation.set(eSpec.rotX ?? 0, spawned.yaw, eSpec.rotZ ?? 0, 'YXZ');
           spawned.group.visible = true;
-          spawned.char.mixer.timeScale = 1.0;
+          spawned.char.mixer.timeScale = eSpec.mixerTimeScale ?? 1.0;
           spawned.char.poseAt(eSpec.clip || 'Idle_Combat', eSpec.time ?? 0.35);
         }
       }
@@ -2152,11 +2912,10 @@ export async function createCoopPlayerSystem({
     enemyManager.rootGroup.visible = true;
     enemyManager.rootGroup.updateMatrixWorld(true);
 
-    // 3. Synchronize Campaign Loop Hero Status, Breathing Blade Sheath & Shared Indicator Meshes
     campaignLoop.combatHeroes.Knight.hp = kSpec.hp ?? 220;
     campaignLoop.combatHeroes.Knight.shield = kSpec.shield ?? 0;
     campaignLoop.combatHeroes.Knight.shieldTimer = kSpec.shield ? 8.0 : 0;
-    campaignLoop.combatHeroes.Mage.hp = mSpec.hp ?? 180;
+    campaignLoop.combatHeroes.Mage.hp = mSpec.hp ?? HERO_STATS.Mage.maxHp;
     campaignLoop.combatHeroes.Mage.shield = mSpec.shield ?? 0;
     campaignLoop.combatHeroes.Mage.shieldTimer = mSpec.shield ? 8.0 : 0;
 
@@ -2164,16 +2923,15 @@ export async function createCoopPlayerSystem({
       Object.assign(campaignLoop.combatHeroes.Mage.spellCooldowns, spec.spellCooldowns);
     }
 
-    campaignLoop.setKnightBreathing(spec.breathingStyle || 'none', spec.breathingTimer ?? 12.0);
+    campaignLoop.setKnightBreathing(spec.breathingStyle || 'none', spec.breathingTimer ?? 13.0);
     campaignLoop.tetherSurge.active = Boolean(spec.breathingStyle && spec.breathingStyle !== 'none');
     campaignLoop.tetherSurge.style = spec.breathingStyle || 'solar';
     campaignLoop.tetherSurge.progress = 0.52;
 
     campaignLoop.setIndicatorsHiddenForShot(false, heroStates);
 
-    // 4. Pose Stage 4 Opaque VFX System at Deterministic Apex Frame
     vfxKit.clear();
-    vfxKit.swordVfx.setInfusion(spec.breathingStyle || 'none', spec.breathingTimer ?? 12.0);
+    vfxKit.swordVfx.setInfusion(spec.breathingStyle || 'none', spec.breathingTimer ?? 13.0);
 
     if (spec.vfx) {
       const v = spec.vfx;
@@ -2199,7 +2957,7 @@ export async function createCoopPlayerSystem({
         vfxKit.cinderFall.cast(
           { x: v.origin[0], y: oy, z: v.origin[2] },
           { x: v.dir[0], y: 0, z: v.dir[2] },
-          { range: v.range ?? 14.0, seed: 1.0 }
+          { range: v.range ?? 14.0, distance: v.range ?? 14.0, seed: 1.0 }
         );
         vfxKit.cinderFall.seek(v.time ?? 0.76);
       } else if (v.system === 'stormLance') {
@@ -2218,8 +2976,57 @@ export async function createCoopPlayerSystem({
           { range: v.range ?? 14.5, seed: 1.0 }
         );
         vfxKit.frostLance.seek(v.time ?? 0.72);
+      } else if (v.system === 'artoriousVfx' && vfxKit.artoriousVfx) {
+        const orig = v.origin
+          ? { x: v.origin[0], y: walkableHeightAt(v.origin[0], v.origin[2]), z: v.origin[2] }
+          : kState;
+        const part = v.partnerPos
+          ? {
+              x: v.partnerPos[0],
+              y: walkableHeightAt(v.partnerPos[0], v.partnerPos[2]),
+              z: v.partnerPos[2],
+            }
+          : mState;
+        if (v.mode === 'channel') {
+          vfxKit.artoriousVfx.startChannel(orig, part, { camera });
+        } else if (v.mode === 'smite') {
+          vfxKit.artoriousVfx.triggerSmite(orig, part, { camera });
+        } else {
+          vfxKit.artoriousVfx.triggerBlessing(orig, part, { camera });
+        }
+        vfxKit.artoriousVfx.seek(v.time ?? 0.5, { camera });
       }
     }
+
+    const vfx = vfxKit.artoriousVfx;
+    const kLevY = vfx?.active ? vfx.getHeroLevitationOffset('Knight') : 0.0;
+    const mLevY = vfx?.active ? vfx.getHeroLevitationOffset('Mage') : 0.0;
+    knightChar.group.position.y = kState.y + kLevY;
+    mageChar.group.position.y = mState.y + mLevY;
+
+    const isUnderground = Boolean(
+      kSpec.undergroundHidden ||
+        mSpec.undergroundHidden ||
+        vfx?.isHeroUndergroundHidden?.()
+    );
+    knightChar.group.visible = !isUnderground;
+    mageChar.group.visible = !isUnderground;
+    if (vfxKit.swordVfx?.group) {
+      vfxKit.swordVfx.group.visible = !isUnderground;
+    }
+
+    setCharacterVerdictShaderState(knightChar, {
+      groundClipY: kLevY < -0.02 ? kState.y - 0.02 : -9999,
+      dissolveProgress: kSpec.dissolveProgress ?? 0,
+      dissolveBaseY: kState.y,
+      monochromeOverride: kSpec.monochromeOverride ?? 0,
+    });
+    setCharacterVerdictShaderState(mageChar, {
+      groundClipY: mLevY < -0.02 ? mState.y - 0.02 : -9999,
+      dissolveProgress: mSpec.dissolveProgress ?? 0,
+      dissolveBaseY: mState.y,
+      monochromeOverride: mSpec.monochromeOverride ?? 0,
+    });
 
     return spec;
   }
@@ -2240,17 +3047,25 @@ export async function createCoopPlayerSystem({
     campaignLoop,
     combatSfx,
     coopClient,
+    communeChannel,
+    actionAim,
+    aimState: actionAim.aimState,
     cameraImpact,
     triggerCameraImpulse,
     getCameraImpactOffset,
     resetCameraImpact,
     launchMageFrostLance,
     triggerSpell,
+    toggleElement,
+    startSkillAim,
+    updateSkillAim,
+    releaseSkillAim,
     heroStates,
     player,
     triggerAction,
     setPraying,
     getHeroDistance,
+    getNearestInscriptionStone,
     isNearAltarStele,
     startCommuneChannel,
     setCommuneSuspense,

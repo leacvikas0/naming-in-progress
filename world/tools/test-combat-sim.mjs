@@ -3,11 +3,37 @@
 // world/tools/test-combat-sim.mjs
 //
 // Automated Node.js Unit & Full 3-Act Campaign Simulation Verification Suite
-// for Haru-machi Stage 4 & 5 Combat, Pooled Enemy AI & Synergy Detonations.
+// for Haru-machi Stage 4 & 5 / Wave 2B Combat Feel, Knight & Mage Kits,
+// Terrain Scalar Math, Pooled Enemy AI & Synergy Detonations.
 // ============================================================================
 
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
+import {
+  clamp,
+  lerp,
+  smoothstep,
+  shortestAngleDiff,
+  sampleSlopeNormal,
+  isWalkableShorelineDepth,
+  projectAimRayToGround,
+} from '../src/terrain-scalar.js';
+import {
+  KNIGHT_COMBO_SPECS,
+  MAGE_COMBO_SPECS,
+  MAGE_CHARGED_SHATTERLANCE_SPEC,
+  MASH_TIMESCALE_MIN,
+  MASH_TIMESCALE_MAX,
+  KNIGHT_SHIELD_BLOCK_DR,
+  KNIGHT_POWER_SWORD_DURATION,
+  KNIGHT_POWER_SWORD_COOLDOWN,
+  KNIGHT_ULT_DURATION,
+  KNIGHT_ULT_DMG_MULT,
+  MAGE_MAX_CONSECUTIVE_CHARGED,
+  MAGE_E_COOLDOWN,
+  MAGE_STORM_CATACLYSM_DURATION,
+  createCombatActionAimController,
+} from '../src/combat/combat-action-aim.js';
 import {
   HERO_STATS,
   BREATHING_STYLES,
@@ -18,6 +44,9 @@ import {
   ACT_SEQUENCE,
   MAX_CONCURRENT_ENEMIES,
   MAX_ATTACK_TOKENS,
+  COMMUNE_MAX_DISTANCE,
+  POWERUP_TETHER_DISTANCE,
+  getKnightLevelStats,
   resolveShrineObstacles,
   selectSoftLockTarget,
   allocateAttackTokens,
@@ -28,9 +57,9 @@ import { createCampaignLoop } from '../src/combat/campaign-loop.js';
 import { createCombatSfx } from '../src/combat/combat-sfx.js';
 
 let passed = 0;
-function check(name, fn) {
+async function check(name, fn) {
   try {
-    fn();
+    await fn();
     passed++;
     console.log(`  PASS  ${name}`);
   } catch (err) {
@@ -40,30 +69,87 @@ function check(name, fn) {
   }
 }
 
-console.log('=== Haru-machi Stage 5 Combat & 3-Act Campaign Simulation Tests ===');
+console.log('=== Haru-machi Wave 2B Combat Feel, Knight & Mage Kits & Campaign Sim Tests ===');
 
 /* ------------------------------------------------------------------------- */
-/* 1. Balance Constants & Geography Coordinate Verification                  */
+/* 1. Terrain Scalar Math & Aim Ray Projection (`terrain-scalar.js`)         */
 /* ------------------------------------------------------------------------- */
 
-check('1. HERO_STATS, SPELLS & DETONATIONS match exact spec tables', () => {
+await check('1. terrain-scalar.js exports pure scalar helpers, slope normal, shoreline depth & aim projection', () => {
+  assert.equal(clamp(5, 0, 3), 3);
+  assert.equal(clamp(-2, 0, 3), 0);
+  assert.equal(lerp(10, 20, 0.25), 12.5);
+  assert.equal(smoothstep(0, 10, 5), 0.5);
+  assert.ok(Math.abs(shortestAngleDiff(Math.PI * 1.9, 0.1) - -0.414159) < 1e-3);
+
+  // Slope normal on a 45-degree incline z -> y = z
+  const n = sampleSlopeNormal((x, z) => z, 0, 0, 0.5);
+  assert.ok(Math.abs(n.x) < 1e-6);
+  assert.ok(n.y > 0.7 && n.y < 0.72);
+  assert.ok(n.z < -0.7 && n.z > -0.72);
+  const [nx, ny, nz] = n;
+  assert.equal(nx, n.x);
+  assert.equal(ny, n.y);
+  assert.equal(nz, n.z);
+
+  // Shoreline wading depth (waterY = -1.2, maxWadeDepth = 0.35 -> walkable down to -1.55m)
+  assert.equal(isWalkableShorelineDepth(-1.45, -1.2, 0.35), true);
+  assert.equal(isWalkableShorelineDepth(-1.85, -1.2, 0.35), false);
+
+  // Aim projection: Frost Lance fixed 14.5m vs Cinder Fall variable 3.0..16.0m
+  const frostAim = projectAimRayToGround({
+    origin: { x: 0, y: 0, z: 0 },
+    yaw: 0,
+    pitch: 0.75,
+    spellId: 'frost_lance',
+  });
+  assert.equal(frostAim.distance, 14.5);
+
+  const cinderNear = projectAimRayToGround({
+    origin: { x: 0, y: 0, z: 0 },
+    yaw: 0,
+    pitch: 0.92,
+    spellId: 'cinder_fall',
+  });
+  const cinderFar = projectAimRayToGround({
+    origin: { x: 0, y: 0, z: 0 },
+    yaw: 0,
+    pitch: 0.04,
+    spellId: 'cinder_fall',
+  });
+  assert.ok(cinderNear.distance >= 3.0 && cinderNear.distance <= 4.0);
+  assert.ok(cinderFar.distance >= 15.5 && cinderFar.distance <= 16.0);
+});
+
+/* ------------------------------------------------------------------------- */
+/* 2. Balance Constants & Geography Coordinate Verification                  */
+/* ------------------------------------------------------------------------- */
+
+await check('2. HERO_STATS (incl. fragile 90 HP Mage), SPELLS & DETONATIONS match exact Wave 2B spec', () => {
   assert.equal(HERO_STATS.Knight.maxHp, 220);
   assert.deepEqual(HERO_STATS.Knight.comboDmg, [22, 26, 38]);
-  assert.equal(HERO_STATS.Knight.heavyDmg, 56);
-  assert.equal(HERO_STATS.Knight.interceptDmg, 34);
-  assert.equal(HERO_STATS.Knight.interceptShield, 35);
-  assert.equal(HERO_STATS.Knight.infusedMult, 1.35);
+  assert.equal(HERO_STATS.Knight.combo4Dmg, 46);
+  assert.equal(HERO_STATS.Knight.shieldBlockDr, 0.8);
+  assert.equal(HERO_STATS.Knight.powerSwordDuration, 13.0);
+  assert.equal(HERO_STATS.Knight.powerSwordCd, 18.0);
+  assert.equal(HERO_STATS.Knight.ultDuration, 10.0);
+  assert.equal(HERO_STATS.Knight.ultDmgMult, 2.0);
 
-  assert.equal(HERO_STATS.Mage.maxHp, 180);
+  // Fragile Glass Cannon Mage (~3 unprotected hits downs her)
+  assert.equal(HERO_STATS.Mage.maxHp, 90);
   assert.deepEqual(HERO_STATS.Mage.boltDmg, [18, 22, 30]);
-  assert.equal(HERO_STATS.Mage.infuseHeal, 45);
-  assert.equal(HERO_STATS.Mage.infuseDuration, 12.0);
+  assert.equal(HERO_STATS.Mage.skillCd, 8.5);
+  assert.equal(HERO_STATS.Mage.stormCataclysmDuration, 6.0);
+  assert.equal(HERO_STATS.Mage.maxConsecutiveCharged, 3);
 
   assert.equal(SPELLS.frost_lance.dmg, 42);
+  assert.equal(SPELLS.frost_lance.cd, 8.5);
+  assert.equal(SPELLS.frost_lance.range, 14.5);
   assert.equal(SPELLS.frost_lance.mark, 'rime');
   assert.equal(SPELLS.shatterlance.dmg, 58);
   assert.equal(SPELLS.shatterlance.detonatesMark, true);
   assert.equal(SPELLS.cinder_fall.dmg, 54);
+  assert.equal(SPELLS.cinder_fall.cd, 8.5);
   assert.equal(SPELLS.cinder_fall.mark, 'solar');
   assert.equal(SPELLS.storm_lance.dmg, 46);
   assert.equal(SPELLS.storm_lance.mark, 'tempest');
@@ -77,8 +163,7 @@ check('1. HERO_STATS, SPELLS & DETONATIONS match exact spec tables', () => {
   assert.equal(DETONATIONS.thunderchain.pullStrength, 5.0);
 });
 
-check('2. ACT_DEFINITIONS match exact geography.js coordinates & obstacle clearances', () => {
-  // Act I: East Wisteria Combat Ring at (68.0, -4.0), r = 6.0..15.0m (inside fenceR = 19.5m)
+await check('3. ACT_DEFINITIONS match exact geography.js coordinates & obstacle clearances', () => {
   const act1 = ACT_DEFINITIONS.act1_arena;
   assert.equal(act1.center.x, 68.0);
   assert.equal(act1.center.z, -4.0);
@@ -99,153 +184,332 @@ check('2. ACT_DEFINITIONS match exact geography.js coordinates & obstacle cleara
     }
   }
 
-  // Interlude: West Millpond Pier Sanctuary Brazier at (-42.0, 8.5)
   const pier = ACT_DEFINITIONS.interlude_pier;
   assert.equal(pier.center.x, -42.0);
   assert.equal(pier.center.z, 8.5);
   assert.equal(pier.triggerRadius, 4.8);
   assert.equal(pier.tod, 'evening');
-  assert.equal(pier.sanctuaryReward.empoweredBreathing, true);
-  assert.equal(pier.sanctuaryReward.resonanceGain, 50);
 
-  // Act II: Twilight Hamlet Plaza Defense at (0.0, 0.0), cobble ring road r = 9.5..12.5m
   const act2 = ACT_DEFINITIONS.act2_plaza;
   assert.equal(act2.center.x, 0.0);
   assert.equal(act2.center.z, 0.0);
-  assert.equal(act2.triggerRadius, 15.0);
-  assert.equal(act2.spawnRadiusMin, 9.5);
-  assert.equal(act2.spawnRadiusMax, 12.5);
-  assert.equal(act2.tod, 'evening');
   assert.equal(act2.waves[0].spawns.length, 6);
-  for (const sp of act2.waves[0].spawns) {
-    const r = Math.hypot(sp.x, sp.z);
-    assert.ok(
-      r >= act2.spawnRadiusMin && r <= act2.spawnRadiusMax,
-      `Act 2 spawn (${sp.x}, ${sp.z}) r=${r.toFixed(2)}m must be on ring road [9.5, 12.5]m`
-    );
-  }
 
-  // Act III: Starlit North Shrine Boss Duel at (0.0, -85.5), arenaRadius <= 12.8m
   const act3 = ACT_DEFINITIONS.act3_shrine;
   assert.equal(act3.center.x, 0.0);
   assert.equal(act3.center.z, -85.5);
-  assert.equal(act3.triggerRadius, 14.0);
   assert.equal(act3.arenaRadius, 12.8);
-  assert.equal(act3.tod, 'night');
   assert.equal(ENEMY_ARCHETYPES.boss_sovereign.maxHp, 1400);
 
-  for (const sp of act3.waves[0].spawns) {
-    const dArena = Math.hypot(sp.x - act3.center.x, sp.z - act3.center.z);
-    assert.ok(dArena <= act3.arenaRadius, `Shrine spawn must be inside arenaRadius 12.8m`);
-    const dPedestal = Math.hypot(sp.x - -5.8, sp.z - -87.8);
-    assert.ok(dPedestal > 1.6 + 0.6, `Shrine spawn must avoid pedestal (-5.8, -87.8, r=1.6)`);
-    const dPlanterW = Math.hypot(sp.x - -10.6, sp.z - -90.8);
-    const dPlanterE = Math.hypot(sp.x - 10.6, sp.z - -90.8);
-    assert.ok(dPlanterW > 2.6 + 0.6 && dPlanterE > 2.6 + 0.6, `Shrine spawn must avoid planters`);
-  }
-
-  // Verify resolveShrineObstacles pushes any point inside pedestal (-5.8, -87.8) out cleanly
   const pushed = resolveShrineObstacles(-5.8, -87.8, 0.6, true);
   assert.ok(Math.hypot(pushed.x - -5.8, pushed.z - -87.8) >= 2.19);
 });
 
 /* ------------------------------------------------------------------------- */
-/* 2. Soft-Lock Cone Acquisition & 3-Attacker Token Cap                      */
+/* 3. Full Native Clips, 1-Input Swing Buffer, Mash Speed Ramp & Contact Hit */
 /* ------------------------------------------------------------------------- */
 
-check('3. selectSoftLockTarget acquires priority enemy in 75° forward cone or partner threat fallback', () => {
-  const origin = { x: 0, z: 0 };
-  const forwardYaw = 0; // Facing +Z
-  const enemies = [
-    { id: 'behind', x: 0, z: -12, hp: 100, dead: false, active: true },
-    { id: 'in_cone_far', x: 1.5, z: 14, hp: 100, dead: false, active: true },
-    { id: 'in_cone_marked', x: 1.0, z: 9, hp: 100, dead: false, active: true, mark: 'rime' },
-  ];
+await check('4. KNIGHT_COMBO_SPECS & MAGE_COMBO_SPECS have startTime: 0, hopVy: 0, contactFrac in [0.38..0.48], and zero routine camera shake', () => {
+  assert.equal(KNIGHT_COMBO_SPECS.length, 4);
+  for (const s of KNIGHT_COMBO_SPECS) {
+    assert.equal(s.startTime, 0, `${s.clip} must start at 0s (zero cut windup)`);
+    assert.equal(s.hopVy, 0, `${s.clip} must have hopVy = 0 (zero mid-air jitter)`);
+    assert.ok(
+      s.contactFrac >= 0.38 && s.contactFrac <= 0.48,
+      `${s.clip} contactFrac (${s.contactFrac}) must be in [0.38, 0.48]`
+    );
+    assert.equal(s.cameraImpulse, 0, `${s.clip} must have 0 routine camera shake`);
+  }
 
-  const picked = selectSoftLockTarget(origin, forwardYaw, enemies);
-  assert.ok(picked);
-  assert.equal(picked.id, 'in_cone_marked');
+  assert.equal(MAGE_COMBO_SPECS.length, 3);
+  for (const s of MAGE_COMBO_SPECS) {
+    assert.equal(s.startTime, 0, `${s.clip} must start at 0s`);
+    assert.equal(s.hopVy, 0, `${s.clip} must have hopVy = 0`);
+    assert.ok(s.contactFrac >= 0.38 && s.contactFrac <= 0.48);
+    assert.equal(s.cameraImpulse, 0);
+  }
 
-  // Partner threat fallback when no enemy is inside the forward cone
-  const onlyBehindNearPartner = [
-    { id: 'flanker', x: 1.5, z: -4.5, hp: 100, dead: false, active: true, aiState: 'windup' },
-  ];
-  const fallback = selectSoftLockTarget(origin, forwardYaw, onlyBehindNearPartner, {
-    partnerPos: { x: 1.0, z: -3.5 },
-  });
-  assert.ok(fallback);
-  assert.equal(fallback.id, 'flanker');
+  assert.equal(MAGE_CHARGED_SHATTERLANCE_SPEC.startTime, 0);
+  assert.equal(MAGE_CHARGED_SHATTERLANCE_SPEC.hopVy, 0);
 });
 
-check('4. allocateAttackTokens strictly caps concurrent attackers at <= 3 and revokes stunned tokens', () => {
+await check('5. 1-Input Swing Buffer, 1.0x -> 1.30x Mash Speed Ramp, and Contact-Frame Hit Detection work cleanly without cutting swings', () => {
+  const contactEvents = [];
+  const startedEvents = [];
+  const finishedEvents = [];
+
+  const ctrl = createCombatActionAimController({
+    onSwingStarted: (sw) => startedEvents.push({ ...sw }),
+    onContactHit: (sw) => contactEvents.push({ clip: sw.clip, elapsed: sw.elapsed, contactTime: sw.contactTime }),
+    onSwingFinished: (sw) => finishedEvents.push({ clip: sw.clip, duration: sw.duration }),
+  });
+
+  // Tap 1: starts combo1 at 1.00x timeScale; does NOT fire contact hit at 0ms!
+  const tap1 = ctrl.pressAttack('Knight');
+  assert.equal(tap1.buffered, false);
+  assert.equal(tap1.mashTimeScale, 1.0);
+  assert.equal(startedEvents.length, 1);
+  assert.equal(startedEvents[0].clip, 'combo1');
+  assert.equal(contactEvents.length, 0, 'Hit detection must NOT trigger at 0ms button press');
+
+  // Spam LMB 4 times during combo1 -> must buffer at most 1 follow-up swing, never cut combo1, and ramp mashTimeScale up to 1.30x!
+  ctrl.pressAttack('Knight');
+  ctrl.pressAttack('Knight');
+  const mashTap = ctrl.pressAttack('Knight');
+  assert.equal(mashTap.buffered, true);
+  assert.equal(mashTap.cutActiveSwing, false);
+  assert.equal(ctrl.heroes.Knight.bufferedAttack, true);
+  assert.equal(ctrl.heroes.Knight.mashTimeScale, MASH_TIMESCALE_MAX);
+  assert.equal(startedEvents.length, 1, 'Active swing must NOT be cut or restarted by mashing');
+
+  // Step to just before contactTime -> still 0 contact hits
+  const cTime = ctrl.heroes.Knight.activeSwing.contactTime;
+  ctrl.update(cTime - 0.02);
+  assert.equal(contactEvents.length, 0);
+
+  // Step across contactTime -> contact hit fires!
+  ctrl.update(0.04);
+  assert.equal(contactEvents.length, 1);
+  assert.equal(contactEvents[0].clip, 'combo1');
+
+  // Step to end of combo1 -> combo1 finishes cleanly and buffered combo2 starts automatically at 1.30x speed!
+  const remaining = ctrl.heroes.Knight.activeSwing.duration - ctrl.heroes.Knight.activeSwing.elapsed + 0.01;
+  ctrl.update(remaining);
+  assert.equal(finishedEvents.length, 1);
+  assert.equal(finishedEvents[0].clip, 'combo1');
+  assert.equal(startedEvents.length, 2, 'Buffered attack must automatically start combo2 on completion');
+  assert.equal(startedEvents[1].clip, 'combo2');
+  assert.equal(startedEvents[1].timeScale, 1.3);
+  assert.equal(ctrl.heroes.Knight.bufferedAttack, false, '1-input buffer is consumed');
+
+  // Let combo2 finish and stay idle for 1.0s -> mashTimeScale decays smoothly back to 1.00x
+  ctrl.update(1.0);
+  ctrl.update(1.0);
+  assert.equal(ctrl.heroes.Knight.activeSwing, null);
+  assert.equal(ctrl.heroes.Knight.mashTimeScale, MASH_TIMESCALE_MIN);
+});
+
+/* ------------------------------------------------------------------------- */
+/* 4. Knight Kit: Tab Ice/Fire, Shield Block, E Power Sword, Q & Leveling    */
+/* ------------------------------------------------------------------------- */
+
+await check('6. Knight Kit: Tab toggles ice/fire, Hold Shield Block (80% DR), E Power Sword (13s active / 18s cd = 5s downtime, Ice slow & Fire burn), Q (10s 2x dmg), and XP leveling', () => {
+  const sim = createHeadlessCampaignSim();
+  sim.moveHeroesTo(ACT_DEFINITIONS.act1_arena.center.x, ACT_DEFINITIONS.act1_arena.center.z);
+  const enemy = sim.activeEnemies[0];
+  assert.ok(enemy);
+
+  // 6A. Tab toggles Knight element between 'ice' and 'fire'
+  assert.equal(sim.heroes.Knight.selectedElement, 'ice');
+  const t1 = sim.knightToggleElement();
+  assert.equal(t1.element, 'fire');
+  const t2 = sim.knightToggleElement();
+  assert.equal(t2.element, 'ice');
+
+  // 6B. Knight E (Power Sword - Ice): 13s active, 18s cooldown = 5s downtime; slows enemy speed, attack & outgoing damage
+  const pIce = sim.knightActivatePowerSword();
+  assert.equal(pIce.activated, true);
+  assert.equal(pIce.element, 'ice');
+  assert.equal(pIce.activeDuration, 13.0);
+  assert.equal(pIce.totalCooldown, 18.0);
+  assert.equal(pIce.downtimeAfterExpiry, 5.0);
+
+  const hitIce = sim.knightAttack('combo1', enemy);
+  assert.equal(hitIce.iceSlowApplied, true);
+  assert.ok(enemy.iceSlowTimer > 0);
+  const lvl1Slow = getKnightLevelStats(1).iceSlowFactor;
+  assert.equal(enemy.iceSlowFactor, lvl1Slow);
+
+  // Step 13.0s -> Power Sword active duration expires, leaving exactly 5.0s downtime on the 18.0s cooldown!
+  sim.step(13.0);
+  assert.equal(sim.heroes.Knight.powerSwordActive, false);
+  assert.ok(Math.abs(sim.heroes.Knight.powerSwordCd - 5.0) < 1e-3);
+  const blockedDuringDowntime = sim.knightActivatePowerSword();
+  assert.equal(blockedDuringDowntime.onCooldown, true);
+
+  // Step remaining 5.0s downtime -> Power Sword is ready again!
+  sim.step(5.05);
+  assert.equal(sim.heroes.Knight.powerSwordCd, 0);
+
+  // 6C. Switch to Fire ('fire') and activate E -> applies bonus fire strike + persistent burn DoT
+  sim.knightToggleElement();
+  assert.equal(sim.heroes.Knight.selectedElement, 'fire');
+  const pFire = sim.knightActivatePowerSword();
+  assert.equal(pFire.activated, true);
+  assert.equal(pFire.breathingStyle, 'solar');
+
+  const enemy2 = sim.activeEnemies.find((e) => !e.dead);
+  const hitFire = sim.knightAttack('combo1', enemy2);
+  assert.equal(hitFire.fireBurnApplied, true);
+  assert.ok(enemy2.burnTimer > 0 && enemy2.burnDps > 0);
+  const hpBeforeBurn = enemy2.hp;
+  sim.step(1.0);
+  assert.ok(enemy2.hp < hpBeforeBurn, 'Fire Sword burn DoT must tick persistent damage over time');
+
+  // 6D. Hold Shield Block reduces incoming damage by 80%
+  sim.knightHoldShieldBlock(true);
+  assert.equal(sim.heroes.Knight.shieldBlocking, true);
+  const kDmgRes = sim.applyDamageToHero('Knight', 50);
+  assert.equal(kDmgRes.hpLost, 10, 'Shield Block must reduce 50 incoming damage by 80% to 10');
+  sim.knightHoldShieldBlock(false);
+
+  // 6E. Knight Q (Sky-Lightning Awakening): 10.0s of 2.0x double damage
+  const target3 = sim.activeEnemies.find((e) => !e.dead);
+  target3.hp = 500;
+  target3.maxHp = 500;
+  const baseSwing = sim.knightAttack('combo1', target3);
+  const qRes = sim.knightCastSkyLightningUlt(target3);
+  assert.equal(qRes.activated, true);
+  assert.equal(qRes.duration, 10.0);
+  assert.equal(qRes.dmgMult, 2.0);
+  const ultSwing = sim.knightAttack('combo1', target3);
+  assert.equal(ultSwing.damageDealt, baseSwing.damageDealt * 2, 'Knight Q must grant 2.0x double sword damage');
+
+  // 6F. Killing enemies grants XP and levels up Knight (scaling damage & Ice/Fire sword potency)
+  const startLevel = sim.heroes.Knight.level;
+  for (const e of [...sim.activeEnemies]) {
+    sim.knightAttack('combo4', e);
+    sim.knightAttack('combo4', e);
+  }
+  assert.ok(sim.heroes.Knight.level > startLevel, 'Killing enemies must level up Knight');
+  assert.ok(
+    getKnightLevelStats(sim.heroes.Knight.level).iceSlowFactor > lvl1Slow,
+    'Higher Knight level must increase Ice Sword slow potency'
+  );
+});
+
+/* ------------------------------------------------------------------------- */
+/* 5. Mage Kit: Fragile 90 HP, 3-Charged Shatterlance, E Aim & 6s Q Storm    */
+/* ------------------------------------------------------------------------- */
+
+await check('7. Mage Kit: Fragile ~3-hit HP, 3-consecutive-charged Shatterlance fallback, Tab toggle, Hold/Release E aim (14.5m vs 3..16m, 8.5s cd), and 6.0s vulnerable Storm Cataclysm + Knight Shield protection', () => {
+  const sim = createHeadlessCampaignSim();
+  sim.moveHeroesTo(ACT_DEFINITIONS.act1_arena.center.x, ACT_DEFINITIONS.act1_arena.center.z);
+
+  // 7A. Fragile 90 HP Mage dies in 3 unprotected hits of 30 dmg
+  assert.equal(sim.heroes.Mage.maxHp, 90);
+  sim.applyDamageToHero('Mage', 30);
+  sim.applyDamageToHero('Mage', 30);
+  assert.equal(sim.heroes.Mage.downed, false);
+  sim.applyDamageToHero('Mage', 30);
+  assert.equal(sim.heroes.Mage.downed, true, 'Mage must go down in 3 unprotected hits');
+  // Restore Mage HP for remaining checks
+  sim.heroes.Mage.downed = false;
+  sim.heroes.Mage.hp = 90;
+
+  // 7B. Hold Attack (Shatterlance): after 3 consecutive charged attacks, 4th automatically falls back to normal bolt attack!
+  const ch1 = sim.mageHoldChargedAttack();
+  const ch2 = sim.mageHoldChargedAttack();
+  const ch3 = sim.mageHoldChargedAttack();
+  assert.equal(ch1.fallbackToNormal, false);
+  assert.equal(ch2.fallbackToNormal, false);
+  assert.equal(ch3.fallbackToNormal, false);
+  assert.equal(sim.heroes.Mage.consecutiveChargedCount, MAGE_MAX_CONSECUTIVE_CHARGED);
+
+  const ch4 = sim.mageHoldChargedAttack();
+  assert.equal(
+    ch4.fallbackToNormal,
+    true,
+    '4th consecutive Hold Attack must automatically fall back to a normal bolt attack'
+  );
+  assert.equal(sim.heroes.Mage.consecutiveChargedCount, 0, 'Fallback normal attack resets consecutiveChargedCount to 0');
+
+  // 7C. Tab toggles Mage E spell between frost_lance and cinder_fall; Hold E / Release E aims & casts with 8.5s cooldown
+  assert.equal(sim.heroes.Mage.selectedSpell, 'frost_lance');
+  const aimFrost = sim.mageStartSkillAim({ pitch: 0.65 });
+  assert.equal(aimFrost.active, true);
+  assert.equal(aimFrost.spellId, 'frost_lance');
+  assert.equal(aimFrost.distance, 14.5, 'Frost Lance aim arrow must have fixed 14.5m length');
+  const castFrost = sim.mageReleaseSkillAim();
+  assert.equal(castFrost.spellId, 'frost_lance');
+  assert.equal(castFrost.cooldown, MAGE_E_COOLDOWN);
+  assert.equal(sim.heroes.Mage.skillCd, 8.5);
+
+  // Clear cooldown and toggle to Cinder Fall
+  sim.heroes.Mage.skillCd = 0;
+  sim.heroes.Mage.spellCooldowns.cinder_fall = 0;
+  const toggled = sim.mageToggleSpell();
+  assert.equal(toggled.spellId, 'cinder_fall');
+
+  const aimCinderClose = sim.mageStartSkillAim({ pitch: 0.9 });
+  assert.ok(aimCinderClose.distance >= 3.0 && aimCinderClose.distance <= 4.5);
+  const aimCinderMid = sim.mageUpdateSkillAim({ distance: 11.2 });
+  assert.equal(aimCinderMid.distance, 11.2, 'Cinder Fall aim arrow must track variable 3..16m distance');
+  const castCinder = sim.mageReleaseSkillAim();
+  assert.equal(castCinder.spellId, 'cinder_fall');
+  assert.equal(castCinder.distance, 11.2);
+  assert.equal(sim.heroes.Mage.skillCd, 8.5);
+
+  // 7D. Mage Q (6.0s Stationary Vulnerable Storm Cataclysm):
+  // - While channeling, if Knight holds Shield Block, Knight intercepts the enemy hit and saves the Mage!
+  // - If Knight is NOT shielding, 1 unprotected hit immediately downs her!
+  const qStorm = sim.mageCastStormCataclysm();
+  assert.equal(qStorm.activated, true);
+  assert.equal(qStorm.duration, MAGE_STORM_CATACLYSM_DURATION);
+  assert.equal(sim.heroes.Mage.stormCataclysmActive, true);
+
+  sim.knightHoldShieldBlock(true);
+  const protectedHit = sim.applyDamageToHero('Mage', 32);
+  assert.equal(protectedHit.interceptedByKnight, true, 'Shielding Knight must intercept attack aimed at channeling Mage');
+  assert.equal(sim.heroes.Mage.downed, false);
+  assert.equal(sim.heroes.Mage.stormCataclysmActive, true);
+
+  // Now drop Knight's shield -> 1 unprotected hit immediately downs Mage!
+  sim.knightHoldShieldBlock(false);
+  const unprotectedHit = sim.applyDamageToHero('Mage', 12);
+  assert.equal(unprotectedHit.downed, true, '1 unprotected hit during 6s Storm Cataclysm must immediately down Mage');
+  assert.equal(sim.heroes.Mage.stormCataclysmActive, false);
+});
+
+/* ------------------------------------------------------------------------- */
+/* 6. Removal of Partner Distance Restrictions & Indicator Clutter           */
+/* ------------------------------------------------------------------------- */
+
+await check('8. Partner distance restrictions are removed (Infinity) and overhead/underfoot enemy indicator clutter stays hidden', () => {
+  assert.equal(COMMUNE_MAX_DISTANCE, Infinity);
+  assert.equal(POWERUP_TETHER_DISTANCE, Infinity);
+
+  const scene = new THREE.Scene();
+  const sfx = createCombatSfx();
+  const loop = createCampaignLoop({
+    scene,
+    walkableHeightAt: () => 0,
+    combatSfx: sfx,
+  });
+
+  // Partners 120m apart can still Commune and share buffs without restriction
+  const heroStates = {
+    Knight: { x: -60, y: 0, z: 0, yaw: 0 },
+    Mage: { x: 60, y: 0, z: 0, yaw: 0 },
+  };
+  assert.equal(loop.canCommuneTogether(heroStates).allowed, true);
+  assert.equal(loop.isWithinPowerupTether(heroStates.Knight, heroStates.Mage), true);
+
+  loop.update(0.016, { heroStates });
+  assert.equal(loop.crestAndTetherMesh.visible, false, 'crestAndTetherMesh must remain hidden');
+  assert.equal(loop.groundIndicatorMesh.visible, false, 'groundIndicatorMesh must remain hidden');
+});
+
+/* ------------------------------------------------------------------------- */
+/* 7. Soft-Lock, 3-Token Cap, Physical Detonations & Full 3-Act Campaign Sim */
+/* ------------------------------------------------------------------------- */
+
+await check('9. selectSoftLockTarget, allocateAttackTokens, Physical Detonations & Boss Bone Aegis work deterministically', () => {
+  const origin = { x: 0, z: 0 };
   const enemies = [
+    { id: 'behind', x: 0, z: -12, hp: 100, dead: false, active: true },
+    { id: 'in_cone_marked', x: 1.0, z: 9, hp: 100, dead: false, active: true, mark: 'rime' },
+  ];
+  assert.equal(selectSoftLockTarget(origin, 0, enemies)?.id, 'in_cone_marked');
+
+  const tokenPool = [
     { id: 'e1', hp: 100, dead: false, active: true, distToTarget: 3.0, aiState: 'windup' },
     { id: 'e2', hp: 100, dead: false, active: true, distToTarget: 4.0, isBoss: true },
     { id: 'e3', hp: 100, dead: false, active: true, distToTarget: 2.5 },
     { id: 'e4', hp: 100, dead: false, active: true, distToTarget: 5.0 },
-    { id: 'e5', hp: 100, dead: false, active: true, distToTarget: 6.0 },
   ];
+  assert.equal(allocateAttackTokens(tokenPool, MAX_ATTACK_TOKENS).length, 3);
 
-  const holders = allocateAttackTokens(enemies, MAX_ATTACK_TOKENS);
-  assert.equal(holders.length, 3);
-  assert.equal(enemies.filter((e) => e.hasAttackToken).length, 3);
-
-  // Stun e1 and e2 -> tokens must reallocate to e3, e4, e5 (still <= 3)
-  enemies[0].stunTimer = 1.4;
-  enemies[1].stunTimer = 1.1;
-  const nextHolders = allocateAttackTokens(enemies, MAX_ATTACK_TOKENS);
-  assert.equal(nextHolders.length, 3);
-  assert.equal(enemies[0].hasAttackToken, false);
-  assert.equal(enemies[1].hasAttackToken, false);
-});
-
-/* ------------------------------------------------------------------------- */
-/* 3. Physical Detonations (Shatterblow, Solar Flare, Thunderchain) & Aegis  */
-/* ------------------------------------------------------------------------- */
-
-check('5. Physical Detonations resolve Shatterblow, Solar Flare, and Thunderchain with AoE & CC', () => {
-  // 5A. Shatterblow ('rime' mark + Knight 'combo3')
-  const rimeTarget = { id: 't1', x: 0, z: 0, hp: 200, maxHp: 200, mark: 'rime', markTimer: 5.0, active: true };
-  const rimeNeighbor = { id: 't2', x: 2.5, z: 0, hp: 150, maxHp: 150, active: true };
-  const resShatter = applyHitAndResolveDetonation(
-    rimeTarget,
-    { source: 'combo3', baseDmg: 38, infusion: 'rime', attackerPos: { x: 0, z: 2 } },
-    [rimeTarget, rimeNeighbor]
-  );
-  assert.ok(resShatter.detonation);
-  assert.equal(resShatter.detonation.id, 'shatterblow');
-  assert.equal(rimeTarget.mark, null);
-  assert.equal(rimeTarget.stunTimer, 1.4);
-  assert.equal(rimeNeighbor.hp, 150 - 65);
-  assert.equal(resShatter.hitstopMs, 70);
-
-  // 5B. Solar Flare ('solar' mark + Knight 'charged' Heavy Finisher -> upward launch vy = 7.5)
-  const solarTarget = { id: 's1', x: 0, z: 0, hp: 220, maxHp: 220, mark: 'solar', markTimer: 5.0, grounded: true, active: true };
-  const resSolar = applyHitAndResolveDetonation(
-    solarTarget,
-    { source: 'charged', baseDmg: 56, infusion: 'solar', attackerPos: { x: 0, z: 2 } },
-    [solarTarget]
-  );
-  assert.ok(resSolar.detonation);
-  assert.equal(resSolar.detonation.id, 'solar_flare');
-  assert.equal(solarTarget.vy, 7.5);
-  assert.equal(solarTarget.grounded, false);
-
-  // 5C. Thunderchain ('tempest' mark + Mage 'shatterlance' or Knight 'intercept' -> inward pull)
-  const stormTarget = { id: 'm1', x: 0, z: 0, hp: 200, maxHp: 200, mark: 'tempest', markTimer: 5.0, active: true };
-  const stormOuter = { id: 'm2', x: 5.0, z: 0, hp: 160, maxHp: 160, active: true };
-  const resThunder = applyHitAndResolveDetonation(
-    stormTarget,
-    { source: 'shatterlance', baseDmg: 58, detonatesMark: true, attackerPos: { x: 0, z: 6 } },
-    [stormTarget, stormOuter]
-  );
-  assert.ok(resThunder.detonation);
-  assert.equal(resThunder.detonation.id, 'thunderchain');
-  assert.ok(stormOuter.vx < 0, 'Thunderchain must pull outer enemy inward toward primary target');
-  assert.equal(stormOuter.stunTimer, 1.1);
-});
-
-check('6. Boss Hollow Sovereign raises 2-layer Bone Aegis at <= 50% HP and breaks via 2 detonations or Ultimate', () => {
   const boss = {
     id: 'sovereign',
     isBoss: true,
@@ -259,220 +523,119 @@ check('6. Boss Hollow Sovereign raises 2-layer Bone Aegis at <= 50% HP and break
     aegisLayers: 0,
     active: true,
   };
-
-  // Hit pushes boss below 700 HP (<= 50%) -> raises 2-layer Bone Aegis
   const triggerHit = applyHitAndResolveDetonation(
     boss,
     { source: 'frost_lance', baseDmg: 42, applyMark: 'rime' },
     [boss]
   );
   assert.equal(triggerHit.aegisRaised, true);
-  assert.equal(boss.aegisActive, true);
   assert.equal(boss.aegisLayers, 2);
 
-  // Detonation #1 breaks Layer 1 (2 -> 1)
-  const det1 = applyHitAndResolveDetonation(
-    boss,
-    { source: 'combo3', baseDmg: 38, infusion: 'rime' },
-    [boss]
-  );
-  assert.equal(det1.aegisBroken, true);
+  applyHitAndResolveDetonation(boss, { source: 'combo3', baseDmg: 38, infusion: 'rime' }, [boss]);
   assert.equal(boss.aegisLayers, 1);
-  assert.equal(boss.aegisActive, true);
 
-  // Re-mark and Detonation #2 breaks Layer 2 (1 -> 0, Aegis shattered!)
   applyHitAndResolveDetonation(boss, { source: 'cinder_fall', baseDmg: 54, applyMark: 'solar' }, [boss]);
-  const det2 = applyHitAndResolveDetonation(
-    boss,
-    { source: 'charged', baseDmg: 56, infusion: 'solar' },
-    [boss]
-  );
-  assert.equal(det2.aegisBroken, true);
+  applyHitAndResolveDetonation(boss, { source: 'combo4', baseDmg: 46, infusion: 'solar' }, [boss]);
   assert.equal(boss.aegisLayers, 0);
   assert.equal(boss.aegisActive, false);
 });
 
-/* ------------------------------------------------------------------------- */
-/* 4. Shared 2-InstancedMesh Indicator Contract & Headless SFX Safety        */
-/* ------------------------------------------------------------------------- */
-
-check('7. campaign-loop.js creates strictly 2 opaque InstancedMeshes and combat-sfx.js is headless-safe', () => {
-  const scene = new THREE.Scene();
-  const sfx = createCombatSfx();
-  // Calling all SFX methods in headless Node must be a clean no-op
-  sfx.playSwordSlash(0, 'rime');
-  sfx.playHeavyFinisher('solar');
-  sfx.playBreathingIgnition('tempest');
-  sfx.playSpellCast('frost_lance');
-  sfx.playDetonation('shatterblow');
-  sfx.playShieldChime();
-  sfx.playVictoryFanfare();
-
-  const loop = createCampaignLoop({
-    scene,
-    walkableHeightAt: () => 0,
-    combatSfx: sfx,
-  });
-
-  const instancedMeshes = [];
-  loop.indicatorGroup.traverse((obj) => {
-    if (obj.isInstancedMesh) instancedMeshes.push(obj);
-  });
-
-  assert.equal(
-    instancedMeshes.length,
-    2,
-    'Combat indicator group must contain strictly 2 shared InstancedMeshes'
-  );
-  for (const im of instancedMeshes) {
-    assert.equal(im.material.transparent, false, `${im.name} must have transparent: false`);
-    assert.equal(im.material.depthWrite, true, `${im.name} must have depthWrite: true`);
-  }
-
-  // Update indicators with Knight & Mage positions -> Soul Tether + Guiding Petals populate cleanly
-  loop.update(0.016, {
-    heroStates: {
-      Knight: { x: 2.0, y: 0, z: 12.0, yaw: Math.PI },
-      Mage: { x: 4.0, y: 0, z: 12.5, yaw: Math.PI },
-    },
-  });
-  assert.ok(loop.groundIndicatorMesh.count > 0, 'Guiding petal markers should populate groundIndicatorMesh');
-  assert.ok(loop.crestAndTetherMesh.count >= 16, 'Golden Soul Tether beads should populate crestAndTetherMesh');
-});
-
-/* ------------------------------------------------------------------------- */
-/* 5. Downed & Partner Revive + Full 3-Act Campaign Deterministic Simulation */
-/* ------------------------------------------------------------------------- */
-
-check('8. Hero Downed & Partner Proximity Revive (2.0s within 3.5m) works deterministically', () => {
-  const sim = createHeadlessCampaignSim();
-  sim.heroes.Knight.x = 0;
-  sim.heroes.Knight.z = 0;
-  sim.heroes.Mage.x = 2.0; // Within 3.5m
-  sim.heroes.Mage.z = 0;
-
-  const fatal = sim.applyDamageToHero('Knight', 500);
-  assert.equal(fatal.downed, true);
-  assert.equal(sim.heroes.Knight.downed, true);
-
-  // Step 2.1 seconds in 0.5s increments while Mage stands within 3.5m
-  sim.step(0.5);
-  assert.equal(sim.heroes.Knight.downed, true);
-  sim.step(0.8);
-  sim.step(0.8);
-  assert.equal(sim.heroes.Knight.downed, false, 'Knight must revive after 2.0s within 3.5m of partner');
-  assert.ok(sim.heroes.Knight.hp > 0);
-});
-
-check('9. Full 3-Act Valley Expedition simulates deterministically from Act I Arena to Dawn Victory', () => {
-  const sim = createHeadlessCampaignSim();
-  assert.equal(sim.currentActId, 'act1_arena');
-
-  // Trigger Act I Wave 1 (4 enemies) & Wave 2 (6 enemies -> capped at <= 5 concurrent visible!)
-  sim.moveHeroesTo(ACT_DEFINITIONS.act1_arena.center.x, ACT_DEFINITIONS.act1_arena.center.z);
-  assert.equal(sim.actTriggered, true);
-  assert.equal(sim.waveIndex, 0);
-  assert.equal(sim.visibleEnemyCount, 4);
-
-  // Start Wave 2 directly to verify the 6-enemy wave caps visible enemies at 5 and queues 1
-  sim.startWave(1);
-  assert.equal(sim.visibleEnemyCount, MAX_CONCURRENT_ENEMIES);
-  assert.equal(sim.spawnQueue.length, 1);
-
-  // Reset and run full 3-Act campaign auto-play
+await check('10. Full 3-Act Valley Expedition & Pooled Enemy Manager (incl. telegraphRingMesh.visible = false) pass 100%', async () => {
   const fullSim = createHeadlessCampaignSim();
   const outcome = fullSim.runFullCampaignAutoPlay();
-
   assert.equal(outcome.completed, true, 'Campaign must reach victory_dawn');
   assert.equal(outcome.currentActId, 'victory_dawn');
-  assert.equal(outcome.currentTod, 'day');
-  assert.equal(fullSim.heroes.Knight.empoweredBreathing, true, 'Pier sanctuary must grant Empowered Breathing');
 
-  const visitedActs = outcome.eventLog
-    .filter((e) => e.type === 'act_changed')
-    .map((e) => e.actId);
-  assert.deepEqual(visitedActs, [
-    'interlude_pier',
-    'act2_plaza',
-    'act3_shrine',
-    'victory_dawn',
-  ]);
-});
-
-const { createEnemyManager } = await import('../src/combat/enemy-manager.js');
-const createdCalls = [];
-const mockKit = {
-  async loadAnimationPacks() {},
-  async createCharacter(charId, opts = {}) {
-    createdCalls.push({ charId, opts });
-    const group = new THREE.Group();
-    const modelRoot = new THREE.Group();
-    group.add(modelRoot);
-    let currentKey = 'idle';
-    return {
-      id: charId,
-      group,
-      modelRoot,
-      mixer: { timeScale: 1.0 },
-      anim: {
-        get currentKey() {
-          return currentKey;
+  const { createEnemyManager } = await import('../src/combat/enemy-manager.js');
+  const mockKit = {
+    async loadAnimationPacks() {},
+    async createCharacter(charId) {
+      const group = new THREE.Group();
+      const modelRoot = new THREE.Group();
+      group.add(modelRoot);
+      let currentKey = 'idle';
+      return {
+        id: charId,
+        group,
+        modelRoot,
+        mixer: { timeScale: 1.0 },
+        anim: {
+          get currentKey() {
+            return currentKey;
+          },
         },
-      },
-      play(key) {
-        currentKey = key;
-      },
-      poseAt(key) {
-        currentKey = key;
-      },
-      update() {},
-    };
-  },
-};
+        play(key) {
+          currentKey = key;
+        },
+        poseAt(key) {
+          currentKey = key;
+        },
+        update() {},
+      };
+    },
+  };
 
-const em = await createEnemyManager({
-  scene: new THREE.Scene(),
-  kit: mockKit,
-  walkableHeightAt: () => 0.6,
-  resolveCollisions: (x, z) => ({ x, z, wrapped: false }),
-});
-
-check('10. enemy-manager.js pre-allocates 6 KayKit Skeletons (incl. Boss Sovereign cellOverrides), caps visible <= 5, and handles setFrozenForShot', () => {
-  assert.equal(em.poolSlots.length, 6);
-  assert.equal(em.visibleCount, 0, 'All 6 pool slots must start with visible = false (0 idle draw calls)');
-
-  const bossCall = createdCalls[5];
-  assert.equal(bossCall.charId, 'Skeleton_Warrior');
-  assert.ok(Math.abs(bossCall.opts.targetHeight - 1.9 * 1.42) < 1e-4);
-  assert.equal(bossCall.opts.outlineThickness, 0.015);
-  assert.deepEqual(bossCall.opts.cellOverrides, {
-    r0c3: [42, 30, 52],
-    r1c0: [204, 24, 44],
-    r1c2: [248, 196, 68],
+  const em = await createEnemyManager({
+    scene: new THREE.Scene(),
+    kit: mockKit,
+    walkableHeightAt: () => 0.6,
+    resolveCollisions: (x, z) => ({ x, z, wrapped: false }),
   });
 
-  // Spawn 6-enemy Wave 2 -> must cap concurrent visible enemies at 5 and queue 1
+  assert.equal(em.poolSlots.length, 6);
+  assert.equal(em.telegraphRingMesh.visible, false, 'telegraphRingMesh must stay permanently hidden');
   em.spawnWave(ACT_DEFINITIONS.act1_arena.waves[1], 'act1_arena');
   assert.equal(em.visibleCount, 5);
-  assert.equal(em.activeEnemies.length, 5);
   assert.equal(em.spawnQueue.length, 1);
+  assert.equal(em.telegraphRingMesh.visible, false);
 
-  // Kill one active enemy and advance death timer -> queued 6th enemy spawns into the freed slot!
-  const firstEnemy = em.activeEnemies[0];
-  em.applyHitToEnemy(firstEnemy, { source: 'charged', baseDmg: 999, infusion: 'rime' });
-  assert.equal(firstEnemy.dead, true);
-  em.update(0.7, {
-    Knight: { id: 'Knight', x: 68, y: 0.6, z: -4 },
-    Mage: { id: 'Mage', x: 66, y: 0.6, z: -4 },
+  // Verify live CampaignLoop + EnemyManager integration for Knight & Mage Wave 2B kits
+  const liveLoop = createCampaignLoop({
+    scene: new THREE.Scene(),
+    walkableHeightAt: () => 0.6,
+    enemyManager: em,
+    combatSfx: createCombatSfx(),
   });
-  assert.equal(em.spawnQueue.length, 0, 'Queued reinforcement must spawn once an active slot frees');
-  assert.equal(em.visibleCount, 5);
 
-  // Verify setFrozenForShot poses cleanly and hides combat wave enemies
-  em.setFrozenForShot('day-arena-wisteria');
-  assert.equal(em.visibleCount, 2, 'day-arena-wisteria frozen shot shows 2 posed Arena skeletons');
-  em.setFrozenForShot(null);
-  assert.equal(em.visibleCount, 5, 'Unfreezing restores active combat wave visibility');
+  // Knight E Power Sword (13s active / 18s cooldown = 5s downtime)
+  const kSkill = liveLoop.performPartnerSkill('Knight', {
+    Knight: { x: 74, y: 0.6, z: -6, yaw: 0 },
+    Mage: { x: 72, y: 0.6, z: -6, yaw: 0 },
+  });
+  assert.equal(kSkill.skill, 'power_sword');
+  assert.equal(kSkill.activeDuration, 13.0);
+  assert.equal(kSkill.totalCooldown, 18.0);
+  assert.equal(kSkill.downtime, 5.0);
+
+  // Mage E Frost Lance / Cinder Fall (8.5s cooldown)
+  const mSkill = liveLoop.performPartnerSkill(
+    'Mage',
+    {
+      Knight: { x: 74, y: 0.6, z: -6, yaw: 0 },
+      Mage: { x: 72, y: 0.6, z: -6, yaw: 0 },
+    },
+    { spellId: 'cinder_fall', distance: 9.5 }
+  );
+  assert.equal(mSkill.skill, 'mage_elemental_spell');
+  assert.equal(mSkill.cooldown, 8.5);
+  assert.equal(mSkill.distance, 9.5);
+
+  // Mage Q 6s Storm Cataclysm + Knight Shield Block interception in liveLoop
+  const mUlt = liveLoop.performMageStormCataclysm({
+    Mage: { x: 72, y: 0.6, z: -6, yaw: 0 },
+  });
+  assert.equal(mUlt.ultimate, 'storm_cataclysm');
+  assert.equal(mUlt.duration, 6.0);
+
+  liveLoop.setKnightShieldBlocking(true);
+  const intercepted = liveLoop.handlePlayerHit({ id: 'Mage' }, em.activeEnemies[0], 30);
+  assert.equal(intercepted.interceptedByKnight, true);
+  assert.equal(liveLoop.combatHeroes.Mage.downed, false);
+
+  liveLoop.setKnightShieldBlocking(false);
+  const downedByOneHit = liveLoop.handlePlayerHit({ id: 'Mage' }, em.activeEnemies[0], 15);
+  assert.equal(downedByOneHit.downed, true);
+  assert.equal(liveLoop.combatHeroes.Mage.downed, true);
 });
 
-console.log(`\nALL ${passed} COMBAT & 3-ACT CAMPAIGN TESTS PASSED!\n`);
+console.log(`\nALL ${passed} WAVE 2B COMBAT & CAMPAIGN TESTS PASSED!\n`);

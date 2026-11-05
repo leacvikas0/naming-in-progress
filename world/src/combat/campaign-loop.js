@@ -1,23 +1,18 @@
 // ============================================================================
 // world/src/combat/campaign-loop.js
 //
-// Stage 5 3-Act Valley Expedition & Co-Op Synergy Loop:
+// Stage 5 / Wave 2B 3-Act Valley Expedition & Co-Op Synergy Loop:
 // - Drives the 3-Act progression:
 //     `act1_arena` -> `interlude_pier` -> `act2_plaza` -> `act3_shrine` -> `victory_dawn`
-// - Manages Hero HP, Golden Ward Shield, Downed & Partner Revive (2.0s within
-//   3.5m or instant on wave clear), Heart Resonance (0..100%), Sword Breathing
-//   infusions (`rime`, `solar`, `tempest`), and `Q: Couples Resonance Ultimate`.
-// - Renders ALL world-space combat indicators using STRICTLY 2 shared
-//   `InstancedMesh`es (`transparent: false, depthWrite: true` with hard
-//   `alphaTest` / cel shading):
-//     1. `groundIndicatorMesh` (1 InstancedMesh): Enemy Telegraph Rings
-//        (y = ground + 0.04m), Sanctuary Brazier Ring on West Pier, Downed
-//        Revival Ring, and Guiding Golden Petal Markers along the road.
-//     2. `crestAndTetherMesh` (1 InstancedMesh): 3D Overhead Elemental Crests
-//        (y = 2.15m above marked enemies: cerulean diamond for `rime`,
-//        vermilion-gold sun-crest for `solar`, violet-gold octahedron for
-//        `tempest`, plus Boss Bone Aegis shields) AND the waist-height
-//        (y = 0.85m) Golden Soul Tether between Knight and Mage.
+// - Manages Hero HP (Knight 220 HP tank, Mage 90 HP fragile glass cannon),
+//   Knight Shield Block (80% DR + Mage protection interception), Knight E Power
+//   Sword (13s active / 18s cooldown = 5s downtime, Ice slow & Fire burn DoT),
+//   Knight Q Sky-Lightning Awakening (10s 2.0x double damage), Knight XP/Leveling,
+//   Mage E Frost Lance / Cinder Fall (8.5s cooldown with Aim Arrow distance),
+//   Mage Q 6.0s Vulnerable Stationary Storm Cataclysm, and Artorious Commune.
+// - Permanently hides prototype indicator clutter (`crestAndTetherMesh.visible = false`,
+//   zero floating tether beads, zero spinning overhead enemy diamonds, zero red
+//   under-enemy circles) and removes artificial partner distance restrictions.
 // ============================================================================
 
 import * as THREE from 'three';
@@ -34,14 +29,31 @@ import {
   ACT_SEQUENCE,
   COMMUNE_MAX_DISTANCE,
   COMMUNE_RESURRECT_DISTANCE,
+  COMMUNE_COMBAT_HP_THRESHOLD,
   POWERUP_TETHER_DISTANCE,
+  DIVINE_BLESSING_DURATION,
+  DIVINE_BLESSING_TETHER_DISTANCE,
+  DIVINE_BLESSING_DMG_MULT,
+  DIVINE_BLESSING_Q_CD_MULT,
+  DIVINE_BLESSING_E_CD_MULT,
   ALTAR_STELE_POS,
   selectSoftLockTarget,
+  getKnightLevelStats,
 } from './combat-balance.js';
+import {
+  KNIGHT_SHIELD_BLOCK_DR,
+  KNIGHT_POWER_SWORD_DURATION,
+  KNIGHT_POWER_SWORD_COOLDOWN,
+  KNIGHT_ULT_DURATION,
+  KNIGHT_ULT_DMG_MULT,
+  KNIGHT_ULT_COOLDOWN,
+  MAGE_E_COOLDOWN,
+  MAGE_STORM_CATACLYSM_DURATION,
+  MAGE_STORM_CATACLYSM_COOLDOWN,
+} from './combat-action-aim.js';
 
 const MAX_GROUND_INDICATORS = 36;
 const MAX_CREST_AND_TETHER_INSTANCES = 56;
-const TETHER_BEAD_COUNT = 16;
 
 /* ------------------------------------------------------------------------- */
 /* 1. Shared 2-InstancedMesh Opaque Cel-Shaded Indicator Builders            */
@@ -51,7 +63,6 @@ function createGroundIndicatorInstancedMesh() {
   const geo = new THREE.PlaneGeometry(2.0, 2.0, 1, 1);
   geo.rotateX(-Math.PI * 0.5);
 
-  // Per-instance metadata: x = kind (0: ring, 1: petal chevron), y = fillProgress (0..1), z = pulsePhase, w = ringThickness
   const metaArray = new Float32Array(MAX_GROUND_INDICATORS * 4);
   const metaAttr = new THREE.InstancedBufferAttribute(metaArray, 4);
   metaAttr.setUsage(THREE.DynamicDrawUsage);
@@ -92,63 +103,7 @@ function createGroundIndicatorInstancedMesh() {
       varying vec4 vMeta;
 
       void main() {
-        float kind = vMeta.x;
-        float progress = clamp(vMeta.y, 0.0, 1.0);
-        float phase = vMeta.z;
-        float rimWidth = vMeta.w;
-
-        // Kind 1: Guiding Golden Petal / Directional Chevron Marker
-        if (kind > 0.5) {
-          vec2 p = vLocalXZ;
-          // Pointed sakura/wisteria petal silhouette pointing along +Z
-          float zNorm = (p.y + 0.85) * 0.55;
-          float widthCurve = sin(clamp(zNorm, 0.0, 1.0) * 3.14159265) * 0.68;
-          float notch = smoothstep(0.55, 0.95, zNorm) * abs(p.x) * 0.35;
-          float dPetal = abs(p.x) - (widthCurve - notch);
-          if (zNorm < 0.02 || zNorm > 0.98 || dPetal > 0.0) {
-            discard;
-          }
-          float isOutline = step(-0.11, dPetal);
-          float isInnerHighlight = step(dPetal, -0.32) * step(0.25, zNorm) * step(zNorm, 0.78);
-          vec3 col = mix(vColor, uHotCoreColor, isInnerHighlight * 0.55);
-          col = mix(col, uInkColor, isOutline);
-          gl_FragColor = vec4(col, 1.0);
-          return;
-        }
-
-        // Kind 0: Opaque Cel-Shaded Telegraph / Sanctuary / Revival Ring
-        float r = length(vLocalXZ);
-        if (r > 1.0) {
-          discard;
-        }
-
-        float ang = atan(vLocalXZ.x, vLocalXZ.y);
-        float segWave = step(0.0, sin(ang * 8.0 + phase));
-
-        bool inOuterRim = r >= (1.0 - rimWidth);
-        bool inFillBand = r <= progress && r >= max(0.08, progress - rimWidth * 1.45);
-        bool inCenterSpoke = r <= progress && (abs(sin(ang * 4.0 + phase * 0.5)) < 0.14) && (r > 0.18);
-        bool inInnerHub = r <= 0.16;
-
-        if (!inOuterRim && !inFillBand && !inCenterSpoke && !inInnerHub) {
-          discard;
-        }
-
-        // Crisp dark ink framing on ring edges
-        bool isInkEdge =
-          r > 0.955 ||
-          (inOuterRim && r < (1.0 - rimWidth + 0.035)) ||
-          (inFillBand && abs(r - progress) < 0.035);
-
-        vec3 baseCol = vColor;
-        if (inFillBand || inInnerHub) {
-          baseCol = mix(vColor, uHotCoreColor, 0.42 + 0.18 * segWave);
-        } else if (inOuterRim && segWave > 0.5) {
-          baseCol = mix(vColor, uHotCoreColor, 0.25);
-        }
-
-        vec3 finalCol = isInkEdge ? uInkColor : baseCol;
-        gl_FragColor = vec4(finalCol, 1.0);
+        gl_FragColor = vec4(vColor, 1.0);
       }
     `,
   });
@@ -185,43 +140,17 @@ function createCrestAndTetherInstancedMesh() {
       uCoreHighlight: { value: new THREE.Color('#fff9e6') },
     },
     vertexShader: /* glsl */ `
-      varying vec3 vWorldNormal;
-      varying vec3 vViewDir;
       varying vec3 vColor;
-
       void main() {
         vColor = instanceColor;
         vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
-        mat3 normalMat = mat3(modelMatrix * instanceMatrix);
-        vWorldNormal = normalize(normalMat * normal);
-        vViewDir = normalize(cameraPosition - worldPos.xyz);
         gl_Position = projectionMatrix * viewMatrix * worldPos;
       }
     `,
     fragmentShader: /* glsl */ `
-      uniform vec3 uSunDir;
-      uniform vec3 uInkColor;
-      uniform vec3 uCoreHighlight;
-
-      varying vec3 vWorldNormal;
-      varying vec3 vViewDir;
       varying vec3 vColor;
-
       void main() {
-        vec3 N = normalize(vWorldNormal);
-        vec3 V = normalize(vViewDir);
-        float ndotl = dot(N, uSunDir) * 0.5 + 0.5;
-        float ndotv = max(0.0, dot(N, V));
-
-        // 3-band cel shading + crisp silhouette ink rim
-        float celBand = step(0.42, ndotl) * 0.35 + step(0.74, ndotl) * 0.45 + 0.40;
-        vec3 shaded = vColor * celBand;
-        shaded = mix(shaded, uCoreHighlight, step(0.82, ndotl) * 0.38);
-
-        // Hard ink outline on grazing facets for solid anime readability
-        float inkRim = 1.0 - step(0.22, ndotv);
-        vec3 outCol = mix(shaded, uInkColor, inkRim * 0.88);
-        gl_FragColor = vec4(outCol, 1.0);
+        gl_FragColor = vec4(vColor, 1.0);
       }
     `,
   });
@@ -267,30 +196,10 @@ export function createCampaignLoop({
     scene.add(indicatorGroup);
   }
 
-  // Strictly 2 shared InstancedMeshes for all world-space combat indicators
   const groundInd = createGroundIndicatorInstancedMesh();
   const crestInd = createCrestAndTetherInstancedMesh();
   indicatorGroup.add(groundInd.mesh);
   indicatorGroup.add(crestInd.mesh);
-
-  // Pre-allocated THREE.Color palette objects (zero per-frame heap allocations)
-  const PALETTE = {
-    telegraphWarn: new THREE.Color('#ff4d2e'),
-    telegraphHot: new THREE.Color('#ffbd2e'),
-    sanctuaryGold: new THREE.Color('#fbbf24'),
-    reviveEmerald: new THREE.Color('#34d399'),
-    petalGold: new THREE.Color('#fcd34d'),
-    crestRime: new THREE.Color('#38bdf8'),
-    crestSolar: new THREE.Color('#ff6a12'),
-    crestTempest: new THREE.Color('#c084fc'),
-    aegisCrimson: new THREE.Color('#e11d48'),
-    aegisGold: new THREE.Color('#facc15'),
-    tetherIdle: new THREE.Color('#f59e0b'),
-    tetherEmpowered: new THREE.Color('#fde047'),
-  };
-
-  const _dummy = new THREE.Object3D();
-  const _colorTmp = new THREE.Color();
 
   // Hero Combat State
   const combatHeroes = {
@@ -302,6 +211,18 @@ export function createCampaignLoop({
       shieldTimer: 0,
       downed: false,
       reviveProgress: 0,
+      level: 1,
+      xp: 0,
+      kills: 0,
+      selectedElement: 'ice', // 'ice' | 'fire'
+      shieldBlocking: false,
+      powerSwordActive: false,
+      powerSwordTimer: 0,
+      powerSwordCd: 0,
+      ultActive: false,
+      ultTimer: 0,
+      ultCd: 0,
+      ultDmgMult: 1.0,
       breathingStyle: 'none',
       breathingTimer: 0,
       empoweredBreathing: false,
@@ -321,6 +242,14 @@ export function createCampaignLoop({
       shieldTimer: 0,
       downed: false,
       reviveProgress: 0,
+      selectedElement: 'ice',
+      selectedSpell: 'frost_lance', // 'frost_lance' | 'cinder_fall'
+      consecutiveChargedCount: 0,
+      skillCd: 0,
+      stormCataclysmActive: false,
+      stormCataclysmTimer: 0,
+      stormCataclysmWaveTimer: 0,
+      ultCd: 0,
       empoweredBreathing: false,
       ascendedMagicFlow: false,
       ascendedMagicTimer: 0,
@@ -338,7 +267,6 @@ export function createCampaignLoop({
     },
   };
 
-  // Alias map so `this.state[speakerKey]` works with 'Knight'/'Mage' or 'knight'/'mage'
   const state = {
     Knight: combatHeroes.Knight,
     Mage: combatHeroes.Mage,
@@ -360,32 +288,205 @@ export function createCampaignLoop({
   let bothDownedTimer = 0;
   let communeChannelActive = false;
   let indicatorsHiddenForShot = false;
+  let divineBlessingActive = false;
+  let divineBlessingTimer = 0;
+
+  const verdictSequence = {
+    active: false,
+    kind: null, // 'blessing' | 'smite'
+    verdict: null,
+    elapsed: 0,
+    duration: 0,
+    beat: 0,
+    speakerRole: 'Knight',
+    dissolveRole: null,
+    startKnightHp: HERO_STATS.Knight.maxHp,
+    startMageHp: HERO_STATS.Mage.maxHp,
+    knightWasDowned: false,
+    mageWasDowned: false,
+    startKnightX: 0,
+    startKnightZ: 0,
+    startMageX: 0,
+    startMageZ: 0,
+    midX: 0,
+    midZ: 0,
+  };
+
+  function isControlLocked() {
+    return Boolean(communeChannelActive || verdictSequence.active);
+  }
+
+  function isDivineBlessingActive() {
+    return Boolean(divineBlessingActive);
+  }
+
+  function getDivineBlessingRemaining() {
+    return divineBlessingActive ? divineBlessingTimer : 0;
+  }
+
+  function activateDivineBlessing() {
+    divineBlessingActive = true;
+    divineBlessingTimer = DIVINE_BLESSING_DURATION;
+    combatHeroes.Knight.partnerSwordMult = DIVINE_BLESSING_DMG_MULT;
+    combatHeroes.Knight.partnerBuffTimer = DIVINE_BLESSING_DURATION;
+    combatHeroes.Knight.sunSwornBreathing = true;
+    combatHeroes.Knight.sunSwornTimer = DIVINE_BLESSING_DURATION;
+    combatHeroes.Knight.empoweredBreathing = true;
+
+    combatHeroes.Mage.partnerMagicMult = DIVINE_BLESSING_DMG_MULT;
+    combatHeroes.Mage.partnerBuffTimer = DIVINE_BLESSING_DURATION;
+    combatHeroes.Mage.ascendedMagicFlow = true;
+    combatHeroes.Mage.ascendedMagicTimer = DIVINE_BLESSING_DURATION;
+    combatHeroes.Mage.empoweredBreathing = true;
+
+    const blessedQCd = Number((KNIGHT_ULT_COOLDOWN * DIVINE_BLESSING_Q_CD_MULT).toFixed(2));
+    if (combatHeroes.Knight.ultCd > blessedQCd) {
+      combatHeroes.Knight.ultCd = blessedQCd;
+    }
+    if (combatHeroes.Mage.ultCd > blessedQCd) {
+      combatHeroes.Mage.ultCd = blessedQCd;
+    }
+    const blessedMageECd = Number((MAGE_E_COOLDOWN * DIVINE_BLESSING_E_CD_MULT).toFixed(2));
+    if (combatHeroes.Mage.skillCd > blessedMageECd) {
+      combatHeroes.Mage.skillCd = blessedMageECd;
+    }
+    for (const k of Object.keys(combatHeroes.Mage.spellCooldowns)) {
+      if (combatHeroes.Mage.spellCooldowns[k] > blessedMageECd) {
+        combatHeroes.Mage.spellCooldowns[k] = blessedMageECd;
+      }
+    }
+  }
+
+  function clearDivineBlessing() {
+    if (!divineBlessingActive && divineBlessingTimer === 0) return;
+    divineBlessingActive = false;
+    divineBlessingTimer = 0;
+    combatHeroes.Knight.partnerSwordMult = 1.0;
+    combatHeroes.Knight.partnerBuffTimer = 0;
+    combatHeroes.Knight.sunSwornBreathing = false;
+    combatHeroes.Knight.sunSwornTimer = 0;
+    combatHeroes.Mage.partnerMagicMult = 1.0;
+    combatHeroes.Mage.partnerBuffTimer = 0;
+    combatHeroes.Mage.ascendedMagicFlow = false;
+    combatHeroes.Mage.ascendedMagicTimer = 0;
+  }
+
+  function emitBanner(title, subtitle = '', kind = 'act') {
+    if (onBanner) {
+      onBanner({ title, subtitle, kind });
+    }
+  }
+
+  function awardKnightKillXp(enemy) {
+    const xpGain = enemy?.isBoss
+      ? HERO_STATS.Knight.xpPerKill * 4
+      : enemy?.isElite
+        ? HERO_STATS.Knight.xpPerKill * 2
+        : HERO_STATS.Knight.xpPerKill;
+    combatHeroes.Knight.kills += 1;
+    combatHeroes.Knight.xp += xpGain;
+    let leveledUp = false;
+    while (combatHeroes.Knight.xp >= HERO_STATS.Knight.xpPerLevel) {
+      combatHeroes.Knight.xp -= HERO_STATS.Knight.xpPerLevel;
+      combatHeroes.Knight.level += 1;
+      leveledUp = true;
+    }
+    if (leveledUp) {
+      const stats = getKnightLevelStats(combatHeroes.Knight.level);
+      emitBanner(
+        `KNIGHT LEVEL ${combatHeroes.Knight.level} AWAKENED`,
+        `Sword DMG ${(stats.dmgMult * 100).toFixed(0)}% · Ice Slow ${(stats.iceSlowFactor * 100).toFixed(0)}% · Fire Burn ${stats.fireBurnDps} DPS`,
+        'blessing'
+      );
+    }
+    return combatHeroes.Knight.level;
+  }
 
   function getPartnerDistance(posA, posB) {
     if (!posA || !posB) return 0;
     return Math.hypot((posA.x ?? 0) - (posB.x ?? 0), (posA.z ?? 0) - (posB.z ?? 0));
   }
 
-  function isWithinPowerupTether(posA, posB) {
-    if (!posA || !posB) return true;
-    return getPartnerDistance(posA, posB) <= POWERUP_TETHER_DISTANCE;
+  function isWithinPowerupTether(heroStates = null) {
+    if (heroStates?.Knight && heroStates?.Mage) {
+      return getPartnerDistance(heroStates.Knight, heroStates.Mage) <= DIVINE_BLESSING_TETHER_DISTANCE;
+    }
+    return true;
   }
 
   function canCommuneTogether(heroStates) {
     const k = heroStates?.Knight || heroStates?.knight;
     const m = heroStates?.Mage || heroStates?.mage;
     const dist = getPartnerDistance(k, m);
-    const anyDowned = Boolean(combatHeroes.Knight.downed || combatHeroes.Mage.downed);
-    const bothDowned = Boolean(combatHeroes.Knight.downed && combatHeroes.Mage.downed);
-    const maxDist = anyDowned ? COMMUNE_RESURRECT_DISTANCE : COMMUNE_MAX_DISTANCE;
+    const kDowned = Boolean(combatHeroes.Knight.downed || k?.downed);
+    const mDowned = Boolean(combatHeroes.Mage.downed || m?.downed);
+    const anyDowned = kDowned || mDowned;
+    const bothDowned = kDowned && mDowned;
+
+    const kHpRatio = combatHeroes.Knight.hp / Math.max(1, combatHeroes.Knight.maxHp);
+    const mHpRatio = combatHeroes.Mage.hp / Math.max(1, combatHeroes.Mage.maxHp);
+    const anyLowHp =
+      kHpRatio < COMMUNE_COMBAT_HP_THRESHOLD || mHpRatio < COMMUNE_COMBAT_HP_THRESHOLD;
+
+    const inCombat = Boolean(
+      enemyManager &&
+        Array.isArray(enemyManager.activeEnemies) &&
+        enemyManager.activeEnemies.some(
+          (e) => e && !e.dead && (e.hp === undefined || e.hp > 0) && e.active !== false
+        )
+    );
+
+    if (bothDowned) {
+      return {
+        allowed: false,
+        reason: 'both_downed',
+        distance: dist,
+        maxDist: COMMUNE_MAX_DISTANCE,
+        inCombat,
+        anyDowned,
+        bothDowned,
+        anyLowHp,
+      };
+    }
+
+    if (dist > COMMUNE_MAX_DISTANCE) {
+      return {
+        allowed: false,
+        reason: 'too_far',
+        distance: dist,
+        maxDist: COMMUNE_MAX_DISTANCE,
+        inCombat,
+        anyDowned,
+        bothDowned,
+        anyLowHp,
+      };
+    }
+
+    if (inCombat && !(anyDowned || anyLowHp)) {
+      return {
+        allowed: false,
+        reason: 'combat_hp_too_high',
+        distance: dist,
+        maxDist: COMMUNE_MAX_DISTANCE,
+        inCombat,
+        anyDowned,
+        bothDowned,
+        anyLowHp,
+      };
+    }
+
     return {
-      allowed: !bothDowned && dist <= maxDist,
+      allowed: true,
+      reason: null,
       distance: dist,
-      maxDist,
+      maxDist: COMMUNE_MAX_DISTANCE,
+      inCombat,
       anyDowned,
       bothDowned,
+      anyLowHp,
     };
   }
+  const canStartDivinePrayer = canCommuneTogether;
 
   const _tmpStaffTip = new THREE.Vector3();
 
@@ -425,8 +526,6 @@ export function createCampaignLoop({
       z: staffTip.z + dir.z * 11.5,
     };
 
-    // MageBoltSystem adds handForward (0.55m) and handHeight (1.24m) to origin;
-    // subtract them so startX/startY/startZ lands at the exact handSlot.r staff tip!
     const handForward = vfxKit.mageBolt.config?.handForward ?? 0.55;
     const handHeight = vfxKit.mageBolt.config?.handHeight ?? 1.24;
     const origin = {
@@ -450,19 +549,15 @@ export function createCampaignLoop({
     duration: 0.65,
   };
 
-  function emitBanner(title, subtitle = '', kind = 'act') {
-    if (onBanner) {
-      onBanner({ title, subtitle, kind });
-    }
-  }
-
   function addResonance(amount) {
     heartResonance = clamp(heartResonance + amount, 0, 100);
     return heartResonance;
   }
 
-  function setKnightBreathing(styleId, duration = HERO_STATS.Mage.infuseDuration) {
-    const validStyle = BREATHING_STYLES[styleId] ? styleId : 'none';
+  function setKnightBreathing(styleId, duration = KNIGHT_POWER_SWORD_DURATION) {
+    const mapped =
+      styleId === 'ice' ? 'rime' : styleId === 'fire' ? 'solar' : styleId;
+    const validStyle = BREATHING_STYLES[mapped] ? mapped : 'none';
     combatHeroes.Knight.breathingStyle = validStyle;
     combatHeroes.Knight.breathingTimer = validStyle === 'none' ? 0 : duration;
 
@@ -482,6 +577,41 @@ export function createCampaignLoop({
     if (onInfusionChanged) {
       onInfusionChanged(validStyle, duration, BREATHING_STYLES[validStyle]);
     }
+  }
+
+  function toggleHeroElement(heroId = 'Knight') {
+    const norm = String(heroId || 'Knight').toLowerCase() === 'mage' ? 'Mage' : 'Knight';
+    if (norm === 'Knight') {
+      combatHeroes.Knight.selectedElement =
+        combatHeroes.Knight.selectedElement === 'ice' ? 'fire' : 'ice';
+      const nextStyle = combatHeroes.Knight.selectedElement === 'fire' ? 'solar' : 'rime';
+      if (combatHeroes.Knight.powerSwordActive && combatHeroes.Knight.powerSwordTimer > 0) {
+        setKnightBreathing(nextStyle, combatHeroes.Knight.powerSwordTimer);
+      }
+      onHudStateChanged?.(getStateSnapshot());
+      return {
+        heroId: 'Knight',
+        element: combatHeroes.Knight.selectedElement,
+        breathingStyle: nextStyle,
+      };
+    }
+
+    combatHeroes.Mage.selectedSpell =
+      combatHeroes.Mage.selectedSpell === 'frost_lance' ? 'cinder_fall' : 'frost_lance';
+    combatHeroes.Mage.selectedElement =
+      combatHeroes.Mage.selectedSpell === 'frost_lance' ? 'ice' : 'fire';
+    onHudStateChanged?.(getStateSnapshot());
+    return {
+      heroId: 'Mage',
+      element: combatHeroes.Mage.selectedElement,
+      spellId: combatHeroes.Mage.selectedSpell,
+    };
+  }
+
+  function setKnightShieldBlocking(active = false) {
+    combatHeroes.Knight.shieldBlocking = Boolean(active);
+    onHudStateChanged?.(getStateSnapshot());
+    return combatHeroes.Knight.shieldBlocking;
   }
 
   function reviveAllInstant() {
@@ -564,7 +694,7 @@ export function createCampaignLoop({
     combatHeroes.Mage.empoweredBreathing = true;
 
     addResonance(reward.resonanceGain);
-    setKnightBreathing('solar', HERO_STATS.Mage.infuseDuration);
+    setKnightBreathing('solar', KNIGHT_POWER_SWORD_DURATION);
 
     if (combatSfx?.playShieldChime) {
       combatSfx.playShieldChime();
@@ -581,14 +711,86 @@ export function createCampaignLoop({
   function handlePlayerHit(targetHeroState, enemy, rawDmg) {
     const heroId = targetHeroState?.id || 'Knight';
     const h = combatHeroes[heroId] || combatHeroes.Knight;
-    if (h.downed || h.iframeTimer > 0) return;
+    if (
+      divineBlessingActive ||
+      communeChannelActive ||
+      (verdictSequence.active && verdictSequence.kind === 'blessing')
+    ) {
+      return {
+        absorbed: rawDmg,
+        hpLost: 0,
+        downed: false,
+        invincible: true,
+        interceptedByKnight: false,
+      };
+    }
+    if (h.downed || h.iframeTimer > 0) {
+      return { absorbed: 0, hpLost: 0, downed: false, interceptedByKnight: false };
+    }
 
-    let rem = rawDmg;
+    // If Mage is hit while Knight is holding Shield Block, Knight intercepts & blocks 80%!
+    if (
+      heroId === 'Mage' &&
+      combatHeroes.Knight.shieldBlocking &&
+      !combatHeroes.Knight.downed
+    ) {
+      const reducedForKnight = Math.max(
+        1,
+        Math.round(rawDmg * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
+      );
+      const kRes = handlePlayerHit({ id: 'Knight' }, enemy, reducedForKnight);
+      return {
+        absorbed: rawDmg - reducedForKnight + (kRes?.absorbed || 0),
+        hpLost: 0,
+        knightHpLost: kRes?.hpLost || 0,
+        downed: false,
+        interceptedByKnight: true,
+      };
+    }
+
+    let effectiveDmg = rawDmg;
+    if (heroId === 'Knight' && combatHeroes.Knight.shieldBlocking) {
+      effectiveDmg = Math.max(
+        1,
+        Math.round(rawDmg * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
+      );
+    }
+
+    let rem = effectiveDmg;
+    let absorbed = 0;
     if (h.shield > 0) {
-      const absorbed = Math.min(h.shield, rem);
+      absorbed = Math.min(h.shield, rem);
       h.shield -= absorbed;
       rem -= absorbed;
     }
+
+    // Mage Q 6.0s Storm Cataclysm vulnerability: 1 unprotected hit immediately downs her!
+    if (heroId === 'Mage' && combatHeroes.Mage.stormCataclysmActive && rem > 0) {
+      h.hp = 0;
+      h.downed = true;
+      h.reviveProgress = 0;
+      combatHeroes.Mage.stormCataclysmActive = false;
+      combatHeroes.Mage.stormCataclysmTimer = 0;
+      if (targetHeroState?.char?.play) {
+        targetHeroState.char.play('death', { loop: false, fade: 0.1, force: true });
+      }
+      if (combatSfx?.playPlayerHit) {
+        combatSfx.playPlayerHit();
+      }
+      emitBanner(
+        'STORM CATACLYSM SHATTERED · MAGE DOWNED!',
+        'Unprotected during Storm Cataclysm! Use Commune to Resurrect!',
+        'warning'
+      );
+      return {
+        absorbed,
+        hpLost: effectiveDmg - absorbed,
+        downed: true,
+        cataclysmInterrupted: true,
+        interceptedByKnight: false,
+      };
+    }
+
     h.hp = Math.max(0, h.hp - rem);
     if (combatSfx?.playPlayerHit) {
       combatSfx.playPlayerHit();
@@ -602,16 +804,13 @@ export function createCampaignLoop({
       }
       emitBanner(
         `${heroId.toUpperCase()} HAS FALLEN!`,
-        'Run Within 4.8m of Your Beloved and Hold [R] Commune to Resurrect!',
+        'Channel Commune to Resurrect Your Beloved!',
         'warning'
       );
     }
+    return { absorbed, hpLost: rem, downed: h.downed, interceptedByKnight: false };
   }
 
-  /**
-   * Evaluates and applies the Ancient God of Love's Commune Verdict (`smite`,
-   * `heal`, `blessing`, `miracle`) to the speaker and partner.
-   */
   function applyCommuneVerdict(judgment = {}, speakerRole = 'Knight', heroStates = null) {
     const verdict = String(judgment?.verdict || 'smite').toLowerCase();
     const speakerKey =
@@ -635,299 +834,232 @@ export function createCampaignLoop({
     communeChannelActive = false;
 
     if (verdict === 'smite') {
-      vfxKit?.artoriousVfx?.triggerSmite?.(speakerPos);
-      speakerHero.shield = 0;
-      speakerHero.shieldTimer = 0;
-      speakerHero.downed = false;
-      // Drop the speaker's HP straight to 1 HP (never 0, always terrifying 1 HP!)
-      state[speakerKey].hp = Math.max(1, Math.min(state[speakerKey].hp, 1));
+      clearDivineBlessing();
+      const partnerAlreadyDowned = Boolean(partnerHero.downed);
+      const dissolveRole = partnerAlreadyDowned ? speakerKey : partnerKey;
 
-      if (speakerEntity) {
-        speakerEntity.actionState = 'hit_b';
-        speakerEntity.actionTimer = 0.58;
-        speakerEntity.praying = false;
-        speakerEntity.char?.play?.('hit_b', { loop: false, fade: 0.06, force: true });
-      }
-      if (partnerEntity) {
-        partnerEntity.praying = false;
-      }
-      combatSfx?.playPlayerHit?.();
-      emitBanner(
-        'DIVINE SMITE · 1 HP REMAINING!',
-        judgment?.divine_quote ||
-          judgment?.subtitle ||
-          'Your prayer displeased the Ancient God of Love!',
-        'warning'
-      );
-      onHudStateChanged?.(getStateSnapshot());
-      return { verdict: 'smite', speakerRole: speakerKey, speakerHp: state[speakerKey].hp };
-    }
+      verdictSequence.active = true;
+      verdictSequence.kind = 'smite';
+      verdictSequence.verdict = 'smite';
+      verdictSequence.elapsed = 0;
+      verdictSequence.duration = 2.8;
+      verdictSequence.beat = 1;
+      verdictSequence.speakerRole = speakerKey;
+      verdictSequence.dissolveRole = dissolveRole;
 
-    if (verdict === 'heal') {
-      const healAmt = Number(judgment?.partner_heal) || 55;
-      const wasDowned = partnerHero.downed;
-      if (partnerHero.downed && judgment?.resurrect_partner !== false) {
-        partnerHero.downed = false;
+      if (partnerAlreadyDowned) {
+        // Case 2: Partner was ALREADY dead/downed when Smite hit -> Speaker dissolves & dies (Total Party Wipe)
+        speakerHero.shield = 0;
+        speakerHero.shieldTimer = 0;
+        speakerHero.hp = 0;
+        speakerHero.downed = true;
+        speakerHero.reviveProgress = 0;
+        vfxKit?.artoriousVfx?.triggerSmite?.(speakerPos, partnerPos);
+        if (speakerEntity) {
+          speakerEntity.praying = false;
+          speakerEntity.actionState = 'death';
+          speakerEntity.actionTimer = 2.8;
+          speakerEntity.char?.play?.('death', { loop: false, fade: 0.08, force: true });
+        }
+        if (partnerEntity) {
+          partnerEntity.praying = false;
+        }
+        combatSfx?.playPlayerHit?.();
+        emitBanner(
+          'DIVINE SMITE · TOTAL PARTY WIPE!',
+          judgment?.divine_quote ||
+            judgment?.subtitle ||
+            'Both lovers dissolve into blood-crimson petals — Returning to the Sanctuary Stone...',
+          'warning'
+        );
+      } else {
+        // Case 1: Both lovers were alive when Smite hit -> Partner dissolves & dies, Speaker drops to 10% Max HP
+        partnerHero.shield = 0;
+        partnerHero.shieldTimer = 0;
+        partnerHero.hp = 0;
+        partnerHero.downed = true;
         partnerHero.reviveProgress = 0;
-        partnerHero.hp = Math.min(partnerHero.maxHp, healAmt);
-      } else if (!partnerHero.downed) {
-        partnerHero.hp = Math.min(partnerHero.maxHp, partnerHero.hp + healAmt);
+
+        speakerHero.shield = 0;
+        speakerHero.shieldTimer = 0;
+        speakerHero.downed = false;
+        speakerHero.hp = Math.max(1, Math.round(speakerHero.maxHp * 0.1));
+
+        vfxKit?.artoriousVfx?.triggerSmite?.(partnerPos, speakerPos);
+
+        if (speakerEntity) {
+          speakerEntity.actionState = 'hit_b';
+          speakerEntity.actionTimer = 0.65;
+          speakerEntity.praying = false;
+          speakerEntity.char?.play?.('hit_b', { loop: false, fade: 0.06, force: true });
+        }
+        if (partnerEntity) {
+          partnerEntity.praying = false;
+          partnerEntity.actionState = 'death';
+          partnerEntity.actionTimer = 2.8;
+          partnerEntity.char?.play?.('death', { loop: false, fade: 0.08, force: true });
+        }
+        combatSfx?.playPlayerHit?.();
+        emitBanner(
+          `DIVINE SMITE · ${partnerKey.toUpperCase()} DISSOLVED!`,
+          judgment?.divine_quote ||
+            judgment?.subtitle ||
+            `${partnerKey} dissolved into crimson petals · ${speakerKey} reduced to 10% HP (${speakerHero.hp} HP)!`,
+          'warning'
+        );
       }
 
-      vfxKit?.artoriousVfx?.triggerHeal?.(speakerPos, partnerPos);
-
-      combatHeroes.Mage.partnerMagicMult = Number(judgment?.partner_magic_mult) || 1.25;
-      combatHeroes.Mage.partnerBuffTimer = Math.max(combatHeroes.Mage.partnerBuffTimer, 15.0);
-      combatHeroes.Knight.partnerSwordMult = Number(judgment?.partner_sword_mult) || 1.20;
-      combatHeroes.Knight.partnerBuffTimer = Math.max(combatHeroes.Knight.partnerBuffTimer, 15.0);
-
-      if (speakerEntity) {
-        speakerEntity.praying = false;
-        speakerEntity.char?.play?.('cheer', { loop: false, fade: 0.1, force: true });
-      }
-      if (partnerEntity) {
-        partnerEntity.praying = false;
-        partnerEntity.char?.play?.(wasDowned ? 'revive' : 'cheer', {
-          loop: false,
-          fade: 0.1,
-          force: true,
-        });
-      }
-
-      addResonance(25);
-      combatSfx?.playShieldChime?.();
-      emitBanner(
-        wasDowned ? 'DIVINE RESURRECTION · BELOVED REVIVED' : 'DIVINE GRACE · BELOVED HEALED',
-        judgment?.divine_quote ||
-          judgment?.subtitle ||
-          `+${healAmt} HP Restored · 15s Tether Power-Up Active`,
-        'blessing'
-      );
-      onHudStateChanged?.(getStateSnapshot());
+      onHudStateChanged?.(getStateSnapshot(heroStates));
       return {
-        verdict: 'heal',
-        partnerRole: partnerKey,
-        partnerHp: partnerHero.hp,
-        resurrected: wasDowned && !partnerHero.downed,
-      };
-    }
-
-    if (verdict === 'blessing') {
-      const healAmt = Number(judgment?.partner_heal) || 80;
-      const wasDowned = partnerHero.downed;
-      partnerHero.downed = false;
-      partnerHero.reviveProgress = 0;
-      partnerHero.hp = Math.min(
-        partnerHero.maxHp,
-        (wasDowned ? 0 : partnerHero.hp) + healAmt
-      );
-
-      speakerHero.downed = false;
-      speakerHero.reviveProgress = 0;
-      speakerHero.hp = Math.min(speakerHero.maxHp, speakerHero.hp + 30);
-
-      vfxKit?.artoriousVfx?.triggerBlessing?.(speakerPos, partnerPos);
-
-      // 22s Ascended Magic Flow on Mage + 22s Sun-Sworn Sword Breathing on Knight
-      combatHeroes.Mage.ascendedMagicFlow = true;
-      combatHeroes.Mage.ascendedMagicTimer = 22.0;
-      combatHeroes.Mage.partnerMagicMult = Number(judgment?.partner_magic_mult) || 1.75;
-      combatHeroes.Mage.partnerBuffTimer = 22.0;
-      combatHeroes.Mage.empoweredBreathing = true;
-
-      combatHeroes.Knight.sunSwornBreathing = true;
-      combatHeroes.Knight.sunSwornTimer = 22.0;
-      combatHeroes.Knight.partnerSwordMult = Number(judgment?.partner_sword_mult) || 1.60;
-      combatHeroes.Knight.partnerBuffTimer = 22.0;
-      combatHeroes.Knight.empoweredBreathing = true;
-
-      setKnightBreathing('eclipse', 22.0);
-
-      if (speakerEntity) {
-        speakerEntity.praying = false;
-        speakerEntity.char?.play?.('cheer', { loop: false, fade: 0.1, force: true });
-      }
-      if (partnerEntity) {
-        partnerEntity.praying = false;
-        partnerEntity.char?.play?.(wasDowned ? 'revive' : 'cheer', {
-          loop: false,
-          fade: 0.1,
-          force: true,
-        });
-      }
-
-      // Crack 1 layer of Boss Bone Aegis if in range
-      if (enemyManager) {
-        enemyManager.applyAreaOrLineHit({
-          origin: speakerPos,
-          radius: 15.0,
-          hitSpec: {
-            source: 'divine_blessing',
-            baseDmg: 95,
-            applyMark: 'eclipse',
-            empoweredBreathing: true,
-            attackerPos: speakerPos,
-          },
-        });
-      }
-
-      addResonance(50);
-      combatSfx?.playShieldChime?.();
-      emitBanner(
-        'SANCTUARY BLESSING · SUN & TIDE ECLIPSE',
-        judgment?.divine_quote ||
-          judgment?.subtitle ||
-          '22s Ascended Magic Flow (1.75x) + Sun & Tide Eclipse Blade (1.60x)',
-        'blessing'
-      );
-      onHudStateChanged?.(getStateSnapshot());
-      return {
-        verdict: 'blessing',
-        partnerHp: partnerHero.hp,
+        verdict: 'smite',
+        speakerRole: speakerKey,
+        dissolveRole,
         speakerHp: speakerHero.hp,
+        partnerHp: partnerHero.hp,
+        totalPartyWipe: Boolean(combatHeroes.Knight.downed && combatHeroes.Mage.downed),
       };
     }
 
-    // verdict === 'miracle'
-    const wasKnightDowned = combatHeroes.Knight.downed;
-    const wasMageDowned = combatHeroes.Mage.downed;
-    combatHeroes.Knight.downed = false;
-    combatHeroes.Knight.reviveProgress = 0;
-    combatHeroes.Mage.downed = false;
-    combatHeroes.Mage.reviveProgress = 0;
+    // Unified 4.80s 4-Beat Blessing / Heal / Miracle Sequence (ZERO direct enemy damage!)
+    const kx = heroStates?.Knight?.x ?? speakerPos.x ?? 0;
+    const kz = heroStates?.Knight?.z ?? speakerPos.z ?? 0;
+    const mx = heroStates?.Mage?.x ?? partnerPos.x ?? kx + 1.5;
+    const mz = heroStates?.Mage?.z ?? partnerPos.z ?? kz;
 
-    combatHeroes.Knight.hp = combatHeroes.Knight.maxHp;
-    combatHeroes.Mage.hp = combatHeroes.Mage.maxHp;
-    combatHeroes.Knight.shield = 40;
-    combatHeroes.Knight.shieldTimer = 25.0;
-    combatHeroes.Mage.shield = 40;
-    combatHeroes.Mage.shieldTimer = 25.0;
-
-    // 30s of God-Tier Ascended Magic Flow (2.2x) + Sun & Tide Eclipse Breathing (1.85x)
-    combatHeroes.Mage.ascendedMagicFlow = true;
-    combatHeroes.Mage.ascendedMagicTimer = 30.0;
-    combatHeroes.Mage.partnerMagicMult = Number(judgment?.partner_magic_mult) || 2.2;
-    combatHeroes.Mage.partnerBuffTimer = 30.0;
-    combatHeroes.Mage.empoweredBreathing = true;
-
-    combatHeroes.Knight.sunSwornBreathing = true;
-    combatHeroes.Knight.sunSwornTimer = 30.0;
-    combatHeroes.Knight.partnerSwordMult = Number(judgment?.partner_sword_mult) || 1.85;
-    combatHeroes.Knight.partnerBuffTimer = 30.0;
-    combatHeroes.Knight.empoweredBreathing = true;
-
-    setKnightBreathing('eclipse', 30.0);
-    heartResonance = 100;
-
-    let enemyCenter = null;
-    if (enemyManager && enemyManager.activeEnemies.length > 0) {
-      const boss = enemyManager.activeEnemies.find((e) => e.isBoss && !e.dead);
-      const refEnemy = boss || enemyManager.activeEnemies[0];
-      if (refEnemy) {
-        enemyCenter = { x: refEnemy.x, y: refEnemy.y || 0, z: refEnemy.z };
-      }
-    }
-
-    vfxKit?.artoriousVfx?.triggerMiracle?.(speakerPos, partnerPos, enemyCenter);
+    verdictSequence.active = true;
+    verdictSequence.kind = 'blessing';
+    verdictSequence.verdict = verdict;
+    verdictSequence.elapsed = 0;
+    verdictSequence.duration = 4.8;
+    verdictSequence.beat = 1;
+    verdictSequence.speakerRole = speakerKey;
+    verdictSequence.dissolveRole = null;
+    verdictSequence.knightWasDowned = Boolean(combatHeroes.Knight.downed);
+    verdictSequence.mageWasDowned = Boolean(combatHeroes.Mage.downed);
+    verdictSequence.startKnightHp = combatHeroes.Knight.downed ? 0 : combatHeroes.Knight.hp;
+    verdictSequence.startMageHp = combatHeroes.Mage.downed ? 0 : combatHeroes.Mage.hp;
+    verdictSequence.startKnightX = kx;
+    verdictSequence.startKnightZ = kz;
+    verdictSequence.startMageX = mx;
+    verdictSequence.startMageZ = mz;
+    verdictSequence.midX = (kx + mx) * 0.5;
+    verdictSequence.midZ = (kz + mz) * 0.5;
 
     if (speakerEntity) {
       speakerEntity.praying = false;
-      speakerEntity.char?.play?.(wasKnightDowned || wasMageDowned ? 'revive' : 'cheer', {
-        loop: false,
-        fade: 0.1,
-        force: true,
-      });
     }
     if (partnerEntity) {
       partnerEntity.praying = false;
-      partnerEntity.char?.play?.(wasKnightDowned || wasMageDowned ? 'revive' : 'cheer', {
-        loop: false,
-        fade: 0.1,
-        force: true,
-      });
     }
 
-    // Shatter all layers of the Act III Boss's Bone Aegis + deal massive AoE damage to nearby skeletons
-    if (enemyManager) {
-      for (const e of enemyManager.activeEnemies) {
-        if (e && !e.dead && e.isBoss) {
-          e.aegisLayers = 0;
-          e.aegisActive = false;
-          e.stunTimer = Math.max(e.stunTimer || 0, 3.5);
-        }
-      }
-      enemyManager.applyAreaOrLineHit({
-        origin: enemyCenter || speakerPos,
-        radius: 18.0,
-        hitSpec: {
-          source: 'divine_miracle',
-          baseDmg: 260,
-          applyMark: 'eclipse',
-          detonatesMark: true,
-          empoweredBreathing: true,
-          attackerPos: speakerPos,
-        },
-      });
+    if (verdict === 'heal') {
+      vfxKit?.artoriousVfx?.triggerHeal?.(speakerPos, partnerPos);
+      addResonance(25);
+    } else if (verdict === 'miracle') {
+      vfxKit?.artoriousVfx?.triggerMiracle?.(speakerPos, partnerPos);
+      heartResonance = 100;
+    } else {
+      vfxKit?.artoriousVfx?.triggerBlessing?.(speakerPos, partnerPos);
+      addResonance(50);
     }
 
-    combatSfx?.playCouplesUltimate?.();
+    setKnightBreathing('eclipse', DIVINE_BLESSING_DURATION);
+    combatSfx?.playShieldChime?.();
     emitBanner(
-      'DIVINE MIRACLE · THE HEAVENS PART FOR YOU BOTH!',
+      verdictSequence.knightWasDowned || verdictSequence.mageWasDowned
+        ? 'DIVINE RESURRECTION · COURT OF DARK FLOWERS'
+        : 'DIVINE BLESSING · COURT OF DARK FLOWERS',
       judgment?.divine_quote ||
         judgment?.subtitle ||
-        'Full Restore + 40 Shield · Bone Aegis Shattered · 30s Eclipse Flow · Cataclysm 100%!',
-      'ultimate'
+        'Briar Sanctuary Encloses You Both · 30s Proximity Blessing (<= 5.0m Tether: Invincible, 2x DMG, Fast CD)',
+      'blessing'
     );
-    onHudStateChanged?.(getStateSnapshot());
+    onHudStateChanged?.(getStateSnapshot(heroStates));
     return {
-      verdict: 'miracle',
+      verdict,
+      sequenceActive: true,
+      duration: 4.8,
+      speakerRole: speakerKey,
+      partnerRole: partnerKey,
+      partnerHp: partnerHero.hp,
+      speakerHp: speakerHero.hp,
       knightHp: combatHeroes.Knight.hp,
       mageHp: combatHeroes.Mage.hp,
       heartResonance,
     };
   }
 
-  function castSpell(spellIdOrSlot, casterPos, aimYaw, partnerPos = null) {
+  function castSpell(spellIdOrSlot, casterPos, aimYaw, partnerPos = null, options = {}) {
     const spell =
       typeof spellIdOrSlot === 'number'
         ? SPELL_BY_SLOT[spellIdOrSlot]
         : SPELLS[spellIdOrSlot];
     if (!spell || combatHeroes.Mage.downed) return null;
 
-    if ((combatHeroes.Mage.spellCooldowns[spell.id] || 0) > 0.05) {
+    if (!options.ignoreCooldown && (combatHeroes.Mage.spellCooldowns[spell.id] || 0) > 0.05) {
       return { onCooldown: true, spell };
     }
 
-    const withinTether = isWithinPowerupTether(casterPos, partnerPos);
-    const cdMult =
-      combatHeroes.Mage.ascendedMagicFlow && withinTether ? 0.45 : 1.0;
-    combatHeroes.Mage.spellCooldowns[spell.id] = Number((spell.cd * cdMult).toFixed(2));
+    const cdMult = divineBlessingActive
+      ? DIVINE_BLESSING_E_CD_MULT
+      : combatHeroes.Mage.ascendedMagicFlow
+        ? 0.45
+        : 1.0;
+    const baseCd =
+      spell.id === 'frost_lance' || spell.id === 'cinder_fall'
+        ? MAGE_E_COOLDOWN
+        : spell.cd;
+    combatHeroes.Mage.spellCooldowns[spell.id] = Number((baseCd * cdMult).toFixed(2));
+    if (spell.id === 'frost_lance' || spell.id === 'cinder_fall') {
+      combatHeroes.Mage.skillCd = combatHeroes.Mage.spellCooldowns[spell.id];
+    }
+
     addResonance(spell.resonanceGain);
     setKnightBreathing(
       combatHeroes.Knight.sunSwornBreathing ? 'eclipse' : spell.infusion,
-      Math.max(HERO_STATS.Mage.infuseDuration, combatHeroes.Knight.sunSwornTimer)
+      Math.max(KNIGHT_POWER_SWORD_DURATION, combatHeroes.Knight.sunSwornTimer)
     );
 
     if (combatSfx?.playSpellCast) {
       combatSfx.playSpellCast(spell.id);
     }
 
+    const explicitDistance =
+      typeof options.distance === 'number' && Number.isFinite(options.distance)
+        ? options.distance
+        : null;
+    const effectiveRange =
+      spell.id === 'frost_lance'
+        ? SPELLS.frost_lance.range
+        : explicitDistance !== null
+          ? clamp(explicitDistance, 3.0, 16.0)
+          : spell.range;
+
     const enemies = enemyManager ? enemyManager.activeEnemies : [];
-    const softTarget = selectSoftLockTarget(casterPos, aimYaw, enemies, {
-      maxRange: spell.range,
-      partnerPos,
-    });
+    const softTarget =
+      explicitDistance !== null
+        ? null
+        : selectSoftLockTarget(casterPos, aimYaw, enemies, {
+            maxRange: effectiveRange,
+            partnerPos,
+          });
 
     let targetYaw = aimYaw;
     let targetPos = null;
-    if (softTarget) {
+    if (options.targetPos && typeof options.targetPos.x === 'number') {
+      targetPos = { ...options.targetPos };
+    } else if (softTarget) {
       const dx = softTarget.x - casterPos.x;
       const dz = softTarget.z - casterPos.z;
       targetYaw = Math.atan2(dx, dz);
       targetPos = { x: softTarget.x, y: softTarget.y, z: softTarget.z };
     } else {
-      const tx = casterPos.x + Math.sin(aimYaw) * Math.min(10.5, spell.range * 0.75);
-      const tz = casterPos.z + Math.cos(aimYaw) * Math.min(10.5, spell.range * 0.75);
+      const distUse =
+        explicitDistance !== null
+          ? effectiveRange
+          : Math.min(10.5, effectiveRange * 0.75);
+      const tx = casterPos.x + Math.sin(targetYaw) * distUse;
+      const tz = casterPos.z + Math.cos(targetYaw) * distUse;
       targetPos = { x: tx, y: walkableHeightAt(tx, tz), z: tz };
     }
 
@@ -939,7 +1071,6 @@ export function createCampaignLoop({
       z: casterPos.z + dirZ * 0.9,
     };
 
-    // Trigger corresponding Stage 4 Opaque VFX system if wired
     if (vfxKit) {
       const sysMap = {
         frost_lance: vfxKit.frostLance,
@@ -949,11 +1080,19 @@ export function createCampaignLoop({
       };
       const sys = sysMap[spell.id];
       if (sys?.cast) {
-        sys.cast(origin, { x: dirX, y: 0, z: dirZ }, { range: spell.range, targetPos });
+        sys.cast(
+          origin,
+          { x: dirX, y: 0, z: dirZ },
+          {
+            range: effectiveRange,
+            distance: effectiveRange,
+            aim: { distance: effectiveRange, yaw: targetYaw, origin, targetPos },
+            targetPos,
+          }
+        );
       }
     }
 
-    // Resolve authoritative damage + Elemental Crest mark + Shatterlance detonation
     let hits = [];
     if (enemyManager) {
       const commonHitSpec = {
@@ -977,13 +1116,16 @@ export function createCampaignLoop({
         hits = enemyManager.applyAreaOrLineHit({
           origin: casterPos,
           direction: { x: dirX, z: dirZ },
-          range: spell.range,
+          range: effectiveRange,
           width: spell.width || 2.6,
           hitSpec: commonHitSpec,
         });
       }
 
       for (const h of hits) {
+        if (h.result?.killed) {
+          awardKnightKillXp(h.enemy);
+        }
         if (h.result?.detonation) {
           addResonance(DETONATIONS[h.result.detonation.id]?.resonanceGain || 18);
           if (vfxKit?.swordVfx?.triggerDetonation) {
@@ -1003,22 +1145,27 @@ export function createCampaignLoop({
       }
     }
 
-    return { spell, targetYaw, targetPos, softTarget, hits };
+    return {
+      spell,
+      distance: effectiveRange,
+      targetYaw,
+      targetPos,
+      softTarget,
+      hits,
+    };
   }
 
   function performKnightSwing(swingType, knightPos, knightYaw, partnerPos = null) {
     if (combatHeroes.Knight.downed) return null;
 
-    const withinTether = isWithinPowerupTether(knightPos, partnerPos);
     if (
       combatHeroes.Knight.sunSwornBreathing &&
-      withinTether &&
       combatHeroes.Knight.breathingStyle === 'none'
     ) {
       setKnightBreathing('eclipse', Math.max(4.0, combatHeroes.Knight.sunSwornTimer));
     }
 
-    const activeStyle = withinTether ? combatHeroes.Knight.breathingStyle : 'none';
+    const activeStyle = combatHeroes.Knight.breathingStyle;
 
     const enemies = enemyManager ? enemyManager.activeEnemies : [];
     const softTarget = selectSoftLockTarget(knightPos, knightYaw, enemies, {
@@ -1078,6 +1225,9 @@ export function createCampaignLoop({
           yaw: swingYaw,
           baseDmg,
           infusion: activeStyle,
+          knightLevel: combatHeroes.Knight.level,
+          knightUltActive: combatHeroes.Knight.ultActive,
+          ultDmgMult: combatHeroes.Knight.ultDmgMult,
           empoweredBreathing: combatHeroes.Knight.empoweredBreathing,
           partnerSwordMult: combatHeroes.Knight.partnerSwordMult,
           perfectDodgeBuff: combatHeroes.Knight.perfectDodgeBuff,
@@ -1089,6 +1239,9 @@ export function createCampaignLoop({
 
       for (const h of hits) {
         addResonance(h.result?.resonanceGain || 4);
+        if (h.result?.killed) {
+          awardKnightKillXp(h.enemy);
+        }
         if (h.result?.detonation) {
           if (vfxKit?.swordVfx?.triggerDetonation) {
             vfxKit.swordVfx.triggerDetonation(h.result.detonation.id, {
@@ -1113,8 +1266,7 @@ export function createCampaignLoop({
   function performMageBoltAttack(comboIndex = 0, mageState, partnerPos = null) {
     if (combatHeroes.Mage.downed || !mageState) return null;
 
-    const withinTether = isWithinPowerupTether(mageState, partnerPos);
-    const ascendedActive = Boolean(combatHeroes.Mage.ascendedMagicFlow && withinTether);
+    const ascendedActive = Boolean(combatHeroes.Mage.ascendedMagicFlow);
 
     const enemies = enemyManager ? enemyManager.activeEnemies : [];
     const softTarget = selectSoftLockTarget(
@@ -1145,9 +1297,6 @@ export function createCampaignLoop({
       mageState.char.group.rotation.y = aimYaw;
     }
 
-    // Fire Starlight Bolt Volley from staff tip (`handSlot.r`):
-    // When Ascended Magic Flow is active (within 6.5m of partner), every tap fires
-    // BOTH the 3-bolt converging starlight fan AND the Starlight Nova Orb!
     if (ascendedActive) {
       fireMageStaffVolleyVfx(mageState, targetPos, 2);
       fireMageStaffVolleyVfx(mageState, targetPos, 3);
@@ -1166,7 +1315,6 @@ export function createCampaignLoop({
     let hits = [];
     if (enemyManager) {
       if (ascendedActive || comboIndex === 3) {
-        // Charged Starlight Nova Orb + 3-bolt converging fan when Ascended
         hits = enemyManager.applyAreaOrLineHit({
           origin: softTarget || targetPos,
           radius: ascendedActive
@@ -1187,7 +1335,6 @@ export function createCampaignLoop({
         });
         addResonance(ascendedActive ? 14 : 10);
       } else if (comboIndex === 2 && softTarget) {
-        // 3-Bolt Converging Starlight Fan Volley that applies 'rime' mark
         hits = enemyManager.applyAreaOrLineHit({
           origin: softTarget,
           radius: 2.5,
@@ -1218,6 +1365,9 @@ export function createCampaignLoop({
       }
 
       for (const h of hits) {
+        if (h.result?.killed) {
+          awardKnightKillXp(h.enemy);
+        }
         if (h.result?.detonation) {
           addResonance(DETONATIONS[h.result.detonation.id]?.resonanceGain || 18);
           vfxKit?.swordVfx?.triggerDetonation?.(h.result.detonation.id, h.result.detonation);
@@ -1230,108 +1380,228 @@ export function createCampaignLoop({
     return { comboIndex, aimYaw, softTarget, targetPos, hits, ascendedActive };
   }
 
-  function performPartnerSkill(activeHeroId, heroStates) {
-    const knightState = heroStates?.Knight;
-    const mageState = heroStates?.Mage;
+  /**
+   * `E` Skill:
+   * - Knight: **Power Sword** — ignites sword with selected element (`ice` or `fire`)
+   *   for `13.0s` active duration on an `18.0s` total cooldown (`5.0s` downtime).
+   * - Mage: Casts selected `E` spell (`frost_lance` or `cinder_fall`) at aimed distance
+   *   with an `8.5s` cooldown.
+   */
+  function performPartnerSkill(activeHeroId, heroStates, options = {}) {
+    const knightState = heroStates?.Knight || { x: 0, y: 0, z: 0, yaw: 0 };
+    const mageState = heroStates?.Mage || { x: 0, y: 0, z: 0, yaw: 0 };
 
     if (activeHeroId === 'Knight') {
-      if (combatHeroes.Knight.interceptCd > 0.05 || combatHeroes.Knight.downed) {
-        return { onCooldown: true };
+      if (combatHeroes.Knight.powerSwordCd > 0.05 || combatHeroes.Knight.downed) {
+        return { onCooldown: true, cooldownRemaining: combatHeroes.Knight.powerSwordCd };
       }
-      combatHeroes.Knight.interceptCd = HERO_STATS.Knight.interceptCd;
-      combatHeroes.Knight.shield = HERO_STATS.Knight.interceptShield;
-      combatHeroes.Knight.shieldTimer = HERO_STATS.Knight.interceptDuration;
-      combatHeroes.Mage.shield = HERO_STATS.Knight.interceptShield;
-      combatHeroes.Mage.shieldTimer = HERO_STATS.Knight.interceptDuration;
+      const elem = combatHeroes.Knight.selectedElement || 'ice';
+      const styleId = elem === 'fire' ? 'solar' : 'rime';
 
-      if (combatSfx?.playShieldChime) {
-        combatSfx.playShieldChime();
+      const baseDowntime = KNIGHT_POWER_SWORD_COOLDOWN - KNIGHT_POWER_SWORD_DURATION; // 5.0s
+      const effectiveDowntime = divineBlessingActive
+        ? Number((baseDowntime * DIVINE_BLESSING_E_CD_MULT).toFixed(2))
+        : baseDowntime;
+      const effectiveTotalCd = KNIGHT_POWER_SWORD_DURATION + effectiveDowntime; // 15.5s when blessed, 18.0s normal
+
+      combatHeroes.Knight.powerSwordActive = true;
+      combatHeroes.Knight.powerSwordTimer = KNIGHT_POWER_SWORD_DURATION; // 13.0s
+      combatHeroes.Knight.powerSwordCd = effectiveTotalCd;
+      combatHeroes.Knight.interceptCd = effectiveTotalCd;
+      setKnightBreathing(styleId, KNIGHT_POWER_SWORD_DURATION);
+      addResonance(12);
+
+      return {
+        skill: 'power_sword',
+        element: elem,
+        breathingStyle: styleId,
+        activeDuration: KNIGHT_POWER_SWORD_DURATION,
+        totalCooldown: effectiveTotalCd,
+        cooldown: effectiveTotalCd,
+        downtime: effectiveDowntime,
+      };
+    }
+
+    // Mage E: Cast selected spell (frost_lance or cinder_fall) with 8.5s cooldown (4.25s during Blessing)
+    if (combatHeroes.Mage.skillCd > 0.05 || combatHeroes.Mage.downed) {
+      return { onCooldown: true, cooldownRemaining: combatHeroes.Mage.skillCd };
+    }
+    const spellId = options.spellId || combatHeroes.Mage.selectedSpell || 'frost_lance';
+    const effectiveMageECd = divineBlessingActive
+      ? Number((MAGE_E_COOLDOWN * DIVINE_BLESSING_E_CD_MULT).toFixed(2))
+      : MAGE_E_COOLDOWN;
+    combatHeroes.Mage.skillCd = effectiveMageECd;
+    combatHeroes.Mage.infuseCd = effectiveMageECd;
+    const castRes = castSpell(
+      spellId,
+      mageState,
+      options.yaw ?? mageState.yaw ?? 0,
+      knightState,
+      {
+        distance: options.distance,
+        targetPos: options.targetPos,
+        ignoreCooldown: true,
       }
+    );
+    return {
+      skill: 'mage_elemental_spell',
+      spellId,
+      cooldown: effectiveMageECd,
+      distance: castRes?.distance,
+      castRes,
+    };
+  }
 
-      const enemies = enemyManager ? enemyManager.activeEnemies : [];
-      const threat = selectSoftLockTarget(
-        knightState || { x: 0, z: 0 },
-        knightState?.yaw || 0,
-        enemies,
-        { maxRange: HERO_STATS.Knight.interceptRange, partnerPos: mageState }
+  /**
+   * Knight `Q` (`ultimate` — Sky-Lightning Awakening):
+   * Plays native sword-raise pose (`pray_channel` / `burst_aoe`), calls down
+   * fiery/water sky-lightning onto his blade, and grants `10.0s` of `2.0x` double damage (`24s` cd, `8.0s` during Blessing).
+   */
+  function performKnightUltimate(heroStates) {
+    if (combatHeroes.Knight.downed) return null;
+    if (combatHeroes.Knight.ultCd > 0.05) {
+      return { onCooldown: true, cooldownRemaining: combatHeroes.Knight.ultCd };
+    }
+
+    const effectiveUltCd = divineBlessingActive
+      ? Number((KNIGHT_ULT_COOLDOWN * DIVINE_BLESSING_Q_CD_MULT).toFixed(2))
+      : KNIGHT_ULT_COOLDOWN;
+
+    combatHeroes.Knight.ultActive = true;
+    combatHeroes.Knight.ultTimer = KNIGHT_ULT_DURATION; // 10.0s
+    combatHeroes.Knight.ultDmgMult = KNIGHT_ULT_DMG_MULT; // 2.0x
+    combatHeroes.Knight.ultCd = effectiveUltCd; // 24.0s (8.0s during Blessing)
+
+    const elem = combatHeroes.Knight.selectedElement || 'ice';
+    const styleId = elem === 'fire' ? 'solar' : 'rime';
+    setKnightBreathing(
+      styleId,
+      Math.max(combatHeroes.Knight.breathingTimer, KNIGHT_ULT_DURATION)
+    );
+
+    const kPos = heroStates?.Knight || { x: 0, y: 0, z: 0, yaw: 0 };
+    const dirX = Math.sin(kPos.yaw || 0);
+    const dirZ = Math.cos(kPos.yaw || 0);
+
+    if (vfxKit) {
+      vfxKit.stormLance?.cast?.(
+        { x: kPos.x, y: walkableHeightAt(kPos.x, kPos.z), z: kPos.z },
+        { x: dirX, y: 0, z: dirZ },
+        { range: 8.5 }
       );
-
-      let hits = [];
-      if (threat && knightState) {
-        const dx = threat.x - knightState.x;
-        const dz = threat.z - knightState.z;
-        const d = Math.hypot(dx, dz) || 1;
-        const step = Math.min(d - 1.25, HERO_STATS.Knight.interceptRange);
-        if (step > 0) {
-          knightState.x += (dx / d) * step;
-          knightState.z += (dz / d) * step;
-          knightState.y = walkableHeightAt(knightState.x, knightState.z);
-          knightState.yaw = Math.atan2(dx, dz);
-        }
-      }
-
-      if (enemyManager && knightState) {
-        hits = enemyManager.applyAreaOrLineHit({
-          origin: knightState,
-          radius: 4.0,
-          hitSpec: {
-            source: 'intercept',
-            baseDmg: HERO_STATS.Knight.interceptDmg,
-            infusion: combatHeroes.Knight.breathingStyle,
-            empoweredBreathing: combatHeroes.Knight.empoweredBreathing,
-            knockback: HERO_STATS.Knight.interceptKnockback,
-            attackerPos: knightState,
-          },
-        });
-        for (const h of hits) {
-          addResonance(h.result?.resonanceGain || 8);
-          if (h.result?.detonation) {
-            vfxKit?.swordVfx?.triggerDetonation?.(h.result.detonation.id, h.result.detonation);
-            combatSfx?.playDetonation?.(h.result.detonation.id);
-            onDetonation?.(h.result.detonation, h.enemy);
-          }
-        }
-      }
-      return { skill: 'chivalric_intercept', shield: HERO_STATS.Knight.interceptShield, hits };
+      vfxKit.swordVfx?.triggerSwing?.('charged', kPos, kPos.yaw || 0, styleId);
     }
+    combatSfx?.playCouplesUltimate?.();
 
-    // Mage E: Soul Infuse (heals partner + ignites Knight's blade + marks nearby enemies)
-    if (combatHeroes.Mage.infuseCd > 0.05 || combatHeroes.Mage.downed) {
-      return { onCooldown: true };
-    }
-    combatHeroes.Mage.infuseCd = HERO_STATS.Mage.infuseCd;
-    combatHeroes.Knight.hp = Math.min(
-      combatHeroes.Knight.maxHp,
-      combatHeroes.Knight.hp + HERO_STATS.Mage.infuseHeal
-    );
-    combatHeroes.Mage.hp = Math.min(
-      combatHeroes.Mage.maxHp,
-      combatHeroes.Mage.hp + Math.round(HERO_STATS.Mage.infuseHeal * 0.65)
-    );
-
-    const nextStyle =
-      combatHeroes.Knight.breathingStyle === 'rime'
-        ? 'solar'
-        : combatHeroes.Knight.breathingStyle === 'solar'
-          ? 'tempest'
-          : 'rime';
-    setKnightBreathing(nextStyle, HERO_STATS.Mage.infuseDuration);
-    addResonance(14);
-
-    if (enemyManager && mageState) {
-      enemyManager.applyAreaOrLineHit({
-        origin: knightState || mageState,
+    let hits = [];
+    if (enemyManager) {
+      hits = enemyManager.applyAreaOrLineHit({
+        origin: kPos,
         radius: 6.5,
         hitSpec: {
-          source: 'soul_infuse',
-          baseDmg: 24,
-          applyMark: nextStyle,
-          empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
-          attackerPos: mageState,
+          source: 'knight_sky_lightning',
+          baseDmg: 75,
+          infusion: styleId,
+          knightLevel: combatHeroes.Knight.level,
+          knightUltActive: true,
+          ultDmgMult: KNIGHT_ULT_DMG_MULT,
+          partnerSwordMult: combatHeroes.Knight.partnerSwordMult,
+          detonatesMark: true,
+          attackerPos: kPos,
         },
       });
+      for (const h of hits) {
+        if (h.result?.killed) {
+          awardKnightKillXp(h.enemy);
+        }
+      }
     }
-    return { skill: 'soul_infuse', style: nextStyle, heal: HERO_STATS.Mage.infuseHeal };
+
+    emitBanner(
+      'SKY-LIGHTNING AWAKENING · 2.0× BLADE',
+      `10.0s Double Sword Damage (${elem === 'fire' ? 'Hinokami Sunfire' : 'Glacial Tide'})`,
+      'ultimate'
+    );
+
+    return {
+      ultimate: 'knight_sky_lightning',
+      poseClip: 'pray_channel',
+      duration: KNIGHT_ULT_DURATION,
+      dmgMult: KNIGHT_ULT_DMG_MULT,
+      cooldown: effectiveUltCd,
+      hits,
+    };
+  }
+
+  /**
+   * Mage `Q` (`ultimate` — 6.0s Vulnerable Storm Cataclysm):
+   * Freezes the Mage in place for `6.0s` channeling a massive multi-wave Storm
+   * Cataclysm across enemies, during which 1 unprotected hit immediately downs her!
+   */
+  function performMageStormCataclysm(heroStates) {
+    if (combatHeroes.Mage.downed) return null;
+    if (combatHeroes.Mage.ultCd > 0.05) {
+      return { onCooldown: true, cooldownRemaining: combatHeroes.Mage.ultCd };
+    }
+
+    const effectiveCataclysmCd = divineBlessingActive
+      ? Number((MAGE_STORM_CATACLYSM_COOLDOWN * DIVINE_BLESSING_Q_CD_MULT).toFixed(2))
+      : MAGE_STORM_CATACLYSM_COOLDOWN;
+
+    combatHeroes.Mage.stormCataclysmActive = true;
+    combatHeroes.Mage.stormCataclysmTimer = MAGE_STORM_CATACLYSM_DURATION; // 6.0s
+    combatHeroes.Mage.stormCataclysmWaveTimer = 0;
+    combatHeroes.Mage.ultCd = effectiveCataclysmCd; // 24.0s (8.0s during Blessing)
+
+    const mPos = heroStates?.Mage || { x: 0, y: 0, z: 0, yaw: 0 };
+    const dirX = Math.sin(mPos.yaw || 0);
+    const dirZ = Math.cos(mPos.yaw || 0);
+
+    if (vfxKit?.stormLance?.cast) {
+      vfxKit.stormLance.cast(
+        { x: mPos.x, y: walkableHeightAt(mPos.x, mPos.z), z: mPos.z },
+        { x: dirX, y: 0, z: dirZ },
+        { range: 14.5 }
+      );
+    }
+    combatSfx?.playCouplesUltimate?.();
+
+    let hits = [];
+    if (enemyManager) {
+      hits = enemyManager.applyAreaOrLineHit({
+        origin: mPos,
+        radius: HERO_STATS.Mage.stormCataclysmRadius,
+        hitSpec: {
+          source: 'storm_cataclysm',
+          baseDmg: HERO_STATS.Mage.stormCataclysmWaveDmg,
+          applyMark: 'tempest',
+          detonatesMark: true,
+          empoweredBreathing: true,
+          partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
+          attackerPos: mPos,
+        },
+      });
+      for (const h of hits) {
+        if (h.result?.killed) {
+          awardKnightKillXp(h.enemy);
+        }
+      }
+    }
+
+    emitBanner(
+      'STORM CATACLYSM · 6.0s CHANNEL!',
+      'Knight Must Shield Her — 1 Unprotected Hit Downs the Mage!',
+      'ultimate'
+    );
+
+    return {
+      ultimate: 'storm_cataclysm',
+      stationary: true,
+      vulnerableOneHitDown: true,
+      duration: MAGE_STORM_CATACLYSM_DURATION,
+      cooldown: effectiveCataclysmCd,
+      hits,
+    };
   }
 
   const ultimateSequence = {
@@ -1362,7 +1632,7 @@ export function createCampaignLoop({
 
     setKnightBreathing(
       'eclipse',
-      Math.max(HERO_STATS.Mage.infuseDuration, combatHeroes.Knight.sunSwornTimer || 16.0)
+      Math.max(KNIGHT_POWER_SWORD_DURATION, combatHeroes.Knight.sunSwornTimer || 16.0)
     );
     if (combatSfx?.playCouplesUltimate) {
       combatSfx.playCouplesUltimate();
@@ -1423,10 +1693,6 @@ export function createCampaignLoop({
       15.5
     );
 
-    // Beat 1 (t = 0.00s — Combined Fire + Frost Vortex & Sun & Tide Eclipse Whirlwind):
-    // - Mage combines Frost Vortex (Frost Lance) + Volcanic Fire Meteor (Cinder Fall) simultaneously for 2x Double Damage!
-    // - Knight unleashes 360° Sun & Tide Eclipse ('eclipse' Fire & Water mixed) Whirlwind Spin ('charged')!
-    // - Enemies within 12m are pulled into the vortex epicenter and rooted for 1.25s awaiting Beat 2!
     if (vfxKit) {
       vfxKit.frostLance?.cast?.(
         castOrigin,
@@ -1436,12 +1702,16 @@ export function createCampaignLoop({
       vfxKit.cinderFall?.cast?.(
         castOrigin,
         { x: dirX, y: 0, z: dirZ },
-        { range: mageToImpactDist }
+        { range: mageToImpactDist, distance: mageToImpactDist }
       );
       fireMageStaffVolleyVfx(mageState, { x: impX, y: impY + 1.0, z: impZ }, 2);
       vfxKit.swordVfx?.triggerSwing?.(
         'charged',
-        { x: knightState.x, y: knightState.y ?? walkableHeightAt(knightState.x, knightState.z), z: knightState.z },
+        {
+          x: knightState.x,
+          y: knightState.y ?? walkableHeightAt(knightState.x, knightState.z),
+          z: knightState.z,
+        },
         aimYaw,
         'eclipse'
       );
@@ -1458,8 +1728,6 @@ export function createCampaignLoop({
 
     let hits = [];
     if (enemyManager) {
-      // Combine Fire + Frost Vortex for 2x Double Damage (COUPLES_ULTIMATE.dmg * 2 = 360 total):
-      // In live VFX sessions, Beat 1 deals COUPLES_ULTIMATE.dmg (180) Frost Vortex damage and Beat 2 deals COUPLES_ULTIMATE.dmg (180) Fire + Eclipse Cataclysm damage!
       const isLiveVfxSession = Boolean(vfxKit && vfxKit.cinderFall);
       const totalDoubleDmg = COUPLES_ULTIMATE.dmg * 2;
       for (const e of enemyManager.activeEnemies) {
@@ -1497,291 +1765,16 @@ export function createCampaignLoop({
     return { ultimate: true, hits, impactPos: ultimateSequence.impactPos };
   }
 
-  function updateIndicatorsInstancedMeshes(heroStates) {
-    if (indicatorsHiddenForShot) {
-      groundInd.mesh.count = 0;
-      groundInd.mesh.visible = false;
-      crestInd.mesh.count = 0;
-      crestInd.mesh.visible = false;
-      return;
-    }
-
-    const knight = heroStates?.Knight;
-    const mage = heroStates?.Mage;
-    const enemies = enemyManager ? enemyManager.activeEnemies : [];
-    const act = ACT_DEFINITIONS[currentActId];
-
-    // -----------------------------------------------------------------------
-    // 1. Populate `groundIndicatorMesh` (Telegraph Rings, Pier Sanctuary Ring,
-    //    Plaza Stele Astrolabe Ring, Downed Revival Ring, and Guiding Petals)
-    // -----------------------------------------------------------------------
-    let gCount = 0;
-    const metaArr = groundInd.metaArray;
-
-    function pushGroundInstance(x, y, z, radius, rotY, kind, progress, phase, rimWidth, color) {
-      if (gCount >= MAX_GROUND_INDICATORS) return;
-      const idx = gCount++;
-      _dummy.position.set(x, y, z);
-      _dummy.rotation.set(0, rotY, 0);
-      _dummy.scale.set(radius, 1.0, radius);
-      _dummy.updateMatrix();
-      groundInd.mesh.setMatrixAt(idx, _dummy.matrix);
-      groundInd.mesh.setColorAt(idx, color);
-
-      const mBase = idx * 4;
-      metaArr[mBase] = kind;
-      metaArr[mBase + 1] = progress;
-      metaArr[mBase + 2] = phase;
-      metaArr[mBase + 3] = rimWidth;
-    }
-
-    // 1A. Enemy Windup Telegraph Rings (y = ground + 0.04m)
-    for (let i = 0; i < enemies.length; i++) {
-      const e = enemies[i];
-      if (!e || e.dead || !e.active || e.aiState !== 'windup') continue;
-      _colorTmp.copy(PALETTE.telegraphWarn).lerp(PALETTE.telegraphHot, e.telegraphProgress);
-      pushGroundInstance(
-        e.telegraphX,
-        e.telegraphY,
-        e.telegraphZ,
-        e.telegraphRadius,
-        elapsed * 1.4,
-        0.0,
-        clamp(e.telegraphProgress, 0.08, 1.0),
-        elapsed * 4.0 + i,
-        0.13,
-        _colorTmp
-      );
-    }
-
-    // 1B. Town Plaza Weathered Sanctuary Stele Rotating Golden Astrolabe Ring at (2.6, 7.2)
-    {
-      const sy = walkableHeightAt(ALTAR_STELE_POS.x, ALTAR_STELE_POS.z) + 0.045;
-      const stelePulse = 0.48 + 0.18 * Math.sin(elapsed * 2.4);
-      pushGroundInstance(
-        ALTAR_STELE_POS.x,
-        sy,
-        ALTAR_STELE_POS.z,
-        1.75,
-        elapsed * 0.65,
-        0.0,
-        stelePulse,
-        elapsed * 1.8,
-        0.14,
-        PALETTE.sanctuaryGold
-      );
-    }
-
-    // 1B-2. West Millpond Pier Sanctuary Brazier Ring
-    if (currentActId === 'interlude_pier' || !combatHeroes.Knight.empoweredBreathing) {
-      const pierCenter = ACT_DEFINITIONS.interlude_pier.center;
-      const py = walkableHeightAt(pierCenter.x, pierCenter.z) + 0.05;
-      const pulse = 0.35 + 0.25 * Math.sin(elapsed * 3.2);
-      pushGroundInstance(
-        pierCenter.x,
-        py,
-        pierCenter.z,
-        currentActId === 'interlude_pier' ? 3.8 : 2.4,
-        elapsed * 0.8,
-        0.0,
-        pulse,
-        elapsed * 2.5,
-        0.14,
-        PALETTE.sanctuaryGold
-      );
-    }
-
-    // 1C. Downed Hero Commune Resurrection Ring (radius = 4.8m)
-    for (const [id, ch] of Object.entries(combatHeroes)) {
-      const pos = id === 'Knight' ? knight : mage;
-      if (ch.downed && pos) {
-        pushGroundInstance(
-          pos.x,
-          walkableHeightAt(pos.x, pos.z) + 0.05,
-          pos.z,
-          COMMUNE_RESURRECT_DISTANCE,
-          elapsed * 1.6,
-          0.0,
-          clamp(ch.reviveProgress, 0.16, 1.0),
-          elapsed * 3.0,
-          0.12,
-          PALETTE.reviveEmerald
-        );
-      }
-    }
-
-    // 1D. Guiding Golden Petal Markers along the road toward the active Act zone
-    if (act && !actTriggered && Array.isArray(act.guidePath)) {
-      for (let i = 0; i < act.guidePath.length; i++) {
-        const pt = act.guidePath[i];
-        const nextPt = act.guidePath[i + 1] || act.center;
-        const dirYaw = Math.atan2(nextPt.x - pt.x, nextPt.z - pt.z);
-        const bobScale = 0.52 + 0.08 * Math.sin(elapsed * 3.4 - i * 0.7);
-        const gy = walkableHeightAt(pt.x, pt.z) + 0.06;
-        pushGroundInstance(
-          pt.x,
-          gy,
-          pt.z,
-          bobScale,
-          dirYaw,
-          1.0,
-          1.0,
-          elapsed * 2.0 + i,
-          0.12,
-          PALETTE.petalGold
-        );
-      }
-    }
-
-    groundInd.mesh.count = gCount;
-    groundInd.mesh.visible = gCount > 0;
-    if (gCount > 0) {
-      groundInd.mesh.instanceMatrix.needsUpdate = true;
-      if (groundInd.mesh.instanceColor) groundInd.mesh.instanceColor.needsUpdate = true;
-      groundInd.metaAttr.needsUpdate = true;
-      groundInd.mesh.material.uniforms.uTime.value = elapsed;
-    }
-
-    // -----------------------------------------------------------------------
-    // 2. Populate `crestAndTetherMesh` strictly for 3D Overhead Enemy
-    //    Elemental Crests (y = 2.15m) and Boss Bone Aegis Shields
-    // -----------------------------------------------------------------------
-    let cCount = 0;
-
-    function pushCrestInstance(x, y, z, sx, sy, sz, rx, ry, rz, color) {
-      if (cCount >= MAX_CREST_AND_TETHER_INSTANCES) return;
-      const idx = cCount++;
-      _dummy.position.set(x, y, z);
-      _dummy.rotation.set(rx, ry, rz);
-      _dummy.scale.set(sx, sy, sz);
-      _dummy.updateMatrix();
-      crestInd.mesh.setMatrixAt(idx, _dummy.matrix);
-      crestInd.mesh.setColorAt(idx, color);
-    }
-
-    // 2A. 3D Overhead Elemental Crests (y = 2.15m above marked enemies) + Boss Bone Aegis Shields
-    for (let i = 0; i < enemies.length; i++) {
-      const e = enemies[i];
-      if (!e || e.dead || !e.active) continue;
-
-      if (e.mark) {
-        const crestY = e.y + (e.isBoss ? 2.85 : 2.15) + Math.sin(elapsed * 4.2 + i) * 0.08;
-        const spinY = elapsed * 2.8 + i;
-
-        if (e.mark === 'rime') {
-          // Cerulean Ice Diamond
-          pushCrestInstance(
-            e.x,
-            crestY,
-            e.z,
-            0.24,
-            0.42,
-            0.24,
-            0.0,
-            spinY,
-            0.0,
-            PALETTE.crestRime
-          );
-        } else if (e.mark === 'solar') {
-          // Vermilion-Gold Sun-Crest (central core + 2 crossed solar flares)
-          pushCrestInstance(
-            e.x,
-            crestY,
-            e.z,
-            0.30,
-            0.30,
-            0.30,
-            0.35,
-            spinY,
-            0.35,
-            PALETTE.crestSolar
-          );
-          pushCrestInstance(
-            e.x,
-            crestY,
-            e.z,
-            0.44,
-            0.12,
-            0.12,
-            0.0,
-            -spinY * 1.4,
-            0.78,
-            PALETTE.sanctuaryGold
-          );
-        } else if (e.mark === 'tempest') {
-          // Violet-Gold Storm Octahedron
-          pushCrestInstance(
-            e.x,
-            crestY,
-            e.z,
-            0.28,
-            0.36,
-            0.28,
-            0.45 * Math.sin(elapsed * 6.0),
-            spinY * 1.8,
-            0.25,
-            PALETTE.crestTempest
-          );
-        } else if (e.mark === 'eclipse') {
-          // Intertwined Fire & Water Eclipse Crest (Cerulean Diamond + Vermilion-Gold Sun-Crest)
-          pushCrestInstance(
-            e.x,
-            crestY,
-            e.z,
-            0.26,
-            0.44,
-            0.26,
-            0.0,
-            spinY,
-            0.0,
-            PALETTE.crestRime
-          );
-          pushCrestInstance(
-            e.x,
-            crestY,
-            e.z,
-            0.44,
-            0.14,
-            0.14,
-            0.35,
-            -spinY * 1.5,
-            0.78,
-            PALETTE.crestSolar
-          );
-        }
-      }
-
-      // Boss Bone Aegis Orbiting Shields
-      if (e.isBoss && e.aegisActive && e.aegisLayers > 0) {
-        const shieldTotal = e.aegisLayers * 2;
-        for (let s = 0; s < shieldTotal; s++) {
-          const ang = elapsed * 2.4 + (s / shieldTotal) * Math.PI * 2;
-          const rOrbit = 1.45;
-          const sx = e.x + Math.cos(ang) * rOrbit;
-          const sz = e.z + Math.sin(ang) * rOrbit;
-          const sy = e.y + 1.55 + Math.sin(elapsed * 4.0 + s) * 0.1;
-          pushCrestInstance(
-            sx,
-            sy,
-            sz,
-            0.22,
-            0.46,
-            0.12,
-            0.15,
-            -ang + Math.PI * 0.5,
-            0.0,
-            s % 2 === 0 ? PALETTE.aegisCrimson : PALETTE.aegisGold
-          );
-        }
-      }
-    }
-
-    crestInd.mesh.count = enemyManager ? cCount : Math.max(cCount, TETHER_BEAD_COUNT);
-    crestInd.mesh.visible = cCount > 0;
-    if (cCount > 0) {
-      crestInd.mesh.instanceMatrix.needsUpdate = true;
-      if (crestInd.mesh.instanceColor) crestInd.mesh.instanceColor.needsUpdate = true;
-    }
+  /**
+   * Permanently hides floating tether beads, spinning overhead enemy diamonds,
+   * and red under-enemy circles (`crestAndTetherMesh.visible = false`,
+   * `groundIndicatorMesh.visible = false`).
+   */
+  function updateIndicatorsInstancedMeshes() {
+    groundInd.mesh.count = 0;
+    groundInd.mesh.visible = false;
+    crestInd.mesh.count = 0;
+    crestInd.mesh.visible = false;
   }
 
   function update(dt, { heroStates, soloWingmanActive = true, camera = null } = {}) {
@@ -1791,7 +1784,155 @@ export function createCampaignLoop({
     const knight = heroStates?.Knight;
     const mage = heroStates?.Mage;
 
-    // 1. Tick Cooldowns, Shield Timers, I-Frames, Commune Power-Up Timers & Tether Surge
+    // 0. Advance Divine Verdict Sequence (2.50s 4-Beat Blessing/Resurrection OR 2.80s Smite)
+    let blessingActivatedThisFrame = false;
+    let smiteWipeCompletedThisFrame = false;
+    if (verdictSequence.active) {
+      verdictSequence.elapsed += dt;
+      const t = verdictSequence.elapsed;
+
+      if (verdictSequence.kind === 'blessing') {
+        let sepDx = verdictSequence.startMageX - verdictSequence.startKnightX;
+        let sepDz = verdictSequence.startMageZ - verdictSequence.startKnightZ;
+        const sepLen = Math.hypot(sepDx, sepDz);
+        if (sepLen > 1e-4) {
+          sepDx /= sepLen;
+          sepDz /= sepLen;
+        } else {
+          sepDx = 1.0;
+          sepDz = 0.0;
+        }
+        const halfSpan = 1.35 * 0.5;
+        const targetKX = verdictSequence.midX - sepDx * halfSpan;
+        const targetKZ = verdictSequence.midZ - sepDz * halfSpan;
+        const targetMX = verdictSequence.midX + sepDx * halfSpan;
+        const targetMZ = verdictSequence.midZ + sepDz * halfSpan;
+
+        if (t < 2.10) {
+          verdictSequence.beat = 1;
+        } else if (t < 2.65) {
+          verdictSequence.beat = 2;
+        } else if (t < 4.25) {
+          verdictSequence.beat = 3;
+          combatHeroes.Knight.downed = false;
+          combatHeroes.Knight.reviveProgress = 0;
+          combatHeroes.Mage.downed = false;
+          combatHeroes.Mage.reviveProgress = 0;
+          bothDownedTimer = 0;
+
+          const fillU = clamp((t - 2.65) / 1.60, 0, 1);
+          combatHeroes.Knight.hp = Math.round(
+            verdictSequence.startKnightHp +
+              (combatHeroes.Knight.maxHp - verdictSequence.startKnightHp) * fillU
+          );
+          combatHeroes.Mage.hp = Math.round(
+            verdictSequence.startMageHp +
+              (combatHeroes.Mage.maxHp - verdictSequence.startMageHp) * fillU
+          );
+
+          if (knight) {
+            knight.x =
+              verdictSequence.startKnightX +
+              (targetKX - verdictSequence.startKnightX) * fillU;
+            knight.z =
+              verdictSequence.startKnightZ +
+              (targetKZ - verdictSequence.startKnightZ) * fillU;
+            knight.y = walkableHeightAt(knight.x, knight.z);
+          }
+          if (mage) {
+            mage.x =
+              verdictSequence.startMageX +
+              (targetMX - verdictSequence.startMageX) * fillU;
+            mage.z =
+              verdictSequence.startMageZ +
+              (targetMZ - verdictSequence.startMageZ) * fillU;
+            mage.y = walkableHeightAt(mage.x, mage.z);
+          }
+        } else if (t < 4.80) {
+          if (verdictSequence.beat < 4) {
+            knight?.char?.play?.(verdictSequence.knightWasDowned ? 'revive' : 'cheer', {
+              loop: false,
+              fade: 0.1,
+              force: true,
+            });
+            mage?.char?.play?.(verdictSequence.mageWasDowned ? 'revive' : 'cheer', {
+              loop: false,
+              fade: 0.1,
+              force: true,
+            });
+          }
+          verdictSequence.beat = 4;
+          combatHeroes.Knight.downed = false;
+          combatHeroes.Mage.downed = false;
+          combatHeroes.Knight.hp = combatHeroes.Knight.maxHp;
+          combatHeroes.Mage.hp = combatHeroes.Mage.maxHp;
+          if (knight) {
+            knight.x = targetKX;
+            knight.z = targetKZ;
+            knight.y = walkableHeightAt(knight.x, knight.z);
+          }
+          if (mage) {
+            mage.x = targetMX;
+            mage.z = targetMZ;
+            mage.y = walkableHeightAt(mage.x, mage.z);
+          }
+        } else {
+          // 4.80s complete: unlock controls, finalize 100% Max HP & side-by-side pop-up, start 30s Blessing
+          combatHeroes.Knight.downed = false;
+          combatHeroes.Mage.downed = false;
+          combatHeroes.Knight.hp = combatHeroes.Knight.maxHp;
+          combatHeroes.Mage.hp = combatHeroes.Mage.maxHp;
+          if (knight) {
+            knight.x = targetKX;
+            knight.z = targetKZ;
+            knight.y = walkableHeightAt(knight.x, knight.z);
+          }
+          if (mage) {
+            mage.x = targetMX;
+            mage.z = targetMZ;
+            mage.y = walkableHeightAt(mage.x, mage.z);
+          }
+          verdictSequence.active = false;
+          verdictSequence.beat = 0;
+          activateDivineBlessing();
+          blessingActivatedThisFrame = true;
+        }
+      } else if (verdictSequence.kind === 'smite') {
+        verdictSequence.beat = 1;
+        if (t >= 2.80) {
+          verdictSequence.active = false;
+          verdictSequence.beat = 0;
+          if (combatHeroes.Knight.downed && combatHeroes.Mage.downed) {
+            smiteWipeCompletedThisFrame = true;
+          }
+        }
+      }
+    }
+
+    // 0B. 30-Second Proximity Blessing Tether (<= 5.0m Rule)
+    if (divineBlessingActive) {
+      const dist = knight && mage ? getPartnerDistance(knight, mage) : 0;
+      if (dist > DIVINE_BLESSING_TETHER_DISTANCE) {
+        clearDivineBlessing();
+        emitBanner(
+          'DIVINE BLESSING BROKEN · TETHER SNAPPED',
+          'Moved further than 5.0m apart — Invincibility & Double Damage ended!',
+          'warning'
+        );
+      } else if (!blessingActivatedThisFrame) {
+        divineBlessingTimer = Math.max(0, divineBlessingTimer - dt);
+        if (divineBlessingTimer <= 0) {
+          clearDivineBlessing();
+        } else {
+          combatHeroes.Knight.partnerSwordMult = DIVINE_BLESSING_DMG_MULT;
+          combatHeroes.Mage.partnerMagicMult = DIVINE_BLESSING_DMG_MULT;
+          combatHeroes.Knight.partnerBuffTimer = divineBlessingTimer;
+          combatHeroes.Mage.partnerBuffTimer = divineBlessingTimer;
+        }
+      }
+    }
+
+    // 1. Tick Cooldowns, Shield Timers, I-Frames, Power Sword (13s/18s) & Ultimates
     for (const h of Object.values(combatHeroes)) {
       if (h.shieldTimer > 0) {
         h.shieldTimer = Math.max(0, h.shieldTimer - dt);
@@ -1800,7 +1941,7 @@ export function createCampaignLoop({
       if (h.iframeTimer > 0) {
         h.iframeTimer = Math.max(0, h.iframeTimer - dt);
       }
-      if (h.partnerBuffTimer > 0) {
+      if (!divineBlessingActive && h.partnerBuffTimer > 0) {
         h.partnerBuffTimer = Math.max(0, h.partnerBuffTimer - dt);
         if (h.partnerBuffTimer <= 0) {
           if (h.id === 'Knight') h.partnerSwordMult = 1.0;
@@ -1809,14 +1950,38 @@ export function createCampaignLoop({
       }
     }
 
-    if (combatHeroes.Knight.sunSwornTimer > 0) {
+    if (combatHeroes.Knight.powerSwordTimer > 0) {
+      combatHeroes.Knight.powerSwordTimer = Math.max(
+        0,
+        combatHeroes.Knight.powerSwordTimer - dt
+      );
+      if (combatHeroes.Knight.powerSwordTimer <= 0) {
+        combatHeroes.Knight.powerSwordActive = false;
+      }
+    }
+    if (combatHeroes.Knight.powerSwordCd > 0) {
+      combatHeroes.Knight.powerSwordCd = Math.max(0, combatHeroes.Knight.powerSwordCd - dt);
+    }
+
+    if (combatHeroes.Knight.ultTimer > 0) {
+      combatHeroes.Knight.ultTimer = Math.max(0, combatHeroes.Knight.ultTimer - dt);
+      if (combatHeroes.Knight.ultTimer <= 0) {
+        combatHeroes.Knight.ultActive = false;
+        combatHeroes.Knight.ultDmgMult = 1.0;
+      }
+    }
+    if (combatHeroes.Knight.ultCd > 0) {
+      combatHeroes.Knight.ultCd = Math.max(0, combatHeroes.Knight.ultCd - dt);
+    }
+
+    if (!divineBlessingActive && combatHeroes.Knight.sunSwornTimer > 0) {
       combatHeroes.Knight.sunSwornTimer = Math.max(0, combatHeroes.Knight.sunSwornTimer - dt);
       if (combatHeroes.Knight.sunSwornTimer <= 0) {
         combatHeroes.Knight.sunSwornBreathing = false;
       }
     }
 
-    if (combatHeroes.Mage.ascendedMagicTimer > 0) {
+    if (!divineBlessingActive && combatHeroes.Mage.ascendedMagicTimer > 0) {
       combatHeroes.Mage.ascendedMagicTimer = Math.max(
         0,
         combatHeroes.Mage.ascendedMagicTimer - dt
@@ -1828,6 +1993,12 @@ export function createCampaignLoop({
 
     if (combatHeroes.Knight.interceptCd > 0) {
       combatHeroes.Knight.interceptCd = Math.max(0, combatHeroes.Knight.interceptCd - dt);
+    }
+    if (combatHeroes.Mage.skillCd > 0) {
+      combatHeroes.Mage.skillCd = Math.max(0, combatHeroes.Mage.skillCd - dt);
+    }
+    if (combatHeroes.Mage.ultCd > 0) {
+      combatHeroes.Mage.ultCd = Math.max(0, combatHeroes.Mage.ultCd - dt);
     }
     if (combatHeroes.Mage.infuseCd > 0) {
       combatHeroes.Mage.infuseCd = Math.max(0, combatHeroes.Mage.infuseCd - dt);
@@ -1845,6 +2016,49 @@ export function createCampaignLoop({
       combatHeroes.Knight.breathingTimer = Math.max(0, combatHeroes.Knight.breathingTimer - dt);
       if (combatHeroes.Knight.breathingTimer <= 0) {
         setKnightBreathing('none', 0);
+      }
+    }
+
+    // Mage 6.0s Vulnerable Stationary Storm Cataclysm pulses
+    if (combatHeroes.Mage.stormCataclysmActive && combatHeroes.Mage.stormCataclysmTimer > 0) {
+      combatHeroes.Mage.stormCataclysmTimer = Math.max(
+        0,
+        combatHeroes.Mage.stormCataclysmTimer - dt
+      );
+      combatHeroes.Mage.stormCataclysmWaveTimer += dt;
+      if (combatHeroes.Mage.stormCataclysmWaveTimer >= 1.0) {
+        combatHeroes.Mage.stormCataclysmWaveTimer -= 1.0;
+        const mPos = mage || { x: 0, y: 0, z: 0, yaw: 0 };
+        if (vfxKit?.stormLance?.cast) {
+          vfxKit.stormLance.cast(
+            { x: mPos.x, y: walkableHeightAt(mPos.x, mPos.z), z: mPos.z },
+            { x: Math.sin(mPos.yaw || 0), y: 0, z: Math.cos(mPos.yaw || 0) },
+            { range: 14.5 }
+          );
+        }
+        if (enemyManager) {
+          const hits = enemyManager.applyAreaOrLineHit({
+            origin: mPos,
+            radius: HERO_STATS.Mage.stormCataclysmRadius,
+            hitSpec: {
+              source: 'storm_cataclysm',
+              baseDmg: HERO_STATS.Mage.stormCataclysmWaveDmg,
+              applyMark: 'tempest',
+              detonatesMark: true,
+              empoweredBreathing: true,
+              partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
+              attackerPos: mPos,
+            },
+          });
+          for (const h of hits) {
+            if (h.result?.killed) {
+              awardKnightKillXp(h.enemy);
+            }
+          }
+        }
+      }
+      if (combatHeroes.Mage.stormCataclysmTimer <= 0) {
+        combatHeroes.Mage.stormCataclysmActive = false;
       }
     }
 
@@ -1866,7 +2080,7 @@ export function createCampaignLoop({
       enemyManager.applySacredWardPushback({ x: cx, z: cz }, 6.0);
     }
 
-    // 1B. Advance 4-Beat Couples Resonance Ultimate Choreography (`ultimateSequence`)
+    // 1B. Advance Couples Resonance Ultimate Choreography (`ultimateSequence`, zero hopVy!)
     if (ultimateSequence.active) {
       ultimateSequence.age += dt;
       if (!ultimateSequence.beat2Fired && ultimateSequence.age >= 0.55) {
@@ -1883,15 +2097,15 @@ export function createCampaignLoop({
           if (knight) {
             knight.x += ultimateSequence.aimDir.x * 1.45;
             knight.z += ultimateSequence.aimDir.z * 1.45;
-            knight.vy = 4.2;
-            knight.grounded = false;
+            knight.vy = 0;
+            knight.grounded = true;
             knight.actionState = 'combo4';
-            knight.actionTimer = 0.56;
+            knight.actionTimer = 0.66;
             knight.char?.play?.('combo4', {
               loop: false,
               fade: 0.06,
-              startTime: 0.52,
-              timeScale: 1.18,
+              startTime: 0,
+              timeScale: 1.0,
               force: true,
             });
             vfxKit.swordVfx?.triggerSwing?.(
@@ -1936,13 +2150,8 @@ export function createCampaignLoop({
       }
     }
 
-    // 2. Downed State & Sincere Resurrection Rules:
-    //    - If BOTH heroes are downed simultaneously, after 3.5s they revive at 60% HP
-    //      at the nearest Sanctuary stone.
-    //    - If ONE hero is downed, they remain on the ground playing 'death' (Death_A)
-    //      until their surviving partner runs within 4.8m and Communes to resurrect them!
-    if (knight && mage) {
-      const distKM = Math.hypot(knight.x - mage.x, knight.z - mage.z);
+    // 2. Downed State & Resurrection Rules (wait until Smite/Blessing cinematic finishes)
+    if (knight && mage && !verdictSequence.active && !smiteWipeCompletedThisFrame) {
       if (combatHeroes.Knight.downed && combatHeroes.Mage.downed) {
         bothDownedTimer += dt;
         combatHeroes.Knight.reviveProgress = clamp(bothDownedTimer / 3.5, 0, 1);
@@ -1990,16 +2199,8 @@ export function createCampaignLoop({
         }
       } else {
         bothDownedTimer = 0;
-        for (const [id, ch] of Object.entries(combatHeroes)) {
-          if (ch.downed) {
-            // Pulse emerald revival ring when partner is within 4.8m to signal Commune readiness
-            ch.reviveProgress =
-              distKM <= COMMUNE_RESURRECT_DISTANCE
-                ? 0.58 + 0.32 * Math.sin(elapsed * 4.5)
-                : 0.18;
-          } else {
-            ch.reviveProgress = 0;
-          }
+        for (const ch of Object.values(combatHeroes)) {
+          ch.reviveProgress = ch.downed ? 0.58 + 0.32 * Math.sin(elapsed * 4.5) : 0;
         }
       }
     }
@@ -2027,16 +2228,23 @@ export function createCampaignLoop({
         dt,
         {
           Knight: knight
-            ? { ...knight, downed: combatHeroes.Knight.downed, iframeTimer: combatHeroes.Knight.iframeTimer }
+            ? {
+                ...knight,
+                downed: combatHeroes.Knight.downed,
+                iframeTimer: combatHeroes.Knight.iframeTimer,
+              }
             : null,
           Mage: mage
-            ? { ...mage, downed: combatHeroes.Mage.downed, iframeTimer: combatHeroes.Mage.iframeTimer }
+            ? {
+                ...mage,
+                downed: combatHeroes.Mage.downed,
+                iframeTimer: combatHeroes.Mage.iframeTimer,
+              }
             : null,
         },
         camera
       );
 
-      // Check if current wave is cleared
       if (
         act &&
         actTriggered &&
@@ -2057,14 +2265,15 @@ export function createCampaignLoop({
       }
     }
 
-    // 4. Smart Solo Wingman AI (auto-casts rotating spell every 4.5s + fires Starlight Bolts between casts!)
+    // 4. Smart Solo Wingman AI (plays full native clips from startTime: 0)
     if (
       soloWingmanActive &&
       enemyManager &&
       enemyManager.activeEnemies.length > 0 &&
       mage &&
       !combatHeroes.Mage.downed &&
-      !communeChannelActive
+      !combatHeroes.Mage.stormCataclysmActive &&
+      !isControlLocked()
     ) {
       wingmanCastTimer -= dt;
       wingmanBoltTimer -= dt;
@@ -2081,8 +2290,14 @@ export function createCampaignLoop({
           const yaw = Math.atan2(target.x - mage.x, target.z - mage.z);
           mage.yaw = yaw;
           mage.actionState = 'cast_spell';
-          mage.actionTimer = 0.56;
-          mage.char?.play?.('cast_spell', { loop: false, fade: 0.08, timeScale: 1.24, force: true });
+          mage.actionTimer = 0.62;
+          mage.char?.play?.('cast_spell', {
+            loop: false,
+            fade: 0.08,
+            startTime: 0,
+            timeScale: 1.0,
+            force: true,
+          });
           castSpell(nextSpellId, mage, yaw, knight);
         }
       } else if (wingmanBoltTimer <= 0) {
@@ -2091,9 +2306,7 @@ export function createCampaignLoop({
         wingmanBoltIdx++;
         const boltClip =
           bIdx === 0 ? 'mage_attack1' : bIdx === 1 ? 'mage_attack2' : 'mage_attack3';
-        const boltStartTime = bIdx === 2 ? 0.12 : 0.04;
-        const boltTimeScale = bIdx === 2 ? 1.50 : 1.45;
-        const boltDuration = bIdx === 2 ? 0.52 : 0.46;
+        const boltDuration = bIdx === 2 ? 0.56 : 0.5;
 
         const boltRes = performMageBoltAttack(bIdx, mage, knight);
         if (boltRes) {
@@ -2102,15 +2315,15 @@ export function createCampaignLoop({
           mage.char?.play?.(boltClip, {
             loop: false,
             fade: 0.07,
-            startTime: boltStartTime,
-            timeScale: boltTimeScale,
+            startTime: 0,
+            timeScale: 1.0,
             force: true,
           });
         }
       }
     }
 
-    // 5. Update the 2 shared InstancedMeshes (`groundIndicatorMesh` + `crestAndTetherMesh`)
+    // 5. Keep indicator meshes permanently hidden (zero clutter)
     updateIndicatorsInstancedMeshes(heroStates);
 
     if (hudDirtyTimer >= 0.12 && onHudStateChanged) {
@@ -2139,7 +2352,11 @@ export function createCampaignLoop({
       heartResonance: Math.round(heartResonance),
       partnerDistance: Number(dist.toFixed(2)),
       withinCommuneRange: dist <= COMMUNE_MAX_DISTANCE,
-      withinTetherRange: dist <= POWERUP_TETHER_DISTANCE,
+      withinTetherRange: dist <= DIVINE_BLESSING_TETHER_DISTANCE,
+      divineBlessingActive,
+      divineBlessingTimer: Number(divineBlessingTimer.toFixed(2)),
+      controlLocked: isControlLocked(),
+      verdictSequence: { ...verdictSequence },
       knight: { ...combatHeroes.Knight },
       mage: {
         ...combatHeroes.Mage,
@@ -2168,15 +2385,29 @@ export function createCampaignLoop({
       heartResonance = clamp(syncPayload.heartResonance, 0, 100);
     }
     if (syncPayload.knightBreathing) {
-      setKnightBreathing(syncPayload.knightBreathing, 12.0);
+      setKnightBreathing(syncPayload.knightBreathing, KNIGHT_POWER_SWORD_DURATION);
     }
   }
 
   function resetCampaign() {
+    clearDivineBlessing();
+    verdictSequence.active = false;
+    verdictSequence.kind = null;
+    verdictSequence.elapsed = 0;
+    verdictSequence.beat = 0;
+
     combatHeroes.Knight.hp = combatHeroes.Knight.maxHp;
     combatHeroes.Knight.shield = 0;
     combatHeroes.Knight.downed = false;
     combatHeroes.Knight.reviveProgress = 0;
+    combatHeroes.Knight.shieldBlocking = false;
+    combatHeroes.Knight.powerSwordActive = false;
+    combatHeroes.Knight.powerSwordTimer = 0;
+    combatHeroes.Knight.powerSwordCd = 0;
+    combatHeroes.Knight.ultActive = false;
+    combatHeroes.Knight.ultTimer = 0;
+    combatHeroes.Knight.ultCd = 0;
+    combatHeroes.Knight.ultDmgMult = 1.0;
     combatHeroes.Knight.empoweredBreathing = false;
     combatHeroes.Knight.sunSwornBreathing = false;
     combatHeroes.Knight.sunSwornTimer = 0;
@@ -2188,6 +2419,12 @@ export function createCampaignLoop({
     combatHeroes.Mage.shield = 0;
     combatHeroes.Mage.downed = false;
     combatHeroes.Mage.reviveProgress = 0;
+    combatHeroes.Mage.consecutiveChargedCount = 0;
+    combatHeroes.Mage.skillCd = 0;
+    combatHeroes.Mage.stormCataclysmActive = false;
+    combatHeroes.Mage.stormCataclysmTimer = 0;
+    combatHeroes.Mage.stormCataclysmWaveTimer = 0;
+    combatHeroes.Mage.ultCd = 0;
     combatHeroes.Mage.empoweredBreathing = false;
     combatHeroes.Mage.ascendedMagicFlow = false;
     combatHeroes.Mage.ascendedMagicTimer = 0;
@@ -2219,6 +2456,7 @@ export function createCampaignLoop({
     combatHeroes,
     state,
     tetherSurge,
+    verdictSequence,
     get currentActId() {
       return currentActId;
     },
@@ -2231,14 +2469,26 @@ export function createCampaignLoop({
     get heartResonance() {
       return heartResonance;
     },
+    get communeChannelActive() {
+      return communeChannelActive;
+    },
+    isControlLocked,
+    isDivineBlessingActive,
+    getDivineBlessingRemaining,
+    activateDivineBlessing,
+    clearDivineBlessing,
     addResonance,
+    awardKnightKillXp,
     setKnightBreathing,
+    toggleHeroElement,
+    setKnightShieldBlocking,
     startWave,
     transitionToAct,
     activatePierSanctuary,
     handlePlayerHit,
     applyCommuneVerdict,
     canCommuneTogether,
+    canStartDivinePrayer,
     getPartnerDistance,
     isWithinPowerupTether,
     setCommuneChannelActive,
@@ -2246,6 +2496,8 @@ export function createCampaignLoop({
     performKnightSwing,
     performMageBoltAttack,
     performPartnerSkill,
+    performKnightUltimate,
+    performMageStormCataclysm,
     performCouplesUltimate,
     getStateSnapshot,
     applyRemoteStateSync,

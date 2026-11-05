@@ -7,17 +7,20 @@ import {
 } from './geography.js';
 
 /**
- * Volumetric 3D Ghibli Trees & Hanging Wisteria Raceme Curtains (`world/assets/terrain/trees.js`).
+ * Ghibli Gouache Leaf-Card & 3D Shingled-Petal Wisteria Trees (`world/assets/terrain/trees.js`).
  *
- * Wave 1C Upgrades:
- * - Replaces flat/thin canopy clusters with 6–7 overlapping 3D geodesic spherical/ovoid sub-domes (`sy: 0.78..0.95`)
- *   per tree crown with rich 360° horizontal + overhead volume, baked inner-core ambient occlusion,
- *   and luminous sunlit spring-emerald/lime upper crowns (`PAL.topSun`, `PAL.midSun`, `PAL.rimSun`).
- * - Adds 18–28 hanging 3D conical raceme blossom curtains (`0.9m–2.1m` long) drooping beneath the canopy
- *   rim on Wisteria, Shrine & Blossom trees (matching `docs/references/visual-concepts/01-title.png`),
- *   sculpted as tapered 3D multi-sided raceme cones/clusters with lavender-to-blush-white vertical color
- *   gradients and higher `windWeight` (`0.75..1.0`) at the hanging tips.
- * - Entire 68-tree valley system merged into 1 draw call (`<= 2` draw calls budget).
+ * Engineered to match `docs/references/visual-concepts/01-title.png` from all 360° horizontal
+ * and overhead angles in a SINGLE merged draw call (`1` draw call for all 69 valley trees):
+ * 1. Asymmetric Multi-Crown Gnarled Trunks & Spreading Boughs:
+ *    - Each tree splits into 2–3 distinct, separated branch sub-crowns at varied heights and reaches
+ *      with visible chestnut limbs and sky gaps between crowns (never a single uniform mushroom ball).
+ * 2. Proxy-Normal Gouache Leaf-Cluster Cards (`alphaTest` cutout, `transparent: false`):
+ *    - Procedural 1024×512 Gouache Botanical Atlas with pointed painted leaf clusters and 5-petal
+ *      white crown blossoms, using spherical proxy normals for plush Ghibli cloud shading.
+ * 3. True 3D Shingled-Petal Wisteria Racemes (`addShingledPetalWisteriaRaceme`):
+ *    - Sculpted from 20 overlapping, downward-cupped 3D hooded pea-blossom petals spiraling down
+ *      curved stems along the outer canopy rims (deep violet-orchid calyx -> luminous lavender-lilac
+ *      mid-florets -> creamy blush-white bottom buds).
  */
 
 const TAU = Math.PI * 2;
@@ -29,8 +32,8 @@ const FOG_COLOR = new THREE.Color(0xd8eef5);
 
 export const TREE_STYLE = {
   uCel: { value: 1.0 },
-  uRim: { value: 0.58 },
-  uRimColor: { value: new THREE.Color(0xdff68c) },
+  uRim: { value: 0.74 },
+  uRimColor: { value: new THREE.Color(0xf2ffa8) },
 };
 
 export function setTreeSunDirection(dir) {
@@ -41,7 +44,7 @@ export function setTreeSunDirection(dir) {
 export function setTreeTimeOfDay(daylight = 1.0, lightTint = null, fogColor = null) {
   if (lightTint) LIGHT_TINT.copy(lightTint);
   if (fogColor) FOG_COLOR.copy(fogColor);
-  const rimScale = 0.30 + 0.32 * Math.max(0, Math.min(1, daylight));
+  const rimScale = 0.34 + 0.42 * Math.max(0, Math.min(1, daylight));
   TREE_STYLE.uRim.value = rimScale;
 }
 
@@ -58,117 +61,258 @@ function smoothstep(edge0, edge1, x) {
   return t * t * (3 - 2 * t);
 }
 
-// Harmonized Ghibli spring palette matching docs/references/visual-concepts/01-title.png
 const PAL = {
-  // Pure, vibrant spring-lime & meadow-green foliage ramp + deep inner-core forest AO
-  topSun: srgbColor(0xc2ec70),
-  midSun: srgbColor(0x8ed452),
-  lowSun: srgbColor(0x62ae3e),
-  rimSun: srgbColor(0xdcf888),
-  shdTop: srgbColor(0x5aa23a),
-  shdLow: srgbColor(0x39782a),
-  aoCore: srgbColor(0x23501d),
+  barkSun: srgbColor(0x8e5636),
+  barkShd: srgbColor(0x5c3620),
+  barkDeep: srgbColor(0x3f2212),
 
-  // Sakura & Wisteria hanging raceme & blossom cluster palettes
-  sakuraTip: srgbColor(0xfff2f7),
-  sakuraMid: srgbColor(0xf9c6da),
-  sakuraTop: srgbColor(0xec92b6),
-  sakuraShdTop: srgbColor(0xc2688e),
-  sakuraShdLow: srgbColor(0xdfa2bc),
+  foliageTopSun: srgbColor(0xcef474),
+  foliageMidSun: srgbColor(0x7ecb4a),
+  foliageLowSun: srgbColor(0x529e3a),
+  foliageShdTop: srgbColor(0x4a9438),
+  foliageShdLow: srgbColor(0x2e6c28),
 
-  wistBlushTip: srgbColor(0xfff4fc),
-  wistLavMid: srgbColor(0xe2befc),
-  wistOrchid: srgbColor(0xc692f6),
-  wistVioletTop: srgbColor(0x9c64e2),
-  wistShdTop: srgbColor(0x6c3cae),
-  wistShdLow: srgbColor(0xb48edc),
+  // 3D Shingled-Petal Wisteria Palette (matching 01-title.png)
+  wistCalyxSun:  srgbColor(0x7c3aed),
+  wistCalyxShd:  srgbColor(0x4c1d95),
+  wistUpperSun:  srgbColor(0xa855f7),
+  wistUpperShd:  srgbColor(0x6d28d9),
+  wistMidSun:    srgbColor(0xd8b4fe),
+  wistMidShd:    srgbColor(0x9333ea),
+  wistLowerSun:  srgbColor(0xf5d0fe),
+  wistLowerShd:  srgbColor(0xc084fc),
+  wistBudTipSun: srgbColor(0xfff5fd),
+  wistBudTipShd: srgbColor(0xe9d5ff),
 
-  // Warm chestnut trunk & spreading under-boughs
-  barkSun: srgbColor(0x925c3a),
-  barkShd: srgbColor(0x683e24),
-  barkDeep: srgbColor(0x4e2c18),
-
-  // Golden blossom stamen center
-  stamenSun: srgbColor(0xffdc56),
-  stamenShd: srgbColor(0xd99e2b),
+  // Sakura Blossom Cascade Palette
+  sakuraCalyxSun:  srgbColor(0xdb2777),
+  sakuraCalyxShd:  srgbColor(0x831843),
+  sakuraUpperSun:  srgbColor(0xf472b6),
+  sakuraUpperShd:  srgbColor(0xbe185d),
+  sakuraMidSun:    srgbColor(0xfbcfe8),
+  sakuraMidShd:    srgbColor(0xdb2777),
+  sakuraLowerSun:  srgbColor(0xfce7f3),
+  sakuraLowerShd:  srgbColor(0xf472b6),
+  sakuraBudTipSun: srgbColor(0xfff9fc),
+  sakuraBudTipShd: srgbColor(0xfbcfe8),
 };
 
-const BLOSSOM_TINTS = [
-  { sun: srgbColor(0xfff6fa), shd: srgbColor(0xdcc8d6) }, // 0: creamy sakura white
-  { sun: srgbColor(0xfcd0e2), shd: srgbColor(0xd49ab4) }, // 1: soft sakura blush
-  { sun: srgbColor(0xe6d0fc), shd: srgbColor(0xb89ad8) }, // 2: soft wisteria lavender
-  { sun: srgbColor(0xfcd8c4), shd: srgbColor(0xd4a48e) }, // 3: warm pastel peach
-  { sun: srgbColor(0xdabef8), shd: srgbColor(0xa886ce) }, // 4: wisteria lilac
-];
+// ============================================================================
+// Procedural 1024×512 Gouache Leaf & Crown-Blossom Atlas (Works in Browser + Node)
+// ============================================================================
+let _cachedFoliageAtlas = null;
 
-// Prebuild a welded 8-azimuth × 4-ring staggered geodesic dome template (26 vertices, 48 triangles)
-// so every volumetric sub-dome is lush from all 360° angles and overhead while keeping all 69 trees <= 48k tris!
-const GEODESIC_DOME_TEMPLATE = (() => {
-  const azSegs = 8;
-  const elRings = 4;
-  const uniqueVerts = [[0, 1, 0]]; // index 0: top pole
-  const rings = [];
+export function getSharedGouacheFoliageAtlas() {
+  if (_cachedFoliageAtlas) return _cachedFoliageAtlas;
 
-  for (let r = 1; r < elRings; r++) {
-    const phi = (r / elRings) * Math.PI;
-    const sinP = Math.sin(phi);
-    const cosP = Math.cos(phi);
-    const row = [];
-    for (let s = 0; s < azSegs; s++) {
-      const theta = (s / azSegs) * TAU + (r % 2) * (TAU / (azSegs * 2));
-      row.push(uniqueVerts.length);
-      uniqueVerts.push([sinP * Math.cos(theta), cosP, sinP * Math.sin(theta)]);
+  const W = 1024;
+  const H = 512;
+
+  if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, W, H);
+
+      const drawGouacheLeaf = (cx, cy, len, wid, angle, baseHex, midHex, tipHex, rimHex, darkOutline = '#285c24') => {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(angle);
+
+        const grad = ctx.createLinearGradient(0, -len * 0.45, 0, len * 0.55);
+        grad.addColorStop(0.0, baseHex);
+        grad.addColorStop(0.50, midHex);
+        grad.addColorStop(0.88, tipHex);
+        grad.addColorStop(1.0, rimHex);
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(0, -len * 0.48);
+        ctx.bezierCurveTo(wid * 0.68, -len * 0.18, wid * 0.60, len * 0.26, 0, len * 0.54);
+        ctx.bezierCurveTo(-wid * 0.60, len * 0.26, -wid * 0.68, -len * 0.18, 0, -len * 0.48);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = darkOutline;
+        ctx.globalAlpha = 0.22;
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+
+        ctx.strokeStyle = rimHex;
+        ctx.globalAlpha = 0.24;
+        ctx.lineWidth = Math.max(1.4, wid * 0.06);
+        ctx.beginPath();
+        ctx.moveTo(0, -len * 0.30);
+        ctx.lineTo(0, len * 0.38);
+        ctx.stroke();
+        ctx.restore();
+      };
+
+      const drawCrownFlower = (cx, cy, radius, rot, petalHex, shdHex) => {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(rot);
+        for (let p = 0; p < 5; p++) {
+          const a = (p / 5) * TAU;
+          ctx.save();
+          ctx.rotate(a);
+          const g = ctx.createRadialGradient(0, radius * 0.35, 1, 0, radius * 0.45, radius * 0.68);
+          g.addColorStop(0, shdHex);
+          g.addColorStop(0.45, petalHex);
+          g.addColorStop(1, '#ffffff');
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.moveTo(0, radius * 0.10);
+          ctx.bezierCurveTo(radius * 0.38, radius * 0.28, radius * 0.34, radius * 0.86, 0, radius * 0.98);
+          ctx.bezierCurveTo(-radius * 0.34, radius * 0.86, -radius * 0.38, radius * 0.28, 0, radius * 0.10);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.fillStyle = '#ffbe32';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.23, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = '#fff5b8';
+        ctx.beginPath();
+        ctx.arc(-radius * 0.05, -radius * 0.05, radius * 0.11, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      };
+
+      // Left Tile (0..512): Ragged Star-Burst Gouache Leaf Cluster
+      {
+        const rand = createPRNG(101);
+        const ox = 256, oy = 256;
+        const outerSpokes = 12;
+        for (let i = 0; i < outerSpokes; i++) {
+          const a = (i / outerSpokes) * TAU + (rand() - 0.5) * 0.16;
+          const r = 96 + (i % 3) * 26 + rand() * 16;
+          drawGouacheLeaf(
+            ox + Math.cos(a) * r,
+            oy + Math.sin(a) * r,
+            152 + (i % 2) * 22,
+            76 + rand() * 14,
+            a - Math.PI * 0.5 + (rand() - 0.5) * 0.28,
+            '#3b7a30', '#5cae40', '#88d652', '#b8f06c'
+          );
+        }
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * TAU + 0.25 + (rand() - 0.5) * 0.20;
+          const r = 46 + rand() * 42;
+          drawGouacheLeaf(
+            ox + Math.cos(a) * r,
+            oy + Math.sin(a) * r,
+            134 + rand() * 20,
+            72 + rand() * 14,
+            a - Math.PI * 0.5 + (rand() - 0.5) * 0.30,
+            '#468a36', '#70c048', '#9ee25e', '#caf678'
+          );
+        }
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * TAU + rand() * 0.35;
+          const r = 18 + rand() * 24;
+          drawGouacheLeaf(
+            ox + Math.cos(a) * r,
+            oy + Math.sin(a) * r,
+            116 + rand() * 16,
+            66 + rand() * 12,
+            a - Math.PI * 0.5 + (rand() - 0.5) * 0.35,
+            '#58a240', '#84d052', '#b6ee6a', '#defa8c'
+          );
+        }
+      }
+
+      // Right Tile (512..1024): Ragged Leaf Sprig + White 5-Petal Crown Flowers
+      {
+        const rand = createPRNG(202);
+        const ox = 512 + 256, oy = 256;
+        const outerSpokes = 12;
+        for (let i = 0; i < outerSpokes; i++) {
+          const a = (i / outerSpokes) * TAU + (rand() - 0.5) * 0.16;
+          const r = 94 + (i % 3) * 24 + rand() * 16;
+          drawGouacheLeaf(
+            ox + Math.cos(a) * r,
+            oy + Math.sin(a) * r,
+            150 + (i % 2) * 22,
+            74 + rand() * 14,
+            a - Math.PI * 0.5 + (rand() - 0.5) * 0.28,
+            '#3b7a30', '#5cae40', '#8ad652', '#baee6c'
+          );
+        }
+        for (let i = 0; i < 9; i++) {
+          const a = (i / 9) * TAU + 0.3 + (rand() - 0.5) * 0.20;
+          const r = 44 + rand() * 42;
+          drawGouacheLeaf(
+            ox + Math.cos(a) * r,
+            oy + Math.sin(a) * r,
+            130 + rand() * 18,
+            70 + rand() * 14,
+            a - Math.PI * 0.5 + (rand() - 0.5) * 0.30,
+            '#488c38', '#74c248', '#a2e45e', '#ccf678'
+          );
+        }
+        drawCrownFlower(ox - 54, oy - 42, 52, 0.3, '#fff6fa', '#dec2d0');
+        drawCrownFlower(ox + 62, oy + 26, 46, 1.1, '#fff8fb', '#e2c8d4');
+        drawCrownFlower(ox - 10, oy + 66, 40, 2.0, '#fff6fa', '#e0c6d2');
+      }
+
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = THREE.ClampToEdgeWrapping;
+      tex.wrapT = THREE.ClampToEdgeWrapping;
+      tex.anisotropy = 4;
+      tex.needsUpdate = true;
+      _cachedFoliageAtlas = tex;
+      return tex;
     }
-    rings.push(row);
   }
-  const botPole = uniqueVerts.length;
-  uniqueVerts.push([0, -1, 0]);
 
-  const indices = [];
-  const firstRow = rings[0];
-  for (let s = 0; s < azSegs; s++) {
-    indices.push(0, firstRow[s], firstRow[(s + 1) % azSegs]);
+  // Fallback RGBA DataTexture for headless Node.js unit tests (verify.mjs)
+  const data = new Uint8Array(64 * 32 * 4);
+  for (let i = 0; i < 64 * 32; i++) {
+    data[i * 4] = 135;
+    data[i * 4 + 1] = 210;
+    data[i * 4 + 2] = 85;
+    data[i * 4 + 3] = 255;
   }
-  for (let r = 0; r < rings.length - 1; r++) {
-    const rA = rings[r];
-    const rB = rings[r + 1];
-    for (let s = 0; s < azSegs; s++) {
-      const ns = (s + 1) % azSegs;
-      indices.push(rA[s], rB[s], rA[ns], rA[ns], rB[s], rB[ns]);
-    }
-  }
-  const lastRow = rings[rings.length - 1];
-  for (let s = 0; s < azSegs; s++) {
-    indices.push(lastRow[s], botPole, lastRow[(s + 1) % azSegs]);
-  }
-  return { uniqueVerts, indices };
-})();
+  const fallbackTex = new THREE.DataTexture(data, 64, 32, THREE.RGBAFormat);
+  fallbackTex.needsUpdate = true;
+  _cachedFoliageAtlas = fallbackTex;
+  return fallbackTex;
+}
 
 class TreeGeometryBuilder {
   constructor(crownCenter) {
     this.positions = [];
     this.normals = [];
+    this.uvs = [];
     this.colors = [];
     this.shadowColors = [];
     this.crownCenters = [];
     this.windWeights = [];
+    this.cardModes = []; // 0.0 = bark, 1.0 = leaf card, 2.0 = 3D shingled wisteria/sakura petal
     this.indices = [];
     this.vCount = 0;
     this.crownCenter = crownCenter;
   }
 
-  addVertex(x, y, z, nx, ny, nz, sunCol, shdCol, wind = 0.0) {
+  addVertex(x, y, z, nx, ny, nz, u, v, sunCol, shdCol, wind = 0.0, mode = 0.0) {
     this.positions.push(x, y, z);
     const nLen = Math.hypot(nx, ny, nz) || 1;
     this.normals.push(nx / nLen, ny / nLen, nz / nLen);
+    this.uvs.push(u, v);
     this.colors.push(sunCol.r, sunCol.g, sunCol.b);
     this.shadowColors.push(shdCol.r, shdCol.g, shdCol.b);
     this.crownCenters.push(this.crownCenter[0], this.crownCenter[1], this.crownCenter[2]);
     this.windWeights.push(wind);
+    this.cardModes.push(mode);
     return this.vCount++;
   }
 
-  addTaperedLimb(points, rStart, rEnd, sides = 4, flare = 0.0) {
+  addTaperedLimb(points, rStart, rEnd, sides = 6, flare = 0.0) {
     const n = points.length;
     const rings = [];
     const tangent = new THREE.Vector3();
@@ -178,9 +322,9 @@ class TreeGeometryBuilder {
 
     for (let i = 0; i < n; i++) {
       const t = i / (n - 1);
-      let r = THREE.MathUtils.lerp(rStart, rEnd, Math.pow(t, 0.82));
-      if (flare > 0.0 && t < 0.35) {
-        r += Math.pow(1.0 - t / 0.35, 2.0) * flare * rStart;
+      let r = THREE.MathUtils.lerp(rStart, rEnd, Math.pow(t, 0.78));
+      if (flare > 0.0 && t < 0.38) {
+        r += Math.pow(1.0 - t / 0.38, 2.2) * flare * rStart;
       }
 
       if (i === 0) tangent.subVectors(points[1], points[0]);
@@ -193,16 +337,16 @@ class TreeGeometryBuilder {
       right.crossVectors(tangent, ref).normalize();
       fwd.crossVectors(right, tangent).normalize();
 
-      const sunC = PAL.barkSun.clone().lerp(PAL.barkShd, t * 0.26);
-      const shdC = PAL.barkShd.clone().lerp(PAL.barkDeep, t * 0.26);
+      const sunC = PAL.barkSun.clone().lerp(PAL.barkShd, t * 0.35);
+      const shdC = PAL.barkShd.clone().lerp(PAL.barkDeep, t * 0.35);
 
       const ring = [];
       for (let k = 0; k < sides; k++) {
         const ang = (k / sides) * TAU;
         const ca = Math.cos(ang);
         const sa = Math.sin(ang);
-        const lobe = flare > 0.0 && t < 0.30 ? 1.0 + 0.14 * (1.0 - t / 0.30) * Math.cos(ang * 4.0) : 1.0;
-        const rad = r * lobe;
+        const ridge = flare > 0.0 && t < 0.35 ? 1.0 + 0.24 * (1.0 - t / 0.35) * Math.cos(ang * 5.0) : 1.0;
+        const rad = r * ridge;
 
         const nx = right.x * ca + fwd.x * sa;
         const ny = right.y * ca + fwd.y * sa;
@@ -216,8 +360,11 @@ class TreeGeometryBuilder {
             nx,
             ny,
             nz,
+            k / sides,
+            t,
             sunC,
             shdC,
+            0.0,
             0.0
           )
         );
@@ -237,261 +384,301 @@ class TreeGeometryBuilder {
     }
   }
 
-  /**
-   * Sculpts a rich, closed 3D geodesic spherical/ovoid foliage sub-dome (`sy: 0.78..0.95`)
-   * with organic multi-lobed Ghibli leaf-clump billowing, baked inner-core ambient occlusion
-   * on lower/inner vertices, and pure luminous sunlit spring-emerald/lime upper crowns.
-   */
-  addVolumetricSubDome({
-    cx,
-    cy,
-    cz,
-    rx,
-    sy = 0.86,
-    rz,
+  addLeafCard({
+    center,
+    lobeCenter,
+    cardNormal,
+    cardRadius = 0.95,
+    cupDepth = 0.16,
+    roll = 0,
+    tileIndex = 0,
     hCrownFrac = 0.5,
-    isInnerCore = false,
-    seed = 1,
-    sunYaw = 0,
+    aoFactor = 1.0,
   }) {
-    const ry = rx * sy;
-    const baseVertOffset = this.vCount;
-    const tmpSun = new THREE.Color();
-    const tmpShd = new THREE.Color();
-    const { uniqueVerts, indices } = GEODESIC_DOME_TEMPLATE;
+    const upRef = Math.abs(cardNormal.y) > 0.92 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+    const tRight = new THREE.Vector3().crossVectors(upRef, cardNormal).normalize();
+    const tUp = new THREE.Vector3().crossVectors(cardNormal, tRight).normalize();
 
-    for (let i = 0; i < uniqueVerts.length; i++) {
-      const [ux, uy, uz] = uniqueVerts[i];
-      const theta = Math.atan2(uz, ux);
+    const cr = Math.cos(roll);
+    const sr = Math.sin(roll);
+    const axX = tRight.clone().multiplyScalar(cr).addScaledVector(tUp, sr);
+    const axY = tUp.clone().multiplyScalar(cr).addScaledVector(tRight, -sr);
 
-      // Smooth 3D Ghibli cloud-leaf billowing across all 360° directions and overhead
-      const lobe1 = Math.sin(ux * 3.4 + seed * 1.3) * Math.cos(uz * 3.4 - seed * 0.9);
-      const lobe2 = Math.sin((uy + 0.5) * 4.2 + seed * 2.1) * 0.5;
-      const puffScale = 1.0 + 0.11 * lobe1 + 0.06 * lobe2;
-      const underTuck = uy < 0 ? 0.86 : 1.0;
+    const u0 = tileIndex === 1 ? 0.51 : 0.01;
+    const u1 = tileIndex === 1 ? 0.99 : 0.49;
+    const v0 = 0.02;
+    const v1 = 0.98;
+    const uMid = (u0 + u1) * 0.5;
+    const vMid = (v0 + v1) * 0.5;
 
-      const lx = ux * rx * puffScale;
-      const ly = uy * ry * underTuck * (1.0 + 0.05 * lobe1);
-      const lz = uz * rz * puffScale;
+    const sunCol = PAL.foliageLowSun
+      .clone()
+      .lerp(PAL.foliageMidSun, smoothstep(0.12, 0.62, hCrownFrac) * aoFactor)
+      .lerp(PAL.foliageTopSun, smoothstep(0.52, 0.96, hCrownFrac) * aoFactor);
+    const shdCol = PAL.foliageShdLow
+      .clone()
+      .lerp(PAL.foliageShdTop, smoothstep(0.22, 0.88, hCrownFrac) * aoFactor);
 
-      const wx = cx + lx;
-      const wy = cy + ly;
-      const wz = cz + lz;
+    const corners = [
+      { lx: -1, ly: -1, u: u0, v: v0 },
+      { lx:  1, ly: -1, u: u1, v: v0 },
+      { lx:  1, ly:  1, u: u1, v: v1 },
+      { lx: -1, ly:  1, u: u0, v: v1 },
+    ];
 
-      // Blend local ovoid normal with overall crown radial normal for clean Ghibli cel shading
-      const dnx = ux / rx;
-      const dny = uy / ry;
-      const dnz = uz / rz;
-      const cnx = (wx - this.crownCenter[0]) * 0.36;
-      const cny = (wy - this.crownCenter[1]) * 0.42 + 0.35;
-      const cnz = (wz - this.crownCenter[2]) * 0.36;
-      const nx = dnx * 0.68 + cnx * 0.32;
-      const ny = dny * 0.68 + cny * 0.32;
-      const nz = dnz * 0.68 + cnz * 0.32;
+    const cPos = center.clone().addScaledVector(cardNormal, cupDepth);
+    const cProxyN = cPos
+      .clone()
+      .sub(lobeCenter)
+      .normalize()
+      .lerp(
+        new THREE.Vector3(
+          cPos.x - this.crownCenter[0],
+          cPos.y - this.crownCenter[1] + 0.75,
+          cPos.z - this.crownCenter[2]
+        ).normalize(),
+        0.42
+      )
+      .normalize();
 
-      const domeVertT = clamp(uy * 0.5 + 0.5, 0, 1); // 0 at bottom pole, 1 at top pole
-      const radialDist = Math.hypot(wx - this.crownCenter[0], wz - this.crownCenter[2]);
-      const coreOcclusion = isInnerCore
-        ? 0.40
-        : smoothstep(0.55, 2.35, radialDist) * 0.65 + 0.35;
-      const underOcclusion = smoothstep(0.0, 0.46, domeVertT);
-      const aoFactor = clamp(coreOcclusion * underOcclusion, 0.0, 1.0);
+    const wind = clamp(0.22 + 0.38 * hCrownFrac, 0.15, 0.65);
 
-      const hTotal = clamp(hCrownFrac * 0.52 + domeVertT * 0.48, 0, 1);
-      const sunAlign = Math.max(0, Math.cos(theta - sunYaw));
+    const iCenter = this.addVertex(
+      cPos.x,
+      cPos.y,
+      cPos.z,
+      cProxyN.x,
+      cProxyN.y,
+      cProxyN.z,
+      uMid,
+      vMid,
+      sunCol,
+      shdCol,
+      wind,
+      1.0
+    );
 
-      tmpSun
-        .copy(PAL.aoCore)
-        .lerp(PAL.lowSun, smoothstep(0.0, 0.40, aoFactor))
-        .lerp(PAL.midSun, smoothstep(0.26, 0.70, hTotal) * aoFactor)
-        .lerp(PAL.topSun, smoothstep(0.56, 0.92, hTotal) * aoFactor)
-        .lerp(PAL.rimSun, smoothstep(0.74, 1.0, hTotal) * sunAlign * 0.30);
+    const cornerIndices = [];
+    for (const c of corners) {
+      const vx = center.x + (axX.x * c.lx + axY.x * c.ly) * cardRadius;
+      const vy = center.y + (axX.y * c.lx + axY.y * c.ly) * cardRadius;
+      const vz = center.z + (axX.z * c.lx + axY.z * c.ly) * cardRadius;
 
-      tmpShd
-        .copy(PAL.aoCore)
-        .lerp(PAL.shdLow, smoothstep(0.08, 0.52, aoFactor))
-        .lerp(PAL.shdTop, smoothstep(0.45, 0.92, hTotal) * aoFactor);
+      const lnx = vx - lobeCenter.x;
+      const lny = (vy - lobeCenter.y) * 1.35 + 0.25;
+      const lnz = vz - lobeCenter.z;
+      const lLen = Math.hypot(lnx, lny, lnz) || 1;
 
-      const wind = clamp((0.18 + 0.38 * (1.0 - Math.abs(uy)) + 0.25 * domeVertT) * (isInnerCore ? 0.5 : 1.0), 0.1, 0.72);
-      this.addVertex(wx, wy, wz, nx, ny, nz, tmpSun, tmpShd, wind);
+      const cnx = vx - this.crownCenter[0];
+      const cny = vy - this.crownCenter[1] + 0.75;
+      const cnz = vz - this.crownCenter[2];
+      const cLen = Math.hypot(cnx, cny, cnz) || 1;
+
+      const nx = (lnx / lLen) * 0.65 + (cnx / cLen) * 0.35;
+      const ny = (lny / lLen) * 0.65 + (cny / cLen) * 0.35;
+      const nz = (lnz / lLen) * 0.65 + (cnz / cLen) * 0.35;
+
+      cornerIndices.push(
+        this.addVertex(vx, vy, vz, nx, ny, nz, c.u, c.v, sunCol, shdCol, wind * 1.15, 1.0)
+      );
     }
 
-    for (let i = 0; i < indices.length; i++) {
-      this.indices.push(baseVertOffset + indices[i]);
-    }
+    this.indices.push(
+      iCenter, cornerIndices[0], cornerIndices[1],
+      iCenter, cornerIndices[1], cornerIndices[2],
+      iCenter, cornerIndices[2], cornerIndices[3],
+      iCenter, cornerIndices[3], cornerIndices[0]
+    );
   }
 
   /**
-   * Sculpts a 3-tiered scalloped 3D raceme blossom panicle (`0.9m–2.1m` long, 20 triangles)
-   * drooping beneath the canopy rim (matching `docs/references/visual-concepts/01-title.png`),
-   * with flared petal-bell tiers, lavender-to-blush-white vertical color gradients,
-   * and higher `windWeight` (`0.75..1.0`) at the hanging tips.
+   * Sculpts a 3D Shingled-Petal Wisteria / Sakura Raceme (`addShingledPetalWisteriaRaceme`):
+   * 18 overlapping, downward-cupped 3D hooded flower petals spiraling down a slender curved stem.
    */
-  addHangingConicalRaceme({
+  addShingledPetalWisteriaRaceme({
     topX,
     topY,
     topZ,
     length = 1.45,
-    topRadius = 0.26,
-    swayX = 0.05,
-    swayZ = 0.04,
+    topRadius = 0.24,
+    swayX = 0.08,
+    swayZ = 0.06,
     kind = 'wisteria',
-    variant = 0,
-    rotOffset = 0.0,
+    seed = 1,
   }) {
-    const sides = 4;
-    const isWist = kind === 'wisteria';
+    const rand = createPRNG(seed);
+    const isSakura = kind === 'sakura';
+    const floretCount = 18;
+    const goldenAngle = 2.3999632;
+    const rotStart = rand() * TAU;
 
-    const colTopSun = isWist
-      ? (variant % 2 === 0 ? PAL.wistVioletTop : srgbColor(0xad74f0))
-      : PAL.sakuraTop;
-    const colMidSun = isWist
-      ? (variant % 2 === 0 ? PAL.wistOrchid : PAL.wistLavMid)
-      : PAL.sakuraMid;
-    const colTipSun = isWist ? PAL.wistBlushTip : PAL.sakuraTip;
+    const cCalyxSun  = isSakura ? PAL.sakuraCalyxSun  : PAL.wistCalyxSun;
+    const cCalyxShd  = isSakura ? PAL.sakuraCalyxShd  : PAL.wistCalyxShd;
+    const cUpperSun  = isSakura ? PAL.sakuraUpperSun  : PAL.wistUpperSun;
+    const cUpperShd  = isSakura ? PAL.sakuraUpperShd  : PAL.wistUpperShd;
+    const cMidSun    = isSakura ? PAL.sakuraMidSun    : PAL.wistMidSun;
+    const cMidShd    = isSakura ? PAL.sakuraMidShd    : PAL.wistMidShd;
+    const cLowerSun  = isSakura ? PAL.sakuraLowerSun  : PAL.wistLowerSun;
+    const cLowerShd  = isSakura ? PAL.sakuraLowerShd  : PAL.wistLowerShd;
+    const cBudTipSun = isSakura ? PAL.sakuraBudTipSun : PAL.wistBudTipSun;
+    const cBudTipShd = isSakura ? PAL.sakuraBudTipShd : PAL.wistBudTipShd;
 
-    const colTopShd = isWist ? PAL.wistShdTop : PAL.sakuraShdTop;
-    const colTipShd = isWist ? PAL.wistShdLow : PAL.sakuraShdLow;
+    const baseSun = new THREE.Color();
+    const baseShd = new THREE.Color();
+    const bellySun = new THREE.Color();
+    const bellyShd = new THREE.Color();
+    const tipSun = new THREE.Color();
+    const tipShd = new THREE.Color();
 
-    const topCapIdx = this.addVertex(
-      topX,
-      topY + 0.10,
-      topZ,
-      0,
-      1,
-      0,
-      colTopSun,
-      colTopShd,
-      0.40
-    );
+    for (let i = 0; i < floretCount; i++) {
+      const t = i / (floretCount - 1);
+      const env = Math.sin(Math.pow(t, 0.55) * Math.PI * 0.92) * (1.0 - t * 0.35) + 0.14 * (1.0 - t);
+      const ringR = topRadius * env * (0.55 + 0.25 * (i % 2));
+      const theta = rotStart + i * goldenAngle + (rand() - 0.5) * 0.18;
 
-    // 3 scalloped floret tiers forming a puffed, cascading wisteria panicle
-    const profileStations = [
-      { frac: 0.22, radMul: 1.05, nyTilt: 0.32 },
-      { frac: 0.56, radMul: 0.76, nyTilt: 0.08 },
-      { frac: 0.84, radMul: 0.42, nyTilt: -0.22 },
-    ];
+      const cx = topX + swayX * t * t + Math.cos(theta) * ringR * 0.48;
+      const cy = topY - t * length;
+      const cz = topZ + swayZ * t * t + Math.sin(theta) * ringR * 0.48;
 
-    const ringIndices = [];
-    const tmpSun = new THREE.Color();
-    const tmpShd = new THREE.Color();
+      const petalLen = (0.31 - t * 0.14) * (topRadius / 0.24) * (0.92 + rand() * 0.16);
+      const petalWid = (0.21 - t * 0.09) * (topRadius / 0.24) * (0.92 + rand() * 0.16);
+      const cupOut   = petalWid * 0.58;
 
-    for (let tIdx = 0; tIdx < profileStations.length; tIdx++) {
-      const st = profileStations[tIdx];
-      const frac = st.frac;
-      const r = topRadius * st.radMul;
-      const y = topY - frac * length;
-      const cx = topX + swayX * frac * frac;
-      const cz = topZ + swayZ * frac * frac;
+      const dirX = Math.cos(theta);
+      const dirZ = Math.sin(theta);
+      const sideX = -dirZ;
+      const sideZ = dirX;
 
-      tmpSun
-        .copy(colTopSun)
-        .lerp(colMidSun, smoothstep(0.08, 0.52, frac))
-        .lerp(colTipSun, smoothstep(0.45, 0.92, frac));
-      tmpShd.copy(colTopShd).lerp(colTipShd, smoothstep(0.15, 0.90, frac));
+      baseSun.copy(cCalyxSun).lerp(cUpperSun, smoothstep(0.0, 0.75, t));
+      baseShd.copy(cCalyxShd).lerp(cUpperShd, smoothstep(0.0, 0.75, t));
 
-      const wind = THREE.MathUtils.lerp(0.52, 0.95, Math.pow(frac, 0.80));
-      const row = [];
-      for (let k = 0; k < sides; k++) {
-        const ang = (k / sides) * TAU + rotOffset + tIdx * 0.38;
-        const ca = Math.cos(ang);
-        const sa = Math.sin(ang);
-        const floretLobe = r * (0.92 + 0.16 * ((k + tIdx) % 2));
-        const dropY = y - ((k + tIdx) % 2) * 0.06 * length;
-        row.push(
-          this.addVertex(
-            cx + ca * floretLobe,
-            dropY,
-            cz + sa * floretLobe,
-            ca,
-            st.nyTilt,
-            sa,
-            tmpSun,
-            tmpShd,
-            wind
-          )
-        );
-      }
-      ringIndices.push(row);
-    }
+      bellySun
+        .copy(cUpperSun)
+        .lerp(cMidSun, smoothstep(0.12, 0.52, t))
+        .lerp(cLowerSun, smoothstep(0.48, 0.88, t));
+      bellyShd
+        .copy(cUpperShd)
+        .lerp(cMidShd, smoothstep(0.12, 0.52, t))
+        .lerp(cLowerShd, smoothstep(0.48, 0.88, t));
 
-    const tipIdx = this.addVertex(
-      topX + swayX,
-      topY - length,
-      topZ + swayZ,
-      0,
-      -0.80,
-      0,
-      colTipSun,
-      colTipShd,
-      0.98
-    );
+      tipSun
+        .copy(cMidSun)
+        .lerp(cLowerSun, smoothstep(0.08, 0.45, t))
+        .lerp(cBudTipSun, smoothstep(0.35, 0.85, t));
+      tipShd
+        .copy(cMidShd)
+        .lerp(cLowerShd, smoothstep(0.08, 0.45, t))
+        .lerp(cBudTipShd, smoothstep(0.35, 0.85, t));
 
-    const r0 = ringIndices[0];
-    for (let k = 0; k < sides; k++) {
-      const nk = (k + 1) % sides;
-      this.indices.push(topCapIdx, r0[k], r0[nk]);
-    }
+      const wind = THREE.MathUtils.lerp(0.55, 0.98, Math.pow(t, 0.82));
 
-    for (let tIdx = 0; tIdx < ringIndices.length - 1; tIdx++) {
-      const rA = ringIndices[tIdx];
-      const rB = ringIndices[tIdx + 1];
-      for (let k = 0; k < sides; k++) {
-        const nk = (k + 1) % sides;
-        this.indices.push(rA[k], rB[k], rA[nk], rA[nk], rB[k], rB[nk]);
-      }
-    }
+      const v0 = this.addVertex(
+        cx,
+        cy + petalLen * 0.18,
+        cz,
+        dirX * 0.4,
+        0.75,
+        dirZ * 0.4,
+        0.5,
+        0.0,
+        baseSun,
+        baseShd,
+        wind * 0.85,
+        2.0
+      );
+      const v1 = this.addVertex(
+        cx + dirX * cupOut * 0.55 - sideX * petalWid * 0.78,
+        cy - petalLen * 0.18,
+        cz + dirZ * cupOut * 0.55 - sideZ * petalWid * 0.78,
+        dirX * 0.6 - sideX * 0.5,
+        0.35,
+        dirZ * 0.6 - sideZ * 0.5,
+        0.0,
+        0.35,
+        bellySun,
+        bellyShd,
+        wind,
+        2.0
+      );
+      const v2 = this.addVertex(
+        cx + dirX * cupOut * 0.55 + sideX * petalWid * 0.78,
+        cy - petalLen * 0.18,
+        cz + dirZ * cupOut * 0.55 + sideZ * petalWid * 0.78,
+        dirX * 0.6 + sideX * 0.5,
+        0.35,
+        dirZ * 0.6 + sideZ * 0.5,
+        1.0,
+        0.35,
+        bellySun,
+        bellyShd,
+        wind,
+        2.0
+      );
+      const v3 = this.addVertex(
+        cx + dirX * cupOut * 1.18,
+        cy - petalLen * 0.36,
+        cz + dirZ * cupOut * 1.18,
+        dirX,
+        0.28,
+        dirZ,
+        0.5,
+        0.5,
+        tipSun,
+        bellyShd,
+        wind,
+        2.0
+      );
+      const v4 = this.addVertex(
+        cx + dirX * cupOut * 0.68 - sideX * petalWid * 0.92,
+        cy - petalLen * 0.64,
+        cz + dirZ * cupOut * 0.68 - sideZ * petalWid * 0.92,
+        dirX * 0.5 - sideX * 0.6,
+        0.05,
+        dirZ * 0.5 - sideZ * 0.6,
+        0.1,
+        0.75,
+        tipSun,
+        tipShd,
+        wind * 1.05,
+        2.0
+      );
+      const v5 = this.addVertex(
+        cx + dirX * cupOut * 0.68 + sideX * petalWid * 0.92,
+        cy - petalLen * 0.64,
+        cz + dirZ * cupOut * 0.68 + sideZ * petalWid * 0.92,
+        dirX * 0.5 + sideX * 0.6,
+        0.05,
+        dirZ * 0.5 + sideZ * 0.6,
+        0.9,
+        0.75,
+        tipSun,
+        tipShd,
+        wind * 1.05,
+        2.0
+      );
+      const v6 = this.addVertex(
+        cx + dirX * cupOut * 0.42,
+        cy - petalLen * 1.0,
+        cz + dirZ * cupOut * 0.42,
+        dirX * 0.6,
+        -0.35,
+        dirZ * 0.6,
+        0.5,
+        1.0,
+        tipSun,
+        tipShd,
+        wind * 1.1,
+        2.0
+      );
 
-    const rLast = ringIndices[ringIndices.length - 1];
-    for (let k = 0; k < sides; k++) {
-      const nk = (k + 1) % sides;
-      this.indices.push(rLast[k], tipIdx, rLast[nk]);
-    }
-  }
-
-  add5PetalBlossom(center, aimDir, radius, rotY, tintObj, windWeight = 0.65) {
-    const up = aimDir.clone().normalize();
-    const ref = Math.abs(up.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
-    const right = new THREE.Vector3().crossVectors(up, ref).normalize();
-    const fwd = new THREE.Vector3().crossVectors(right, up).normalize();
-
-    const cosR = Math.cos(rotY);
-    const sinR = Math.sin(rotY);
-    const rAxis = right.clone().multiplyScalar(cosR).addScaledVector(fwd, sinR);
-    const fAxis = fwd.clone().multiplyScalar(cosR).addScaledVector(right, -sinR);
-
-    const toWorld = (lx, ly, lz) => [
-      center.x + (rAxis.x * lx + up.x * ly + fAxis.x * lz) * radius,
-      center.y + (rAxis.y * lx + up.y * ly + fAxis.y * lz) * radius,
-      center.z + (rAxis.z * lx + up.z * ly + fAxis.z * lz) * radius,
-    ];
-
-    const tipSun = tintObj.sun.clone().lerp(new THREE.Color(1, 1, 1), 0.25);
-    const tipShd = tintObj.shd.clone();
-
-    const p0 = toWorld(0, 0.03, 0);
-    const vCenter = this.addVertex(
-      p0[0], p0[1], p0[2],
-      up.x, up.y + 0.55, up.z,
-      PAL.stamenSun, PAL.stamenShd, windWeight * 0.8
-    );
-
-    const numPetals = 5;
-    for (let p = 0; p < numPetals; p++) {
-      const a = (p / numPetals) * TAU;
-      const ca = Math.cos(a);
-      const sa = Math.sin(a);
-      const rot = (x, y, z) => [x * ca - z * sa, y, x * sa + z * ca];
-
-      const pL = toWorld(...rot(-0.125, 0.08, 0.23));
-      const pR = toWorld(...rot(0.125, 0.08, 0.23));
-      const pT = toWorld(...rot(0.0, 0.04, 0.44));
-
-      const vL = this.addVertex(pL[0], pL[1], pL[2], up.x, up.y + 0.55, up.z, tintObj.sun, tintObj.shd, windWeight);
-      const vR = this.addVertex(pR[0], pR[1], pR[2], up.x, up.y + 0.55, up.z, tintObj.sun, tintObj.shd, windWeight);
-      const vT = this.addVertex(pT[0], pT[1], pT[2], up.x, up.y + 0.55, up.z, tipSun, tipShd, windWeight * 1.1);
-
-      this.indices.push(vCenter, vL, vR, vL, vT, vR);
+      this.indices.push(
+        v0, v1, v3,
+        v0, v3, v2,
+        v1, v4, v3,
+        v3, v5, v2,
+        v4, v6, v3,
+        v3, v6, v5
+      );
     }
   }
 
@@ -499,104 +686,15 @@ class TreeGeometryBuilder {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(this.positions, 3));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(this.normals, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(this.uvs, 2));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(this.colors, 3));
     geo.setAttribute('aShadowColor', new THREE.Float32BufferAttribute(this.shadowColors, 3));
     geo.setAttribute('aCrownCenter', new THREE.Float32BufferAttribute(this.crownCenters, 3));
     geo.setAttribute('aWindWeight', new THREE.Float32BufferAttribute(this.windWeights, 1));
+    geo.setAttribute('aCardMode', new THREE.Float32BufferAttribute(this.cardModes, 1));
     geo.setIndex(this.indices);
     return geo;
   }
-}
-
-/**
- * Adds 6–7 overlapping 3D geodesic spherical/ovoid foliage sub-domes (`sy: 0.78..0.95`)
- * that give every tree rich, painterly 360° horizontal AND overhead volume
- * with baked inner-core ambient occlusion and sunlit spring-emerald/lime upper crowns.
- */
-function addVolumetricGhibliCrownToBuilder(builder, {
-  seed,
-  worldOrigin,
-  scale,
-  kind,
-  variantIdx = 0,
-  boughTipsLocal,
-}) {
-  const rand = createPRNG(seed);
-  const randRange = (lo, hi) => lo + rand() * (hi - lo);
-  const sunYaw = Math.atan2(-0.93, -0.21);
-
-  const subDomes = [];
-
-  // 1. 5 lower/mid perimeter 3D ovoid sub-domes seated directly over the 5 spreading bough tips
-  for (let i = 0; i < boughTipsLocal.length; i++) {
-    const bt = boughTipsLocal[i];
-    const rx = randRange(1.44, 1.70) * scale;
-    const rz = rx * randRange(0.92, 1.08);
-    const sy = randRange(0.78, 0.90);
-    subDomes.push({
-      cx: worldOrigin.x + bt.x * 0.92,
-      cy: worldOrigin.y + bt.y + 0.42 * scale,
-      cz: worldOrigin.z + bt.z * 0.92,
-      rx,
-      sy,
-      rz,
-      hCrownFrac: 0.36 + (i % 3) * 0.14,
-      isInnerCore: false,
-      seed: seed + i * 19,
-    });
-  }
-
-  // 2. 1 Inner-core ambient-occluded sub-dome sealing the central trunk fork with deep forest shade
-  subDomes.push({
-    cx: worldOrigin.x + randRange(-0.18, 0.18) * scale,
-    cy: worldOrigin.y + 3.25 * scale,
-    cz: worldOrigin.z + randRange(-0.18, 0.18) * scale,
-    rx: 1.60 * scale,
-    sy: 0.84,
-    rz: 1.58 * scale,
-    hCrownFrac: 0.28,
-    isInnerCore: true,
-    seed: seed + 107,
-  });
-
-  // 3. 1 Luminous upper-central crown sub-dome (`sy: 0.86..0.95`)
-  subDomes.push({
-    cx: worldOrigin.x + randRange(-0.22, 0.22) * scale,
-    cy: worldOrigin.y + 4.18 * scale,
-    cz: worldOrigin.z + randRange(-0.22, 0.22) * scale,
-    rx: 1.68 * scale,
-    sy: randRange(0.86, 0.95),
-    rz: 1.66 * scale,
-    hCrownFrac: 0.92,
-    isInnerCore: false,
-    seed: seed + 211,
-  });
-
-  // 4. 7th asymmetric shoulder sub-dome for multi-crowned Ghibli silhouette variety
-  if (variantIdx % 2 === 0 || kind === 'wisteria') {
-    const shAng = (variantIdx * 2.1 + rand() * 0.8) % TAU;
-    const shDist = 1.06 * scale;
-    subDomes.push({
-      cx: worldOrigin.x + Math.cos(shAng) * shDist,
-      cy: worldOrigin.y + 3.78 * scale,
-      cz: worldOrigin.z + Math.sin(shAng) * shDist,
-      rx: 1.46 * scale,
-      sy: randRange(0.82, 0.93),
-      rz: 1.42 * scale,
-      hCrownFrac: 0.72,
-      isInnerCore: false,
-      seed: seed + 307,
-    });
-  }
-
-  for (const sd of subDomes) {
-    builder.addVolumetricSubDome({
-      ...sd,
-      sunYaw,
-    });
-  }
-
-  return subDomes;
 }
 
 export function buildSingleTreeGeometry(t, treeIdx = 0) {
@@ -605,179 +703,194 @@ export function buildSingleTreeGeometry(t, treeIdx = 0) {
   const isWisteria = kind === 'wisteria';
   const isSakura = kind === 'sakura';
   const isShrine = Boolean(t.hasPlanter);
-  const variantIdx = t.variant !== undefined ? t.variant : treeIdx % 3;
-  const s = (t.scale || 1.0) * (isWisteria || isSakura ? 1.15 : 1.08);
+  const s = (t.scale || 1.0) * (isWisteria || isSakura ? 1.12 : 1.04);
 
   const rand = createPRNG(1009 + treeIdx * 137);
   const randRange = (lo, hi) => lo + rand() * (hi - lo);
 
   const worldOrigin = new THREE.Vector3(t.x, ty, t.z);
-  const crownCenter = [worldOrigin.x, worldOrigin.y + 3.85 * s, worldOrigin.z];
+  const crownCenter = [worldOrigin.x, worldOrigin.y + 3.55 * s, worldOrigin.z];
   const builder = new TreeGeometryBuilder(crownCenter);
 
   const yawRot = (treeIdx * 2.17 + 0.45) % TAU;
-  const cosYaw = Math.cos(yawRot);
-  const sinYaw = Math.sin(yawRot);
 
-  const toWorldVec = (lx, ly, lz) =>
-    new THREE.Vector3(
-      worldOrigin.x + (lx * cosYaw - lz * sinYaw) * s,
-      worldOrigin.y + ly * s,
-      worldOrigin.z + (lx * sinYaw + lz * cosYaw) * s
-    );
-
-  // 1. Sturdy Warm Chestnut Trunk with Asymmetric Lean & Grounded Basal Flare
-  const leanX = (rand() - 0.5) * 0.44;
-  const leanZ = (rand() - 0.5) * 0.38;
+  // 1. Sturdy Gnarled Chestnut Trunk with Root Buttress Flare
+  const leanX = (rand() - 0.5) * 0.42 * s;
+  const leanZ = (rand() - 0.5) * 0.36 * s;
   const trunkPts = [
-    toWorldVec(0.0, -0.16, 0.0),
-    toWorldVec(leanX * 0.45, 0.62, leanZ * 0.45),
-    toWorldVec(leanX * 0.85, 1.28, leanZ * 0.85),
-    toWorldVec(leanX * 0.68, 1.92, leanZ * 0.68),
+    new THREE.Vector3(worldOrigin.x, worldOrigin.y - 0.14, worldOrigin.z),
+    new THREE.Vector3(worldOrigin.x + leanX * 0.45, worldOrigin.y + 0.66 * s, worldOrigin.z + leanZ * 0.45),
+    new THREE.Vector3(worldOrigin.x + leanX * 0.88, worldOrigin.y + 1.34 * s, worldOrigin.z + leanZ * 0.88),
+    new THREE.Vector3(worldOrigin.x + leanX * 0.70, worldOrigin.y + 1.98 * s, worldOrigin.z + leanZ * 0.70),
   ];
-  const rTrunkBase = (isWisteria || isSakura ? 0.36 : 0.32) * s;
-  const rTrunkFork = (isWisteria || isSakura ? 0.23 : 0.20) * s;
-  builder.addTaperedLimb(trunkPts, rTrunkBase, rTrunkFork, 6, 0.42);
+  const rTrunkBase = (isWisteria || isSakura ? 0.38 : 0.32) * s;
+  const rTrunkFork = (isWisteria || isSakura ? 0.23 : 0.19) * s;
+  builder.addTaperedLimb(trunkPts, rTrunkBase, rTrunkFork, 7, 0.68);
 
-  const forkOrigin = trunkPts[trunkPts.length - 1];
-  const leaderTop = toWorldVec(leanX * 0.32, 3.15, leanZ * 0.32);
-  builder.addTaperedLimb([forkOrigin, leaderTop], rTrunkFork * 0.58, 0.05 * s, 4, 0.0);
+  // 2. 6 Asymmetric Multi-Height Umbrella Boughs & Separated Sub-Crowns
+  const boughCount = 6;
+  const lobes = [];
 
-  // 2. 5 Asymmetric Multi-Height Primary Boughs + Secondary Sub-Boughs
-  const numBoughs = 5;
-  const boughTipsLocal = [];
-  const blossomAnchors = [];
+  for (let b = 0; b < boughCount; b++) {
+    const az = yawRot + (b / boughCount) * TAU + randRange(-0.22, 0.22);
+    const isLowerShelf = b % 2 === 0;
+    const reach = (isLowerShelf ? randRange(2.05, 2.55) : randRange(1.45, 1.95)) * s;
+    const rise = (isLowerShelf ? randRange(0.76, 1.12) : randRange(1.36, 1.72)) * s;
+    const startY = worldOrigin.y + (isLowerShelf ? 1.44 : 1.76) * s;
 
-  for (let b = 0; b < numBoughs; b++) {
-    const bAz = (b / numBoughs) * TAU + randRange(-0.24, 0.24);
-    const isLowSide = b === 0 || b === 2;
-    const reach = isLowSide ? randRange(1.92, 2.26) : randRange(1.62, 1.98);
-    const rise = isLowSide ? randRange(0.96, 1.20) : randRange(1.22, 1.46);
-    const startY = isLowSide ? 1.45 + (b % 2) * 0.14 : 1.68 + (b % 2) * 0.16;
-
-    const p0 = toWorldVec(leanX * 0.68, startY, leanZ * 0.68);
-    const pMid = toWorldVec(
-      leanX * 0.32 + Math.cos(bAz) * reach * 0.52,
-      startY + rise * 0.52,
-      leanZ * 0.32 + Math.sin(bAz) * reach * 0.52
+    const p0 = new THREE.Vector3(worldOrigin.x + leanX * 0.70, startY, worldOrigin.z + leanZ * 0.70);
+    const p1 = new THREE.Vector3(
+      worldOrigin.x + Math.cos(az) * reach * 0.54,
+      startY + rise * 0.58,
+      worldOrigin.z + Math.sin(az) * reach * 0.54
     );
-    const pEnd = toWorldVec(
-      Math.cos(bAz) * reach,
+    const p2 = new THREE.Vector3(
+      worldOrigin.x + Math.cos(az) * reach,
       startY + rise,
-      Math.sin(bAz) * reach
+      worldOrigin.z + Math.sin(az) * reach
     );
-
-    const rBoughStart = rTrunkFork * randRange(0.56, 0.65);
-    const rBoughEnd = rBoughStart * 0.38;
-    builder.addTaperedLimb([p0, pMid, pEnd], rBoughStart, rBoughEnd, 5, 0.0);
-
-    boughTipsLocal.push({
-      x: pEnd.x - worldOrigin.x,
-      y: pEnd.y - worldOrigin.y,
-      z: pEnd.z - worldOrigin.z,
-    });
-
-    const worldAz = bAz + yawRot;
-    blossomAnchors.push({
-      pos: pMid.clone(),
-      outDir: new THREE.Vector3(Math.cos(worldAz), 0.18, Math.sin(worldAz)).normalize(),
-    });
-    blossomAnchors.push({
-      pos: pmidLerp(pMid, pEnd, 0.55),
-      outDir: new THREE.Vector3(Math.cos(worldAz), 0.24, Math.sin(worldAz)).normalize(),
-    });
+    builder.addTaperedLimb([p0, p1, p2], rTrunkFork * 0.64, rTrunkFork * 0.22, 5, 0.0);
 
     for (const side of [-1, 1]) {
-      const subAz = worldAz + side * randRange(0.38, 0.56);
-      const subLen = randRange(0.76, 1.02);
-      const subRise = randRange(0.30, 0.48);
-      const subStart = pmidLerp(p0, pEnd, side < 0 ? 0.48 : 0.64);
+      const subAz = az + side * randRange(0.45, 0.68);
+      const subReach = randRange(0.82, 1.10) * s;
       const subEnd = new THREE.Vector3(
-        subStart.x + Math.cos(subAz) * subLen * s,
-        subStart.y + subRise * s,
-        subStart.z + Math.sin(subAz) * subLen * s
+        p1.x + Math.cos(subAz) * subReach,
+        p1.y + randRange(0.26, 0.48) * s,
+        p1.z + Math.sin(subAz) * subReach
       );
-      builder.addTaperedLimb([subStart, subEnd], rBoughStart * 0.48, 0.03 * s, 4, 0.0);
+      builder.addTaperedLimb([p1, subEnd], rTrunkFork * 0.35, rTrunkFork * 0.10, 4, 0.0);
+    }
+
+    const rx = randRange(1.34, 1.64) * s;
+    lobes.push({
+      center: new THREE.Vector3(p2.x, p2.y + 0.28 * s, p2.z),
+      rx,
+      ry: rx * randRange(0.52, 0.62),
+      rz: rx * randRange(0.90, 1.12),
+      hFrac: isLowerShelf ? 0.35 : 0.68,
+      isRim: true,
+      isLowerShelf,
+    });
+  }
+
+  // 3 Upper Umbrella Crown Shelves
+  const topShelves = [
+    { ox: -0.56, oy: 3.62, oz:  0.46, rx: 1.58, ry: 0.88, hFrac: 0.82 },
+    { ox:  0.60, oy: 3.72, oz: -0.48, rx: 1.52, ry: 0.85, hFrac: 0.86 },
+    { ox:  0.00, oy: 4.16, oz:  0.05, rx: 1.64, ry: 0.90, hFrac: 0.98 },
+  ];
+  for (const ts of topShelves) {
+    lobes.push({
+      center: new THREE.Vector3(
+        worldOrigin.x + ts.ox * s,
+        worldOrigin.y + ts.oy * s,
+        worldOrigin.z + ts.oz * s
+      ),
+      rx: ts.rx * s,
+      ry: ts.ry * s,
+      rz: ts.rx * s,
+      hFrac: ts.hFrac,
+      isRim: false,
+      isLowerShelf: false,
+    });
+  }
+
+  // 3. Populate each shelf with crossed & radially-tilted Gouache Leaf-Cluster Cards
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  for (let lIdx = 0; lIdx < lobes.length; lIdx++) {
+    const lobe = lobes[lIdx];
+    const cardCount = 22;
+    for (let i = 0; i < cardCount; i++) {
+      const tCard = (i + 0.5) / cardCount;
+      const uy = -0.45 + tCard * 1.43;
+      const rHoriz = Math.sqrt(Math.max(0.05, 1.0 - Math.min(1.0, uy * uy)));
+      const theta = i * goldenAngle + lIdx * 2.1;
+
+      const jitterR = 0.72 + (0.44 * ((i * 7 + lIdx * 3) % 5)) / 4;
+      const ux = Math.cos(theta) * rHoriz * jitterR;
+      const uz = Math.sin(theta) * rHoriz * jitterR;
+
+      const pos = new THREE.Vector3(
+        lobe.center.x + ux * lobe.rx,
+        lobe.center.y + uy * lobe.ry,
+        lobe.center.z + uz * lobe.rz
+      );
+
+      const radialDir = new THREE.Vector3(ux, uy * 1.2 + 0.2, uz).normalize();
+      const tiltAxis = new THREE.Vector3(-Math.sin(theta), 0.35, Math.cos(theta)).normalize();
+      const cardNormal = radialDir.clone().lerp(tiltAxis, i % 2 === 0 ? 0.52 : -0.52).normalize();
+
+      const cardRadius = randRange(0.82, 1.12) * s;
+      const hasFlowers = uy > 0.18 && (i + lIdx) % 4 === 0 ? 1 : 0;
+      const hLocal = Math.max(0, Math.min(1, lobe.hFrac * 0.58 + (uy * 0.5 + 0.5) * 0.42));
+      const ao = smoothstep(-0.50, 0.35, uy) * 0.54 + 0.46;
+
+      builder.addLeafCard({
+        center: pos,
+        lobeCenter: lobe.center,
+        cardNormal,
+        cardRadius,
+        cupDepth: cardRadius * 0.18,
+        roll: rand() * TAU,
+        tileIndex: hasFlowers,
+        hCrownFrac: hLocal,
+        aoFactor: ao,
+      });
     }
   }
 
-  // 3. Add Volumetric 6–7 Overlapping 3D Geodesic Spherical/Ovoid Sub-Domes (`sy: 0.78..0.95`)
-  const subDomes = addVolumetricGhibliCrownToBuilder(builder, {
-    seed: 3007 + treeIdx * 113,
-    worldOrigin,
-    scale: s,
-    kind,
-    variantIdx,
-    boughTipsLocal,
-  });
+  // 4. 3D Shingled-Petal Wisteria & Sakura Blossom Cascades along outer bough rims
+  if (isWisteria || isSakura || isShrine) {
+    const rimLobes = lobes.filter((l) => l.isRim);
+    const blossomKind = isSakura && !isWisteria ? 'sakura' : 'wisteria';
 
-  // 4. Perched 5-Petal Star Blossom Clusters on Upper Canopy & Boughs (matching 01-title.png upper crown flowers)
-  const perimeterDomes = subDomes.filter((d) => !d.isInnerCore && d.hCrownFrac < 0.85);
-  const flowerBaseScale = 0.88 * (s / 1.15);
-  const clusterCount = isWisteria ? 7 : isSakura ? 6 : 3;
+    for (let lIdx = 0; lIdx < rimLobes.length; lIdx++) {
+      const lobe = rimLobes[lIdx];
+      const outBaseAng = Math.atan2(lobe.center.z - worldOrigin.z, lobe.center.x - worldOrigin.x);
+      const groupCount = lobe.isLowerShelf ? 3 : 2;
 
-  for (let c = 0; c < clusterCount; c++) {
-    const dome = subDomes[c % subDomes.length];
-    const tintIdx = isWisteria
-      ? [0, 2, 4, 1][(c + treeIdx) % 4]
-      : isSakura
-      ? [0, 1, 3, 2][(c + treeIdx) % 4]
-      : [0, 3, 1, 2][(c + treeIdx) % 4];
-    const tintObj = BLOSSOM_TINTS[tintIdx];
+      for (let g = 0; g < groupCount; g++) {
+        const frac = (g - (groupCount - 1) * 0.5) / Math.max(1, groupCount);
+        const baseAng = outBaseAng + frac * 1.85 + randRange(-0.10, 0.10);
+        const baseR = lobe.rx * randRange(0.82, 1.02);
 
-    const bAng = (c / clusterCount) * TAU + treeIdx * 0.7;
-    const rSurf = dome.rx * 0.78;
-    const pos = new THREE.Vector3(
-      dome.cx + Math.cos(bAng) * rSurf,
-      dome.cy + dome.rx * dome.sy * 0.72,
-      dome.cz + Math.sin(bAng) * rSurf
-    );
-    const aim = new THREE.Vector3(Math.cos(bAng) * 0.55, 0.82, Math.sin(bAng) * 0.55).normalize();
-    builder.add5PetalBlossom(
-      pos,
-      aim,
-      flowerBaseScale * randRange(0.95, 1.25),
-      randRange(0, TAU),
-      tintObj,
-      0.55
-    );
-  }
+        const clusterSpecs = lobe.isLowerShelf
+          ? [
+              { dAng: -0.12, dR: -0.05, lenMul: 0.76, radMul: 0.86 },
+              { dAng:  0.02, dR:  0.02, lenMul: 1.04, radMul: 1.00 },
+            ]
+          : [
+              { dAng:  0.00, dR:  0.00, lenMul: 0.86, radMul: 0.90 },
+            ];
 
-  // 5. 18–28 Hanging 3D Conical Raceme Blossom Curtains (`0.9m–1.6m` long)
-  // Drooping in lush tiered curtains beneath the 360° perimeter sub-domes on Wisteria, Shrine & Sakura trees
-  const racemeCount = isWisteria || isShrine ? 25 : isSakura ? 18 : 0;
+        for (let sc = 0; sc < clusterSpecs.length; sc++) {
+          const sub = clusterSpecs[sc];
+          const ang = baseAng + sub.dAng;
+          const r = baseR + sub.dR * s;
+          const px = lobe.center.x + Math.cos(ang) * r;
+          const pz = lobe.center.z + Math.sin(ang) * r;
+          const py = lobe.center.y - lobe.ry * randRange(0.08, 0.24);
 
-  for (let rIdx = 0; rIdx < racemeCount; rIdx++) {
-    const dome = perimeterDomes[rIdx % perimeterDomes.length];
-    const localIdx = Math.floor(rIdx / perimeterDomes.length);
-    // Distribute curtains around the outer-lower rim of each perimeter sub-dome so they hang cleanly below the green crown
-    const domeOutwardAng = Math.atan2(dome.cz - worldOrigin.z, dome.cx - worldOrigin.x);
-    const spreadAng = ((localIdx / 5) - 0.4) * 2.2 + (rIdx % 2 === 0 ? 0.22 : -0.22);
-    const ringAng = domeOutwardAng + spreadAng + randRange(-0.14, 0.14);
-    const ringR = dome.rx * randRange(0.58, 0.88);
-    const topX = dome.cx + Math.cos(ringAng) * ringR;
-    const topZ = dome.cz + Math.sin(ringAng) * ringR;
-    const topY = dome.cy - dome.rx * dome.sy * randRange(0.18, 0.38);
+          const rawLen = randRange(1.02, 1.52) * s * sub.lenMul;
+          const maxSafeLen = Math.max(0.65, py - (worldOrigin.y + 1.05));
+          const len = Math.min(rawLen, maxSafeLen);
+          const topRad = randRange(0.20, 0.26) * s * sub.radMul;
 
-    const rawLen = isWisteria || isShrine
-      ? randRange(0.92, 1.55)
-      : randRange(0.82, 1.25);
-    const maxSafeLen = Math.max(0.78, topY - (worldOrigin.y + 1.80));
-    const racemeLen = Math.min(rawLen * (0.88 + 0.10 * (t.scale || 1.0)), maxSafeLen);
-    const topRadius = randRange(0.13, 0.19) * Math.min(1.15, s * 0.85);
-
-    builder.addHangingConicalRaceme({
-      topX,
-      topY,
-      topZ,
-      length: racemeLen,
-      topRadius,
-      swayX: Math.cos(ringAng) * 0.05 * s,
-      swayZ: Math.sin(ringAng) * 0.05 * s,
-      kind: isWisteria ? 'wisteria' : 'sakura',
-      variant: rIdx + variantIdx,
-      rotOffset: rand() * TAU,
-    });
+          builder.addShingledPetalWisteriaRaceme({
+            topX: px,
+            topY: py,
+            topZ: pz,
+            length: len,
+            topRadius: topRad,
+            swayX: Math.cos(ang) * 0.09 * s,
+            swayZ: Math.sin(ang) * 0.09 * s,
+            kind: blossomKind,
+            seed: 500 + treeIdx * 71 + lIdx * 19 + g * 7 + sc * 3,
+          });
+        }
+      }
+    }
   }
 
   return builder.toGeometry();
@@ -816,8 +929,11 @@ export function buildBotanicalTrees(opts = {}) {
   });
 
   const mergedTreesGeo = mergeGeometries(allTreeGeometries, false);
+  const atlasTex = getSharedGouacheFoliageAtlas();
+
   const treesMat = new THREE.ShaderMaterial({
     uniforms: {
+      uAtlas: { value: atlasTex },
       uSunDir: { value: SUN_DIR },
       uTime: { value: 0 },
       uLightTint: { value: LIGHT_TINT },
@@ -829,29 +945,50 @@ export function buildBotanicalTrees(opts = {}) {
       uRimColor: TREE_STYLE.uRimColor,
     },
     side: THREE.DoubleSide,
+    transparent: false,
+    depthWrite: true,
     vertexColors: true,
     vertexShader: /* glsl */ `
       attribute vec3 aShadowColor;
       attribute vec3 aCrownCenter;
       attribute float aWindWeight;
+      attribute float aCardMode;
       uniform float uTime;
+      varying vec2 vUv;
       varying vec3 vColorSun;
       varying vec3 vColorShd;
       varying vec3 vCrownCenter;
       varying vec3 vNormal;
       varying vec3 vWorldPos;
       varying float vWindWeight;
+      varying float vCardMode;
       varying float vViewDist;
       void main() {
+        vUv = uv;
         vColorSun = color;
         vColorShd = aShadowColor;
         vCrownCenter = aCrownCenter;
         vWindWeight = aWindWeight;
+        vCardMode = aCardMode;
         vec3 pos = position;
         if (aWindWeight > 0.01) {
-          float wave = sin(uTime * 1.85 + pos.x * 0.55 + pos.z * 0.55) * 0.065 * aWindWeight;
-          pos.x += wave;
-          pos.z += wave * 0.68;
+          // Unified Prevailing Valley Wind (flows along WIND_DIR = vec2(0.8207, 0.5714)):
+          // Tree crowns & hanging Wisteria racemes lean and ripple in the exact same direction as the grass!
+          const vec2 WIND_DIR = vec2(0.8207, 0.5714);
+          const vec2 WIND_PERP = vec2(-0.5714, 0.8207);
+          float windCoord = dot(aCrownCenter.xz, WIND_DIR) + dot(pos.xz - aCrownCenter.xz, WIND_DIR) * 0.35;
+          float crossCoord = dot(pos.xz, WIND_PERP);
+          float macroGust = sin(uTime * 2.15 - windCoord * 0.14 + sin(crossCoord * 0.08) * 0.7) * 0.5 + 0.5;
+          float fineRipple = sin(uTime * 3.20 - windCoord * 0.28 + crossCoord * 0.18) * 0.5 + 0.5;
+          float racemeMult = aCardMode > 1.5 ? (1.35 + vUv.y * 0.85) : 1.0;
+          float forwardSway = (0.18 + pow(macroGust, 1.4) * 0.92 + fineRipple * 0.35) * 0.22 * aWindWeight * racemeMult;
+          float crossFlutter = sin(uTime * 3.4 - windCoord * 0.32 + crossCoord * 0.45) * 0.035 * aWindWeight * racemeMult;
+          vec2 disp = WIND_DIR * forwardSway + WIND_PERP * crossFlutter;
+          pos.x += disp.x;
+          pos.z += disp.y;
+          if (aCardMode > 1.5) {
+            pos.y += length(disp) * 0.14 * vUv.y;
+          }
         }
         vec4 wp = modelMatrix * vec4(pos, 1.0);
         vWorldPos = wp.xyz;
@@ -862,6 +999,7 @@ export function buildBotanicalTrees(opts = {}) {
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform sampler2D uAtlas;
       uniform vec3 uSunDir;
       uniform vec3 uLightTint;
       uniform vec3 uFogColor;
@@ -870,40 +1008,97 @@ export function buildBotanicalTrees(opts = {}) {
       uniform float uCel;
       uniform float uRim;
       uniform vec3 uRimColor;
+      varying vec2 vUv;
       varying vec3 vColorSun;
       varying vec3 vColorShd;
       varying vec3 vCrownCenter;
       varying vec3 vNormal;
       varying vec3 vWorldPos;
       varying float vWindWeight;
+      varying float vCardMode;
       varying float vViewDist;
+
       void main() {
-        vec3 rawN = gl_FrontFacing ? normalize(vNormal) : -normalize(vNormal);
-        float isFoliage = step(0.01, vWindWeight);
-        vec3 N = normalize(mix(rawN, vec3(rawN.x * 0.52, max(rawN.y, 0.35), rawN.z * 0.52), isFoliage * 0.42));
+        // IMPORTANT: vNormal on leaf cards (1.0) and wisteria florets (2.0) is an outward spherical
+        // proxy normal — NEVER flip it with gl_FrontFacing or half the cards in each sub-crown invert!
+        vec3 proxyN = normalize(vNormal);
+        vec3 trunkN = gl_FrontFacing ? proxyN : -proxyN;
+        vec3 L = normalize(uSunDir);
+        vec3 V = normalize(cameraPosition - vWorldPos);
+        vec3 col;
 
-        float ndl = dot(N, normalize(uSunDir)) * 0.5 + 0.5;
-        float hCrown = clamp((vWorldPos.y - (vCrownCenter.y - 1.55)) / 3.1, 0.0, 1.0);
-        float litIn = mix(ndl, ndl * 0.68 + hCrown * 0.32, isFoliage);
+        if (vCardMode < 0.5) {
+          // 0.0: Solid Gnarled Chestnut Trunk & Boughs with Procedural Bark Furrows & Under-Canopy Shadow
+          float ndl = dot(trunkN, L) * 0.5 + 0.5;
+          float barkFurrow = sin(vUv.x * 38.0 + sin(vWorldPos.y * 5.2 + vWorldPos.x * 2.1) * 1.8) * 0.5 + 0.5;
+          float barkGrain = smoothstep(0.28, 0.72, barkFurrow) * 0.14 - 0.07;
+          // Deep under-canopy occlusion where upper boughs tuck into the leaf crown
+          float underCanopyAO = 1.0 - smoothstep(-1.6, -0.15, vWorldPos.y - vCrownCenter.y) * 0.48;
+          float cel = smoothstep(0.26, 0.52, ndl + barkGrain) * 0.68 + smoothstep(0.60, 0.84, ndl + barkGrain) * 0.32;
+          vec3 shd = vColorShd * vec3(0.68, 0.72, 0.84);
+          vec3 sun = vColorSun * (0.94 + 0.12 * smoothstep(0.3, 0.7, barkFurrow));
+          col = mix(shd, sun, cel) * underCanopyAO;
+        } else if (vCardMode < 1.5) {
+          // 1.0: Super-Soft Volumetric Ghibli Sub-Crown Leaf-Cluster Card (matching Sunlit Wisteria Village Path.png!)
+          vec4 texel = texture2D(uAtlas, vUv);
+          if (texel.a < 0.44) discard;
 
-        float celBand = 0.5 * smoothstep(0.28, 0.38, litIn) + 0.5 * smoothstep(0.55, 0.65, litIn);
-        float lightFactor = mix(smoothstep(0.20, 0.72, litIn), celBand, uCel);
+          vec3 crownDir = normalize(vWorldPos - vCrownCenter + vec3(0.0, 0.65, 0.0));
+          // Blend 85% spherical sub-lobe proxyN + 15% macro crown dome normal for plush, velvety cloud lobes
+          vec3 N = normalize(mix(proxyN, crownDir, 0.28));
+          float ndl = dot(N, L) * 0.5 + 0.5;
+          float crownH = clamp((vWorldPos.y - (vCrownCenter.y - 2.1)) / 3.7, 0.0, 1.0);
+          float lit = clamp(ndl * 0.68 + crownH * 0.32, 0.0, 1.0);
 
-        vec3 col = mix(vColorShd, vColorSun, lightFactor);
+          // Creamy 4-band soft Ghibli gouache ramp in Linear RGB (matching Sunlit Wisteria Village Path.png!):
+          // Deep cool forest-viridian underbelly -> rich meadow emerald -> warm sunlit apple-chartreuse top dome
+          float underBelly = smoothstep(0.06, 0.40, lit);
+          float midCrown   = smoothstep(0.32, 0.68, lit);
+          float topSunDome = smoothstep(0.60, 0.90, lit);
 
-        if (isFoliage > 0.5) {
-          vec3 V = normalize(cameraPosition - vWorldPos);
-          vec3 canN = normalize(vWorldPos - vCrownCenter + vec3(0.0, 0.001, 0.0));
-          float fres = 1.0 - clamp(abs(dot(canN, V)), 0.0, 1.0);
-          float rim = smoothstep(0.58, 0.88, fres) * smoothstep(0.42, 0.76, litIn);
-          col = mix(col, uRimColor, rim * uRim * 0.24);
+          vec3 deepUnderCol = vec3(0.016, 0.082, 0.024);
+          vec3 coolShd      = vColorShd * vec3(0.52, 0.68, 0.56);
+          vec3 midLeafCol   = mix(coolShd, vColorSun * vec3(0.68, 0.78, 0.52), 0.62);
+          vec3 warmSunCrown = vColorSun * vec3(0.86, 0.92, 0.62);
+
+          vec3 softVolumeCol = mix(deepUnderCol, coolShd, underBelly);
+          softVolumeCol = mix(softVolumeCol, midLeafCol, midCrown);
+          softVolumeCol = mix(softVolumeCol, warmSunCrown, topSunDome);
+
+          // Gentle internal gouache leaf-brushstroke modulation (never harsh dark card outlines!)
+          float leafBrush = smoothstep(0.22, 0.82, texel.g);
+          vec3 leafTint = softVolumeCol * mix(vec3(0.86, 0.90, 0.84), vec3(1.06, 1.04, 0.96), leafBrush);
+
+          float isFlower = clamp((texel.r - texel.g) * 3.2 + (min(texel.r, texel.b) - 0.62) * 3.0, 0.0, 1.0);
+          vec3 flowerCol = texel.rgb * mix(vec3(0.68, 0.66, 0.82), vec3(0.96, 0.94, 0.92), midCrown);
+          col = mix(leafTint, flowerCol, isFlower);
+
+          float fres = 1.0 - clamp(abs(dot(N, V)), 0.0, 1.0);
+          float sss = pow(clamp(dot(-L, V) * 0.5 + 0.5, 0.0, 1.0), 2.0) * smoothstep(0.38, 0.92, crownH);
+          float rim = smoothstep(0.56, 0.90, fres) * smoothstep(0.52, 0.88, lit);
+          col += warmSunCrown * sss * 0.08 * (1.0 - isFlower);
+          col = mix(col, uRimColor * vec3(0.75, 0.88, 0.48), rim * uRim * 0.16 * (1.0 - isFlower));
+        } else {
+          // 2.0: 3D Shingled-Petal Wisteria & Sakura Florets with Top-Down Under-Canopy Occlusion
+          float ndl = dot(proxyN, L) * 0.5 + 0.5;
+          float topCanopyAO = mix(0.58, 1.0, smoothstep(0.0, 0.52, vUv.y));
+          float wrapLit = (0.20 + 0.48 * smoothstep(0.20, 0.52, ndl) + 0.32 * smoothstep(0.56, 0.84, ndl)) * topCanopyAO;
+          vec3 coolShd = vColorShd * vec3(0.72, 0.70, 0.90);
+          col = mix(coolShd, vColorSun, wrapLit);
+
+          float fres = 1.0 - clamp(abs(dot(proxyN, V)), 0.0, 1.0);
+          float rim = smoothstep(0.46, 0.88, fres) * smoothstep(0.25, 0.95, vUv.y);
+          col = mix(col, vec3(1.0, 0.94, 0.99), rim * 0.28);
         }
 
         col *= uLightTint;
-        float fogFactor = smoothstep(uFogNear, uFogFar, vViewDist);
-        gl_FragColor = vec4(mix(col, uFogColor, fogFactor), 1.0);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
+        // Restrained height-aware valley mist + permanent outer mountain-boundary mist + warm sun scattering
+        float sunForward = pow(clamp(dot(-V, L) * 0.5 + 0.5, 0.0, 1.0), 3.0);
+        vec3 hazeCol = mix(uFogColor, vec3(1.0, 0.95, 0.86) * uLightTint, sunForward * 0.42);
+        float heightMist = (1.0 - smoothstep(-1.0, 9.5, vWorldPos.y)) * smoothstep(48.0, 165.0, vViewDist) * 0.20;
+        float perimeterMist = smoothstep(132.0, 175.0, length(vWorldPos.xz)) * (1.0 - smoothstep(10.0, 42.0, vWorldPos.y)) * 0.62;
+        float distFog = smoothstep(340.0, 880.0, vViewDist);
+        gl_FragColor = vec4(mix(col, hazeCol, clamp(distFog + max(heightMist, perimeterMist), 0.0, 0.75)), 1.0);
       }
     `,
   });
@@ -911,6 +1106,8 @@ export function buildBotanicalTrees(opts = {}) {
   const treesMesh = new THREE.Mesh(mergedTreesGeo, treesMat);
   treesMesh.name = 'trees-merged-botanical';
   treesMesh.frustumCulled = false;
+  treesMesh.castShadow = true;
+  treesMesh.receiveShadow = true;
   root.add(treesMesh);
 
   return {
@@ -927,12 +1124,4 @@ export function buildBotanicalTrees(opts = {}) {
       }
     },
   };
-}
-
-function pmidLerp(a, b, t) {
-  return new THREE.Vector3(
-    a.x + (b.x - a.x) * t,
-    a.y + (b.y - a.y) * t,
-    a.z + (b.z - a.z) * t
-  );
 }

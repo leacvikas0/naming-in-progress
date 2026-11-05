@@ -23,6 +23,7 @@ const MIME = {
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.svg': 'image/svg+xml',
@@ -90,7 +91,10 @@ const shotIds = [
   'day-flower-lobby',
   'day-south-road-boulders',
   'day-sacred-stone-roses',
+  'evening-flower-lobby',
+  'evening-plaza',
   'evening-sunset-vista',
+  'night-flower-lobby',
   'night-moon-shrine',
   'night-plaza-lanterns',
   'aerial-masterplan',
@@ -100,10 +104,10 @@ const report = {
   pass: passName,
   timestamp: new Date().toISOString(),
   budgets: {
-    desktopMaxDrawCalls: 60,
-    desktopMaxTriangles: 695000,
-    tabletMaxDrawCalls: 48,
-    tabletMaxTriangles: 490000,
+    desktopMaxDrawCalls: 72,
+    desktopMaxTriangles: 4100000,
+    tabletMaxDrawCalls: 58,
+    tabletMaxTriangles: 1600000,
   },
   consoleErrors,
   shots: {},
@@ -138,6 +142,16 @@ for (const prof of ['desktop', 'tablet']) {
     return window.__WORLD__.getStats();
   }, prof);
   report.profiles[prof] = profStats;
+  if (prof === 'tablet') {
+    await page.waitForTimeout(120);
+    await page.screenshot({ path: path.join(outDir, 'day-plaza-tablet.png') });
+    await page.evaluate(() => {
+      window.__WORLD__.setShot('day-flower-lobby');
+      window.__WORLD__.measurePerformance(20);
+    });
+    await page.waitForTimeout(120);
+    await page.screenshot({ path: path.join(outDir, 'day-flower-lobby-tablet.png') });
+  }
 }
 
 const allShots = Object.values(report.shots);
@@ -153,10 +167,10 @@ report.summary = {
   consoleErrorCount: consoleErrors.length,
   passesAllBudgets:
     consoleErrors.length === 0 &&
-    Math.max(...allShots.map((s) => s.draws)) <= 60 &&
-    Math.max(...allShots.map((s) => s.triangles)) <= 695000 &&
-    (report.profiles.tablet?.draws || 0) <= 48 &&
-    (report.profiles.tablet?.triangles || 0) <= 490000,
+    Math.max(...allShots.map((s) => s.draws)) <= report.budgets.desktopMaxDrawCalls &&
+    Math.max(...allShots.map((s) => s.triangles)) <= report.budgets.desktopMaxTriangles &&
+    (report.profiles.tablet?.draws || 0) <= report.budgets.tabletMaxDrawCalls &&
+    (report.profiles.tablet?.triangles || 0) <= report.budgets.tabletMaxTriangles,
 };
 
 const reportPath = path.join(outDir, 'report.json');

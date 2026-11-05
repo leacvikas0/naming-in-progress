@@ -2,20 +2,34 @@
 // world/src/combat/combat-balance.js
 //
 // Pure-JS, Zero-DOM/WebGL Combat Balance, Synergy Rules, Soft-Lock Cone Target
-// Acquisition, 3-Attacker Token Allocator, Detonation Resolver & Deterministic
-// Headless 3-Act Campaign Simulator.
+// Acquisition, 3-Attacker Token Allocator, Detonation Resolver, Knight & Mage
+// Wave 2B Kits & Deterministic Headless 3-Act Campaign Simulator.
 //
 // Safe to import in both browser ES modules and headless Node.js test scripts.
 // ============================================================================
 
-export const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+import {
+  clamp,
+  shortestAngleDiff,
+  FROST_LANCE_AIM_LENGTH,
+  CINDER_FALL_MIN_DISTANCE,
+  CINDER_FALL_MAX_DISTANCE,
+} from '../terrain-scalar.js';
+import {
+  KNIGHT_SHIELD_BLOCK_DR,
+  KNIGHT_POWER_SWORD_DURATION,
+  KNIGHT_POWER_SWORD_COOLDOWN,
+  KNIGHT_ULT_DURATION,
+  KNIGHT_ULT_DMG_MULT,
+  KNIGHT_ULT_COOLDOWN,
+  MAGE_MAX_CONSECUTIVE_CHARGED,
+  MAGE_E_COOLDOWN,
+  MAGE_STORM_CATACLYSM_DURATION,
+  MAGE_STORM_CATACLYSM_COOLDOWN,
+  createCombatActionAimController,
+} from './combat-action-aim.js';
 
-export function shortestAngleDiff(target, current) {
-  let diff = (target - current) % (Math.PI * 2);
-  if (diff > Math.PI) diff -= Math.PI * 2;
-  if (diff < -Math.PI) diff += Math.PI * 2;
-  return diff;
-}
+export { clamp, shortestAngleDiff };
 
 /* ------------------------------------------------------------------------- */
 /* 1. Hero Stats & Sword Breathing Styles                                    */
@@ -30,6 +44,12 @@ export const HERO_STATS = {
     comboDmg: [22, 26, 38],
     combo4Dmg: 46,
     heavyDmg: 56,
+    shieldBlockDr: KNIGHT_SHIELD_BLOCK_DR, // 80% damage reduction while holding Shield Block
+    powerSwordDuration: KNIGHT_POWER_SWORD_DURATION, // 13.0s active
+    powerSwordCd: KNIGHT_POWER_SWORD_COOLDOWN, // 18.0s total cooldown from activation (5.0s downtime)
+    ultDuration: KNIGHT_ULT_DURATION, // 10.0s of 2.0x double damage
+    ultDmgMult: KNIGHT_ULT_DMG_MULT, // 2.0x
+    ultCd: KNIGHT_ULT_COOLDOWN, // 24.0s
     interceptDmg: 34,
     interceptShield: 35,
     interceptDuration: 6.0,
@@ -37,25 +57,48 @@ export const HERO_STATS = {
     interceptRange: 9.0,
     interceptKnockback: 3.8,
     infusedMult: 1.35,
+    xpPerKill: 45,
+    xpPerLevel: 90,
   },
   Mage: {
     id: 'Mage',
-    maxHp: 180,
+    maxHp: 90, // Fragile Glass Cannon — dies in ~3 unprotected hits!
     speed: 7.2,
-    sprintMult: 1.50,
+    sprintMult: 1.5,
     boltDmg: [18, 22, 30],
     boltRange: 14.5,
+    shatterlanceDmg: 58,
+    maxConsecutiveCharged: MAGE_MAX_CONSECUTIVE_CHARGED, // 3 consecutive charged limit
+    skillCd: MAGE_E_COOLDOWN, // 8.5s cooldown on Hold/Release E spell
+    stormCataclysmDuration: MAGE_STORM_CATACLYSM_DURATION, // 6.0s stationary vulnerable channel
+    stormCataclysmCd: MAGE_STORM_CATACLYSM_COOLDOWN, // 24.0s
+    stormCataclysmWaveDmg: 68,
+    stormCataclysmRadius: 11.0,
     heavyNovaDmg: 42,
     heavyNovaRadius: 3.5,
     infuseHeal: 45,
-    infuseDuration: 12.0,
-    infuseCd: 7.0,
+    infuseDuration: 13.0,
+    infuseCd: 8.5,
   },
 };
+
+export function getKnightLevelStats(level = 1) {
+  const cleanLevel = Math.max(1, Math.floor(Number(level) || 1));
+  return {
+    level: cleanLevel,
+    dmgMult: Number((1.0 + 0.12 * (cleanLevel - 1)).toFixed(3)),
+    iceSlowFactor: clamp(Number((0.25 + 0.04 * cleanLevel).toFixed(3)), 0.25, 0.65),
+    iceSlowDuration: 4.5,
+    fireStrikeBonus: 6 + 3 * cleanLevel,
+    fireBurnDps: 8 + 4 * cleanLevel,
+    fireBurnDuration: 4.0,
+  };
+}
 
 export const BREATHING_STYLES = {
   none: {
     id: 'none',
+    element: 'none',
     name: 'Steel Wind',
     mark: null,
     dmgMult: 1.0,
@@ -65,24 +108,27 @@ export const BREATHING_STYLES = {
   },
   rime: {
     id: 'rime',
+    element: 'ice',
     name: 'Glacial Tide',
     mark: 'rime',
     dmgMult: 1.35,
-    duration: 12.0,
+    duration: KNIGHT_POWER_SWORD_DURATION,
     colorHex: '#38bdf8',
     detonationId: 'shatterblow',
   },
   solar: {
     id: 'solar',
+    element: 'fire',
     name: 'Hinokami Sunfire',
     mark: 'solar',
     dmgMult: 1.35,
-    duration: 12.0,
+    duration: KNIGHT_POWER_SWORD_DURATION,
     colorHex: '#ff6a12',
     detonationId: 'solar_flare',
   },
   tempest: {
     id: 'tempest',
+    element: 'storm',
     name: 'Thunderclap Wisteria',
     mark: 'tempest',
     dmgMult: 1.35,
@@ -92,6 +138,7 @@ export const BREATHING_STYLES = {
   },
   eclipse: {
     id: 'eclipse',
+    element: 'eclipse',
     name: 'Sun & Tide Eclipse',
     mark: 'eclipse',
     dmgMult: 1.5,
@@ -110,9 +157,9 @@ export const SPELLS = {
     id: 'frost_lance',
     slot: 1,
     name: 'Frost Lance',
-    cd: 4.5,
+    cd: MAGE_E_COOLDOWN,
     dmg: 42,
-    range: 14.5,
+    range: FROST_LANCE_AIM_LENGTH,
     width: 2.6,
     mark: 'rime',
     infusion: 'rime',
@@ -135,9 +182,11 @@ export const SPELLS = {
     id: 'cinder_fall',
     slot: 3,
     name: 'Cinder Fall',
-    cd: 7.0,
+    cd: MAGE_E_COOLDOWN,
     dmg: 54,
-    range: 16.0,
+    range: CINDER_FALL_MAX_DISTANCE,
+    minRange: CINDER_FALL_MIN_DISTANCE,
+    maxRange: CINDER_FALL_MAX_DISTANCE,
     radius: 4.2,
     mark: 'solar',
     infusion: 'solar',
@@ -226,6 +275,8 @@ export const FINISHER_SOURCES = new Set([
   'shatterlance',
   'mage_heavy',
   'couples_ultimate',
+  'storm_cataclysm',
+  'knight_sky_lightning',
 ]);
 
 export const COUPLES_ULTIMATE = {
@@ -257,7 +308,7 @@ export const ENEMY_ARCHETYPES = {
     poolRole: 'Skeleton_Minion',
     name: 'Skeleton Minion',
     maxHp: 95,
-    dmg: 12,
+    dmg: 30,
     speed: 4.8,
     attackRange: 2.3,
     windupDuration: ENEMY_WINDUP_SECONDS,
@@ -271,7 +322,7 @@ export const ENEMY_ARCHETYPES = {
     poolRole: 'Skeleton_Warrior',
     name: 'Skeleton Warrior',
     maxHp: 140,
-    dmg: 16,
+    dmg: 32,
     speed: 4.4,
     attackRange: 2.5,
     windupDuration: ENEMY_WINDUP_SECONDS,
@@ -285,7 +336,7 @@ export const ENEMY_ARCHETYPES = {
     poolRole: 'Skeleton_Rogue',
     name: 'Skeleton Rogue',
     maxHp: 115,
-    dmg: 15,
+    dmg: 30,
     speed: 5.4,
     attackRange: 2.2,
     windupDuration: ENEMY_WINDUP_SECONDS,
@@ -299,7 +350,7 @@ export const ENEMY_ARCHETYPES = {
     poolRole: 'Skeleton_Mage',
     name: 'Skeleton Mage',
     maxHp: 110,
-    dmg: 18,
+    dmg: 30,
     speed: 3.9,
     attackRange: 9.5,
     windupDuration: ENEMY_WINDUP_SECONDS,
@@ -314,7 +365,7 @@ export const ENEMY_ARCHETYPES = {
     poolRole: 'Skeleton_Warrior',
     name: 'Twilight Elite Captain',
     maxHp: 320,
-    dmg: 24,
+    dmg: 36,
     speed: 4.6,
     attackRange: 2.8,
     windupDuration: ENEMY_WINDUP_SECONDS,
@@ -329,7 +380,7 @@ export const ENEMY_ARCHETYPES = {
     poolRole: 'Skeleton_Warrior',
     name: 'Shrine Royal Guard',
     maxHp: 210,
-    dmg: 20,
+    dmg: 34,
     speed: 4.5,
     attackRange: 2.6,
     windupDuration: ENEMY_WINDUP_SECONDS,
@@ -343,7 +394,7 @@ export const ENEMY_ARCHETYPES = {
     poolRole: 'Boss_Sovereign',
     name: 'The Hollow Sovereign',
     maxHp: 1400,
-    dmg: 34,
+    dmg: 45,
     speed: 4.2,
     attackRange: 3.6,
     windupDuration: ENEMY_WINDUP_SECONDS,
@@ -363,13 +414,6 @@ export const SHRINE_OBSTACLES = [
   { id: 'shrine_planter_e', x: 10.6, z: -90.8, r: 2.6 },
 ];
 
-/**
- * Exact `geography.js` coordinates for the 3-Act Valley Expedition:
- * - `act1_arena`: East Wisteria Combat Ring at `(68.0, -4.0)` (`spawnRadius: 6.0..15.0m`, inside `fenceR = 19.5m`)
- * - `interlude_pier`: West Millpond Pier Sanctuary Brazier at `(-42.0, 8.5, y = -0.23)`
- * - `act2_plaza`: Twilight Hamlet Plaza Defense at `(0.0, 0.0)` (`spawnRadius: 9.5..12.5m` on cobble ring road)
- * - `act3_shrine`: Starlit North Shrine Overlook Boss Duel at `(0.0, -85.5, y = 8.0)` (`arenaRadius: 12.8m`)
- */
 export const ACT_DEFINITIONS = {
   act1_arena: {
     id: 'act1_arena',
@@ -495,7 +539,7 @@ export const ACT_DEFINITIONS = {
     id: 'act3_shrine',
     name: 'Act III · Starlit North Shrine Overlook Boss Duel',
     bannerTitle: 'ACT III · THE HOLLOW SOVEREIGN',
-    bannerSubtitle: 'Shatter the Sovereign’s Bone Aegis with Physical Detonations or Couples Ultimate',
+    bannerSubtitle: 'Shatter the Sovereign’s Bone Aegis with Physical Detonations or Cataclysm',
     center: { x: 0.0, z: -85.5, y: 8.0 },
     triggerRadius: 14.0,
     arenaRadius: 12.8,
@@ -549,11 +593,6 @@ export const ACT_SEQUENCE = [
   'victory_dawn',
 ];
 
-/**
- * Resolves collisions against Shrine obstacles (pedestal `(-5.8, -87.8, r = 1.6)`
- * and raised stone planters `(±10.6, -90.8, r = 2.6)`) and optionally clamps
- * within `arenaRadius = 12.8m` around `(0.0, -85.5)`.
- */
 export function resolveShrineObstacles(px, pz, entityRadius = 0.55, clampToArena = false) {
   let x = px;
   let z = pz;
@@ -594,13 +633,6 @@ export function resolveShrineObstacles(px, pz, entityRadius = 0.55, clampToArena
 /* 5. Pure Helper Functions                                                  */
 /* ------------------------------------------------------------------------- */
 
-/**
- * Smart Cone Soft-Lock (`75°` forward cone = `37.5°` half-angle, `20m` range):
- * - Prioritizes alive enemies inside the forward cone (weighted by distance,
- *   angle alignment, active elemental mark, and boss/windup priority).
- * - Falls back to nearest enemy within `partnerThreatRadius` (`8.0m`) of either
- *   the caster (`origin`) or `partnerPos` so neither partner gets blindsided.
- */
 export function selectSoftLockTarget(
   origin,
   forwardYaw,
@@ -647,14 +679,13 @@ export function selectSoftLockTarget(
       }
     }
 
-    // Check close-range threat fallback around origin or partnerPos (within 8.0m)
     const distPartner = partnerPos
       ? Math.hypot(ex - partnerPos.x, ez - partnerPos.z)
       : Infinity;
     const minThreatDist = Math.min(dist, distPartner);
     if (minThreatDist <= partnerThreatRadius) {
       const attackingBonus = e.aiState === 'windup' || e.hasAttackToken ? 0.5 : 0.0;
-      const threatScore = (1.0 - minThreatDist / partnerThreatRadius) + attackingBonus;
+      const threatScore = 1.0 - minThreatDist / partnerThreatRadius + attackingBonus;
       if (threatScore > bestThreatScore) {
         bestThreatScore = threatScore;
         bestThreatFallback = e;
@@ -665,13 +696,6 @@ export function selectSoftLockTarget(
   return bestInCone || bestThreatFallback || null;
 }
 
-/**
- * Enforces the 3-Attacker Token AI cap:
- * - At most `maxTokens` (`3`) alive, active, unstunned enemies can hold an
- *   attack token simultaneously.
- * - Stunned, dead, or inactive enemies immediately release their token.
- * - Returns the array of enemies holding an attack token.
- */
 export function allocateAttackTokens(enemies, maxTokens = MAX_ATTACK_TOKENS) {
   if (!Array.isArray(enemies)) return [];
 
@@ -726,16 +750,23 @@ export function allocateAttackTokens(enemies, maxTokens = MAX_ATTACK_TOKENS) {
   return holders;
 }
 
-export const COMMUNE_MAX_DISTANCE = 5.0;
-export const COMMUNE_RESURRECT_DISTANCE = 4.8;
-export const POWERUP_TETHER_DISTANCE = 6.5;
+// Divine Verdict ("Court of Bloody Dark Flowers & The Eclipse") Locked Constants
+export const COMMUNE_MAX_DISTANCE = 4.0;
+export const COMMUNE_RESURRECT_DISTANCE = 4.0;
+export const COMMUNE_COMBAT_HP_THRESHOLD = 0.35;
+export const POWERUP_TETHER_DISTANCE = 5.0;
+export const DIVINE_BLESSING_DURATION = 30.0;
+export const DIVINE_BLESSING_TETHER_DISTANCE = 5.0;
+export const DIVINE_BLESSING_DMG_MULT = 2.0;
+export const DIVINE_BLESSING_Q_CD_MULT = 1 / 3;
+export const DIVINE_BLESSING_E_CD_MULT = 0.5;
 export const ALTAR_STELE_POS = { x: 2.6, z: 7.2, y: 0.0, triggerRadius: 5.0 };
 
 /**
  * Applies a hit (`hitSpec`) to `enemy`, resolves Sword Breathing multipliers,
- * proximity-linked Commune power-up multipliers (`<= 6.5m`), Boss Bone Aegis
- * mitigation/layer-breaking, and Physical Detonations
- * (`SHATTERBLOW!`, `SOLAR FLARE!`, `THUNDERCHAIN!`) across `allEnemies`.
+ * Knight Level scaling, Ice Sword slow (movement, attack speed & damage) and
+ * Fire Sword persistent burn DoT, Knight Q 2.0x Sky-Lightning double damage,
+ * Boss Bone Aegis mitigation/layer-breaking, and Physical Detonations.
  */
 export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = []) {
   if (!enemy || enemy.dead || enemy.hp <= 0) {
@@ -745,6 +776,8 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
       killed: false,
       detonation: null,
       markApplied: null,
+      iceSlowApplied: false,
+      fireBurnApplied: false,
       aegisBroken: false,
       aegisLayersRemaining: enemy?.aegisLayers || 0,
       resonanceGain: 0,
@@ -755,7 +788,14 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
 
   const source = hitSpec.source || 'combo1';
   const baseDmg = Number(hitSpec.baseDmg ?? hitSpec.dmg ?? 20);
-  const infusion = hitSpec.infusion || 'none';
+  const rawInfusion = hitSpec.infusion || 'none';
+  const infusion =
+    rawInfusion === 'ice'
+      ? 'rime'
+      : rawInfusion === 'fire'
+        ? 'solar'
+        : rawInfusion;
+
   const isSwordHit =
     source === 'combo1' ||
     source === 'combo2' ||
@@ -763,19 +803,18 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     source === 'combo4' ||
     source === 'charged' ||
     source === 'heavy' ||
-    source === 'intercept';
+    source === 'intercept' ||
+    source === 'knight_sky_lightning';
 
-  // Single-Mandala / Tether Proximity Rule: Knight's Sword Breathing & Mage's Ascended Magic Flow
-  // require staying within 6.5m of your partner when partnerPos is supplied
-  const withinTether =
-    !hitSpec.attackerPos ||
-    !hitSpec.partnerPos ||
-    Math.hypot(
-      (hitSpec.attackerPos.x ?? 0) - (hitSpec.partnerPos.x ?? 0),
-      (hitSpec.attackerPos.z ?? 0) - (hitSpec.partnerPos.z ?? 0)
-    ) <= POWERUP_TETHER_DISTANCE;
+  const knightLevel = Math.max(1, Number(hitSpec.knightLevel || 1));
+  const lvlStats = getKnightLevelStats(knightLevel);
+  const levelMult = isSwordHit ? lvlStats.dmgMult : 1.0;
+  const ultMult =
+    isSwordHit && (hitSpec.knightUltActive || Number(hitSpec.ultDmgMult) > 1.0)
+      ? Number(hitSpec.ultDmgMult || KNIGHT_ULT_DMG_MULT)
+      : 1.0;
 
-  const effectiveInfusion = withinTether ? infusion : 'none';
+  const effectiveInfusion = infusion;
   const infusedMult =
     isSwordHit && effectiveInfusion && effectiveInfusion !== 'none'
       ? effectiveInfusion === 'eclipse'
@@ -783,21 +822,44 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
         : HERO_STATS.Knight.infusedMult
       : 1.0;
   const empoweredMult =
-    withinTether &&
     hitSpec.empoweredBreathing &&
     ((isSwordHit && effectiveInfusion !== 'none') || SPELLS[source])
       ? 1.25
       : 1.0;
   const dodgeMult = hitSpec.perfectDodgeBuff ? 1.35 : 1.0;
-  const communeMult = withinTether
-    ? isSwordHit
-      ? Number(hitSpec.partnerSwordMult || 1.0)
-      : Number(hitSpec.partnerMagicMult || 1.0)
-    : 1.0;
+  const communeMult = isSwordHit
+    ? Number(hitSpec.partnerSwordMult || 1.0)
+    : Number(hitSpec.partnerMagicMult || 1.0);
+
+  const fireBonus =
+    isSwordHit && (effectiveInfusion === 'solar' || effectiveInfusion === 'eclipse')
+      ? lvlStats.fireStrikeBonus
+      : 0;
 
   let rawDirectDmg = Math.round(
-    baseDmg * infusedMult * empoweredMult * dodgeMult * communeMult
+    (baseDmg * levelMult + fireBonus) *
+      infusedMult *
+      empoweredMult *
+      dodgeMult *
+      communeMult *
+      ultMult
   );
+
+  // Apply Knight E Power Sword Ice Slow or Fire Burn DoT on sword hits
+  let iceSlowApplied = false;
+  let fireBurnApplied = false;
+  if (isSwordHit && (effectiveInfusion === 'rime' || effectiveInfusion === 'eclipse')) {
+    enemy.iceSlowTimer = Math.max(enemy.iceSlowTimer || 0, lvlStats.iceSlowDuration);
+    enemy.iceSlowFactor = Math.max(enemy.iceSlowFactor || 0, lvlStats.iceSlowFactor);
+    enemy.slowTimer = Math.max(enemy.slowTimer || 0, lvlStats.iceSlowDuration);
+    enemy.slowFactor = enemy.iceSlowFactor;
+    iceSlowApplied = true;
+  }
+  if (isSwordHit && (effectiveInfusion === 'solar' || effectiveInfusion === 'eclipse')) {
+    enemy.burnTimer = Math.max(enemy.burnTimer || 0, lvlStats.fireBurnDuration);
+    enemy.burnDps = Math.max(enemy.burnDps || 0, lvlStats.fireBurnDps);
+    fireBurnApplied = true;
+  }
 
   // Check if this hit triggers a Physical Detonation on a marked enemy
   const canDetonate = Boolean(hitSpec.detonatesMark || FINISHER_SOURCES.has(source));
@@ -808,7 +870,8 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
   const isEclipseDetonation =
     canDetonate &&
     (activeMark === 'eclipse' ||
-      (effectiveInfusion === 'eclipse' && (activeMark === 'rime' || activeMark === 'solar' || isSwordHit)));
+      (effectiveInfusion === 'eclipse' &&
+        (activeMark === 'rime' || activeMark === 'solar' || isSwordHit)));
 
   if (activeMark && canDetonate && MARK_TO_DETONATION[activeMark]) {
     detonationSpec = MARK_TO_DETONATION[activeMark];
@@ -822,15 +885,17 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
 
   let aegisBroken = false;
 
-  // If Boss Bone Aegis is active, physical detonations / Blessing break 1 layer,
-  // and Couples Ultimate / Miracle shatter all layers!
   if (enemy.isBoss && enemy.aegisActive && enemy.aegisLayers > 0) {
-    if (source === 'couples_ultimate' || source === 'divine_miracle') {
+    if (
+      source === 'couples_ultimate' ||
+      source === 'divine_miracle' ||
+      source === 'storm_cataclysm'
+    ) {
       enemy.aegisLayers = 0;
       enemy.aegisActive = false;
       aegisBroken = true;
       enemy.stunTimer = Math.max(enemy.stunTimer || 0, COUPLES_ULTIMATE.stun);
-    } else if (detonationSpec || source === 'divine_blessing') {
+    } else if (detonationSpec || source === 'divine_blessing' || source === 'knight_sky_lightning') {
       enemy.aegisLayers = Math.max(0, enemy.aegisLayers - 1);
       aegisBroken = true;
       if (enemy.aegisLayers === 0) {
@@ -838,13 +903,11 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
         enemy.stunTimer = Math.max(enemy.stunTimer || 0, 2.0);
       }
     } else {
-      // Bone Aegis reduces non-detonation direct damage by 85%
       const reduction = enemy.aegisDmgReduction ?? 0.85;
       rawDirectDmg = Math.max(1, Math.round(rawDirectDmg * (1.0 - reduction)));
     }
   }
 
-  // Apply direct damage to primary target
   const prevHp = enemy.hp;
   enemy.hp = Math.max(0, enemy.hp - rawDirectDmg);
   let primaryDamageDealt = prevHp - enemy.hp;
@@ -861,7 +924,7 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     const bonusBase = isEclipseDetonation
       ? Math.round((DETONATIONS.solar_flare.bonusDmg + DETONATIONS.shatterblow.bonusDmg) * 0.75)
       : detonationSpec.bonusDmg;
-    const bonusDmg = Math.round(bonusBase * empoweredMult);
+    const bonusDmg = Math.round(bonusBase * empoweredMult * ultMult);
     const affectedIds = [];
 
     const targets =
@@ -883,7 +946,6 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
         }
         affectedIds.push(t.instanceId || t.id || i);
 
-        // Apply physical CC (stun, launch, knockback, or inward thunderchain pull)
         const stunDur = isEclipseDetonation
           ? Math.max(detonationSpec.stun || 0, DETONATIONS.shatterblow.stun)
           : detonationSpec.stun;
@@ -937,10 +999,11 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
       affectedCount: affectedIds.length,
     };
   } else {
-    // Apply mark if hitSpec provides one (or if Knight's blade is Breathing-infused on combo1/combo2)
     const nextMark =
       hitSpec.applyMark ||
-      (isSwordHit && !FINISHER_SOURCES.has(source) && infusion !== 'none' ? infusion : null);
+      (isSwordHit && !FINISHER_SOURCES.has(source) && effectiveInfusion !== 'none'
+        ? effectiveInfusion
+        : null);
     if (nextMark && enemy.hp > 0) {
       enemy.mark = nextMark;
       enemy.markTimer = hitSpec.markDuration ?? 6.0;
@@ -955,7 +1018,6 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     }
   }
 
-  // Check if Boss Sovereign crosses <= 50% HP threshold and raises 2-layer Bone Aegis
   let aegisRaised = false;
   if (
     enemy.isBoss &&
@@ -964,7 +1026,7 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     enemy.hp <= enemy.maxHp * (enemy.aegisTriggerHpRatio ?? 0.5)
   ) {
     enemy.aegisTriggered = true;
-    if (source === 'couples_ultimate') {
+    if (source === 'couples_ultimate' || source === 'storm_cataclysm') {
       enemy.aegisActive = false;
       enemy.aegisLayers = 0;
       aegisBroken = true;
@@ -988,12 +1050,14 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     killed: enemy.dead,
     detonation: detonationResult,
     markApplied: enemy.mark || null,
+    iceSlowApplied,
+    fireBurnApplied,
     aegisRaised,
     aegisBroken,
     aegisLayersRemaining: enemy.aegisLayers || 0,
     resonanceGain,
     hitstopMs: detonationResult ? 70 : 0,
-    cameraPunch: detonationResult ? 0.14 : 0.03,
+    cameraPunch: 0, // Zero routine attack camera shake!
   };
 }
 
@@ -1017,6 +1081,18 @@ export function createHeadlessCampaignSim() {
       yaw: Math.PI,
       downed: false,
       reviveProgress: 0,
+      level: 1,
+      xp: 0,
+      kills: 0,
+      selectedElement: 'ice', // 'ice' | 'fire'
+      shieldBlocking: false,
+      powerSwordActive: false,
+      powerSwordTimer: 0,
+      powerSwordCd: 0,
+      ultActive: false,
+      ultTimer: 0,
+      ultCd: 0,
+      ultDmgMult: 1.0,
       breathingStyle: 'none',
       breathingTimer: 0,
       empoweredBreathing: false,
@@ -1036,6 +1112,14 @@ export function createHeadlessCampaignSim() {
       yaw: Math.PI,
       downed: false,
       reviveProgress: 0,
+      selectedElement: 'ice',
+      selectedSpell: 'frost_lance', // 'frost_lance' | 'cinder_fall'
+      consecutiveChargedCount: 0,
+      skillCd: 0,
+      stormCataclysmActive: false,
+      stormCataclysmTimer: 0,
+      stormCataclysmWaveTimer: 0,
+      ultCd: 0,
       empoweredBreathing: false,
       perfectDodgeBuff: false,
       iframeTimer: 0,
@@ -1057,7 +1141,6 @@ export function createHeadlessCampaignSim() {
   let heartResonance = 0;
   let tetherSurge = { active: false, style: 'none', progress: 0, duration: 0.65 };
 
-  // 6-slot pre-allocated enemy pool (5 standard + 1 Boss Sovereign)
   const poolSlots = [
     { slotIndex: 0, poolRole: 'Skeleton_Warrior', busy: false, visible: false, enemy: null },
     { slotIndex: 1, poolRole: 'Skeleton_Warrior', busy: false, visible: false, enemy: null },
@@ -1071,6 +1154,21 @@ export function createHeadlessCampaignSim() {
   let spawnQueue = [];
   let nextEnemySeq = 1;
   const eventLog = [];
+
+  function awardKnightKillXp(enemy) {
+    const xpGain = enemy?.isBoss
+      ? HERO_STATS.Knight.xpPerKill * 4
+      : enemy?.isElite
+        ? HERO_STATS.Knight.xpPerKill * 2
+        : HERO_STATS.Knight.xpPerKill;
+    heroes.Knight.kills += 1;
+    heroes.Knight.xp += xpGain;
+    while (heroes.Knight.xp >= HERO_STATS.Knight.xpPerLevel) {
+      heroes.Knight.xp -= HERO_STATS.Knight.xpPerLevel;
+      heroes.Knight.level += 1;
+      eventLog.push({ type: 'knight_level_up', level: heroes.Knight.level });
+    }
+  }
 
   function addResonance(amount) {
     heartResonance = clamp(heartResonance + amount, 0, 100);
@@ -1086,7 +1184,6 @@ export function createHeadlessCampaignSim() {
       if (!bossSlot.busy) return bossSlot;
     }
 
-    // Prefer matching poolRole among standard slots 0..4
     for (let i = 0; i < 5; i++) {
       if (!poolSlots[i].busy && poolSlots[i].poolRole === archetypeSpec.poolRole) {
         return poolSlots[i];
@@ -1146,11 +1243,16 @@ export function createHeadlessCampaignSim() {
       vz: 0,
       grounded: true,
       dead: false,
+      xpAwarded: false,
       active: true,
       mark: null,
       markTimer: 0,
       stunTimer: 0,
       slowTimer: 0,
+      iceSlowTimer: 0,
+      iceSlowFactor: 0,
+      burnTimer: 0,
+      burnDps: 0,
       aiState: 'orbit',
       windupTimer: 0,
       telegraphProgress: 0,
@@ -1167,6 +1269,10 @@ export function createHeadlessCampaignSim() {
   }
 
   function releaseEnemySlot(enemy) {
+    if (enemy && !enemy.xpAwarded && (enemy.dead || enemy.hp <= 0)) {
+      enemy.xpAwarded = true;
+      awardKnightKillXp(enemy);
+    }
     const slot = poolSlots[enemy.slotIndex];
     if (slot) {
       slot.busy = false;
@@ -1176,7 +1282,6 @@ export function createHeadlessCampaignSim() {
     enemy.active = false;
     activeEnemies = activeEnemies.filter((e) => e !== enemy);
 
-    // Immediately pull from reinforcement queue if wave has remaining enemies
     while (spawnQueue.length > 0 && activeEnemies.length < MAX_CONCURRENT_ENEMIES) {
       const nextSpec = spawnQueue.shift();
       spawnEnemyFromSpec(nextSpec);
@@ -1232,10 +1337,15 @@ export function createHeadlessCampaignSim() {
   }
 
   function checkWaveAndActCompletion() {
+    for (const e of activeEnemies) {
+      if ((e.dead || e.hp <= 0) && !e.xpAwarded) {
+        e.xpAwarded = true;
+        awardKnightKillXp(e);
+      }
+    }
     const act = ACT_DEFINITIONS[currentActId];
     if (!act || !actTriggered) return;
 
-    // Clean up dead enemies and spawn queued reinforcements
     const deadList = activeEnemies.filter((e) => e.dead || e.hp <= 0);
     for (const d of deadList) {
       releaseEnemySlot(d);
@@ -1262,6 +1372,8 @@ export function createHeadlessCampaignSim() {
     heroes.Knight.z = z;
     heroes.Mage.x = x + 1.8;
     heroes.Mage.z = z + 0.5;
+    heroes.Mage.consecutiveChargedCount = 0;
+    actionAim.notifyHeroMoved('Mage');
 
     const act = ACT_DEFINITIONS[currentActId];
     if (act && !actTriggered) {
@@ -1269,7 +1381,6 @@ export function createHeadlessCampaignSim() {
       if (d <= act.triggerRadius) {
         actTriggered = true;
         if (currentActId === 'interlude_pier') {
-          // Sanctuary Brazier full heal + shield + +50% Resonance + Empowered Breathing
           heroes.Knight.hp = heroes.Knight.maxHp;
           heroes.Mage.hp = heroes.Mage.maxHp;
           heroes.Knight.shield = act.sanctuaryReward.shield;
@@ -1290,29 +1401,35 @@ export function createHeadlessCampaignSim() {
     }
   }
 
-  function igniteKnightBreathing(styleId, duration = HERO_STATS.Mage.infuseDuration) {
-    if (!BREATHING_STYLES[styleId]) return;
-    heroes.Knight.breathingStyle = styleId;
+  function igniteKnightBreathing(styleId, duration = HERO_STATS.Knight.powerSwordDuration) {
+    const resolvedStyle =
+      styleId === 'ice' ? 'rime' : styleId === 'fire' ? 'solar' : styleId;
+    if (!BREATHING_STYLES[resolvedStyle]) return;
+    heroes.Knight.breathingStyle = resolvedStyle;
     heroes.Knight.breathingTimer = duration;
-    tetherSurge = { active: true, style: styleId, progress: 0, duration: 0.65 };
+    tetherSurge = { active: true, style: resolvedStyle, progress: 0, duration: 0.65 };
   }
 
-  function castSpell(spellId, targetEnemy = null) {
+  function castSpell(spellId, targetEnemy = null, options = {}) {
     const spell = SPELLS[spellId];
     if (!spell || heroes.Mage.downed) return null;
 
+    const castDistance = Number(options.distance || options.range || spell.range);
     const primary =
       targetEnemy ||
       selectSoftLockTarget(
         heroes.Mage,
         heroes.Mage.yaw,
         activeEnemies,
-        { maxRange: spell.range, partnerPos: heroes.Knight }
+        { maxRange: castDistance, partnerPos: heroes.Knight }
       ) ||
       activeEnemies[0];
 
-    igniteKnightBreathing(spell.infusion, HERO_STATS.Mage.infuseDuration);
+    igniteKnightBreathing(spell.infusion, HERO_STATS.Knight.powerSwordDuration);
     heroes.Mage.spellCooldowns[spell.id] = spell.cd;
+    if (spell.id === 'frost_lance' || spell.id === 'cinder_fall') {
+      heroes.Mage.skillCd = MAGE_E_COOLDOWN;
+    }
     addResonance(spell.resonanceGain);
 
     const results = [];
@@ -1330,11 +1447,12 @@ export function createHeadlessCampaignSim() {
         activeEnemies
       );
       if (hitRes.detonation) {
-        addResonance(hitRes.detonation.resonanceGain || DETONATIONS[hitRes.detonation.id].resonanceGain);
+        addResonance(
+          hitRes.detonation.resonanceGain || DETONATIONS[hitRes.detonation.id].resonanceGain
+        );
       }
       results.push(hitRes);
 
-      // Handle AoE / Chain secondary hits
       if (spell.radius || spell.chainCount) {
         const rad = spell.chainRadius || spell.radius || 4.0;
         let chainsLeft = spell.chainCount || 99;
@@ -1363,7 +1481,12 @@ export function createHeadlessCampaignSim() {
     }
 
     checkWaveAndActCompletion();
-    return { spell, results, knightBreathing: heroes.Knight.breathingStyle };
+    return {
+      spell,
+      distance: castDistance,
+      results,
+      knightBreathing: heroes.Knight.breathingStyle,
+    };
   }
 
   function mageInfuse(styleId = 'rime') {
@@ -1384,6 +1507,7 @@ export function createHeadlessCampaignSim() {
 
   function knightAttack(swingType = 'combo1', targetEnemy = null) {
     if (heroes.Knight.downed) return null;
+    heroes.Knight.shieldBlocking = false;
     const target =
       targetEnemy ||
       selectSoftLockTarget(
@@ -1399,7 +1523,8 @@ export function createHeadlessCampaignSim() {
     if (swingType === 'combo2') baseDmg = HERO_STATS.Knight.comboDmg[1];
     else if (swingType === 'combo3') baseDmg = HERO_STATS.Knight.comboDmg[2];
     else if (swingType === 'combo4') baseDmg = HERO_STATS.Knight.combo4Dmg || 46;
-    else if (swingType === 'charged' || swingType === 'heavy') baseDmg = HERO_STATS.Knight.heavyDmg;
+    else if (swingType === 'charged' || swingType === 'heavy')
+      baseDmg = HERO_STATS.Knight.heavyDmg;
 
     const res = applyHitAndResolveDetonation(
       target,
@@ -1407,6 +1532,9 @@ export function createHeadlessCampaignSim() {
         source: swingType,
         baseDmg,
         infusion: heroes.Knight.breathingStyle,
+        knightLevel: heroes.Knight.level,
+        knightUltActive: heroes.Knight.ultActive,
+        ultDmgMult: heroes.Knight.ultDmgMult,
         empoweredBreathing: heroes.Knight.empoweredBreathing,
         perfectDodgeBuff: heroes.Knight.perfectDodgeBuff,
         attackerPos: heroes.Knight,
@@ -1417,6 +1545,242 @@ export function createHeadlessCampaignSim() {
     addResonance(res.resonanceGain);
     checkWaveAndActCompletion();
     return res;
+  }
+
+  function knightToggleElement() {
+    const res = actionAim.toggleElement('Knight');
+    heroes.Knight.selectedElement = res.element;
+    return res;
+  }
+
+  function knightHoldShieldBlock(active = true) {
+    if (active) {
+      const res = actionAim.pressHeavy('Knight');
+      heroes.Knight.shieldBlocking = true;
+      return res;
+    }
+    const res = actionAim.releaseHeavy('Knight');
+    heroes.Knight.shieldBlocking = false;
+    return res;
+  }
+
+  function knightActivatePowerSword() {
+    if (heroes.Knight.downed) return null;
+    if (heroes.Knight.powerSwordCd > 0.05) {
+      return { onCooldown: true, cooldownRemaining: heroes.Knight.powerSwordCd };
+    }
+    const elem = heroes.Knight.selectedElement || 'ice';
+    const styleId = elem === 'fire' ? 'solar' : 'rime';
+    heroes.Knight.powerSwordActive = true;
+    heroes.Knight.powerSwordTimer = KNIGHT_POWER_SWORD_DURATION; // 13.0s active
+    heroes.Knight.powerSwordCd = KNIGHT_POWER_SWORD_COOLDOWN; // 18.0s total cd (5.0s downtime)
+    igniteKnightBreathing(styleId, KNIGHT_POWER_SWORD_DURATION);
+    return {
+      activated: true,
+      element: elem,
+      breathingStyle: styleId,
+      activeDuration: KNIGHT_POWER_SWORD_DURATION,
+      totalCooldown: KNIGHT_POWER_SWORD_COOLDOWN,
+      downtimeAfterExpiry: KNIGHT_POWER_SWORD_COOLDOWN - KNIGHT_POWER_SWORD_DURATION,
+    };
+  }
+
+  function knightCastSkyLightningUlt(targetEnemy = null) {
+    if (heroes.Knight.downed) return null;
+    if (heroes.Knight.ultCd > 0.05) {
+      return { onCooldown: true, cooldownRemaining: heroes.Knight.ultCd };
+    }
+    heroes.Knight.ultActive = true;
+    heroes.Knight.ultTimer = KNIGHT_ULT_DURATION; // 10.0s
+    heroes.Knight.ultDmgMult = KNIGHT_ULT_DMG_MULT; // 2.0x
+    heroes.Knight.ultCd = KNIGHT_ULT_COOLDOWN; // 24.0s
+    const styleId = heroes.Knight.selectedElement === 'fire' ? 'solar' : 'rime';
+    igniteKnightBreathing(styleId, Math.max(heroes.Knight.breathingTimer, KNIGHT_ULT_DURATION));
+
+    const target = targetEnemy || activeEnemies[0];
+    let strikeResult = null;
+    if (target && !target.dead) {
+      strikeResult = applyHitAndResolveDetonation(
+        target,
+        {
+          source: 'knight_sky_lightning',
+          baseDmg: 75,
+          infusion: styleId,
+          knightLevel: heroes.Knight.level,
+          knightUltActive: true,
+          ultDmgMult: KNIGHT_ULT_DMG_MULT,
+          detonatesMark: true,
+          attackerPos: heroes.Knight,
+        },
+        activeEnemies
+      );
+      checkWaveAndActCompletion();
+    }
+    return {
+      activated: true,
+      poseClip: 'pray_channel',
+      element: heroes.Knight.selectedElement,
+      duration: KNIGHT_ULT_DURATION,
+      dmgMult: KNIGHT_ULT_DMG_MULT,
+      cooldown: KNIGHT_ULT_COOLDOWN,
+      strikeResult,
+    };
+  }
+
+  function mageTapAttack(targetEnemy = null) {
+    if (heroes.Mage.downed || heroes.Mage.stormCataclysmActive) return null;
+    heroes.Mage.consecutiveChargedCount = 0;
+    const swingRes = actionAim.pressAttack('Mage');
+    const target =
+      targetEnemy ||
+      selectSoftLockTarget(
+        heroes.Mage,
+        heroes.Mage.yaw,
+        activeEnemies,
+        { maxRange: HERO_STATS.Mage.boltRange, partnerPos: heroes.Knight }
+      ) ||
+      activeEnemies[0];
+    let hitResult = null;
+    if (target) {
+      const cIdx = clamp(actionAim.heroes.Mage.comboIndex, 0, 2);
+      const dmg = HERO_STATS.Mage.boltDmg[cIdx] || 18;
+      hitResult = applyHitAndResolveDetonation(
+        target,
+        {
+          source: cIdx === 2 ? 'mage_attack3' : cIdx === 1 ? 'mage_attack2' : 'mage_attack1',
+          baseDmg: dmg,
+          applyMark: cIdx === 2 ? 'rime' : null,
+          attackerPos: heroes.Mage,
+        },
+        activeEnemies
+      );
+      checkWaveAndActCompletion();
+    }
+    return {
+      kind: 'normal_bolt',
+      consecutiveChargedCount: heroes.Mage.consecutiveChargedCount,
+      swingRes,
+      hitResult,
+    };
+  }
+
+  function mageHoldChargedAttack(targetEnemy = null) {
+    if (heroes.Mage.downed || heroes.Mage.stormCataclysmActive) return null;
+    // Clear any finished/pending swing in headless immediate calls so consecutive presses test cleanly
+    actionAim.heroes.Mage.activeSwing = null;
+    const heavyRes = actionAim.pressHeavy('Mage');
+    heroes.Mage.consecutiveChargedCount = actionAim.heroes.Mage.consecutiveChargedCount;
+
+    if (heavyRes.fallbackToNormal) {
+      const target =
+        targetEnemy ||
+        selectSoftLockTarget(
+          heroes.Mage,
+          heroes.Mage.yaw,
+          activeEnemies,
+          { maxRange: HERO_STATS.Mage.boltRange, partnerPos: heroes.Knight }
+        ) ||
+        activeEnemies[0];
+      let hitResult = null;
+      if (target) {
+        hitResult = applyHitAndResolveDetonation(
+          target,
+          {
+            source: 'mage_attack1',
+            baseDmg: HERO_STATS.Mage.boltDmg[0],
+            attackerPos: heroes.Mage,
+          },
+          activeEnemies
+        );
+        checkWaveAndActCompletion();
+      }
+      return {
+        kind: 'normal_bolt_fallback',
+        fallbackToNormal: true,
+        consecutiveChargedCount: heroes.Mage.consecutiveChargedCount,
+        hitResult,
+      };
+    }
+
+    const castRes = castSpell('shatterlance', targetEnemy);
+    return {
+      kind: 'charged_shatterlance',
+      fallbackToNormal: false,
+      stationary: true,
+      startTime: 0,
+      consecutiveChargedCount: heroes.Mage.consecutiveChargedCount,
+      castRes,
+    };
+  }
+
+  function mageToggleSpell() {
+    const res = actionAim.toggleElement('Mage');
+    heroes.Mage.selectedSpell = res.spellId;
+    heroes.Mage.selectedElement = res.element;
+    return res;
+  }
+
+  function mageStartSkillAim(opts = {}) {
+    return actionAim.startSkillAim({
+      origin: opts.origin || heroes.Mage,
+      yaw: opts.yaw ?? heroes.Mage.yaw,
+      pitch: opts.pitch ?? 0.18,
+      distance: opts.distance,
+      touchTarget: opts.touchTarget,
+      spellId: opts.spellId || heroes.Mage.selectedSpell,
+    });
+  }
+
+  function mageUpdateSkillAim(opts = {}) {
+    return actionAim.updateSkillAim(opts);
+  }
+
+  function mageReleaseSkillAim(opts = null) {
+    if (heroes.Mage.skillCd > 0.05) {
+      actionAim.cancelSkillAim();
+      return { onCooldown: true, cooldownRemaining: heroes.Mage.skillCd };
+    }
+    return actionAim.releaseSkillAim(opts);
+  }
+
+  function mageCastStormCataclysm() {
+    if (heroes.Mage.downed) return null;
+    if (heroes.Mage.ultCd > 0.05) {
+      return { onCooldown: true, cooldownRemaining: heroes.Mage.ultCd };
+    }
+    heroes.Mage.stormCataclysmActive = true;
+    heroes.Mage.stormCataclysmTimer = MAGE_STORM_CATACLYSM_DURATION; // 6.0s stationary vulnerable
+    heroes.Mage.stormCataclysmWaveTimer = 0;
+    heroes.Mage.ultCd = MAGE_STORM_CATACLYSM_COOLDOWN; // 24.0s
+
+    // Immediate opening Storm Cataclysm wave across active enemies
+    const waveHits = [];
+    for (const e of [...activeEnemies]) {
+      if (!e || e.dead || e.hp <= 0) continue;
+      waveHits.push(
+        applyHitAndResolveDetonation(
+          e,
+          {
+            source: 'storm_cataclysm',
+            baseDmg: HERO_STATS.Mage.stormCataclysmWaveDmg,
+            applyMark: 'tempest',
+            detonatesMark: true,
+            empoweredBreathing: true,
+            attackerPos: heroes.Mage,
+          },
+          activeEnemies
+        )
+      );
+    }
+    checkWaveAndActCompletion();
+    return {
+      activated: true,
+      stationary: true,
+      vulnerableOneHitDown: true,
+      duration: MAGE_STORM_CATACLYSM_DURATION,
+      cooldown: MAGE_STORM_CATACLYSM_COOLDOWN,
+      waveHits,
+    };
   }
 
   function knightIntercept(targetEnemy = null) {
@@ -1438,6 +1802,9 @@ export function createHeadlessCampaignSim() {
           source: 'intercept',
           baseDmg: HERO_STATS.Knight.interceptDmg,
           infusion: heroes.Knight.breathingStyle,
+          knightLevel: heroes.Knight.level,
+          knightUltActive: heroes.Knight.ultActive,
+          ultDmgMult: heroes.Knight.ultDmgMult,
           empoweredBreathing: heroes.Knight.empoweredBreathing,
           knockback: HERO_STATS.Knight.interceptKnockback,
           attackerPos: heroes.Knight,
@@ -1487,26 +1854,109 @@ export function createHeadlessCampaignSim() {
     return { hits, resonance: heartResonance };
   }
 
-  function applyDamageToHero(heroId, amount) {
+  function applyDamageToHero(heroId, amount, attackerEnemy = null) {
     const h = heroes[heroId];
-    if (!h || h.downed || h.iframeTimer > 0) return { absorbed: 0, hpLost: 0, downed: false };
+    if (!h || h.downed || h.iframeTimer > 0) {
+      return { absorbed: 0, hpLost: 0, downed: false, interceptedByKnight: false };
+    }
 
-    let rem = amount;
+    const slowReduction = clamp(Number(attackerEnemy?.iceSlowFactor) || 0, 0, 0.75);
+    let effectiveAmount = Math.max(1, Math.round(amount * (1.0 - slowReduction)));
+
+    // If Mage is attacked while Knight is holding Shield Block, Knight intercepts & blocks 80%!
+    if (heroId === 'Mage' && heroes.Knight.shieldBlocking && !heroes.Knight.downed) {
+      const blockedDmg = Math.max(
+        1,
+        Math.round(effectiveAmount * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
+      );
+      const knightRes = applyDamageToHero('Knight', blockedDmg, null);
+      return {
+        absorbed: effectiveAmount - blockedDmg + knightRes.absorbed,
+        hpLost: 0,
+        knightHpLost: knightRes.hpLost,
+        downed: false,
+        interceptedByKnight: true,
+      };
+    }
+
+    if (heroId === 'Knight' && heroes.Knight.shieldBlocking) {
+      effectiveAmount = Math.max(
+        1,
+        Math.round(effectiveAmount * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
+      );
+    }
+
+    let rem = effectiveAmount;
     let absorbed = 0;
     if (h.shield > 0) {
       absorbed = Math.min(h.shield, rem);
       h.shield -= absorbed;
       rem -= absorbed;
     }
+
+    // Mage Q 6.0s Storm Cataclysm vulnerability: 1 unprotected hit immediately downs her!
+    if (heroId === 'Mage' && heroes.Mage.stormCataclysmActive && rem > 0) {
+      h.hp = 0;
+      h.downed = true;
+      h.reviveProgress = 0;
+      heroes.Mage.stormCataclysmActive = false;
+      heroes.Mage.stormCataclysmTimer = 0;
+      return {
+        absorbed,
+        hpLost: effectiveAmount - absorbed,
+        downed: true,
+        cataclysmInterrupted: true,
+        interceptedByKnight: false,
+      };
+    }
+
     h.hp = Math.max(0, h.hp - rem);
     if (h.hp <= 0) {
       h.downed = true;
       h.reviveProgress = 0;
     }
-    return { absorbed, hpLost: rem, downed: h.downed };
+    return { absorbed, hpLost: rem, downed: h.downed, interceptedByKnight: false };
   }
 
+  const actionAim = createCombatActionAimController({
+    walkableHeightAt: () => ACT_DEFINITIONS[currentActId]?.center?.y || 0,
+    onContactHit: (swing) => {
+      if (swing.heroId === 'Knight') {
+        knightAttack(swing.clip);
+      } else if (swing.kind === 'charged') {
+        castSpell('shatterlance');
+      } else {
+        const target =
+          selectSoftLockTarget(
+            heroes.Mage,
+            heroes.Mage.yaw,
+            activeEnemies,
+            { maxRange: HERO_STATS.Mage.boltRange, partnerPos: heroes.Knight }
+          ) || activeEnemies[0];
+        if (target) {
+          applyHitAndResolveDetonation(
+            target,
+            {
+              source: swing.clip,
+              baseDmg: HERO_STATS.Mage.boltDmg[swing.comboIndex] || 18,
+              applyMark: swing.comboIndex === 2 ? 'rime' : null,
+              attackerPos: heroes.Mage,
+            },
+            activeEnemies
+          );
+          checkWaveAndActCompletion();
+        }
+      }
+    },
+    onAimCast: (payload) => {
+      heroes.Mage.skillCd = MAGE_E_COOLDOWN;
+      return castSpell(payload.spellId, null, { distance: payload.distance });
+    },
+  });
+
   function step(dt) {
+    actionAim.update(dt);
+
     // 1. Update Hero timers & Partner Revive (2.0s within 3.5m)
     for (const h of Object.values(heroes)) {
       if (h.shieldTimer > 0) {
@@ -1516,9 +1966,68 @@ export function createHeadlessCampaignSim() {
       if (h.iframeTimer > 0) h.iframeTimer = Math.max(0, h.iframeTimer - dt);
     }
 
+    if (heroes.Knight.powerSwordTimer > 0) {
+      heroes.Knight.powerSwordTimer = Math.max(0, heroes.Knight.powerSwordTimer - dt);
+      if (heroes.Knight.powerSwordTimer <= 0) {
+        heroes.Knight.powerSwordActive = false;
+      }
+    }
+    if (heroes.Knight.powerSwordCd > 0) {
+      heroes.Knight.powerSwordCd = Math.max(0, heroes.Knight.powerSwordCd - dt);
+    }
+
+    if (heroes.Knight.ultTimer > 0) {
+      heroes.Knight.ultTimer = Math.max(0, heroes.Knight.ultTimer - dt);
+      if (heroes.Knight.ultTimer <= 0) {
+        heroes.Knight.ultActive = false;
+        heroes.Knight.ultDmgMult = 1.0;
+      }
+    }
+    if (heroes.Knight.ultCd > 0) {
+      heroes.Knight.ultCd = Math.max(0, heroes.Knight.ultCd - dt);
+    }
+
     if (heroes.Knight.breathingTimer > 0) {
       heroes.Knight.breathingTimer = Math.max(0, heroes.Knight.breathingTimer - dt);
       if (heroes.Knight.breathingTimer <= 0) heroes.Knight.breathingStyle = 'none';
+    }
+
+    if (heroes.Mage.skillCd > 0) {
+      heroes.Mage.skillCd = Math.max(0, heroes.Mage.skillCd - dt);
+    }
+    if (heroes.Mage.ultCd > 0) {
+      heroes.Mage.ultCd = Math.max(0, heroes.Mage.ultCd - dt);
+    }
+    for (const k of Object.keys(heroes.Mage.spellCooldowns)) {
+      if (heroes.Mage.spellCooldowns[k] > 0) {
+        heroes.Mage.spellCooldowns[k] = Math.max(0, heroes.Mage.spellCooldowns[k] - dt);
+      }
+    }
+
+    if (heroes.Mage.stormCataclysmActive && heroes.Mage.stormCataclysmTimer > 0) {
+      heroes.Mage.stormCataclysmTimer = Math.max(0, heroes.Mage.stormCataclysmTimer - dt);
+      heroes.Mage.stormCataclysmWaveTimer += dt;
+      if (heroes.Mage.stormCataclysmWaveTimer >= 1.0) {
+        heroes.Mage.stormCataclysmWaveTimer -= 1.0;
+        for (const e of [...activeEnemies]) {
+          if (!e || e.dead || e.hp <= 0) continue;
+          applyHitAndResolveDetonation(
+            e,
+            {
+              source: 'storm_cataclysm',
+              baseDmg: HERO_STATS.Mage.stormCataclysmWaveDmg,
+              applyMark: 'tempest',
+              detonatesMark: true,
+              empoweredBreathing: true,
+              attackerPos: heroes.Mage,
+            },
+            activeEnemies
+          );
+        }
+      }
+      if (heroes.Mage.stormCataclysmTimer <= 0) {
+        heroes.Mage.stormCataclysmActive = false;
+      }
     }
 
     if (tetherSurge.active) {
@@ -1545,9 +2054,29 @@ export function createHeadlessCampaignSim() {
       }
     }
 
-    // 2. Update Active Enemies & 3-Token Attacker AI
+    // 2. Update Active Enemies (including Fire Sword Burn DoT & Ice Sword Slow)
     for (const e of activeEnemies) {
       if (e.dead || e.hp <= 0) continue;
+
+      if (e.burnTimer > 0 && e.burnDps > 0) {
+        const tickDt = Math.min(dt, e.burnTimer);
+        e.burnTimer = Math.max(0, e.burnTimer - dt);
+        const burnDmg = e.burnDps * tickDt;
+        e.hp = Math.max(0, Number((e.hp - burnDmg).toFixed(2)));
+        if (e.hp <= 0) {
+          e.dead = true;
+          e.hasAttackToken = false;
+          continue;
+        }
+      }
+
+      if (e.iceSlowTimer > 0) {
+        e.iceSlowTimer = Math.max(0, e.iceSlowTimer - dt);
+        if (e.iceSlowTimer <= 0) {
+          e.iceSlowFactor = 0;
+        }
+      }
+
       if (e.markTimer > 0) {
         e.markTimer = Math.max(0, e.markTimer - dt);
         if (e.markTimer <= 0) e.mark = null;
@@ -1583,11 +2112,12 @@ export function createHeadlessCampaignSim() {
 
     for (const e of activeEnemies) {
       if (e.dead || e.hp <= 0 || e.stunTimer > 0) continue;
-      if (e.cooldownTimer > 0) e.cooldownTimer = Math.max(0, e.cooldownTimer - dt);
+      const slowMult = 1.0 - clamp(e.iceSlowFactor || 0, 0, 0.75);
+      if (e.cooldownTimer > 0) e.cooldownTimer = Math.max(0, e.cooldownTimer - dt * slowMult);
 
       if (e.hasAttackToken) {
         if (e.aiState === 'windup') {
-          e.windupTimer += dt;
+          e.windupTimer += dt * slowMult;
           e.telegraphProgress = clamp(e.windupTimer / e.windupDuration, 0, 1);
           if (e.windupTimer >= e.windupDuration) {
             e.aiState = 'orbit';
@@ -1595,7 +2125,7 @@ export function createHeadlessCampaignSim() {
             e.telegraphProgress = 0;
             e.cooldownTimer = e.attackCooldown;
             if (e.distToTarget <= e.telegraphRadius + 1.2) {
-              applyDamageToHero('Knight', e.dmg);
+              applyDamageToHero('Knight', e.dmg, e);
             }
           }
         } else if (e.cooldownTimer <= 0 && e.distToTarget <= e.attackRange + 0.5) {
@@ -1606,8 +2136,8 @@ export function createHeadlessCampaignSim() {
           const dx = heroes.Knight.x - e.x;
           const dz = heroes.Knight.z - e.z;
           const d = Math.hypot(dx, dz) || 1;
-          e.x += (dx / d) * e.speed * dt;
-          e.z += (dz / d) * e.speed * dt;
+          e.x += (dx / d) * e.speed * slowMult * dt;
+          e.z += (dz / d) * e.speed * slowMult * dt;
         }
       }
     }
@@ -1634,16 +2164,14 @@ export function createHeadlessCampaignSim() {
         heroes.Mage.x = target.x - 3.0;
         heroes.Mage.z = target.z + 2.2;
 
-        // Cast spell to mark enemy + ignite Knight's Sword Breathing
         const spId = spellOrder[spellIdx % spellOrder.length];
         spellIdx++;
         castSpell(spId, target);
 
-        // Follow up with Knight's 3-hit combo + Heavy Finisher to trigger physical detonation
         if (!target.dead) knightAttack('combo1', target);
         if (!target.dead) knightAttack('combo2', target);
         if (!target.dead) knightAttack('combo3', target);
-        if (!target.dead) knightAttack('charged', target);
+        if (!target.dead) knightAttack('combo4', target);
 
         if (heartResonance >= 100 && activeEnemies.some((e) => e.isBoss && e.aegisActive)) {
           castCouplesUltimate();
@@ -1665,6 +2193,7 @@ export function createHeadlessCampaignSim() {
   return {
     heroes,
     poolSlots,
+    actionAim,
     get currentActId() {
       return currentActId;
     },
@@ -1700,6 +2229,17 @@ export function createHeadlessCampaignSim() {
     castSpell,
     mageInfuse,
     knightAttack,
+    knightToggleElement,
+    knightHoldShieldBlock,
+    knightActivatePowerSword,
+    knightCastSkyLightningUlt,
+    mageTapAttack,
+    mageHoldChargedAttack,
+    mageToggleSpell,
+    mageStartSkillAim,
+    mageUpdateSkillAim,
+    mageReleaseSkillAim,
+    mageCastStormCataclysm,
     knightIntercept,
     castCouplesUltimate,
     applyDamageToHero,

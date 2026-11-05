@@ -69,63 +69,63 @@ function signedHash(n) {
 export const FROST_LANCE_STYLE_PRESETS = Object.freeze({
   v1: {
     name: 'v1-luminous-glacial-cerulean',
-    label: 'V1: Luminous Glacial Cerulean & Frost Veins (Exact Attached Reference Match)',
-    colorDeep: '#26659c', // exact luminous mid-deep glacial cerulean from attached image.png
-    colorMid: '#4f8ec2',
-    colorIce: '#7fd0ff', // crisp glacier sky-blue
-    colorRim: '#f4feff', // chalky frost-white Fresnel & basal rime
-    colorCore: '#5292c4', // permanent subsurface glacial cerulean inner light
-    colorInk: '#153a5c',
-    colorScarDeep: '#427ba6',
-    colorScarMid: '#72b0db',
-    colorScarVein: '#f2faff',
-    colorMistCrest: '#f4feff',
-    colorMistShadow: '#72b0db',
-    depthTint: 0.96,
-    frostLine: 0.56,
-    veins: 0.54,
-    fracture: 0.72,
-    facetSharp: 0.80,
+    label: 'V1: Deep Glacial Sapphire & Alpine Cerulean (High-Contrast Cel Glacier)',
+    colorDeep: '#164a84', // deep glacier sapphire core bite
+    colorMid: '#2d76b8', // rich alpine sapphire-cerulean mid
+    colorIce: '#6ac8ff', // crisp glacier cyan-sky highlight
+    colorRim: '#f2fbff', // chalky frost-white Fresnel & basal rime
+    colorCore: '#2b73b5', // deep sub-zero sapphire inner light
+    colorInk: '#081b38', // abyssal navy-indigo cel silhouette ink
+    colorScarDeep: '#24588a',
+    colorScarMid: '#4f94cc',
+    colorScarVein: '#edf9ff',
+    colorMistCrest: '#f2fbff',
+    colorMistShadow: '#3b82bd',
+    depthTint: 1.16,
+    frostLine: 0.54,
+    veins: 0.56,
+    fracture: 0.86,
+    facetSharp: 0.90,
   },
   v2: {
     name: 'v2-fierce-glacier-monolith',
-    label: 'V2: Fierce Glacial Cerulean (Deeper Core Bite & Razor Fracture Cracks)',
-    colorDeep: '#1d548a', // slightly deeper, scarier cerulean core bite
-    colorMid: '#4482b8',
-    colorIce: '#78ccff', // crisp alpine glacier blue
-    colorRim: '#f6feff', // razor frost-white ridges, cracks & rime
-    colorCore: '#4888bd',
-    colorInk: '#102f4d',
-    colorScarDeep: '#3b719c',
-    colorScarMid: '#6aa8d6',
-    colorScarVein: '#f4fbff',
-    colorMistCrest: '#f6feff',
-    colorMistShadow: '#6aa8d6',
-    depthTint: 1.12,
+    label: 'V2: Fierce Glacier Sapphire & Abyssal Indigo (Deeper Core Bite & Razor Fracture Cracks)',
+    colorDeep: '#14447a', // deep glacier sapphire core shadow
+    colorMid: '#286eb0', // rich glacial sapphire-cerulean mid-tone
+    colorIce: '#64c4ff', // crisp alpine glacier cyan-blue
+    colorRim: '#f4fcff', // razor frost-white ridges, cracks & rime
+    colorCore: '#266cad', // deep sub-zero sapphire subsurface core
+    colorInk: '#071833', // abyssal indigo-navy cel ink border
+    colorScarDeep: '#225485',
+    colorScarMid: '#4b8fc7',
+    colorScarVein: '#effaff',
+    colorMistCrest: '#f4fcff',
+    colorMistShadow: '#387db8',
+    depthTint: 1.18,
     frostLine: 0.54,
-    veins: 0.52,
-    fracture: 0.82,
-    facetSharp: 0.88,
+    veins: 0.56,
+    fracture: 0.88,
+    facetSharp: 0.90,
   },
   v3: {
     name: 'v3-subzero-cryo-cerulean',
-    label: 'V3: Sub-Zero Cryo-Cerulean (Charged Cold Cyan-Blue Inner Faults)',
-    colorDeep: '#1f5a91', // rich sub-zero glacial cerulean
-    colorMid: '#3f8cc4',
-    colorIce: '#74ceff', // luminous cryo-sky body
-    colorRim: '#f7ffff', // bright frost-white rime & crack highlights
-    colorCore: '#3ea4d9', // cold charged cyan-cerulean subsurface core
-    colorInk: '#113354',
-    colorScarDeep: '#39739e',
-    colorScarMid: '#64addb',
-    colorScarVein: '#f5fcff',
-    colorMistCrest: '#f7ffff',
-    colorMistShadow: '#64addb',
-    depthTint: 1.05,
-    frostLine: 0.62,
+    label: 'V3: Sub-Zero Cryo-Sapphire (Charged Cold Cyan-Sapphire Inner Faults)',
+    colorDeep: '#154880',
+    colorMid: '#2b74b5',
+    colorIce: '#68c6ff',
+    colorRim: '#f5fcff',
+    colorCore: '#2972b6',
+    colorInk: '#081a36',
+    colorScarDeep: '#235687',
+    colorScarMid: '#4d92ca',
+    colorScarVein: '#f0faff',
+    colorMistCrest: '#f5fcff',
+    colorMistShadow: '#3a80ba',
+    depthTint: 1.16,
+    frostLine: 0.56,
     veins: 0.58,
-    fracture: 0.84,
-    facetSharp: 0.85,
+    fracture: 0.88,
+    facetSharp: 0.90,
   },
 });
 
@@ -138,28 +138,28 @@ export const FROST_LANCE_DEFAULTS = Object.freeze({
   shatterShakeTime: 0.28, // pre-sink shudder duration
   sinkTime: 1.05, // Beat 4: sink withdrawal duration
 
-  // Footprint Progression (matching original ice.js + wider, more intimidating far end)
-  widthNear: 0.56, // half-width at caster's feet, metres
-  width: 3.40, // widened half-width at far end, metres
+  // Footprint Progression (matching original ice.js + wider, denser far end)
+  widthNear: 0.58, // half-width at caster's feet, metres
+  width: 3.45, // widened half-width at far end, metres
   widthCurve: 0.74, // flares powerfully into the impact zone
-  spikeCount: 168,
+  spikeCount: 210,
   clumping: 1.32,
   scatter: 0.55,
   frontBias: 0.85,
 
   // Silhouette (heavier, more intimidating glacial monolith wall & crown)
-  heightNear: 0.56, // spike height at caster, metres
-  height: 3.32, // towering glacier height at far end, metres
-  heightCurve: 1.50,
+  heightNear: 0.58, // spike height at caster, metres
+  height: 3.38, // towering glacier height at far end, metres
+  heightCurve: 1.48,
   heightJitter: 0.52,
   crown: 0.50,
-  peak: 1.44, // extra height swell at impact point (~4.7m towering monoliths)
+  peak: 1.46, // extra height swell at impact point (~4.8m towering monoliths)
   peakWidth: 0.32,
   rubble: 0.40, // 40% chunky ankle-height glacier blocks filling the bed
-  rubbleScale: 0.34,
+  rubbleScale: 0.35,
 
   // Individual Crystal (matching original ice.js + ProceduralGeometry.js!)
-  radius: 0.47, // heavy, imposing glacial column radius
+  radius: 0.48, // heavy, imposing glacial column radius
   radiusJitter: 0.85, // wide organic variety of thick & medium glacier columns
   taper: 0.69, // exact original ice.js taper (0.69 = blocky, heavy glacier columns, NEVER spiky!)
   facets: 7, // exact original ice.js 7-sided prism
@@ -170,16 +170,16 @@ export const FROST_LANCE_DEFAULTS = Object.freeze({
   leanJitter: 1.18,
   twist: 1.0,
 
-  // Eruption Dynamics (matching original ice.js)
-  riseTime: 0.17,
-  riseOvershoot: 0.26,
-  riseStagger: 0.07,
+  // Eruption Dynamics (fast, solid, zero springy oscillation!)
+  riseTime: 0.15,
+  riseOvershoot: 0.0,
+  riseStagger: 0.06,
   settle: 0.55,
   birthFade: 0.45,
 
-  // Default V1 Luminous Glacial Cerulean Palette
-  stylePreset: 'v1',
-  ...FROST_LANCE_STYLE_PRESETS.v1,
+  // Default V2 Fierce Glacier Sapphire & Abyssal Indigo Palette
+  stylePreset: 'v2',
+  ...FROST_LANCE_STYLE_PRESETS.v2,
   shockRadius: 6.8,
 });
 
@@ -313,8 +313,8 @@ function createDebrisCrystalGeometry() {
 function createGroundDecalMaterial(noiseAtlas, sharedUniforms, corridorUniforms) {
   return new THREE.ShaderMaterial({
     name: 'FrostLanceGroundDecalMaterial',
-    transparent: true,
-    depthWrite: false,
+    transparent: false,
+    depthWrite: true,
     depthTest: true,
     side: THREE.DoubleSide,
     blending: THREE.NormalBlending,
@@ -509,8 +509,10 @@ function createGroundDecalMaterial(noiseAtlas, sharedUniforms, corridorUniforms)
           col = mix(uColorIce, uColorRim, ring) * (1.05 + 0.35 * uGlowBoost);
         }
 
-        if (alpha < 0.004) discard;
-        gl_FragColor = vec4(col, alpha);
+        if (alpha < 0.32) discard;
+        float rimInk = 1.0 - smoothstep(0.32, 0.42, alpha);
+        col = mix(col, uColorScarDeep, rimInk * 0.55);
+        gl_FragColor = vec4(col, 1.0);
       }
     `,
   });
@@ -541,14 +543,14 @@ function createCelGlacierMaterial(noiseAtlas, sharedUniforms, corridorUniforms, 
       uColorRim: { value: new THREE.Color(FROST_LANCE_DEFAULTS.colorRim) },
       uColorInk: { value: new THREE.Color(FROST_LANCE_DEFAULTS.colorInk) },
       uColorScarVein: { value: new THREE.Color(FROST_LANCE_DEFAULTS.colorScarVein) },
-      uDensity: { value: FROST_LANCE_DEFAULTS.depthTint ?? 1.20 },
+      uDensity: { value: FROST_LANCE_DEFAULTS.depthTint ?? 1.28 },
       uFresnel: { value: 2.3 },
       uFresnelPower: { value: 2.4 },
       uTranslucency: { value: 1.5 },
-      uFacetSharp: { value: FROST_LANCE_DEFAULTS.facetSharp ?? 0.72 },
-      uFracture: { value: FROST_LANCE_DEFAULTS.fracture ?? 0.62 },
-      uVeins: { value: FROST_LANCE_DEFAULTS.veins ?? 0.52 },
-      uFrostLine: { value: FROST_LANCE_DEFAULTS.frostLine ?? 0.56 },
+      uFacetSharp: { value: FROST_LANCE_DEFAULTS.facetSharp ?? 0.94 },
+      uFracture: { value: FROST_LANCE_DEFAULTS.fracture ?? 0.90 },
+      uVeins: { value: FROST_LANCE_DEFAULTS.veins ?? 0.56 },
+      uFrostLine: { value: FROST_LANCE_DEFAULTS.frostLine ?? 0.48 },
       uIsDebris: { value: isDebris ? 1.0 : 0.0 },
     },
     vertexShader: /* glsl */ `
@@ -627,10 +629,10 @@ function createCelGlacierMaterial(noiseAtlas, sharedUniforms, corridorUniforms, 
         vec3 horizV = normalize(vec3(V.x, 0.0, V.z) + vec3(1e-5, 0.0, 0.0));
         float ndv = clamp(dot(horizN, horizV), 0.0, 1.0);
 
-        // 2. Thickness Tint & Fresnel (Exact IceMaterial.js lines 153-155):
+        // 2. Thickness Tint & Fresnel:
         //    Facing a facet head-on looks deep into the solid glacier block (darkening to uColorDeep);
         //    grazing angles clip the pale edge (uColorIce -> uColorRim).
-        float thickness = clamp(pow(ndv, 0.85) * uDensity, 0.0, 1.0);
+        float thickness = clamp(pow(ndv, 0.78) * uDensity, 0.0, 1.0);
         float fres = pow(1.0 - ndv, uFresnelPower) * uFresnel;
 
         // 3. World-Space Internal Fracture Planes (cracks) & Local-Space Milky Feather-Frost (veins)
@@ -649,23 +651,24 @@ function createCelGlacierMaterial(noiseAtlas, sharedUniforms, corridorUniforms, 
         float sublimateNoise = (0.58 * r0 + 0.42 * v0) * 0.72 + (1.0 - hLocal) * 0.28;
         if (sublimateNoise < dissolveProgress) discard;
 
-        vec3 body = mix(uColorIce, uColorDeep, thickness);
-        body = mix(body, uColorRim, veins * uVeins * 0.52);
-        body = mix(body, uColorRim, cracks * uFracture * 0.38);
+        vec3 deepSapphire = mix(uColorMid, uColorDeep, smoothstep(0.25, 0.85, thickness));
+        vec3 body = mix(uColorIce, deepSapphire, thickness);
+        body = mix(body, uColorRim, veins * uVeins * 0.48);
+        body = mix(body, uColorRim, cracks * uFracture * 0.36);
 
         // 5. Rime gathers where the crystal left the floor (Exact IceMaterial.js lines 166-168)
         float rimeFbm = texture2D(uNoiseAtlas, vLocalPos.xy * 1.35 + vec2(vSeed * 0.29, vLocalPos.z * 1.35)).b;
-        float rime = smoothstep(0.52, 0.0, hLocal) * (0.5 + 0.5 * rimeFbm) * (1.0 - uIsDebris * 0.70);
+        float rime = smoothstep(0.50, 0.0, hLocal) * (0.5 + 0.5 * rimeFbm) * (1.0 - uIsDebris * 0.70);
         body = mix(body, uColorRim, clamp(rime, 0.0, 1.0) * uFrostLine);
 
         // 6. Lift facets that point at the camera so the silhouette reads as a bundle of hewn planes
-        body *= mix(1.0, 0.62 + 0.82 * ndv, uFacetSharp);
+        body *= mix(1.0, 0.56 + 0.86 * ndv, uFacetSharp);
 
         // 7. Even Sky-Probe + Key Sun Lighting (prevents downward-tilted ring planes from turning grey!)
         vec3 L = normalize(vec3(uSunDir.x, max(0.45, uSunDir.y), uSunDir.z));
         vec3 H = normalize(L + V);
         float ndl = max(dot(N, L), 0.0);
-        float skyProbe = 0.74 + 0.28 * ndl;
+        float skyProbe = 0.72 + 0.30 * ndl;
         vec3 diffuseLit = body * skyProbe * mix(0.80, 0.98, uDaylight);
 
         // Subtle crisp planar specular reflection from the sun
@@ -679,15 +682,19 @@ function createCelGlacierMaterial(noiseAtlas, sharedUniforms, corridorUniforms, 
         float sp = pow(clamp(spNoise, 0.0, 1.0), 11.0) * smoothstep(0.0, 0.7, fres + 0.3);
 
         float rimAmount = pow(1.0 - ndv, uFresnelPower);
-        vec3 glow = uColorRim * rimAmount * 0.85;
+        vec3 glow = uColorRim * rimAmount * 0.78;
         glow += uColorCore * (cracks * uFracture * 0.80 + veins * uVeins * 0.35) * uTranslucency;
-        glow += uColorCore * 0.88;
+        glow += uColorCore * 0.75;
         glow += uColorRim * sp * 1.35;
         glow += uColorRim * birthFlash * (cracks * 0.65 + rime * 0.45) * 0.45;
-        glow *= (0.34 + 0.55 * uGlowBoost);
+        glow *= (0.32 + 0.52 * uGlowBoost);
         glow /= (1.0 + glow * 0.35);
 
         vec3 finalColor = diffuseLit + uColorRim * spec + glow;
+        // Crisp abyssal navy-indigo silhouette ink framing
+        float inkRim = 1.0 - smoothstep(0.10, 0.22, ndv);
+        finalColor = mix(finalColor, uColorInk, inkRim * 0.58);
+
         float sublimateEdge = step(0.001, dissolveProgress) * (1.0 - smoothstep(dissolveProgress, dissolveProgress + 0.075, sublimateNoise));
         finalColor = mix(finalColor, uColorRim * 1.28, sublimateEdge);
 
@@ -700,8 +707,8 @@ function createCelGlacierMaterial(noiseAtlas, sharedUniforms, corridorUniforms, 
 function createAtmosphereBillboardMaterial(noiseAtlas, sharedUniforms) {
   return new THREE.ShaderMaterial({
     name: 'FrostLanceAtmosphereBillboardMaterial',
-    transparent: true,
-    depthWrite: false,
+    transparent: false,
+    depthWrite: true,
     depthTest: true,
     side: THREE.DoubleSide,
     blending: THREE.NormalBlending,
@@ -779,50 +786,58 @@ function createAtmosphereBillboardMaterial(noiseAtlas, sharedUniforms) {
 
         if (pType < 0.5) {
           // =================================================================
-          // PTYPE 0: ROLLING GROUND GLACIER FOG (Non-additive occluding mist)
+          // PTYPE 0: CEL-CUTOUT GROUND CRYO-PLUME WISP
           // =================================================================
-          vec2 nUv = vUv * 0.38 + vec2(seed * 0.43 + age * 0.11, seed * 0.71);
+          vec2 nUv = vUv * 0.45 + vec2(seed * 0.43 + age * 0.14, seed * 0.71);
           float b = texture2D(uNoiseAtlas, nUv).b;
 
-          float radialSoft = exp(-r * r * 2.8) * (1.0 - r * r);
-          float cloudShape = radialSoft * (0.50 + 0.50 * b);
-          float fadeIn = smoothstep(0.0, 0.14, age);
-          float fadeOut = 1.0 - smoothstep(0.55, 1.0, age);
+          float radialSoft = exp(-r * r * 3.6) * (1.0 - r * r);
+          float cloudShape = radialSoft * (0.42 + 0.58 * b);
+          float fadeIn = smoothstep(0.0, 0.12, age);
+          float fadeOut = 1.0 - smoothstep(0.52, 1.0, age);
 
-          float topLit = smoothstep(-0.40, 0.45, p.y + (b - 0.5) * 0.25);
+          float topLit = smoothstep(-0.35, 0.40, p.y + (b - 0.5) * 0.25);
           col = mix(uColorMistShadow, uColorMistCrest, topLit) * (0.98 + 0.25 * uGlowBoost);
-          alpha = cloudShape * fadeIn * fadeOut * alphaScale * 1.35;
+          alpha = cloudShape * fadeIn * fadeOut * alphaScale * 2.15;
+          if (alpha < 0.36) discard;
+          float inkEdge = 1.0 - smoothstep(0.36, 0.46, alpha);
+          col = mix(col, uColorInk, inkEdge * 0.65);
 
         } else if (pType < 1.5) {
           // =================================================================
-          // PTYPE 1: SOFT PINPOINT ICE GLITTER PLUME (Exact Spellbook ParticleShape.SOFT)
-          // Small, glowing ice motes drifting upward — zero big 2D star stickers!
+          // PTYPE 1: 4-POINT CEL DIAMOND ICE GLINT MOTE
           // =================================================================
           float fadeIn = smoothstep(0.0, 0.06, age);
           float fadeOut = 1.0 - smoothstep(0.62, 1.0, age);
           float twinkle = 0.65 + 0.35 * sin(uTime * 16.0 + seed * 43.0);
 
-          float core = exp(-r * r * 14.0);
-          float halo = exp(-r * r * 3.8) * (1.0 - r * r) * 0.45;
-          float mote = clamp((core + halo) * twinkle, 0.0, 1.0);
+          float starCross = max(
+            exp(-abs(p.x) * 6.5) * exp(-abs(p.y) * 1.9),
+            exp(-abs(p.y) * 6.5) * exp(-abs(p.x) * 1.9)
+          );
+          float core = max(exp(-r * r * 10.0), starCross);
+          float mote = clamp(core * twinkle, 0.0, 1.0);
 
-          col = mix(uColorIce, uColorRim, smoothstep(0.15, 0.65, core)) * (1.35 + 0.65 * uGlowBoost);
+          col = mix(uColorIce, uColorRim, smoothstep(0.45, 0.75, core)) * (1.30 + 0.60 * uGlowBoost);
           alpha = mote * fadeIn * fadeOut * alphaScale;
+          if (alpha < 0.36) discard;
+          float inkEdge = 1.0 - smoothstep(0.36, 0.48, alpha);
+          col = mix(col, uColorInk, inkEdge * 0.75);
 
         } else {
           // =================================================================
-          // PTYPE 2: IMPACT FREEZING VAPOUR SHELL / BURST
+          // PTYPE 2: IMPACT FREEZING SHOCK-RING BURST
           // =================================================================
           float fadeOut = 1.0 - smoothstep(0.18, 1.0, age);
           vec2 nUv = vUv * 0.55 + vec2(seed * 0.37, age * 0.22);
           float b = texture2D(uNoiseAtlas, nUv).b;
-          float shell = exp(-r * r * 3.2) * (1.0 - r * r) * (0.55 + 0.45 * b);
+          float shell = smoothstep(0.18, 0.02, abs(r - 0.68)) * (0.65 + 0.35 * b);
           col = mix(uColorIce, uColorRim, 0.72) * (1.30 + 0.55 * uGlowBoost);
-          alpha = shell * fadeOut * alphaScale * 0.75;
+          alpha = shell * fadeOut * alphaScale * 1.25;
+          if (alpha < 0.36) discard;
         }
 
-        if (alpha < 0.004) discard;
-        gl_FragColor = vec4(col, alpha);
+        gl_FragColor = vec4(col, 1.0);
       }
     `,
   });
@@ -833,10 +848,10 @@ function createAtmosphereBillboardMaterial(noiseAtlas, sharedUniforms) {
 /* ------------------------------------------------------------------------- */
 
 const CRYSTAL_VARIANTS = 3;
-const MAX_SPIKES = 168;
-const SLOTS_PER_VARIANT = Math.ceil(MAX_SPIKES / CRYSTAL_VARIANTS); // 56
+const MAX_SPIKES = 210;
+const SLOTS_PER_VARIANT = Math.ceil(MAX_SPIKES / CRYSTAL_VARIANTS); // 70
 const MAX_GROUND_DECALS = 16;
-const MAX_DEBRIS_CRYSTALS = 196;
+const MAX_DEBRIS_CRYSTALS = 280;
 const MAX_ATMOSPHERE_PARTICLES = 210;
 
 const _dummy = new THREE.Object3D();
@@ -1336,32 +1351,32 @@ export class FrostLanceSystem {
       rec.spinZ = signedHash(s + 9.3) * 9.0;
     }
 
-    // 3c. 90 Breach Ice Chips Spat Along the Racing Eruption Front
-    for (let k = 0; k < 90 && dIdx < MAX_DEBRIS_CRYSTALS; k++, dIdx++) {
+    // 3c. 160 Breach Ice Chips Spat Densely Along the Racing Eruption Front & Wake
+    for (let k = 0; k < 160 && dIdx < MAX_DEBRIS_CRYSTALS; k++, dIdx++) {
       const rec = this.debrisRecords[dIdx];
       const s = castSeed * 53.3 + k * 19.7;
       const spikeRef = this.spikeRecords[(k * 2) % lineCount];
       const spreadAng = hash11(s + 1.3) * TAU;
-      const speed = 3.2 + hash11(s + 2.9) * 4.2;
+      const speed = 3.4 + hash11(s + 2.9) * 4.6;
 
       rec.mode = 'chip';
-      rec.spawnTime = spikeRef.eruptTime + 0.02;
-      rec.life = 0.38 + hash11(s + 4.1) * 0.22;
+      rec.spawnTime = spikeRef.eruptTime + (k % 3) * 0.015;
+      rec.life = 0.44 + hash11(s + 4.1) * 0.28;
       rec.along = spikeRef.along;
       rec.lateral = spikeRef.lateral;
-      rec.offsetX = Math.cos(spreadAng) * 0.20;
-      rec.offsetY = 0.22 + hash11(s + 5.7) * 0.38;
-      rec.offsetZ = Math.sin(spreadAng) * 0.20;
-      rec.vx = Math.cos(spreadAng) * speed * 0.62;
-      rec.vy = 3.6 + hash11(s + 7.3) * 3.8;
-      rec.vz = Math.sin(spreadAng) * speed * 0.62 + 1.4;
-      rec.gravity = -22.0;
-      rec.drag = 0.75;
-      const sz = 0.11 + hash11(s + 8.9) * 0.08;
+      rec.offsetX = Math.cos(spreadAng) * 0.22;
+      rec.offsetY = 0.24 + hash11(s + 5.7) * 0.48;
+      rec.offsetZ = Math.sin(spreadAng) * 0.22;
+      rec.vx = Math.cos(spreadAng) * speed * 0.65;
+      rec.vy = 3.8 + hash11(s + 7.3) * 4.2;
+      rec.vz = Math.sin(spreadAng) * speed * 0.65 + 1.6;
+      rec.gravity = -21.0;
+      rec.drag = 0.72;
+      const sz = 0.12 + hash11(s + 8.9) * 0.09;
       rec.scaleX = sz;
-      rec.scaleY = sz * (1.12 + hash11(s + 10.1) * 0.32);
-      rec.scaleZ = sz * 0.92;
-      rec.endScaleMult = 0.12;
+      rec.scaleY = sz * (1.16 + hash11(s + 10.1) * 0.36);
+      rec.scaleZ = sz * 0.94;
+      rec.endScaleMult = 0.16;
       rec.yaw = hash11(s + 11.7) * TAU;
       rec.pitch = hash11(s + 13.3) * TAU;
       rec.roll = hash11(s + 14.9) * TAU;
@@ -1370,34 +1385,34 @@ export class FrostLanceSystem {
       rec.spinZ = signedHash(s + 19.3) * 12.0;
     }
 
-    // 3d. 46 Apex Detonation Shards (`along = 0.86..1.0`) + 24 Beat-4 Shatter Chips
+    // 3d. 60 Apex Detonation Shards (`along = 0.84..1.0`) + 24 Beat-4 Shatter Chips
     for (; dIdx < MAX_DEBRIS_CRYSTALS; dIdx++) {
       const rec = this.debrisRecords[dIdx];
       const s = castSeed * 67.9 + dIdx * 23.1;
       const isWithdrawShatter = dIdx >= MAX_DEBRIS_CRYSTALS - 24;
       const ang = hash11(s + 1.1) * TAU;
-      const spd = 4.2 + hash11(s + 2.7) * 5.4;
+      const spd = 4.4 + hash11(s + 2.7) * 5.6;
 
       rec.mode = isWithdrawShatter ? 'shatterChip' : 'chip';
       rec.spawnTime = isWithdrawShatter
         ? this.withdrawStartTime + hash11(s + 3.9) * 0.32
-        : 0.56 + hash11(s + 3.9) * 0.14;
-      rec.life = isWithdrawShatter ? 0.65 : 0.48 + hash11(s + 5.3) * 0.34;
-      rec.along = isWithdrawShatter ? 0.18 + 0.82 * hash11(s + 6.7) : 0.88 + 0.12 * hash11(s + 6.7);
-      rec.lateral = isWithdrawShatter ? signedHash(s + 8.1) * 0.65 : signedHash(s + 8.1) * 0.52;
-      rec.offsetX = Math.cos(ang) * 0.55;
-      rec.offsetY = 0.45 + hash11(s + 9.5) * 1.15;
-      rec.offsetZ = Math.sin(ang) * 0.55;
+        : 0.54 + hash11(s + 3.9) * 0.16;
+      rec.life = isWithdrawShatter ? 0.65 : 0.52 + hash11(s + 5.3) * 0.36;
+      rec.along = isWithdrawShatter ? 0.18 + 0.82 * hash11(s + 6.7) : 0.84 + 0.16 * hash11(s + 6.7);
+      rec.lateral = isWithdrawShatter ? signedHash(s + 8.1) * 0.65 : signedHash(s + 8.1) * 0.56;
+      rec.offsetX = Math.cos(ang) * 0.58;
+      rec.offsetY = 0.48 + hash11(s + 9.5) * 1.25;
+      rec.offsetZ = Math.sin(ang) * 0.58;
       rec.vx = Math.cos(ang) * spd;
-      rec.vy = 4.2 + hash11(s + 11.1) * 4.6;
+      rec.vy = 4.4 + hash11(s + 11.1) * 4.8;
       rec.vz = Math.sin(ang) * spd;
       rec.gravity = -19.5;
       rec.drag = 0.68;
-      const sz = 0.12 + hash11(s + 12.7) * 0.09;
+      const sz = 0.13 + hash11(s + 12.7) * 0.10;
       rec.scaleX = sz;
-      rec.scaleY = sz * (1.15 + hash11(s + 14.3) * 0.35);
-      rec.scaleZ = sz * 0.92;
-      rec.endScaleMult = 0.15;
+      rec.scaleY = sz * (1.18 + hash11(s + 14.3) * 0.36);
+      rec.scaleZ = sz * 0.94;
+      rec.endScaleMult = 0.18;
       rec.yaw = hash11(s + 15.9) * TAU;
       rec.pitch = hash11(s + 17.3) * TAU;
       rec.roll = hash11(s + 18.9) * TAU;
@@ -1428,16 +1443,16 @@ export class FrostLanceSystem {
       p.along = u;
       p.lateral = signedHash(s + 5.9) * (isApexMist ? 0.72 : 0.48);
       p.offsetX = signedHash(s + 7.1) * 0.25;
-      p.offsetY = 0.18 + hash11(s + 8.7) * (isApexMist ? 0.58 : 0.30);
+      p.offsetY = 0.14 + hash11(s + 8.7) * (isApexMist ? 0.34 : 0.22);
       p.offsetZ = signedHash(s + 10.3) * 0.25;
       p.vx = signedHash(s + 11.9) * 0.32;
-      p.vy = 0.12 + hash11(s + 13.1) * 0.18;
+      p.vy = 0.10 + hash11(s + 13.1) * 0.14;
       p.vz = signedHash(s + 14.7) * 0.32;
       p.drag = 1.85;
-      const baseSz = lerp(0.85, 1.85, u) * (0.85 + 0.30 * hash11(s + 16.3));
+      const baseSz = lerp(0.45, 0.82, u) * (0.85 + 0.30 * hash11(s + 16.3));
       p.startSize = baseSz * 0.55;
-      p.endSize = baseSz * 1.25;
-      p.alphaScale = isApexMist ? 0.24 + 0.10 * hash11(s + 17.9) : 0.18 + 0.08 * hash11(s + 17.9);
+      p.endSize = baseSz * 1.05;
+      p.alphaScale = isApexMist ? 0.32 + 0.10 * hash11(s + 17.9) : 0.28 + 0.08 * hash11(s + 17.9);
       p.seed = hash11(s + 19.1);
     }
 
@@ -1474,10 +1489,10 @@ export class FrostLanceSystem {
       p.vy = 0.75 + hash11(s + 12.9) * (isApexStar ? 1.55 : 0.85);
       p.vz = signedHash(s + 14.5) * 0.95;
       p.drag = 1.15;
-      const moteSz = (isMuzzleStar ? 0.18 : 0.11 + 0.12 * hash11(s + 16.1)) * lerp(0.85, 1.25, u);
+      const moteSz = (isMuzzleStar ? 0.22 : 0.15 + 0.14 * hash11(s + 16.1)) * lerp(0.85, 1.25, u);
       p.startSize = moteSz;
-      p.endSize = moteSz * 0.45;
-      p.alphaScale = 0.88;
+      p.endSize = moteSz * 0.55;
+      p.alphaScale = 0.92;
       p.seed = hash11(s + 17.7);
     }
 
@@ -1496,8 +1511,8 @@ export class FrostLanceSystem {
       p.vy = 0.1;
       p.vz = 0.4;
       p.drag = 1.5;
-      p.startSize = 0.85;
-      p.endSize = 1.45;
+      p.startSize = 0.75;
+      p.endSize = 1.25;
       p.alphaScale = 0.75;
       p.seed = 0.33;
     }
@@ -1510,15 +1525,15 @@ export class FrostLanceSystem {
       p.along = 0.96;
       p.lateral = (b - 1) * 0.35;
       p.offsetX = 0.0;
-      p.offsetY = 0.28;
+      p.offsetY = 0.22;
       p.offsetZ = 0.0;
       p.vx = (b - 1) * 0.35;
-      p.vy = 0.14;
+      p.vy = 0.12;
       p.vz = 0;
       p.drag = 1.8;
-      p.startSize = 1.15;
-      p.endSize = 2.10;
-      p.alphaScale = 0.28;
+      p.startSize = 0.65;
+      p.endSize = 1.10;
+      p.alphaScale = 0.34;
       p.seed = 0.51 + b * 0.21;
     }
   }
@@ -1625,9 +1640,7 @@ export class FrostLanceSystem {
       return outQuint(elapsed / riseTime);
     }
 
-    const after = elapsed - riseTime;
-    const spring = Math.sin(after * 14.0) * Math.exp(-after / Math.max(0.06, c.settle));
-    return 1.0 + c.riseOvershoot * spring;
+    return 1.0;
   }
 
   _cacheCastWorldPositions() {

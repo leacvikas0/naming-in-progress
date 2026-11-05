@@ -13,6 +13,7 @@ import {
   buildForgeShedAndHearth,
   buildKitchenGarden,
   buildWaterwheelAssembly,
+  buildWindmillTowerAndSails,
   buildCoreShell,
   finalizeRoofTiles,
   mergeStatic,
@@ -145,6 +146,7 @@ export function createHousesKit(renderer = null) {
     });
 
     let wheelGroup = null;
+    let sailsGroup = null;
 
     if (type === 'inn') {
       const dormer = computeDormerSpec({
@@ -308,6 +310,10 @@ export function createHousesKit(renderer = null) {
         subDepth: 2.6,
         inValley: Boolean(spec.inValley || spec.hasWaterwheel),
       });
+      sailsGroup = buildWindmillTowerAndSails(add, materials, {
+        wallX: w * 0.5,
+        subDepth: 2.6,
+      });
     }
 
     finalizeRoofTiles(add, materials);
@@ -411,6 +417,7 @@ export function createHousesKit(renderer = null) {
 
     const update = (dt = 0) => {
       if (wheelGroup) wheelGroup.rotation.x += dt * 1.15;
+      if (sailsGroup) sailsGroup.rotation.z -= dt * 0.65;
     };
 
     return { group, doorWorldOffset, collider, wingColliders, colliders, update };

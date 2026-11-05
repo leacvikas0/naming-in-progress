@@ -92,6 +92,9 @@ function evalOneBounceBallistic(t, y0, vy0, gravity, restitution, floorY, outSta
 
 export const CINDER_FALL_DEFAULTS = Object.freeze({
   range: 14.0, // default arena impact distance
+  length: 14.0, // default aim distance alias
+  minDistance: 3.0, // minimum aim distance, m
+  maxDistance: 16.0, // maximum aim distance, m
   speed: 22.5, // horizontal downrange travel speed, m/s
   lifetime: 2.2, // seconds crater burns after impact
   fadeTime: 1.5, // seconds everything takes to cool & crumble
@@ -780,7 +783,12 @@ export class CinderFallSystem {
   _trajectoryAt(u, out) {
     const c = this.config;
     const t = clamp(u, 0.0, 1.0);
-    const dist = lerp(c.handForward, this.castLength, t);
+    const targetDist = clamp(
+      this.castLength ?? c.length ?? c.range ?? 14.0,
+      c.minDistance ?? 3.0,
+      c.maxDistance ?? 16.0
+    );
+    const dist = lerp(c.handForward, targetDist, t);
     const x = this.origin.x + this.direction.x * dist;
     const z = this.origin.z + this.direction.z * dist;
     const baseH = lerp(
@@ -888,7 +896,15 @@ export class CinderFallSystem {
       this.direction.set(dx / len, 0, dz / len);
     }
     this.side.set(-this.direction.z, 0, this.direction.x);
-    this.castLength = options.range ?? this.config.range;
+    const c = this.config;
+    const rawDist =
+      options.distance ??
+      options.aimDistance ??
+      options.range ??
+      options.length ??
+      c.length ??
+      c.range;
+    this.castLength = clamp(rawDist, c.minDistance ?? 3.0, c.maxDistance ?? 16.0);
     this.origin.y = this.getGroundHeight(this.origin.x, this.origin.z);
 
     this._seedRecords(options.seed ?? 1.0);

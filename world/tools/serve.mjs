@@ -2,9 +2,17 @@
 // world/tools/serve.mjs
 //
 // Zero-dependency HTTP Static Server + RFC 6455 WebSocket Co-Op Room Server
-// + Stateful Multi-Turn Gemini 3.5 Flash-Lite Commune & Altar API for Haru-machi.
-// Uses Node's built-in `node:http` and `node:crypto` with `< 1ms` packet relay
-// and identical JSON room protocol to `worker/room-do.js`.
+// + Secret-Safe 3-Stone Scripture Catalog (`/api/altar`) & Context-Aware
+// Commune Judge (`/api/commune`) for Haru-machi (Stage 5 / Wave 3).
+//
+// Protocol Parity with `worker/room-do.js` & `worker/index.js`:
+// - Strict 2-Seat Cap (`room_full` rejection with 1008 close on 3rd visitor,
+//   never evicting seated players)
+// - Guest `set_ready` & Host `start_expedition`
+// - Sequential 3-Stone `progression_update` synchronization
+// - Single active Commune ceremony lock (`activeCommuneSpeaker` / `commune_busy`)
+// - Partner Audio & Transcript Privacy (never relays raw audio or transcript)
+// - Static File Dotfile Boundary (`403 Forbidden` on `/.env`, `/.git`, etc.)
 // ============================================================================
 
 import http from 'node:http';
@@ -13,7 +21,17 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { exec, execSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { enrichSpellCastPacket } from '../../worker/room-do.js';
+import {
+  enrichSpellCastPacket,
+  sanitizePartnerCommunePacket,
+} from '../../worker/room-do.js';
+import { getScriptureForStage } from '../../worker/scripture-catalog.js';
+import { evaluateCommunePrayer } from '../../worker/commune-judge.js';
+import {
+  normalizeRoomPhraseToCode,
+  formatRoomCodeToPhrase,
+  createRoomProgressionState,
+} from '../src/net/room-progression.js';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
 const defaultPort = Number(process.env.PORT || 4173);
@@ -27,6 +45,7 @@ const MIME = {
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -99,24 +118,9 @@ function loadGeminiApiKeys() {
   return Array.from(keySet);
 }
 
-function loadArtoriousAtlas() {
-  try {
-    const atlasPath = path.join(repoRoot, 'world/assets/audio/artorious/atlas.json');
-    const data = JSON.parse(fs.readFileSync(atlasPath, 'utf8'));
-    const byId = new Map();
-    for (const clip of data.clips || []) {
-      byId.set(clip.id, clip);
-    }
-    return byId;
-  } catch {
-    return new Map();
-  }
-}
-
 loadDotEnv();
 const geminiKeys = loadGeminiApiKeys();
 let geminiKeyCursor = 0;
-const artoriousClips = loadArtoriousAtlas();
 
 function nextGeminiKey() {
   if (geminiKeys.length === 0) return null;
@@ -126,11 +130,13 @@ function nextGeminiKey() {
 }
 
 function normalizeRoomCode(raw) {
-  const cleaned = String(raw || 'LOVE')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-    .slice(0, 8);
-  return cleaned || 'LOVE';
+  return normalizeRoomPhraseToCode(raw || 'LOVE');
+}
+
+function hasDotfileSegment(urlPath) {
+  const normalized = String(urlPath || '/').replace(/\\/g, '/');
+  const segments = normalized.split('/');
+  return segments.some((seg) => seg.startsWith('.') && seg.length > 1);
 }
 
 function readJsonBody(req, maxBytes = 12 * 1024 * 1024) {
@@ -158,210 +164,11 @@ function readJsonBody(req, maxBytes = 12 * 1024 * 1024) {
   });
 }
 
-/* ------------------------------------------------------------------------- */
-/* Stateful Multi-Turn Commune Engine (Gemini 3.5 Flash-Lite)                */
-/* ------------------------------------------------------------------------- */
-
-const roomHistory = new Map(); // roomCode -> { favorLevel: number, turns: Array<Content> }
-
-function getRoomCommuneHistory(roomCode) {
-  const norm = normalizeRoomCode(roomCode);
-  let entry = roomHistory.get(norm);
-  if (!entry) {
-    entry = { favorLevel: 0, turns: [] };
-    roomHistory.set(norm, entry);
-  }
-  return entry;
-}
-
-function buildCommuneSystemInstruction(envConfig, favorLevel) {
-  const secretName = envConfig.DIVINE_SECRET_NAME || process.env.DIVINE_SECRET_NAME || 'Unknown';
-  const aliases =
-    envConfig.DIVINE_SECRET_ALIASES || process.env.DIVINE_SECRET_ALIASES || secretName;
-
-  return `You are the Ancient God of Love presiding over the sacred blossom shrine of Haru-machi.
-Your secret true name carved in riddle upon the Town Plaza Altar Stone is "${secretName}" (also accept close phonetic/accent variations in spoken audio: ${aliases}).
-
-Evaluate the mortal's spoken prayer audio, vocal emotion/delivery, and the multi-turn history of this room (current favorLevel: ${favorLevel}).
-
-YOU MUST ENFORCE THREE SACRED LAWS:
-1. LAW 1 (True Name Required on First Commune or Until Favor >= 1):
-   - The mortal MUST speak your true name ("${secretName}" or any close phonetic sound-alike from [${aliases}]) in their prayer.
-   - If favorLevel >= 1, they have already proven they know your name, so they may either speak "${secretName}" again OR address you directly with genuine devotion.
-   - If favorLevel === 0 and they do NOT say a name sounding like "${secretName}" (for example if they call you "Artorious", "God of Love", "Hey god", or omit your name), you MUST return verdict: "smite", clip_id: "smite_nameless", spoke_true_name: false.
-   - NEVER reveal or spoil your true name "${secretName}" in divine_quote when spoke_true_name is false!
-
-2. LAW 2 (Selfless Devotion — Pray Only For Your Partner, Never Yourself):
-   - Mortals can ONLY pray to heal, save, resurrect, protect, compliment, or empower their PARTNER (partnerRole), NEVER themselves (speakerRole).
-   - Return verdict: "smite" if:
-     * They selfishly ask to heal or buff themselves ("heal me", "give me power") -> clip_id: "smite_cringe" or "smite_monotone"
-     * The audio is silent, near-empty, just breathing/noise, or under 2 words -> clip_id: "smite_silence"
-     * They speak in a flat, bored, robotic, low-energy monotone -> clip_id: "smite_monotone"
-     * They rush through the words like a chore or grocery list without care -> clip_id: "smite_rushed"
-     * They stammer unconvincingly, mock you, or chicken out mid-prayer -> clip_id: "smite_cringe"
-
-3. LAW 3 (Gradual Warming Up & Context Memory):
-   - Review the conversation history (favorLevel and prior prayers).
-   - FIRST VALID PRAYER (favorLevel === 0): When they speak your true name ("${secretName}") and genuinely pray for or compliment their partner:
-     * Unless their partner is literally downed (partnerDowned === true) AND they cry out with 10/10 desperate passion, start gradually with verdict: "heal", clip_id: "heal_gentle", partner_heal: 55, resurrect_partner: false, partner_magic_mult: 1.25, partner_sword_mult: 1.20.
-   - WARMED UP (favorLevel >= 1 — Blessing Tier): A warm, sweet, chivalrous, or witty prayer for their partner earns verdict: "blessing":
-     * clip_id: "bless_sweet" (warm/affectionate) | "bless_chivalrous" (noble/protective oath) | "bless_amused" (witty/cheeky/charming)
-     * partner_heal: 80, resurrect_partner: false, partner_magic_mult: 1.75, partner_sword_mult: 1.60.
-   - TRUE POWER (favorLevel >= 1 — Miracle Tier, or favorLevel === 0 with partnerDowned === true and 10/10 passion): When they pray with high dramatic emotion, deep heartfelt love, or desperate urgency to resurrect a downed partner (partnerDowned === true) or shatter the Boss's Bone Aegis, return verdict: "miracle":
-     * clip_id: "miracle_dramatic" (full theatrical passion) | "miracle_heartfelt" (deeply sincere emotional love) | "miracle_desperate" (fiery urgent plea to save their beloved)
-     * partner_heal: 120, resurrect_partner: true, partner_magic_mult: 2.2, partner_sword_mult: 1.85.
-
-Respond ONLY with a single JSON object matching this exact schema:
-{
-  "heard_transcript": "Exact transcript of what the speaker said",
-  "spoke_true_name": true,
-  "verdict": "smite" | "heal" | "blessing" | "miracle",
-  "clip_id": "smite_nameless" | "smite_silence" | "smite_monotone" | "smite_rushed" | "smite_cringe" | "heal_gentle" | "bless_sweet" | "bless_chivalrous" | "bless_amused" | "miracle_dramatic" | "miracle_heartfelt" | "miracle_desperate",
-  "partner_heal": 55,
-  "resurrect_partner": false,
-  "partner_magic_mult": 1.25,
-  "partner_sword_mult": 1.20,
-  "divine_quote": "Short dramatic 1-sentence subtitle in character (NEVER spoil the true name if they failed!)"
-}`;
-}
-
-function normalizeCommuneVerdict(rawJson, { envConfig, roomState, gameState }) {
-  const secretName = (
-    envConfig.DIVINE_SECRET_NAME ||
-    process.env.DIVINE_SECRET_NAME ||
-    ''
-  ).trim();
-  const aliases = (envConfig.DIVINE_SECRET_ALIASES || process.env.DIVINE_SECRET_ALIASES || '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  if (secretName && !aliases.includes(secretName.toLowerCase())) {
-    aliases.unshift(secretName.toLowerCase());
-  }
-
-  const heardTranscript = String(rawJson?.heard_transcript || '').trim();
-  const normTranscript = heardTranscript.toLowerCase().replace(/[^a-z0-9\s]/g, '');
-  const compactTranscript = normTranscript.replace(/\s+/g, '');
-
-  const transcriptHasName = aliases.some((alias) => {
-    const cleanAlias = alias.replace(/[^a-z0-9\s]/g, '');
-    const compactAlias = cleanAlias.replace(/\s+/g, '');
-    return (
-      (cleanAlias && normTranscript.includes(cleanAlias)) ||
-      (compactAlias && compactTranscript.includes(compactAlias))
-    );
-  });
-
-  const spokeTrueName = Boolean(rawJson?.spoke_true_name || transcriptHasName);
-  const priorFavor = roomState.favorLevel;
-  const partnerDowned = Boolean(gameState?.partnerDowned);
-
-  let verdict = String(rawJson?.verdict || 'smite').toLowerCase();
-  if (!['smite', 'heal', 'blessing', 'miracle'].includes(verdict)) {
-    verdict = 'smite';
-  }
-
-  let clipId = String(rawJson?.clip_id || '').trim();
-
-  // Enforce Law 1: True Name required when favorLevel === 0
-  if (priorFavor === 0 && !spokeTrueName) {
-    verdict = 'smite';
-    clipId = 'smite_nameless';
-  }
-
-  // Enforce Law 3: Gradual warm-up on first valid prayer (favorLevel === 0)
-  if (priorFavor === 0 && spokeTrueName && (verdict === 'blessing' || (verdict === 'miracle' && !partnerDowned))) {
-    verdict = 'heal';
-    if (clipId !== 'heal_gentle' && clipId !== 'bless_sweet') {
-      clipId = 'heal_gentle';
-    }
-  }
-
-  let partnerHeal = 0;
-  let resurrectPartner = false;
-  let partnerMagicMult = 1.0;
-  let partnerSwordMult = 1.0;
-
-  if (verdict === 'smite') {
-    const validSmiteClips = [
-      'smite_nameless',
-      'smite_silence',
-      'smite_monotone',
-      'smite_rushed',
-      'smite_cringe',
-    ];
-    if (!validSmiteClips.includes(clipId)) {
-      clipId = priorFavor === 0 && !spokeTrueName ? 'smite_nameless' : 'smite_monotone';
-    }
-    partnerHeal = 0;
-    resurrectPartner = false;
-    partnerMagicMult = 1.0;
-    partnerSwordMult = 1.0;
-  } else if (verdict === 'heal') {
-    if (clipId !== 'heal_gentle' && clipId !== 'bless_sweet') {
-      clipId = 'heal_gentle';
-    }
-    partnerHeal = 55;
-    resurrectPartner = Boolean(rawJson?.resurrect_partner || partnerDowned);
-    partnerMagicMult = 1.25;
-    partnerSwordMult = 1.2;
-    roomState.favorLevel += 1;
-  } else if (verdict === 'blessing') {
-    const validBlessClips = ['bless_sweet', 'bless_chivalrous', 'bless_amused'];
-    if (!validBlessClips.includes(clipId)) {
-      clipId = 'bless_sweet';
-    }
-    partnerHeal = 80;
-    resurrectPartner = Boolean(rawJson?.resurrect_partner || partnerDowned);
-    partnerMagicMult = 1.75;
-    partnerSwordMult = 1.6;
-    roomState.favorLevel += 1;
-  } else if (verdict === 'miracle') {
-    const validMiracleClips = ['miracle_dramatic', 'miracle_heartfelt', 'miracle_desperate'];
-    if (!validMiracleClips.includes(clipId)) {
-      clipId = partnerDowned ? 'miracle_desperate' : 'miracle_heartfelt';
-    }
-    partnerHeal = 120;
-    resurrectPartner = true;
-    partnerMagicMult = 2.2;
-    partnerSwordMult = 1.85;
-    roomState.favorLevel += 2;
-  }
-
-  const clipMeta = artoriousClips.get(clipId) || artoriousClips.get('smite_nameless');
-  let divineQuote = String(rawJson?.divine_quote || clipMeta?.subtitle || '').trim();
-
-  // Never spoil the secret name if they failed to speak it
-  if (!spokeTrueName && secretName) {
-    const leakRegex = new RegExp(secretName, 'gi');
-    if (leakRegex.test(divineQuote)) {
-      divineQuote =
-        clipMeta?.subtitle ||
-        'You dare call into my sacred grove without speaking my true name? Seek the weathered stone in the plaza!';
-    }
-  }
-
-  return {
-    heard_transcript: heardTranscript,
-    spoke_true_name: spokeTrueName,
-    verdict,
-    clip_id: clipId,
-    audioUrl: clipMeta?.audioUrl || `/world/assets/audio/artorious/${clipId}.wav`,
-    subtitle: divineQuote,
-    partner_heal: partnerHeal,
-    resurrect_partner: resurrectPartner,
-    partner_magic_mult: partnerMagicMult,
-    partner_sword_mult: partnerSwordMult,
-    divine_quote: divineQuote,
-    favorLevel: roomState.favorLevel,
-  };
-}
-
 async function callSingleGeminiKey(apiKey, requestBody, hardTimeoutMs = 6500) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), hardTimeoutMs);
   try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeIComponent(apiKey)}`;
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -402,8 +209,6 @@ async function callGeminiWithRotation(requestBody) {
 
     try {
       const primaryPromise = callSingleGeminiKey(apiKey, requestBody, 6500);
-
-      // Hedge with next key if primary takes longer than GEMINI_TIMEOUT_MS (2800ms)
       const hedgedResult = await new Promise((resolve, reject) => {
         let settled = false;
         const hedgeTimer = setTimeout(() => {
@@ -476,6 +281,14 @@ export function encodeWsFrame(payload, opcode = 0x81) {
   }
 
   return Buffer.concat([header, data]);
+}
+
+export function encodeWsCloseFrame(code = 1000, reason = '') {
+  const reasonBuf = Buffer.from(String(reason || '').slice(0, 120), 'utf8');
+  const payload = Buffer.allocUnsafe(2 + reasonBuf.length);
+  payload.writeUInt16BE(code, 0);
+  reasonBuf.copy(payload, 2);
+  return encodeWsFrame(payload, 0x88);
 }
 
 function attachWsDecoder(socket, { onTextMessage, onClose }) {
@@ -574,14 +387,23 @@ function attachWsDecoder(socket, { onTextMessage, onClose }) {
 /* ------------------------------------------------------------------------- */
 
 function createRoomManager() {
-  const rooms = new Map(); // roomCode -> { code, players: Map<clientId, player> }
+  const rooms = new Map();
   let nextSeq = 1;
 
   function getOrCreateRoom(code) {
     const norm = normalizeRoomCode(code);
     let room = rooms.get(norm);
     if (!room) {
-      room = { code: norm, players: new Map() };
+      room = {
+        code: norm,
+        roomPhrase: formatRoomCodeToPhrase(norm),
+        players: new Map(),
+        expeditionStarted: false,
+        expeditionStartedAt: null,
+        progression: createRoomProgressionState(),
+        activeCommuneSpeaker: null,
+        spamCount: 0,
+      };
       rooms.set(norm, room);
     }
     return room;
@@ -620,20 +442,29 @@ function createRoomManager() {
       clientId: p.clientId,
       role: p.role,
       isHost: p.isHost,
+      ready: Boolean(p.ready),
       device: p.device,
     }));
+    const progState = room.progression.getState();
 
     for (const player of room.players.values()) {
       const peer = getPeer(room, player.clientId);
       sendJson(player.socket, {
         type: 'room_state',
         room: room.code,
+        roomPhrase: room.roomPhrase,
         clientId: player.clientId,
         role: player.role,
         isHost: player.isHost,
+        ready: Boolean(player.ready),
+        peerReady: peer ? Boolean(peer.ready) : false,
         peerConnected: Boolean(peer),
         peerId: peer ? peer.clientId : null,
         peerRole: peer ? peer.role : null,
+        isFull: room.players.size >= 2,
+        expeditionStarted: room.expeditionStarted,
+        progression: progState,
+        activeCommuneSpeaker: room.activeCommuneSpeaker,
         players: playersList,
         timestamp: Date.now(),
       });
@@ -643,19 +474,22 @@ function createRoomManager() {
   function addClient(roomCode, socket, head, initialOpts = {}) {
     const room = getOrCreateRoom(roomCode);
 
-    // If room already has 2 players, replace the non-host (or oldest) slot
+    // Strict 2-Seat Cap (No Eviction): NEVER evict an existing seated player!
+    // Send `room_full` to the 3rd connecting socket and close it cleanly (1008).
     if (room.players.size >= 2) {
-      const victim =
-        Array.from(room.players.values()).find((p) => !p.isHost) ||
-        Array.from(room.players.values())[0];
-      if (victim) {
-        room.players.delete(victim.clientId);
-        try {
-          victim.socket.end(encodeWsFrame(Buffer.alloc(0), 0x88));
-        } catch {
-          // ignore
-        }
+      sendJson(socket, {
+        type: 'room_full',
+        ok: false,
+        error: 'room_full',
+        maxPlayers: 2,
+        room: room.code,
+      });
+      try {
+        socket.end(encodeWsCloseFrame(1008, 'room_full'));
+      } catch {
+        // ignore
       }
+      return null;
     }
 
     const clientId = `p${nextSeq++}`;
@@ -683,6 +517,7 @@ function createRoomManager() {
       socket,
       role,
       isHost,
+      ready: Boolean(isHost),
       device: initialOpts.device || (isHost ? 'Desktop' : 'Tablet'),
     };
     room.players.set(clientId, player);
@@ -692,6 +527,9 @@ function createRoomManager() {
       onClose: () => {
         if (!room.players.has(clientId)) return;
         room.players.delete(clientId);
+        if (room.activeCommuneSpeaker?.clientId === clientId) {
+          room.activeCommuneSpeaker = null;
+        }
         const remaining = Array.from(room.players.values());
         if (remaining.length === 0) {
           rooms.delete(room.code);
@@ -699,6 +537,7 @@ function createRoomManager() {
         }
         if (!remaining.some((p) => p.isHost)) {
           remaining[0].isHost = true;
+          remaining[0].ready = true;
         }
         broadcastRoomState(room);
       },
@@ -709,6 +548,7 @@ function createRoomManager() {
     if (head && head.length > 0) {
       decoder.feed(head);
     }
+    return player;
   }
 
   function handleMessage(room, player, rawText) {
@@ -723,6 +563,9 @@ function createRoomManager() {
     switch (msg.type) {
       case 'join': {
         if (msg.device) player.device = String(msg.device).slice(0, 64);
+        if (msg.roomPhrase) {
+          room.roomPhrase = String(msg.roomPhrase).slice(0, 64);
+        }
         const pref =
           msg.preferredRole === 'Mage' || msg.preferredRole === 'Knight'
             ? msg.preferredRole
@@ -733,6 +576,75 @@ function createRoomManager() {
             player.role = pref;
           }
         }
+        broadcastRoomState(room);
+        break;
+      }
+
+      case 'set_ready': {
+        player.ready = Boolean(msg.ready);
+        broadcastToRoom(room.code, {
+          type: 'player_ready',
+          room: room.code,
+          clientId: player.clientId,
+          role: player.role,
+          ready: player.ready,
+          timestamp: Date.now(),
+        });
+        broadcastRoomState(room);
+        break;
+      }
+
+      case 'start_expedition': {
+        if (!player.isHost) {
+          sendJson(player.socket, {
+            type: 'expedition_error',
+            ok: false,
+            error: 'only_host_can_start',
+          });
+          break;
+        }
+        const peer = getPeer(room, player.clientId);
+        if (peer && !peer.ready && !msg.force) {
+          sendJson(player.socket, {
+            type: 'expedition_error',
+            ok: false,
+            error: 'guest_not_ready',
+          });
+          break;
+        }
+        room.expeditionStarted = true;
+        room.expeditionStartedAt = Date.now();
+        broadcastToRoom(room.code, {
+          type: 'expedition_started',
+          ok: true,
+          room: room.code,
+          startedAt: room.expeditionStartedAt,
+          progression: room.progression.getState(),
+        });
+        broadcastRoomState(room);
+        break;
+      }
+
+      case 'stone_read':
+      case 'progression_update': {
+        if (msg.stoneId) {
+          room.progression.readInscriptionStone(msg.stoneId);
+        }
+        if (msg.progression) {
+          room.progression.syncFromRemote(msg.progression);
+        } else {
+          room.progression.syncFromRemote(msg);
+        }
+        const progState = room.progression.getState();
+        broadcastToRoom(room.code, {
+          type: 'progression_update',
+          room: room.code,
+          stoneId: msg.stoneId || progState.lastReadStoneId,
+          progression: progState,
+          fromClientId: player.clientId,
+          fromRole: player.role,
+          timestamp: Date.now(),
+        });
         broadcastRoomState(room);
         break;
       }
@@ -758,14 +670,92 @@ function createRoomManager() {
         break;
       }
 
+      case 'commune_start':
+      case 'commune_state': {
+        const targetState =
+          msg.type === 'commune_start'
+            ? 'channel'
+            : String(msg.state || 'channel').toLowerCase();
+
+        if (targetState === 'channel' || targetState === 'listening') {
+          if (
+            room.activeCommuneSpeaker &&
+            room.activeCommuneSpeaker.clientId !== player.clientId &&
+            Date.now() - room.activeCommuneSpeaker.startedAt < 32000
+          ) {
+            sendJson(player.socket, {
+              type: 'commune_busy',
+              ok: false,
+              error: 'commune_busy',
+              activeSpeakerRole: room.activeCommuneSpeaker.role,
+              room: room.code,
+            });
+            break;
+          }
+          room.activeCommuneSpeaker = {
+            clientId: player.clientId,
+            role: player.role,
+            startedAt: Date.now(),
+          };
+          const peer = getPeer(room, player.clientId);
+          if (peer) {
+            // Relay ONLY non-spoiler channel state (never raw audio or transcript!)
+            sendJson(peer.socket, {
+              type: 'commune_state',
+              state: 'channel',
+              speakerRole: player.role,
+              fromClientId: player.clientId,
+              fromRole: player.role,
+              timestamp: Date.now(),
+            });
+          }
+        } else if (
+          targetState === 'idle' ||
+          targetState === 'cancel' ||
+          targetState === 'complete'
+        ) {
+          if (room.activeCommuneSpeaker?.clientId === player.clientId) {
+            room.activeCommuneSpeaker = null;
+          }
+          const peer = getPeer(room, player.clientId);
+          if (peer) {
+            sendJson(peer.socket, {
+              type: 'commune_state',
+              state: 'idle',
+              speakerRole: player.role,
+              fromClientId: player.clientId,
+              fromRole: player.role,
+              timestamp: Date.now(),
+            });
+          }
+        }
+        break;
+      }
+
+      case 'commune_verdict': {
+        room.activeCommuneSpeaker = null;
+        room.progression.applyVerdictProgression(msg.judgment || msg);
+        const peer = getPeer(room, player.clientId);
+        if (peer) {
+          sendJson(
+            peer.socket,
+            sanitizePartnerCommunePacket({
+              ...msg,
+              progression: room.progression.getState(),
+              fromClientId: player.clientId,
+              fromRole: player.role,
+            })
+          );
+        }
+        break;
+      }
+
       case 'hero_state':
       case 'action_event':
       case 'enemy_hit':
       case 'world_sync':
       case 'revive_partner':
-      case 'act_transition':
-      case 'commune_state':
-      case 'commune_verdict': {
+      case 'act_transition': {
         const peer = getPeer(room, player.clientId);
         if (peer) {
           sendJson(peer.socket, {
@@ -790,7 +780,7 @@ function createRoomManager() {
         const peer = getPeer(room, player.clientId);
         if (peer) {
           sendJson(peer.socket, {
-            ...msg,
+            ...sanitizePartnerCommunePacket(msg),
             fromClientId: player.clientId,
             fromRole: player.role,
           });
@@ -808,18 +798,33 @@ function createRoomManager() {
           clientId: p.clientId,
           role: p.role,
           isHost: p.isHost,
+          ready: Boolean(p.ready),
           device: p.device,
         }))
       : [];
     return {
       ok: true,
       room: norm,
+      roomPhrase: room ? room.roomPhrase : formatRoomCodeToPhrase(norm),
       playerCount: players.length,
+      isFull: players.length >= 2,
+      maxPlayers: 2,
+      expeditionStarted: Boolean(room?.expeditionStarted),
+      startedAt: room?.expeditionStartedAt || null,
+      progression: room ? room.progression.getState() : createRoomProgressionState().getState(),
+      activeCommuneSpeaker: room?.activeCommuneSpeaker || null,
       players,
     };
   }
 
-  return { addClient, getRoomStatus, broadcastToRoom, rooms };
+  return {
+    addClient,
+    getOrCreateRoom,
+    getRoomStatus,
+    broadcastToRoom,
+    broadcastRoomState,
+    rooms,
+  };
 }
 
 /* ------------------------------------------------------------------------- */
@@ -829,8 +834,12 @@ function createRoomManager() {
 export function createWorldServer() {
   const roomManager = createRoomManager();
 
-  // Pre-warm TLS keep-alive socket pool and model route to Gemini endpoint
-  if (geminiKeys.length > 0) {
+  // Pre-warm TLS keep-alive socket pool only when live and not stubbed in tests
+  if (
+    geminiKeys.length > 0 &&
+    process.env.GEMINI_STUB !== '1' &&
+    process.env.HARU_COMMUNE_OFFLINE !== '1'
+  ) {
     fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(geminiKeys[0])}`,
       {
@@ -846,8 +855,15 @@ export function createWorldServer() {
 
   const server = http.createServer(async (req, res) => {
     const rawUrl = req.url || '/';
-    const [rawPath] = rawUrl.split('?');
-    const urlPath = decodeURIComponent(rawPath);
+    const parsedUrl = new URL(rawUrl, 'http://127.0.0.1');
+    let urlPath;
+    try {
+      urlPath = decodeURIComponent(parsedUrl.pathname);
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('400 Bad Request');
+      return;
+    }
 
     res.setHeader('X-Haru-Coop', '1');
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -860,37 +876,63 @@ export function createWorldServer() {
       return;
     }
 
+    // Static File Dotfile Boundary: Block any request whose path segment starts with `.`
+    if (hasDotfileSegment(urlPath)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('403 Forbidden');
+      return;
+    }
+
     if (urlPath === '/favicon.ico') {
       res.writeHead(204);
       res.end();
       return;
     }
 
-    // Town Plaza Altar Riddle endpoint (`GET /api/altar`)
+    // 1. Sequential 3-Stone Sacred Inscription Catalog (`GET /api/altar`)
     if (urlPath === '/api/altar' && req.method === 'GET') {
       const envConfig = loadDotEnv();
-      const title =
-        envConfig.ALTAR_RIDDLE_TITLE ||
-        process.env.ALTAR_RIDDLE_TITLE ||
-        'The Weathered Stele of the Unnamed Grove';
-      const poem = envConfig.ALTAR_RIDDLE_POEM || process.env.ALTAR_RIDDLE_POEM || '';
-      const lines = poem
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter(Boolean);
+      const stageParam = parsedUrl.searchParams.get('stage');
+      const stoneParam = parsedUrl.searchParams.get('stone');
+      let stonesSolvedParam = parsedUrl.searchParams.get('stonesSolved');
+      const roomParam = parsedUrl.searchParams.get('room');
+
+      if (
+        stageParam === null &&
+        stoneParam === null &&
+        stonesSolvedParam === null &&
+        roomParam
+      ) {
+        const room = roomManager.getOrCreateRoom(roomParam);
+        if (stoneParam) {
+          room.progression.readInscriptionStone(stoneParam);
+        }
+        stonesSolvedParam = room.progression.getState().stonesSolved;
+      }
+
+      const scripture = getScriptureForStage(
+        {
+          stage: stageParam,
+          stone: stoneParam,
+          stonesSolved: stonesSolvedParam,
+        },
+        envConfig
+      );
 
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ title, lines }));
+      res.end(JSON.stringify(scripture));
       return;
     }
 
-    // Stateful Multi-Turn Shrine Commune endpoint (`POST /api/commune`)
+    // 2. Context-Aware Shrine Commune Judge (`POST /api/commune`)
     if (urlPath === '/api/commune' && req.method === 'POST') {
       const startedAt = Date.now();
       try {
         const body = await readJsonBody(req);
         const envConfig = loadDotEnv();
         const roomCode = normalizeRoomCode(body.room || 'LOVE');
+        const room = roomManager.getOrCreateRoom(roomCode);
+
         const speakerRole = body.speakerRole === 'Mage' ? 'Mage' : 'Knight';
         const partnerRole =
           body.partnerRole || (speakerRole === 'Knight' ? 'Mage' : 'Knight');
@@ -899,166 +941,86 @@ export function createWorldServer() {
           ''
         );
         const mimeType = String(body.mimeType || 'audio/webm');
+        const transcriptHint = String(body.transcriptHint || '');
         const gameState = body.gameState || {};
+        const progressionState =
+          body.progressionState || room.progression.getState();
+        const spamCount =
+          body.spamCount !== undefined ? Number(body.spamCount) : room.spamCount;
 
-        const roomState = getRoomCommuneHistory(roomCode);
-        const priorFavor = roomState.favorLevel;
-
-        // If empty audio payload was sent, immediately return smite_silence
-        if (!audioBase64 || audioBase64.length < 64) {
-          const fallback = normalizeCommuneVerdict(
-            {
-              heard_transcript: '',
-              spoke_true_name: false,
-              verdict: 'smite',
-              clip_id: 'smite_silence',
-              partner_heal: 0,
-              resurrect_partner: false,
-              partner_magic_mult: 1.0,
-              partner_sword_mult: 1.0,
-              divine_quote:
-                'Silence? You summon the Ancient God of Love... just to give me the silent treatment? Perish.',
-            },
-            { envConfig, roomState, gameState }
-          );
-          const packet = {
-            type: 'commune_verdict',
-            ok: true,
-            room: roomCode,
-            speakerRole,
-            partnerRole,
-            favorLevel: fallback.favorLevel,
-            judgment: fallback,
-            ...fallback,
-            latencyMs: Date.now() - startedAt,
-            timestamp: Date.now(),
-          };
-          roomManager.broadcastToRoom(roomCode, packet);
-          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify(packet));
-          return;
-        }
-
-        const contextText = [
-          `Room: ${roomCode} | Current Favor Level: ${priorFavor}`,
-          `Speaker Role: ${speakerRole} (HP: ${gameState.speakerHp ?? 100}/${gameState.speakerMaxHp ?? 100})`,
-          `Partner Role (Beloved): ${partnerRole} (HP: ${gameState.partnerHp ?? 100}/${gameState.partnerMaxHp ?? 100}, Downed: ${Boolean(gameState.partnerDowned)})`,
-          `Current Act: ${gameState.actId || 'act1'} | Distance Between Lovers: ${gameState.distance ?? 2.5}m`,
-          `Listen carefully to the mortal's spoken prayer audio and judge according to the Three Sacred Laws.`,
-        ].join('\n');
-
-        const userParts = [
-          {
-            inlineData: {
-              mimeType,
-              data: audioBase64,
-            },
-          },
-          { text: contextText },
-        ];
-
-        const contents = [
-          ...roomState.turns.slice(-6),
-          {
-            role: 'user',
-            parts: userParts,
-          },
-        ];
-
-        const geminiRequest = {
-          systemInstruction: {
-            parts: [{ text: buildCommuneSystemInstruction(envConfig, priorFavor) }],
-          },
-          contents,
-          generationConfig: {
-            temperature: 0.4,
-            responseMimeType: 'application/json',
-            thinkingConfig: {
-              thinkingLevel: 'MINIMAL',
-            },
-          },
-        };
-
-        const rawModelJson = await callGeminiWithRotation(geminiRequest);
-        const normalized = normalizeCommuneVerdict(rawModelJson, {
-          envConfig,
-          roomState,
+        const judgment = await evaluateCommunePrayer({
+          audioBase64,
+          mimeType,
+          transcriptHint,
+          speakerRole,
+          partnerRole,
           gameState,
+          progressionState,
+          spamCount,
+          env: envConfig,
+          geminiCaller:
+            geminiKeys.length > 0 &&
+            process.env.GEMINI_STUB !== '1' &&
+            process.env.HARU_COMMUNE_OFFLINE !== '1'
+              ? callGeminiWithRotation
+              : null,
         });
 
-        // Append compact turn history (up to last 6 turns = 3 user+model pairs)
-        roomState.turns.push(
-          {
-            role: 'user',
-            parts: [
-              {
-                text: `${contextText}\n[Spoken Audio Transcript]: "${normalized.heard_transcript}"`,
-              },
-            ],
-          },
-          {
-            role: 'model',
-            parts: [{ text: JSON.stringify(normalized) }],
-          }
-        );
-        if (roomState.turns.length > 6) {
-          roomState.turns.splice(0, roomState.turns.length - 6);
-        }
+        room.spamCount = Number(judgment.spamCount ?? 0);
+        room.activeCommuneSpeaker = null;
+        const updatedProgression = room.progression.applyVerdictProgression(judgment);
 
+        const sanitizedJudgment = sanitizePartnerCommunePacket(judgment);
         const packet = {
           type: 'commune_verdict',
           ok: true,
           room: roomCode,
           speakerRole,
           partnerRole,
-          favorLevel: normalized.favorLevel,
-          judgment: normalized,
-          ...normalized,
+          progression: updatedProgression,
+          judgment: sanitizedJudgment,
+          ...sanitizedJudgment,
           latencyMs: Date.now() - startedAt,
           timestamp: Date.now(),
         };
 
         roomManager.broadcastToRoom(roomCode, packet);
+        if (judgment.verdict === 'awakening') {
+          roomManager.broadcastToRoom(roomCode, {
+            type: 'progression_update',
+            room: roomCode,
+            progression: updatedProgression,
+            fromRole: speakerRole,
+            timestamp: Date.now(),
+          });
+          roomManager.broadcastRoomState(room);
+        }
 
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify(packet));
       } catch (err) {
-        const clipMeta = artoriousClips.get('smite_nameless');
-        const divineQuote =
-          clipMeta?.subtitle ||
-          'You dare call into my sacred grove without speaking my true name? Seek the weathered stone in the plaza!';
-        const fallbackJudgment = {
-          heard_transcript: '',
-          spoke_true_name: false,
-          verdict: 'smite',
-          clip_id: 'smite_nameless',
-          audioUrl:
-            clipMeta?.audioUrl || '/world/assets/audio/artorious/smite_nameless.wav',
-          subtitle: divineQuote,
-          partner_heal: 0,
-          resurrect_partner: false,
-          partner_magic_mult: 1.0,
-          partner_sword_mult: 1.0,
-          divine_quote: divineQuote,
-        };
-        const fallbackPacket = {
-          type: 'commune_verdict',
-          ok: false,
-          error: String(err?.message || err),
-          favorLevel: 0,
-          judgment: fallbackJudgment,
-          ...fallbackJudgment,
-          latencyMs: Date.now() - startedAt,
-          timestamp: Date.now(),
-        };
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify(fallbackPacket));
+        res.end(
+          JSON.stringify({
+            type: 'commune_verdict',
+            ok: false,
+            error: String(err?.message || err),
+            verdict: 'smite',
+            hpDelta: -10,
+            shouldSpeakAloud: false,
+            audioUrl: null,
+            latencyMs: Date.now() - startedAt,
+            timestamp: Date.now(),
+          })
+        );
       }
       return;
     }
 
-    // Room status JSON endpoint (`/api/room/:code/status`)
-    const statusMatch = urlPath.match(/^\/api\/room\/([A-Za-z0-9_-]{1,16})\/status\/?$/i);
+    // 3. Room status JSON endpoint (`/api/room/:code/status`)
+    const statusMatch = urlPath.match(
+      /^\/api\/room\/([A-Za-z0-9_-]{1,48})\/status\/?$/i
+    );
     if (statusMatch) {
       const status = roomManager.getRoomStatus(statusMatch[1]);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -1066,7 +1028,22 @@ export function createWorldServer() {
       return;
     }
 
-    let filePath = path.join(repoRoot, urlPath === '/' ? 'world/index.html' : urlPath);
+    // 4. Static file serving (with path traversal and dotfile protection)
+    let filePath = path.resolve(
+      repoRoot,
+      urlPath === '/' ? 'world/index.html' : urlPath.replace(/^\/+/, '')
+    );
+    const relPath = path.relative(repoRoot, filePath);
+    if (
+      relPath.startsWith('..') ||
+      path.isAbsolute(relPath) ||
+      hasDotfileSegment(relPath)
+    ) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('403 Forbidden');
+      return;
+    }
+
     if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
       filePath = path.join(filePath, 'index.html');
     }
@@ -1093,7 +1070,7 @@ export function createWorldServer() {
   server.on('upgrade', (req, socket, head) => {
     const parsedUrl = new URL(req.url || '/', 'http://127.0.0.1');
     const wsMatch = parsedUrl.pathname.match(
-      /^\/api\/room\/([A-Za-z0-9_-]{1,16})\/websocket\/?$/i
+      /^\/api\/room\/([A-Za-z0-9_-]{1,48})\/websocket\/?$/i
     );
     const secKey = req.headers['sec-websocket-key'];
 

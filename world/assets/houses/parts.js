@@ -314,20 +314,16 @@ function stoneJambs(group, { w, h, stone, count = 2 }) {
 }
 
 function stoneArch(group, { w, h, stone }) {
-  const count = 5;
-  const radius = w / 2 + 0.14;
-  const centerY = h - 0.5;
-  for (let i = 0; i < count; i++) {
-    const angle = THREE.MathUtils.lerp(
-      THREE.MathUtils.degToRad(150),
-      THREE.MathUtils.degToRad(30),
-      i / (count - 1),
-    );
-    const block = box(0.22, 0.2, 0.13, stone, { tile: TILE.stone, outline: 0.008 });
-    block.position.set(Math.cos(angle) * radius, centerY + Math.sin(angle) * radius, 0.018);
-    block.rotation.z = angle - Math.PI / 2;
-    group.add(block);
+  const lintelY = h + 0.085;
+  const sideW = (w + 0.44 - 0.28) * 0.5;
+  for (const sx of [-1, 1]) {
+    const sideBlock = box(sideW - 0.012, 0.17, 0.14, stone, { tile: TILE.stone, outline: 0.008 });
+    sideBlock.position.set(sx * (0.14 + sideW * 0.5), lintelY, 0.02);
+    group.add(sideBlock);
   }
+  const keystone = box(0.27, 0.22, 0.155, stone, { tile: TILE.stone, outline: 0.008 });
+  keystone.position.set(0, lintelY + 0.018, 0.025);
+  group.add(keystone);
 }
 
 function windowShutters(group, { w, h, materials, shutterWidth = 0.32, hasJambs = true }) {
@@ -2136,7 +2132,7 @@ export function buildWaterwheelAssembly(
 
   wAdd(cyl(0.22, wheelW + 1.15, materials.timberDark, { axis: 'x', segments: 8, outline: 0.012 }));
   for (const sx of [-1, 1]) {
-    const hub = cyl(0.42, 0.14, materials.iron, { axis: 'x', segments: 8, outline: 0 });
+    const hub = cyl(0.42, 0.14, materials.timberDark, { axis: 'x', segments: 8, outline: 0 });
     hub.position.x = sx * (halfW - 0.04);
     wAdd(hub);
   }
@@ -2176,16 +2172,342 @@ export function buildWaterwheelAssembly(
     const pr = outerR - 0.22;
     const paddle = box(wheelW + 0.08, 0.085, 0.44, materials.timberLight, {
       tile: TILE.wood,
-      outline: 0.012,
+      outline: 0,
     });
     paddle.position.set(0, sinA * pr, cosA * pr);
     paddle.rotation.x = -a + 0.22;
     wAdd(paddle);
   }
 
-  mergeStatic(wheelGroup, { outline: 0.012, materials });
+  // Clear child outline weights inside wheelGroup so wheelGroup merges into 1 single draw call
+  wheelGroup.traverse((c) => {
+    if (c.isMesh) c.userData.outlineWeight = 0;
+  });
+  mergeStatic(wheelGroup, { outline: 0, materials });
   add(wheelGroup);
   return wheelGroup;
+}
+
+/**
+ * Storybook Octagonal Stone-and-Timber Windmill Smock Tower (`buildWindmillTowerAndSails`)
+ * rising on the `+X` side of the Mill (`towerX = +w * 0.5 + 1.55, towerZ = 0.20`), complete with:
+ * - Octagonal coursed stone base (`y = -subDepth .. 3.85m`)
+ * - Cantilevered wooden miller's balcony stage (`y = 3.88m`) with knee braces & handrail
+ * - Tapered octagonal stucco-and-timber upper tower (`y = 3.88m .. 9.35m`)
+ * - Steep conical terracotta cap roof (`y = 9.35m .. 11.85m`) with brass spire finial
+ * - Rotating 4-bladed timber-lattice & bright cream-linen canvas sails (`8.0m` span, 100% clear of cottage roof)
+ */
+export function buildWindmillTowerAndSails(
+  add,
+  materials,
+  { wallX = 3.9, subDepth = 2.6 } = {},
+) {
+  const tx = wallX + 3.55; // +7.45m -> completely clear to the right of the cottage roof (x <= 4.38m)
+  const tz = 1.15;
+  const baseTopY = 4.15;
+  const towerTopY = 10.35;
+  const capApexY = 12.95;
+  const hubY = 9.75;
+  const hubZ = tz + 1.92; // +3.07m -> proud of the tower & balcony
+
+  // 0. Connecting Stone-and-Timber Miller's Granary Passage bridging wallX (3.9m) to the Windmill Tower
+  const linkW = 2.15;
+  const linkD = 2.85;
+  const linkMidX = wallX + linkW * 0.5 - 0.08;
+  const linkWallY = 3.45;
+  const linkRidgeY = 4.45;
+  const linkStoneH = 2.15 + subDepth;
+
+  const linkBase = box(linkW, linkStoneH, linkD, materials.stone, {
+    tile: TILE.stone,
+    outline: 0.016,
+  });
+  linkBase.position.set(linkMidX, 2.15 - linkStoneH * 0.5, tz);
+  add(linkBase);
+
+  const linkTrim = box(linkW + 0.16, 0.12, linkD + 0.24, materials.stoneTrim, {
+    tile: TILE.stone,
+    outline: 0.012,
+  });
+  linkTrim.position.set(linkMidX, 2.20, tz);
+  add(linkTrim);
+
+  const linkUpper = box(linkW, linkWallY - 2.20, linkD - 0.08, materials.stuccoWarm, {
+    tile: TILE.stucco,
+    outline: 0.014,
+  });
+  linkUpper.position.set(linkMidX, 2.20 + (linkWallY - 2.20) * 0.5, tz);
+  add(linkUpper);
+
+  // Pitched terracotta roof over the connecting granary passage
+  const linkHalfD = linkD * 0.5 + 0.28;
+  const linkRise = linkRidgeY - linkWallY;
+  add(
+    quad(
+      [wallX - 0.1, linkWallY, tz + linkHalfD],
+      [tx - 1.2, linkWallY, tz + linkHalfD],
+      [tx - 1.2, linkRidgeY, tz],
+      [wallX - 0.1, linkRidgeY, tz],
+      materials.roofRidge,
+      { outline: 0.016 },
+    ),
+  );
+  add(
+    quad(
+      [wallX - 0.1, linkWallY, tz - linkHalfD],
+      [wallX - 0.1, linkRidgeY, tz],
+      [tx - 1.2, linkRidgeY, tz],
+      [tx - 1.2, linkWallY, tz - linkHalfD],
+      materials.roofRidge,
+      { outline: 0.016 },
+    ),
+  );
+
+  // 1. Octagonal Stone Base (from -subDepth up to y = 4.15m)
+  const stoneTotalH = baseTopY + subDepth;
+  const stoneBase = cyl(2.05, stoneTotalH, materials.stone, {
+    radiusTop: 1.78,
+    segments: 8,
+    outline: 0.018,
+  });
+  stoneBase.position.set(tx, baseTopY - stoneTotalH / 2, tz);
+  add(stoneBase);
+
+  const plinthBelt = cyl(2.16, 0.16, materials.stoneTrim, {
+    radiusTop: 2.12,
+    segments: 8,
+    outline: 0.012,
+  });
+  plinthBelt.position.set(tx, 0.58, tz);
+  add(plinthBelt);
+
+  const stoneCornice = cyl(1.92, 0.18, materials.stoneTrim, {
+    radiusTop: 1.94,
+    segments: 8,
+    outline: 0.014,
+  });
+  stoneCornice.position.set(tx, baseTopY, tz);
+  add(stoneCornice);
+
+  // 2. Cantilevered Wooden Miller's Balcony Stage around the tower at y = 4.18m
+  const stageDeck = cyl(2.46, 0.12, materials.timberDark, {
+    radiusTop: 2.46,
+    segments: 8,
+    outline: 0.014,
+  });
+  stageDeck.position.set(tx, baseTopY + 0.06, tz);
+  add(stageDeck);
+
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    const px = tx + ca * 2.34;
+    const pz = tz + sa * 2.34;
+    // Skip railing posts where the connecting passage roof meets the west (-X) side of the tower
+    if (ca < -0.65) continue;
+
+    // Diagonal knee brace supporting the balcony from the stone tower wall
+    add(
+      beamBetween(
+        [tx + ca * 1.74, baseTopY - 0.78, tz + sa * 1.74],
+        [tx + ca * 2.32, baseTopY + 0.02, tz + sa * 2.32],
+        0.12,
+        0.12,
+        materials.timber,
+      ),
+    );
+    // Balcony railing post
+    const rPost = box(0.1, 0.78, 0.1, materials.timber, { tile: TILE.wood, outline: 0.01 });
+    rPost.position.set(px, baseTopY + 0.46, pz);
+    add(rPost);
+
+    const nextA = ((i + 1) / 8) * Math.PI * 2 + Math.PI / 8;
+    if (Math.cos(nextA) >= -0.65) {
+      const npx = tx + Math.cos(nextA) * 2.34;
+      const npz = tz + Math.sin(nextA) * 2.34;
+      add(
+        beamBetween(
+          [px, baseTopY + 0.82, pz],
+          [npx, baseTopY + 0.82, npz],
+          0.09,
+          0.09,
+          materials.timberDark,
+        ),
+      );
+    }
+  }
+
+  // 3. Tapered Octagonal Stucco-and-Timber Smock Tower (y = 4.18m .. 10.35m)
+  const smockH = towerTopY - baseTopY;
+  const smockBody = cyl(1.74, smockH, materials.stuccoWarm, {
+    radiusTop: 1.36,
+    segments: 8,
+    outline: 0.018,
+  });
+  smockBody.position.set(tx, baseTopY + smockH / 2, tz);
+  add(smockBody);
+
+  // Mid-tower and top-eave timber collar rings
+  const midRing = cyl(1.58, 0.16, materials.timber, {
+    radiusTop: 1.56,
+    segments: 8,
+    outline: 0.012,
+  });
+  midRing.position.set(tx, baseTopY + smockH * 0.52, tz);
+  add(midRing);
+
+  const topCurb = cyl(1.46, 0.22, materials.timberDark, {
+    radiusTop: 1.48,
+    segments: 8,
+    outline: 0.014,
+  });
+  topCurb.position.set(tx, towerTopY - 0.06, tz);
+  add(topCurb);
+
+  // 8 tapered corner timber ribs running up the octagonal smock tower
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    add(
+      beamBetween(
+        [tx + ca * 1.72, baseTopY + 0.08, tz + sa * 1.72],
+        [tx + ca * 1.35, towerTopY - 0.08, tz + sa * 1.35],
+        0.13,
+        0.13,
+        materials.timber,
+      ),
+    );
+  }
+
+  // 4. Conical Weathered Terracotta Windmill Cap Roof (y = 10.35m .. 12.95m)
+  const capH = capApexY - towerTopY;
+  const capRoof = cyl(1.68, capH, materials.roofRidge, {
+    radiusTop: 0.08,
+    segments: 8,
+    outline: 0.018,
+  });
+  capRoof.position.set(tx, towerTopY + capH / 2, tz);
+  add(capRoof);
+
+  const capSoffit = cyl(1.70, 0.14, materials.timberDark, {
+    radiusTop: 1.64,
+    segments: 8,
+    outline: 0.012,
+  });
+  capSoffit.position.set(tx, towerTopY - 0.02, tz);
+  add(capSoffit);
+
+  const finialSpire = cyl(0.06, 0.72, materials.signGold, {
+    radiusTop: 0.02,
+    segments: 6,
+    outline: 0.01,
+  });
+  finialSpire.position.set(tx, capApexY + 0.32, tz);
+  add(finialSpire);
+
+  // Projecting front windshaft dormer housing + stout timber axle neck extending forward to hubZ
+  const shaftBox = box(0.72, 0.72, 1.28, materials.timberDark, {
+    tile: TILE.wood,
+    outline: 0.014,
+  });
+  shaftBox.position.set(tx, hubY, tz + 1.24);
+  add(shaftBox);
+
+  const shaftHood = box(0.88, 0.16, 1.38, materials.roofRidge, { outline: 0.012 });
+  shaftHood.position.set(tx, hubY + 0.40, tz + 1.26);
+  add(shaftHood);
+
+  // Diagonal timber support strut under the projecting windshaft box
+  add(
+    beamBetween(
+      [tx, hubY - 0.95, tz + 1.15],
+      [tx, hubY - 0.28, tz + 1.78],
+      0.14,
+      0.14,
+      materials.timber,
+    ),
+  );
+
+  // 5. Rotating 4-Bladed Timber-Lattice & Bright Cream-Linen Canvas Windmill Sails (7.1m diameter, 100% clear of cottage)
+  const sailsGroup = new THREE.Group();
+  sailsGroup.name = 'windmill-sails';
+  sailsGroup.position.set(tx, hubY, hubZ);
+  sailsGroup.rotation.z = 0.42;
+  sailsGroup.userData.noMerge = true;
+
+  const sAdd = (obj) => {
+    sailsGroup.add(obj);
+    return obj;
+  };
+
+  sAdd(cyl(0.28, 0.62, materials.timberDark, { axis: 'z', segments: 8, outline: 0 }));
+  const hubCap = cyl(0.18, 0.76, materials.timber, { axis: 'z', segments: 8, outline: 0 });
+  hubCap.position.z = 0.08;
+  sAdd(hubCap);
+
+  const sailSpan = 3.55;
+  const sailPitch = 0.24; // 14-degree aerodynamic wind-catching angle
+
+  for (let i = 0; i < 4; i++) {
+    const armAngle = (i * Math.PI) / 2;
+    const armHolder = new THREE.Group();
+    armHolder.rotation.z = armAngle;
+
+    // Main tapered dark-timber whip stock beam running from hub out to 3.55m
+    const stock = box(0.13, sailSpan, 0.13, materials.timberDark, {
+      tile: TILE.wood,
+      outline: 0,
+    });
+    stock.position.set(0, sailSpan * 0.5, 0);
+    armHolder.add(stock);
+
+    // Pitched lattice frame & bright cream linen canvas panel spanning r = 0.72m .. 3.50m
+    const panelGroup = new THREE.Group();
+    panelGroup.position.set(0, 2.12, 0);
+    panelGroup.rotation.y = sailPitch;
+
+    const panelLen = 2.82;
+    const panelW = 0.88;
+
+    // Warm cream-white linen canvas sailcloth sheet (bound to buckets.stucco for bright cream pigment!)
+    const canvasSheet = box(panelW - 0.06, panelLen - 0.08, 0.04, materials.sailCanvas, {
+      tile: TILE.stucco,
+      outline: 0,
+    });
+    canvasSheet.position.set(0.28, 0, 0.0);
+    panelGroup.add(canvasSheet);
+
+    // Outer & inner longitudinal wooden hemlock frame rails
+    for (const rx of [-0.16, 0.28, 0.72]) {
+      const rail = box(0.05, panelLen, 0.065, materials.timber, {
+        tile: TILE.wood,
+        outline: 0,
+      });
+      rail.position.set(rx, 0, 0.015);
+      panelGroup.add(rail);
+    }
+
+    // 7 transverse wooden lattice bars across each sail
+    const rungs = 7;
+    for (let r = 0; r < rungs; r++) {
+      const ry = -panelLen * 0.5 + (r / (rungs - 1)) * panelLen;
+      const rung = box(panelW + 0.06, 0.05, 0.07, materials.timberDark, {
+        tile: TILE.wood,
+        outline: 0,
+      });
+      rung.position.set(0.28, ry, 0.018);
+      panelGroup.add(rung);
+    }
+
+    armHolder.add(panelGroup);
+    sailsGroup.add(armHolder);
+  }
+
+  mergeStatic(sailsGroup, { outline: 0, materials });
+  add(sailsGroup);
+  return sailsGroup;
 }
 
 export function buildCoreShell(

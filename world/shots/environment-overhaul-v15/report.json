@@ -1,0 +1,329 @@
+{
+  "pass": "environment-overhaul-v15",
+  "timestamp": "2026-11-03T15:54:18.092Z",
+  "budgets": {
+    "desktopMaxDrawCalls": 72,
+    "desktopMaxTriangles": 4100000,
+    "tabletMaxDrawCalls": 58,
+    "tabletMaxTriangles": 1600000
+  },
+  "consoleErrors": [],
+  "shots": {
+    "day-plaza": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\environment-overhaul-v15\\day-plaza.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 111,
+      "frameMs": 1.04,
+      "draws": 41,
+      "composerDraws": 52,
+      "triangles": 4137652,
+      "bloomStrength": 0.22,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": 0.8,
+        "y": 0,
+        "z": 11.5
+      }
+    },
+    "day-mill-pier": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\environment-overhaul-v15\\day-mill-pier.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 125,
+      "frameMs": 0.42,
+      "draws": 40,
+      "composerDraws": 51,
+      "triangles": 4138556,
+      "bloomStrength": 0.22,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": -38.4,
+        "y": -0.2,
+        "z": 9
+      }
+    },
+    "day-arena-wisteria": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\environment-overhaul-v15\\day-arena-wisteria.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 109,
+      "frameMs": 0.38,
+      "draws": 30,
+      "composerDraws": 41,
+      "triangles": 4116466,
+      "bloomStrength": 0.22,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": 50.5,
+        "y": 0.6,
+        "z": -5.8
+      }
+    },
+    "day-shrine-arch": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\environment-overhaul-v15\\day-shrine-arch.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 125,
+      "frameMs": 0.38,
+      "draws": 26,
+      "composerDraws": 37,
+      "triangles": 4090482,
+      "bloomStrength": 0.22,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": -1.1,
+        "y": 8,
+        "z": -76.2
+      }
+    },
+    "day-flower-lobby": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\environment-overhaul-v15\\day-flower-lobby.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 121,
+      "frameMs": 0.74,
+      "draws": 42,
+      "composerDraws": 53,
+      "triangles": 4138612,
+      "bloomStrength": 0.22,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": -1.1,
+        "y": 1.6,
+        "z": 128
+      }
+    },
+    "day-south-road-boulders": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\environment-overhaul-v15\\day-south-road-boulders.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 121,
+      "frameMs": 0.58,
+      "draws": 39,
+      "composerDraws": 50,
+      "triangles": 4137012,
+      "bloomStrength": 0.22,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": -5.2,
+        "y": -0.5,
+        "z": 62.5
+      }
+    },
+    "day-sacred-stone-roses": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\environment-overhaul-v15\\day-sacred-stone-roses.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 123,
+      "frameMs": 0.46,
+      "draws": 37,
+      "composerDraws": 48,
+      "triangles": 4136956,
+      "bloomStrength": 0.22,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": -1.9,
+        "y": 0,
+        "z": -12.2
+      }
+    },
+    "evening-flower-lobby": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\environment-overhaul-v15\\evening-flower-lobby.png",
+      "profile": "desktop",
+      "timeOfDay": "evening",
+      "todT": 0.76,
+      "fps": 119,
+      "frameMs": 0.53,
+      "draws": 42,
+      "composerDraws": 53,
+      "triangles": 4138612,
+      "bloomStrength": 0.26,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": -1.1,
+        "y": 1.6,
+        "z": 128
+      }
+    },
+    "evening-plaza": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\environment-overhaul-v15\\evening-plaza.png",
+      "profile": "desktop",
+      "timeOfDay": "evening",
+      "todT": 0.76,
+      "fps": 121,
+      "frameMs": 0.41,
+      "draws": 41,
+      "composerDraws": 52,
+      "triangles": 4137652,
+      "bloomStrength": 0.26,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": 0.8,
+        "y": 0,
+        "z": 11.5
+      }
+    },
+    "evening-sunset-vista": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\environment-overhaul-v15\\evening-sunset-vista.png",
+      "profile": "desktop",
+      "timeOfDay": "evening",
+      "todT": 0.76,
+      "fps": 120,
+      "frameMs": 0.49,
+      "draws": 42,
+      "composerDraws": 53,
+      "triangles": 4138612,
+      "bloomStrength": 0.26,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": -0.9,
+        "y": 2.8,
+        "z": -36.5
+      }
+    },
+    "night-flower-lobby": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\environment-overhaul-v15\\night-flower-lobby.png",
+      "profile": "desktop",
+      "timeOfDay": "night",
+      "todT": 0.96,
+      "fps": 119,
+      "frameMs": 0.41,
+      "draws": 42,
+      "composerDraws": 53,
+      "triangles": 4138612,
+      "bloomStrength": 0.3,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": -1.1,
+        "y": 1.6,
+        "z": 128
+      }
+    },
+    "night-moon-shrine": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\environment-overhaul-v15\\night-moon-shrine.png",
+      "profile": "desktop",
+      "timeOfDay": "night",
+      "todT": 0.96,
+      "fps": 123,
+      "frameMs": 0.34,
+      "draws": 26,
+      "composerDraws": 37,
+      "triangles": 4090482,
+      "bloomStrength": 0.3,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": -1.1,
+        "y": 8,
+        "z": -76.2
+      }
+    },
+    "night-plaza-lanterns": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\environment-overhaul-v15\\night-plaza-lanterns.png",
+      "profile": "desktop",
+      "timeOfDay": "night",
+      "todT": 0.96,
+      "fps": 122,
+      "frameMs": 0.37,
+      "draws": 42,
+      "composerDraws": 53,
+      "triangles": 4138612,
+      "bloomStrength": 0.3,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": 1.1,
+        "y": 0,
+        "z": 8.5
+      }
+    },
+    "aerial-masterplan": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\environment-overhaul-v15\\aerial-masterplan.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 123,
+      "frameMs": 0.52,
+      "draws": 42,
+      "composerDraws": 53,
+      "triangles": 4138612,
+      "bloomStrength": 0.22,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": 0,
+        "y": 0,
+        "z": 14
+      }
+    }
+  },
+  "profiles": {
+    "desktop": {
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 144,
+      "frameMs": 0.38,
+      "draws": 41,
+      "composerDraws": 52,
+      "triangles": 4137652,
+      "bloomStrength": 0.22,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": 0.8,
+        "y": 0,
+        "z": 11.5
+      }
+    },
+    "tablet": {
+      "profile": "tablet",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 144,
+      "frameMs": 0.37,
+      "draws": 41,
+      "composerDraws": 52,
+      "triangles": 1646572,
+      "bloomStrength": 0.22,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": 0.8,
+        "y": 0,
+        "z": 11.5
+      }
+    }
+  },
+  "summary": {
+    "maxSceneDrawCalls": 42,
+    "minSceneDrawCalls": 26,
+    "maxSceneTriangles": 4138612,
+    "minSceneTriangles": 4090482,
+    "desktopDraws": 41,
+    "desktopTriangles": 4137652,
+    "tabletDraws": 41,
+    "tabletTriangles": 1646572,
+    "consoleErrorCount": 0,
+    "passesAllBudgets": false
+  }
+}

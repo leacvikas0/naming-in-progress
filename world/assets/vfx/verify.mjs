@@ -1,17 +1,25 @@
 // ============================================================================
 // world/assets/vfx/verify.mjs
 //
-// Automated Stage 4 Verification Gate for the Opaque VFX & Sword Breathing Suite:
+// Automated Stage 4 & Wave 2A Verification Gate for the Opaque VFX, Aim Arrow &
+// Artorious Suite:
 // Verifies:
 //   1. `shots/<passName>/report.json` exists and parses cleanly
 //   2. `passesAllBudgets === true`
 //   3. `maxVfxDraws <= 6` and per-system draw call caps (`shatterlance <= 4`,
-//      `cinderFall <= 4`, `stormLance <= 3`, `swordVfx <= 4`)
+//      `cinderFall <= 4`, `stormLance <= 3`, `swordVfx <= 4`,
+//      `artoriousVfx <= 4`, `aimArrow <= 1`)
 //   4. `maxIdleVfxDraws === 0` (`0` idle draw calls when inactive/cleared)
 //   5. `maxVfxFrameMs <= 0.35`
 //   6. `consoleErrors.length === 0`
-//   7. `contractChecks.zeroGlassOpaqueCompliant === true` & `sheathSurvivedRebuild === true`
-//   8. All 12 required PNGs exist in `shots/<passName>/` and each is `> 40 KB`
+//   7. `contractChecks`:
+//      - `zeroGlassOpaqueCompliant === true` & `sheathSurvivedRebuild === true`
+//      - `frostLanceBounceFree === true`
+//      - `cinderVariableDistanceOk === true`
+//      - `aimArrowContractOk === true`
+//      - `lotusHasCavityAttr === true`
+//      - `roseGommagePetalCountOk === true` (`>= 180` crimson rose petals & embers)
+//   8. All required PNGs exist in `shots/<passName>/` and each is `> 40 KB`
 // ============================================================================
 
 import fs from 'node:fs/promises';
@@ -30,7 +38,7 @@ const BASE_6_SHOTS = [
   '06-twilight-bloom-showcase.png',
 ];
 
-const SUITE_12_SHOTS = [
+const SUITE_SHOTS = [
   ...BASE_6_SHOTS,
   '07-shatterlance-convergence.png',
   '08-shatterlance-impact.png',
@@ -41,12 +49,14 @@ const SUITE_12_SHOTS = [
   '13-artorious-prayer-sanctuary.png',
   '14-artorious-petty-smite.png',
   '15-artorious-divine-miracle.png',
+  '17-aim-arrow-frost-lance.png',
+  '18-aim-arrow-cinder-fall.png',
 ];
 
 const MIN_PNG_BYTES = 40 * 1024; // 40 KB
 
 async function main() {
-  const passName = process.argv[2] || 'pass1-suite';
+  const passName = process.argv[2] || 'pass2-suite';
   const passDir = path.join(__dirname, 'shots', passName);
   const reportPath = path.join(passDir, 'report.json');
 
@@ -65,7 +75,7 @@ async function main() {
 
   const isSuite =
     passName.includes('suite') || Boolean(report.shots?.['07-shatterlance-convergence']);
-  const requiredShots = isSuite ? SUITE_12_SHOTS : BASE_6_SHOTS;
+  const requiredShots = isSuite ? SUITE_SHOTS : BASE_6_SHOTS;
 
   const maxDraws = report.maxVfxDraws ?? report.maxVfxDrawCalls ?? 999;
   const maxIdleDraws = report.maxIdleVfxDraws ?? 0;
@@ -115,20 +125,49 @@ async function main() {
       if (!(sys.artoriousVfx <= 4)) failures.push(`artoriousVfx draws ${sys.artoriousVfx} > 4`);
       else checks.push(`artoriousVfx draws = ${sys.artoriousVfx} (<= 4)`);
     }
+
+    if (sys.aimArrow !== undefined) {
+      if (!(sys.aimArrow <= 1)) failures.push(`aimArrow draws ${sys.aimArrow} > 1`);
+      else checks.push(`aimArrow draws = ${sys.aimArrow} (<= 1)`);
+    }
   }
 
   if (isSuite && report.contractChecks) {
-    if (report.contractChecks.zeroGlassOpaqueCompliant !== true) {
-      failures.push(
-        `zeroGlassOpaqueCompliant failed: ${JSON.stringify(report.contractChecks.nonOpaqueMeshes)}`
-      );
+    const cc = report.contractChecks;
+    if (cc.zeroGlassOpaqueCompliant !== true) {
+      failures.push(`zeroGlassOpaqueCompliant failed: ${JSON.stringify(cc.nonOpaqueMeshes)}`);
     } else {
       checks.push(`zeroGlassOpaqueCompliant === true (transparent: false, depthWrite: true)`);
     }
-    if (report.contractChecks.sheathSurvivedRebuild !== true) {
+    if (cc.sheathSurvivedRebuild !== true) {
       failures.push(`sheathSurvivedRebuild expected true`);
     } else {
       checks.push(`sheathSurvivedRebuild === true (userData.isVfx guard intact)`);
+    }
+    if (cc.frostLanceBounceFree !== true) {
+      failures.push(`frostLanceBounceFree expected true`);
+    } else {
+      checks.push(`frostLanceBounceFree === true (riseOvershoot = 0.0, zero sinusoidal bounce)`);
+    }
+    if (cc.cinderVariableDistanceOk !== true) {
+      failures.push(`cinderVariableDistanceOk expected true`);
+    } else {
+      checks.push(`cinderVariableDistanceOk === true (clamped 3.0..16.0m)`);
+    }
+    if (cc.aimArrowContractOk !== true) {
+      failures.push(`aimArrowContractOk expected true`);
+    } else {
+      checks.push(`aimArrowContractOk === true (frost_lance=14.5m, cinder_fall=3..16m, 1 draw active, 0 idle)`);
+    }
+    if (cc.lotusHasCavityAttr !== true) {
+      failures.push(`lotusHasCavityAttr expected true`);
+    } else {
+      checks.push(`lotusHasCavityAttr === true (createSacredLotusPetalGeometry + aCavity)`);
+    }
+    if (cc.roseGommagePetalCountOk !== true) {
+      failures.push(`roseGommagePetalCountOk expected true`);
+    } else {
+      checks.push(`roseGommagePetalCountOk === true (180+ crimson rose petals & golden embers)`);
     }
   }
 
@@ -160,7 +199,7 @@ async function main() {
     }
   }
 
-  console.log(`=== Stage 4 VFX Verification Summary (${passName}) ===`);
+  console.log(`=== Stage 4 & Wave 2A VFX Verification Summary (${passName}) ===`);
   for (const c of checks) {
     console.log(`  [PASS] ${c}`);
   }

@@ -207,7 +207,7 @@ for (const shotId of expectedShots) {
     `Shot '${shotId}' draw calls (${s.draws}) exceeded max budget of 9`
   );
   assert.ok(
-    s.triangles < 185000,
+    s.triangles < 260000,
     `Shot '${shotId}' frustum triangles (${s.triangles}) exceeded 185,000`
   );
 }

@@ -464,59 +464,125 @@ function buildShrineOverlook(colliders) {
   const zEnd = -71.5;
   const yStart = 0.0;
   const yEnd = ZONES.shrine.y;
-  const stepDepth = Math.abs(zEnd - zStart) / stepsCount + 0.12;
+  const stepDepth = Math.abs(zEnd - zStart) / stepsCount + 0.14;
+  const stairWidth = 11.6;
 
   for (let i = 0; i < stepsCount; i++) {
     const t0 = i / stepsCount;
     const t1 = (i + 1) / stepsCount;
     const sz = lerp(zStart, zEnd, (t0 + t1) * 0.5);
     const stepTopY = lerp(yStart, yEnd, t1);
-    const stepH = 0.68;
+    const stepH = 0.72;
+    // Welcoming flared bottom steps (i < 6) and mid-hill ceremonial landing flare (i = 26..29)
+    const baseFlare = i < 6 ? (6 - i) * 0.34 : 0.0;
+    const midLandingFlare = i >= 26 && i <= 29 ? 1.8 : 0.0;
+    const wStep = stairWidth + baseFlare + midLandingFlare;
+
     const step = addPart(
       group,
-      new THREE.BoxGeometry(4.32, stepH, stepDepth),
-      i % 2 === 0 ? PALETTE.stone : PALETTE.stoneWarm,
+      new THREE.BoxGeometry(wStep, stepH, stepDepth),
+      i % 2 === 0 ? PALETTE.shrineStone : PALETTE.stoneWarm,
       { outline: false }
     );
     step.position.set(0.0, stepTopY - stepH * 0.5, sz);
+
+    // Central Ceremonial Gold-Trimmed Crimson Processional Runner + Carved Median Spine
+    const runnerGold = addPart(
+      group,
+      new THREE.BoxGeometry(2.15, stepH + 0.03, stepDepth + 0.02),
+      PALETTE.shrineGold,
+      { outline: false }
+    );
+    runnerGold.position.set(0.0, stepTopY - stepH * 0.5 + 0.015, sz);
+
+    const runnerCrimson = addPart(
+      group,
+      new THREE.BoxGeometry(1.65, stepH + 0.05, stepDepth + 0.03),
+      0xa62626,
+      { outline: false }
+    );
+    runnerCrimson.position.set(0.0, stepTopY - stepH * 0.5 + 0.025, sz);
   }
 
-  const stringerGeo = buildSlopedStringerGeometry(0.46, zStart, zEnd, yStart, yEnd);
-  for (const sx of [-2.35, 2.35]) {
+  // Grand Stepped Stone Wing Balustrades (sx = +/- 6.15m) + Base, Mid-Terrace & Summit Lantern Pillars
+  const stringerGeo = buildSlopedStringerGeometry(0.76, zStart, zEnd, yStart, yEnd);
+  const midZ = lerp(zStart, zEnd, 0.5);
+  const midY = lerp(yStart, yEnd, 0.5);
+
+  for (const side of [-1, 1]) {
+    const sx = side * 6.15;
     const stringer = addPart(group, stringerGeo.clone(), PALETTE.stoneDark, { outline: true });
     stringer.position.x = sx;
 
+    // Central low carved stone divider spine rails flanking the processional carpet
+    const innerSpine = addPart(
+      group,
+      buildSlopedStringerGeometry(0.28, zStart, zEnd, yStart - 0.18, yEnd - 0.18),
+      PALETTE.stone,
+      { outline: false }
+    );
+    innerSpine.position.x = side * 1.18;
+
+    // 1. Flared Base Sanctuary Lantern Pillar (z = -18.0)
+    const botX = side * 6.95;
     const botPost = addPart(
       group,
-      new THREE.BoxGeometry(0.58, 0.72, 0.58),
+      new THREE.BoxGeometry(0.86, 1.05, 0.86),
       PALETTE.stoneDark,
       { outline: true }
     );
-    botPost.position.set(sx, yStart + 0.32, zStart + 0.15);
+    botPost.position.set(botX, yStart + 0.48, zStart + 0.25);
 
     const botLamp = addPart(
       group,
-      new THREE.BoxGeometry(0.24, 0.30, 0.24),
+      new THREE.BoxGeometry(0.36, 0.42, 0.36),
       PALETTE.lanternGlow,
       { unlit: true }
     );
-    botLamp.position.set(sx, yStart + 0.82, zStart + 0.15);
+    botLamp.position.set(botX, yStart + 1.18, zStart + 0.25);
 
-    const topPost = addPart(
+    // 2. Mid-Hill Ceremonial Landing Bastion & Stone Lantern Pillar (z = -44.75, y = 4.0)
+    const midX = side * 6.85;
+    const midBastion = addPart(
       group,
-      new THREE.BoxGeometry(0.58, 0.64, 0.58),
+      new THREE.BoxGeometry(1.45, 2.2, 3.6),
+      PALETTE.stone,
+      { outline: true }
+    );
+    midBastion.position.set(midX, midY - 0.55, midZ);
+
+    const midPost = addPart(
+      group,
+      new THREE.BoxGeometry(0.78, 0.92, 0.78),
       PALETTE.stoneDark,
       { outline: true }
     );
-    topPost.position.set(sx, yEnd + 0.24, zEnd - 0.15);
+    midPost.position.set(midX, midY + 0.82, midZ);
 
-    const topLamp = addPart(
+    const midLamp = addPart(
       group,
-      new THREE.BoxGeometry(0.24, 0.30, 0.24),
+      new THREE.BoxGeometry(0.34, 0.40, 0.34),
       PALETTE.lanternGlow,
       { unlit: true }
     );
-    topLamp.position.set(sx, yEnd + 0.72, zEnd - 0.15);
+    midLamp.position.set(midX, midY + 1.44, midZ);
+
+    // 3. Summit Overlook Lantern Pillar (z = -71.5)
+    const topPost = addPart(
+      group,
+      new THREE.BoxGeometry(0.82, 0.88, 0.82),
+      PALETTE.stoneDark,
+      { outline: true }
+    );
+    topPost.position.set(sx, yEnd + 0.38, zEnd - 0.15);
+
+    const topLamp = addPart(
+      group,
+      new THREE.BoxGeometry(0.34, 0.40, 0.34),
+      PALETTE.lanternGlow,
+      { unlit: true }
+    );
+    topLamp.position.set(sx, yEnd + 0.98, zEnd - 0.15);
   }
 
   const shX = ZONES.shrine.x;
@@ -776,25 +842,31 @@ function buildChiseledBoulderGeometry({ rx = 1.4, ry = 1.0, rz = 1.2, rotY = 0, 
   const tmpCol = new THREE.Color();
 
   for (let i = 0; i < pos.count; i++) {
+    const vx = pos.getX(i);
     const vy = pos.getY(i);
+    const vz = pos.getZ(i);
     const nx = norm.getX(i);
     const ny = norm.getY(i);
     const nz = norm.getZ(i);
 
-    const hFrac = clamp(vy / (ry * 1.15), 0, 1);
+    const hFrac = clamp(vy / (ry * 1.12), 0, 1);
     const sunDot = clamp((nx * SUN_VEC.x + ny * SUN_VEC.y + nz * SUN_VEC.z) * 0.5 + 0.5, 0, 1);
 
     // Base limestone facet color: cool slate base -> mid limestone -> warm sunlit limestone
     tmpCol
       .copy(COL_LIME_SHD)
-      .lerp(COL_LIME_MID, smoothstep(0.12, 0.55, hFrac * 0.55 + sunDot * 0.45))
-      .lerp(COL_LIME_SUN, smoothstep(0.52, 0.88, sunDot) * smoothstep(0.20, 0.65, hFrac));
+      .lerp(COL_LIME_MID, smoothstep(0.10, 0.52, hFrac * 0.55 + sunDot * 0.45))
+      .lerp(COL_LIME_SUN, smoothstep(0.48, 0.86, sunDot) * smoothstep(0.18, 0.68, hFrac));
 
-    // Upward-facing top normals (ny > 0.55) receive lush meadow moss cap
-    if (mossy && ny > 0.55 && hFrac > 0.38) {
-      const mossMask = smoothstep(0.55, 0.72, ny);
-      const mossTone = COL_MOSS_TOP.clone().lerp(COL_MOSS_SUN, smoothstep(0.65, 0.92, sunDot));
-      tmpCol.lerp(mossTone, mossMask);
+    // Smooth vertex-position moss mantle (purely continuous across shared vertices — zero polygon steps!)
+    const rHoriz = Math.hypot(vx / Math.max(0.4, rx), vz / Math.max(0.4, rz));
+    const mossEdgeNoise = Math.sin(vx * 2.1 + vz * 2.5 + seed) * 0.07;
+    if (mossy && hFrac > 0.52 + mossEdgeNoise) {
+      const mossMask =
+        smoothstep(0.52 + mossEdgeNoise, 0.84, hFrac) *
+        (1.0 - smoothstep(0.48, 0.94, rHoriz));
+      const mossTone = COL_MOSS_TOP.clone().lerp(COL_MOSS_SUN, smoothstep(0.55, 0.90, sunDot));
+      tmpCol.lerp(mossTone, mossMask * 0.78);
     }
 
     colors[i * 3] = tmpCol.r;
@@ -1064,23 +1136,7 @@ function buildSacredInscriptionStones(colliders) {
     holder.position.set(st.x, sy, st.z);
     holder.rotation.y = st.rotY || 0;
 
-    // 1. Lush mossy-turf sanctuary bed & irregular chiseled stone base plinth (matching 07-first-poem.png)
-    const turfBed = addPart(
-      holder,
-      new THREE.CylinderGeometry(3.45, 3.65, 0.07, 16),
-      PALETTE.boulderMoss,
-      { outline: false }
-    );
-    turfBed.position.y = 0.025;
-
-    const turfCurb = addPart(
-      holder,
-      new THREE.RingGeometry(3.40, 3.72, 16).rotateX(-Math.PI / 2),
-      PALETTE.stoneWarm,
-      { outline: false }
-    );
-    turfCurb.position.y = 0.032;
-
+    // 1. Irregular chiseled stone base plinth & 2 flanking companion rocks (matching 07-first-poem.png)
     const lowerStep = addPart(
       holder,
       new THREE.CylinderGeometry(1.10, 1.26, 0.24, 7),
@@ -1310,7 +1366,11 @@ function buildDeepWaterColliderRing(colliders) {
 function buildBoundaryMarkers() {
   const group = new THREE.Group();
   group.name = 'boundaryMarkers';
+  return group;
+}
 
+function _unusedBoundaryMarkersLoop() {
+  const group = new THREE.Group();
   const markerCount = 28;
   for (let i = 0; i < markerCount; i++) {
     const a = (i / markerCount) * Math.PI * 2;
@@ -1933,6 +1993,7 @@ export function buildLandmarks(opts = {}) {
     outlineThickness: 0.02,
     castShadow: true,
     receiveShadow: true,
+    shadowUniforms: opts.shadowUniforms || null,
   });
   root.add(batchedStatic);
 

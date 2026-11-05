@@ -1,15 +1,33 @@
 // ============================================================================
 // world/src/net/coop-client.js
 //
-// Browser & Node Co-Op WebSocket Room Client for Haru-machi (Stage 5).
-// - Reads initial room code from `?room=XXXX` (defaulting to `'LOVE'`).
-// - Connects to `${proto}//${location.host}/api/room/${roomCode}/websocket`.
-// - Probes `/world/index.html` via HEAD first in browsers so plain static servers
-//   (such as `shoot-world.mjs`) smoothly enter `mode: 'solo'` (`isHost: true,
-//   peerConnected: false`) with ZERO console or network errors.
-// - Throttles `sendHeroState` and `sendWorldSync` to 20Hz (`50ms`), and delivers
-//   `sendSpellCast`, `sendActionEvent`, `sendEnemyHit`, and `swapRoles` immediately.
+// Browser & Node Co-Op WebSocket Room Client for Haru-machi (Stage 5 / Wave 3).
+// - Supports human-memorable romantic room phrases ("Love is curiosity" ->
+//   `LOVE-IS-CURIOSITY`) as well as 4-letter codes (`LOVE`, `DUET`).
+// - Handles 2-seat cap (`room_full` rejection on 3rd visitor without evicting
+//   seated players), Guest `set_ready` (`setReady`), Host `start_expedition`
+//   (`startExpedition`), and sequential 3-Stone `progression_update` sync.
+// - Enforces strict partner audio privacy on `sendCommuneState` / `sendCommuneVerdict`
+//   (never transmitting raw audio or transcripts to the partner socket).
 // ============================================================================
+
+import {
+  generateRoomPhrase,
+  normalizeRoomPhraseToCode,
+  formatRoomCodeToPhrase,
+  buildRoomInviteLink,
+  parseRoomFromUrl,
+  createRoomProgressionState,
+} from './room-progression.js';
+
+export {
+  generateRoomPhrase,
+  normalizeRoomPhraseToCode,
+  formatRoomCodeToPhrase,
+  buildRoomInviteLink,
+  parseRoomFromUrl,
+  createRoomProgressionState,
+};
 
 const SPELL_INFUSION_META = {
   frost_lance: {
@@ -51,25 +69,27 @@ const SPELL_INFUSION_META = {
 };
 
 export function normalizeRoomCode(raw) {
-  const cleaned = String(raw || 'LOVE')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-    .slice(0, 4);
-  return cleaned || 'LOVE';
+  return normalizeRoomPhraseToCode(raw || 'LOVE');
 }
 
 function readInitialRoomCode(explicitCode) {
   if (explicitCode) return normalizeRoomCode(explicitCode);
   if (typeof window !== 'undefined' && window.location?.search) {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const fromUrl = params.get('room');
-      if (fromUrl) return normalizeRoomCode(fromUrl);
-    } catch {
-      // ignore URL parse error
-    }
+    return parseRoomFromUrl(window.location.search, 'LOVE');
   }
   return 'LOVE';
+}
+
+function stripPrivateCommuneFields(payload = {}) {
+  const copy = { ...payload };
+  delete copy.audioBase64;
+  delete copy.audio;
+  delete copy.rawAudio;
+  delete copy.chunks;
+  delete copy.transcript;
+  delete copy.heard_transcript;
+  delete copy.transcriptHint;
+  return copy;
 }
 
 export function createCoopClient(options = {}) {
@@ -82,6 +102,11 @@ export function createCoopClient(options = {}) {
     autoConnect = true,
     throttleMs = 50, // 20Hz
     onRoomState = null,
+    onRoomFull = null,
+    onPlayerReady = null,
+    onExpeditionStarted = null,
+    onProgressionUpdate = null,
+    onCommuneBusy = null,
     onPeerHeroState = null,
     onPeerSpellCast = null,
     onPeerAction = null,
@@ -94,7 +119,7 @@ export function createCoopClient(options = {}) {
     onCommuneVerdict = null,
   } = options;
 
-  let roomCode = readInitialRoomCode(options.roomCode);
+  let roomCode = readInitialRoomCode(options.roomCode || options.roomPhrase);
   let ws = null;
   let disposed = false;
   let connectSeq = 0;
@@ -102,21 +127,36 @@ export function createCoopClient(options = {}) {
   let lastHeroSentAt = 0;
   let lastWorldSyncSentAt = 0;
 
+  const progression = createRoomProgressionState(options.initialProgression || {});
+
   const state = {
     mode: 'solo', // 'solo' | 'coop'
     room: roomCode,
+    roomPhrase: formatRoomCodeToPhrase(roomCode),
     clientId: 'solo-local',
     role: preferredRole === 'Mage' ? 'Mage' : 'Knight',
     isHost: true,
+    ready: true,
+    peerReady: false,
     peerConnected: false,
     peerId: null,
     peerRole: null,
+    isFull: false,
+    roomFullRejected: false,
+    expeditionStarted: false,
+    activeCommuneSpeaker: null,
+    progression: progression.getState(),
     players: [],
     connected: false,
   };
 
   function emitRoomState() {
-    onRoomState?.({ ...state, players: [...state.players] });
+    state.progression = progression.getState();
+    onRoomState?.({
+      ...state,
+      progression: state.progression,
+      players: [...state.players],
+    });
   }
 
   function fallbackToSolo() {
@@ -127,16 +167,21 @@ export function createCoopClient(options = {}) {
       state.connected !== false;
     state.mode = 'solo';
     state.room = roomCode;
+    state.roomPhrase = formatRoomCodeToPhrase(roomCode);
     state.isHost = true;
+    state.ready = true;
+    state.peerReady = false;
     state.peerConnected = false;
     state.peerId = null;
     state.peerRole = null;
+    state.isFull = false;
     state.connected = false;
     state.players = [
       {
         clientId: state.clientId,
         role: state.role,
         isHost: true,
+        ready: true,
         device,
       },
     ];
@@ -176,7 +221,10 @@ export function createCoopClient(options = {}) {
 
   function buildWsUrl(targetRoom) {
     if (explicitWsUrl) {
-      return explicitWsUrl.replace(/\/api\/room\/[^/]+\/websocket/i, `/api\/room/${targetRoom}/websocket`);
+      return explicitWsUrl.replace(
+        /\/api\/room\/[^/]+\/websocket/i,
+        `/api/room/${targetRoom}/websocket`
+      );
     }
     if (typeof window !== 'undefined' && window.location?.host) {
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -190,12 +238,12 @@ export function createCoopClient(options = {}) {
     if (newRoomCode) {
       roomCode = normalizeRoomCode(newRoomCode);
       state.room = roomCode;
+      state.roomPhrase = formatRoomCodeToPhrase(roomCode);
     }
 
     const seq = ++connectSeq;
     closeCurrentSocket();
 
-    // Check if the current server supports the Haru-machi Co-Op WebSocket upgrade
     const supported = await canServerUpgradeInBrowser();
     if (disposed || seq !== connectSeq) return;
     if (!supported) {
@@ -225,9 +273,11 @@ export function createCoopClient(options = {}) {
     const handleOpen = () => {
       if (disposed || ws !== socket) return;
       state.connected = true;
+      state.roomFullRejected = false;
       sendRaw({
         type: 'join',
         room: roomCode,
+        roomPhrase: state.roomPhrase,
         preferredRole: preferredRole || state.role,
         device,
       });
@@ -245,17 +295,65 @@ export function createCoopClient(options = {}) {
       if (!msg || typeof msg.type !== 'string') return;
 
       switch (msg.type) {
+        case 'room_full': {
+          state.roomFullRejected = true;
+          onRoomFull?.(msg);
+          break;
+        }
         case 'room_state': {
           state.room = msg.room || roomCode;
+          state.roomPhrase = msg.roomPhrase || formatRoomCodeToPhrase(state.room);
           state.clientId = msg.clientId || state.clientId;
           state.role = msg.role || state.role;
           state.isHost = Boolean(msg.isHost);
+          state.ready = msg.ready !== undefined ? Boolean(msg.ready) : state.isHost;
+          state.peerReady = Boolean(msg.peerReady);
           state.peerConnected = Boolean(msg.peerConnected);
           state.peerId = msg.peerId || null;
           state.peerRole = msg.peerRole || null;
+          state.isFull = Boolean(msg.isFull ?? (Array.isArray(msg.players) && msg.players.length >= 2));
+          state.expeditionStarted = Boolean(msg.expeditionStarted);
+          state.activeCommuneSpeaker = msg.activeCommuneSpeaker || null;
+          if (msg.progression) {
+            progression.syncFromRemote(msg.progression);
+          }
+          state.progression = progression.getState();
           state.players = Array.isArray(msg.players) ? msg.players : [];
           state.mode = state.peerConnected ? 'coop' : 'solo';
           emitRoomState();
+          break;
+        }
+        case 'player_ready': {
+          if (msg.clientId === state.clientId) {
+            state.ready = Boolean(msg.ready);
+          } else {
+            state.peerReady = Boolean(msg.ready);
+          }
+          onPlayerReady?.(msg);
+          emitRoomState();
+          break;
+        }
+        case 'expedition_started': {
+          state.expeditionStarted = true;
+          if (msg.progression) {
+            progression.syncFromRemote(msg.progression);
+            state.progression = progression.getState();
+          }
+          onExpeditionStarted?.(msg);
+          emitRoomState();
+          break;
+        }
+        case 'progression_update': {
+          if (msg.progression) {
+            progression.syncFromRemote(msg.progression);
+            state.progression = progression.getState();
+          }
+          onProgressionUpdate?.(state.progression, msg);
+          emitRoomState();
+          break;
+        }
+        case 'commune_busy': {
+          onCommuneBusy?.(msg);
           break;
         }
         case 'hero_state': {
@@ -289,11 +387,22 @@ export function createCoopClient(options = {}) {
           break;
         }
         case 'commune_state': {
-          onCommuneState?.(msg);
+          state.activeCommuneSpeaker =
+            msg.state === 'channel' || msg.state === 'listening'
+              ? { role: msg.speakerRole || msg.fromRole }
+              : null;
+          onCommuneState?.(stripPrivateCommuneFields(msg));
           break;
         }
         case 'commune_verdict': {
-          onCommuneVerdict?.(msg);
+          state.activeCommuneSpeaker = null;
+          if (msg.progression) {
+            progression.syncFromRemote(msg.progression);
+          } else {
+            progression.applyVerdictProgression(msg.judgment || msg);
+          }
+          state.progression = progression.getState();
+          onCommuneVerdict?.(stripPrivateCommuneFields(msg));
           break;
         }
         default:
@@ -403,21 +512,83 @@ export function createCoopClient(options = {}) {
   }
 
   function sendCommuneState(payload = {}) {
+    const safePayload = stripPrivateCommuneFields(payload);
     return sendRaw({
-      ...payload,
+      ...safePayload,
       type: 'commune_state',
-      speakerRole: payload.speakerRole || state.role,
+      speakerRole: safePayload.speakerRole || state.role,
       timestamp: Date.now(),
     });
   }
 
   function sendCommuneVerdict(payload = {}) {
+    const safePayload = stripPrivateCommuneFields(payload);
     return sendRaw({
-      ...payload,
+      ...safePayload,
       type: 'commune_verdict',
-      speakerRole: payload.speakerRole || state.role,
+      speakerRole: safePayload.speakerRole || state.role,
       timestamp: Date.now(),
     });
+  }
+
+  function setReady(ready = true) {
+    state.ready = Boolean(ready);
+    if (ws && ws.readyState === 1) {
+      return sendRaw({
+        type: 'set_ready',
+        ready: state.ready,
+        timestamp: Date.now(),
+      });
+    }
+    emitRoomState();
+    return true;
+  }
+
+  function startExpedition() {
+    if (ws && ws.readyState === 1) {
+      return sendRaw({
+        type: 'start_expedition',
+        timestamp: Date.now(),
+      });
+    }
+    state.expeditionStarted = true;
+    onExpeditionStarted?.({
+      type: 'expedition_started',
+      startedAt: Date.now(),
+      progression: progression.getState(),
+    });
+    emitRoomState();
+    return true;
+  }
+
+  function sendStoneRead(stoneId) {
+    const readInfo = progression.readInscriptionStone(stoneId);
+    state.progression = readInfo.state;
+    if (ws && ws.readyState === 1) {
+      sendRaw({
+        type: 'progression_update',
+        stoneId: readInfo.stoneId,
+        progression: state.progression,
+        timestamp: Date.now(),
+      });
+    } else {
+      emitRoomState();
+    }
+    return readInfo;
+  }
+
+  function sendProgressionUpdate(patch = {}) {
+    progression.syncFromRemote(patch);
+    state.progression = progression.getState();
+    if (ws && ws.readyState === 1) {
+      return sendRaw({
+        type: 'progression_update',
+        progression: state.progression,
+        timestamp: Date.now(),
+      });
+    }
+    emitRoomState();
+    return true;
   }
 
   function setPreferredRole(nextRole) {
@@ -445,10 +616,11 @@ export function createCoopClient(options = {}) {
     return true;
   }
 
-  function setRoomCode(newCode) {
-    const norm = normalizeRoomCode(newCode);
+  function setRoomCode(newCodeOrPhrase) {
+    const norm = normalizeRoomCode(newCodeOrPhrase);
     roomCode = norm;
     state.room = norm;
+    state.roomPhrase = formatRoomCodeToPhrase(norm);
     if (typeof window !== 'undefined' && window.history?.replaceState) {
       try {
         const u = new URL(window.location.href);
@@ -466,21 +638,24 @@ export function createCoopClient(options = {}) {
     return roomCode;
   }
 
+  function getRoomPhrase() {
+    return state.roomPhrase;
+  }
+
   function getShareUrl() {
-    if (typeof window !== 'undefined' && window.location?.href) {
-      try {
-        const u = new URL(window.location.href);
-        u.searchParams.set('room', roomCode);
-        return u.toString();
-      } catch {
-        // fallback below
-      }
-    }
-    return `https://haru-machi-coop.workers.dev/world/index.html?room=${roomCode}`;
+    return buildRoomInviteLink(roomCode);
+  }
+
+  function getProgressionState() {
+    return progression.getState();
   }
 
   function getState() {
-    return { ...state, players: [...state.players] };
+    return {
+      ...state,
+      progression: progression.getState(),
+      players: [...state.players],
+    };
   }
 
   function dispose() {
@@ -488,7 +663,6 @@ export function createCoopClient(options = {}) {
     closeCurrentSocket();
   }
 
-  // Emit initial solo state synchronously, then initiate connection if autoConnect
   emitRoomState();
   if (autoConnect) {
     connect(roomCode);
@@ -498,8 +672,15 @@ export function createCoopClient(options = {}) {
     connect,
     setRoomCode,
     getRoomCode,
+    getRoomPhrase,
     getShareUrl,
     getState,
+    getProgressionState,
+    progression,
+    setReady,
+    startExpedition,
+    sendStoneRead,
+    sendProgressionUpdate,
     setPreferredRole,
     swapRoles,
     sendHeroState,

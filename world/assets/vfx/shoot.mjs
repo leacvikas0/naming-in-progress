@@ -2,9 +2,9 @@
 // world/assets/vfx/shoot.mjs
 //
 // Ephemeral-port (`server.listen(0, '127.0.0.1')`) Playwright verification
-// studio for the Complete Stage 4 Opaque VFX & Sword Breathing Suite
+// studio for the Complete Stage 4 & Wave 2A Opaque VFX, Aim Arrow & Artorious Suite
 // (`world/assets/vfx/preview.html`).
-// Captures all 12 deterministic showcase shots into `shots/<passName>/`.
+// Captures all 17 deterministic showcase shots into `shots/<passName>/`.
 // ============================================================================
 
 import http from 'node:http';
@@ -65,7 +65,7 @@ function startStaticServer(rootDir) {
 }
 
 async function main() {
-  const passName = process.argv[2] || 'pass1-suite';
+  const passName = process.argv[2] || 'pass2-suite';
   const outDir = path.join(__dirname, 'shots', passName);
   await fs.mkdir(outDir, { recursive: true });
 
@@ -118,6 +118,8 @@ async function main() {
       '13-artorious-prayer-sanctuary',
       '14-artorious-petty-smite',
       '15-artorious-divine-miracle',
+      '17-aim-arrow-frost-lance',
+      '18-aim-arrow-cinder-fall',
     ];
 
     const shotsReport = {};
@@ -131,11 +133,12 @@ async function main() {
       stormLance: 0,
       swordVfx: 0,
       artoriousVfx: 0,
+      aimArrow: 0,
     };
 
     for (const shotName of shotList) {
       const stats = await page.evaluate((name) => {
-        window.__vfxPreview.frostLance.setStylePreset('v1');
+        window.__vfxPreview.frostLance.setStylePreset('v2');
         return window.__vfxPreview.setShot(name, { hideUI: true });
       }, shotName);
 
@@ -159,7 +162,7 @@ async function main() {
       };
     }
 
-    // Run suite-wide contract checks (Zero-Glass material audit, idle=0 audit, toon-skin isVfx guard audit)
+    // Run suite-wide contract checks (Zero-Glass material audit, idle=0 audit, Wave 2A checks)
     const contractChecks = await page.evaluate(() => {
       const p = window.__vfxPreview;
       p.clearAllVfx();
@@ -171,10 +174,15 @@ async function main() {
         p.stormLance.group.visible ||
         p.swordVfx.group.visible ||
         p.swordVfx.sheathMesh.visible ||
-        p.artoriousVfx.group.visible;
+        p.artoriousVfx.group.visible ||
+        p.aimArrow.group.visible;
 
-      // Verify Zero-Glass (`transparent === false, depthWrite === true`) on all new systems
+      // Verify Zero-Glass (`transparent === false, depthWrite === true`) on all VFX meshes
       const newMeshes = [
+        p.frostLance.groundDecalMesh,
+        ...p.frostLance.crystalMeshes,
+        p.frostLance.crystalDebrisMesh,
+        p.frostLance.atmosphereMesh,
         p.shatterlance.intakeShardsMesh,
         p.shatterlance.greatLanceMesh,
         p.shatterlance.shatterWedgesMesh,
@@ -194,6 +202,7 @@ async function main() {
         p.artoriousVfx.monolithsMesh,
         p.artoriousVfx.prismsAndDebrisMesh,
         p.artoriousVfx.groundSigilMesh,
+        p.aimArrow.mesh,
       ];
 
       const nonOpaqueMeshes = [];
@@ -217,7 +226,53 @@ async function main() {
         p.swordVfx.sheathMesh.userData?.isVfx === true &&
         p.swordVfx.sheathMesh.parent === p.knightChar.equippedWeapons['handSlot.r'];
 
-      // Verify all 3 detonations and all 5 swing types execute cleanly
+      // Verify Frost Lance bounce-free emergence (`riseOvershoot === 0` and `_spikeEmergence` locks at 1.0)
+      const testSpike = p.frostLance.spikeRecords[0];
+      const postRiseEmergence = p.frostLance._spikeEmergence(
+        testSpike,
+        testSpike.eruptTime + p.frostLance.config.riseTime + 0.08
+      );
+      const frostLanceBounceFree =
+        p.frostLance.config.riseOvershoot === 0 && Math.abs(postRiseEmergence - 1.0) < 1e-6;
+
+      // Verify Cinder Fall variable aim distance clamped to 3.0..16.0m
+      p.cinderFall.cast([60.8, 0.6, -4.0], [1, 0, 0], { distance: 9.25 });
+      const cinderDistMid = p.cinderFall.castLength;
+      p.cinderFall.cast([60.8, 0.6, -4.0], [1, 0, 0], { aimDistance: 1.2 });
+      const cinderDistMin = p.cinderFall.castLength;
+      p.cinderFall.cast([60.8, 0.6, -4.0], [1, 0, 0], { distance: 24.0 });
+      const cinderDistMax = p.cinderFall.castLength;
+      const cinderVariableDistanceOk =
+        Math.abs(cinderDistMid - 9.25) < 1e-4 &&
+        Math.abs(cinderDistMin - 3.0) < 1e-4 &&
+        Math.abs(cinderDistMax - 16.0) < 1e-4;
+
+      // Verify AimArrowSystem modes, clamping, and idle=0 draw calls
+      p.aimArrow.show({
+        origin: [60.4, 0.6, -4.0],
+        direction: [1, 0, 0],
+        mode: 'frost_lance',
+        distance: 8.0,
+      });
+      const aimFrostStats = p.aimArrow.getStats();
+      p.aimArrow.update(0.016, {
+        origin: [60.4, 0.6, -4.0],
+        direction: [1, 0, 0],
+        mode: 'cinder_fall',
+        distance: 11.4,
+      });
+      const aimCinderStats = p.aimArrow.getStats();
+      p.aimArrow.hide();
+      const aimHiddenStats = p.aimArrow.getStats();
+      const aimArrowContractOk =
+        aimFrostStats.drawCalls === 1 &&
+        Math.abs(aimFrostStats.length - 14.5) < 1e-4 &&
+        aimCinderStats.drawCalls === 1 &&
+        Math.abs(aimCinderStats.length - 11.4) < 1e-4 &&
+        aimHiddenStats.drawCalls === 0 &&
+        p.aimArrow.group.visible === false;
+
+      // Verify all 3 detonations
       const detResults = {};
       for (const dType of ['shatterblow', 'solar_flare', 'thunderchain']) {
         p.swordVfx.triggerDetonation(dType, [75.1, 0.6, -3.8]);
@@ -225,8 +280,12 @@ async function main() {
         detResults[dType] = p.swordVfx.getStats().drawCalls;
       }
 
-      // Verify all Artorious modes (channel, suspense, smite, heal, blessing, miracle)
+      // Verify all Artorious modes (channel, smite, rose_gommage, heal, blessing, miracle)
       const artoriousResults = {};
+      const lotusHasCavityAttr = Boolean(
+        p.artoriousVfx.monolithsMesh.geometry.getAttribute('aCavity')
+      );
+
       p.artoriousVfx.startChannel([59.8, 0.6, -4.0], [59.1, 0.6, -2.05]);
       p.artoriousVfx.setSuspense(true);
       p.artoriousVfx.seek(0.65);
@@ -236,6 +295,16 @@ async function main() {
       p.artoriousVfx.triggerSmite([59.8, 0.6, -4.0]);
       p.artoriousVfx.seek(0.22);
       artoriousResults.smite = p.artoriousVfx.getStats().drawCalls;
+      artoriousResults.smitePetals = p.artoriousVfx.getStats().activePrismsAndDebris;
+
+      p.artoriousVfx.triggerRoseGommageDeath({
+        position: [59.8, 0.6, -4.0],
+        partnerPosition: [59.1, 0.6, -2.05],
+      });
+      p.artoriousVfx.seek(0.42);
+      artoriousResults.roseGommageDraws = p.artoriousVfx.getStats().drawCalls;
+      artoriousResults.roseGommagePetals = p.artoriousVfx.getStats().activePrismsAndDebris;
+      artoriousResults.roseGommageRoses = p.artoriousVfx.getStats().activeMonoliths;
 
       p.artoriousVfx.triggerHeal([59.8, 0.6, -4.0], [59.1, 0.6, -2.05]);
       p.artoriousVfx.seek(0.50);
@@ -259,6 +328,12 @@ async function main() {
         zeroGlassOpaqueCompliant: nonOpaqueMeshes.length === 0,
         nonOpaqueMeshes,
         sheathSurvivedRebuild,
+        frostLanceBounceFree,
+        cinderVariableDistanceOk,
+        aimArrowContractOk,
+        lotusHasCavityAttr,
+        roseGommagePetalCountOk:
+          artoriousResults.smitePetals >= 180 && artoriousResults.roseGommagePetals >= 180,
         detResults,
         artoriousResults,
       };
@@ -272,11 +347,17 @@ async function main() {
       systemMaxDraws.stormLance <= 3 &&
       systemMaxDraws.swordVfx <= 4 &&
       systemMaxDraws.artoriousVfx <= 4 &&
+      systemMaxDraws.aimArrow <= 1 &&
       maxFrameMs <= 0.35 &&
       consoleErrors.length === 0 &&
       contractChecks.zeroIdleGroupVisibility === true &&
       contractChecks.zeroGlassOpaqueCompliant === true &&
-      contractChecks.sheathSurvivedRebuild === true;
+      contractChecks.sheathSurvivedRebuild === true &&
+      contractChecks.frostLanceBounceFree === true &&
+      contractChecks.cinderVariableDistanceOk === true &&
+      contractChecks.aimArrowContractOk === true &&
+      contractChecks.lotusHasCavityAttr === true &&
+      contractChecks.roseGommagePetalCountOk === true;
 
     const report = {
       pass: passName,

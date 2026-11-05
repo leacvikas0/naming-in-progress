@@ -109,6 +109,7 @@ export function createTerrainAndLandmarks(renderer, opts = {}) {
   const landmarksSys = buildLandmarks({
     ...opts,
     colliders,
+    shadowUniforms: terrainSys.terrainMat?.uniforms || null,
   });
   root.add(landmarksSys.group);
 

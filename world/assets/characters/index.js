@@ -361,8 +361,8 @@ export const SEMANTIC_ANIMATIONS = {
     loop: false,
   },
   revive: {
-    candidates: ['Spawn_Air', 'Lie_StandUp', 'Death_C_Skeletons_Resurrect'],
-    aliases: ['General_Spawn_Air', 'General_StandUp'],
+    candidates: ['Spawn_Ground', 'Lie_StandUp', 'Cheer'],
+    aliases: ['General_Spawn_Ground', 'General_StandUp'],
     loop: false,
   },
   spawn: {

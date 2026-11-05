@@ -357,6 +357,8 @@ export const ROADS = [
     width: 4.4,
     surface: 'dirt',
     points: [
+      [0.0, 144.0],
+      [0.0, 135.0],
       [0.0, 128.0],
       [0.0, 122.0],
       [-3.2, 109.0],
@@ -433,7 +435,7 @@ export const ROADS = [
   {
     id: 'north_shrine_approach',
     name: 'Northern Staircase Approach',
-    width: 4.4,
+    width: 11.6,
     surface: 'cobble',
     points: [
       [0.0, -RING_RADIUS],
@@ -443,7 +445,7 @@ export const ROADS = [
   {
     id: 'north_shrine_climb',
     name: 'Northern Shrine Stepped Path',
-    width: 4.4,
+    width: 11.6,
     surface: 'stone_steps',
     points: [
       [0.0, -15.0],
@@ -691,12 +693,12 @@ export const BOULDERS = [
   { x: -42.0, z: -28.5, rx: 1.52, ry: 1.10, rz: 1.30, rotY: -0.70, mossy: true },
 
   // Group C: Northern Shrine Staircase Hillsides & Overlook Ridge (11 boulders)
-  { x: -8.5,  z: -22.5, rx: 1.38, ry: 1.02, rz: 1.18, rotY: 0.40, mossy: true },
-  { x: 8.5,   z: -24.0, rx: 1.42, ry: 1.05, rz: 1.22, rotY: -0.50, mossy: true },
-  { x: -9.8,  z: -38.5, rx: 1.62, ry: 1.18, rz: 1.38, rotY: 0.80, mossy: true },
-  { x: 10.2,  z: -41.0, rx: 1.58, ry: 1.15, rz: 1.35, rotY: -0.30, mossy: true },
-  { x: -11.0, z: -56.0, rx: 1.75, ry: 1.28, rz: 1.48, rotY: 0.20, mossy: true },
-  { x: 11.2,  z: -58.5, rx: 1.70, ry: 1.24, rz: 1.44, rotY: -0.70, mossy: true },
+  { x: -12.6, z: -22.5, rx: 1.38, ry: 1.02, rz: 1.18, rotY: 0.40, mossy: true },
+  { x: 12.6,  z: -24.0, rx: 1.42, ry: 1.05, rz: 1.22, rotY: -0.50, mossy: true },
+  { x: -13.8, z: -38.5, rx: 1.62, ry: 1.18, rz: 1.38, rotY: 0.80, mossy: true },
+  { x: 13.8,  z: -41.0, rx: 1.58, ry: 1.15, rz: 1.35, rotY: -0.30, mossy: true },
+  { x: -14.5, z: -56.0, rx: 1.75, ry: 1.28, rz: 1.48, rotY: 0.20, mossy: true },
+  { x: 14.8,  z: -58.5, rx: 1.70, ry: 1.24, rz: 1.44, rotY: -0.70, mossy: true },
   { x: -18.5, z: -76.0, rx: 1.88, ry: 1.36, rz: 1.60, rotY: 0.60, mossy: true },
   { x: 18.5,  z: -76.5, rx: 1.85, ry: 1.34, rz: 1.58, rotY: -0.40, mossy: true },
   { x: -16.5, z: -96.0, rx: 2.05, ry: 1.48, rz: 1.72, rotY: 0.90, mossy: true },
@@ -887,11 +889,11 @@ export function terrainHeightAt(x, z) {
     }
   }
 
-  // Linearly graded ramp along x = 0.0 from z = -18.0 (y = 0.0) to z = -71.5 (y = 8.0)
-  if (z <= -17.5 && z >= -73.0 && Math.abs(x) < 18.0) {
+  // Linearly graded ramp along x = 0.0 from z = -18.0 (y = 0.0) to z = -71.5 (y = 8.0) for the 11.6m Grand Staircase
+  if (z <= -17.5 && z >= -73.0 && Math.abs(x) < 22.0) {
     const rampT = clamp((-18.0 - z) / (71.5 - 18.0), 0, 1);
     const rampY = lerp(0.0, ZONES.shrine.y, rampT);
-    const pathLat = 1.0 - smoothstep(2.6, 15.0, Math.abs(x));
+    const pathLat = 1.0 - smoothstep(7.2, 20.0, Math.abs(x));
     h = lerp(h, rampY, pathLat);
   }
 
@@ -1075,7 +1077,9 @@ export function sampleWorld(x, z) {
     const rd = roadDistanceAt(x, z);
     if (rd.road) {
       const hw = rd.road.width * 0.5;
-      if (rd.dist < hw + 1.35) roadFoliageClear = true;
+      const clearPad =
+        rd.road.surface === 'cobble' || rd.road.surface === 'stone_steps' ? 0.68 : 0.26;
+      if (rd.dist < hw + clearPad) roadFoliageClear = true;
       if (rd.dist < hw + 0.55) {
         const edgeJitter = (hash2(Math.floor(x * 1.5), Math.floor(z * 1.5), 33) - 0.5) * 0.14;
         const dEdge = rd.dist - (hw + edgeJitter);
@@ -1399,6 +1403,88 @@ export function createWorldMaskTexture(size = 512) {
       data[idx + 2] = Math.round(foliageMask * 255);
       data[idx + 3] = Math.round(ao * 255);
     }
+  }
+
+  // Stamp rich ground-contact AO + directional (+X, +Z) anime sun-shadow pools under Boulders, Dry-Stone Walls, Fences & Sacred Stones (< 0.5ms)
+  // Matches `getAnimeShadowDir(uSunDir)` in terrain-water.js & meadow.js (`normalize(vec2(0.58, 0.72))` -> `(+0.63, +0.78)`)!
+  const stampCircleAO = (cx, cz, rCore, rOuter, minAoByte = 32) => {
+    const shdX = cx + 0.78 * rCore;
+    const shdZ = cz + 0.92 * rCore;
+    const shdX2 = cx + 1.35 * rCore;
+    const shdZ2 = cz + 1.55 * rCore;
+    const pad = rOuter * 1.85;
+    const ix0 = Math.max(0, Math.floor((((cx - pad * 0.7) / span) + 0.5) * size));
+    const ix1 = Math.min(size - 1, Math.ceil((((cx + pad) / span) + 0.5) * size));
+    const iz0 = Math.max(0, Math.floor((((cz - pad * 0.7) / span) + 0.5) * size));
+    const iz1 = Math.min(size - 1, Math.ceil((((cz + pad) / span) + 0.5) * size));
+    for (let iz = iz0; iz <= iz1; iz++) {
+      const wz = ((iz + 0.5) / size - 0.5) * span;
+      for (let ix = ix0; ix <= ix1; ix++) {
+        const wx = ((ix + 0.5) / size - 0.5) * span;
+        const dBase = Math.hypot(wx - cx, wz - cz);
+        const dShd1 = Math.hypot(wx - shdX, wz - shdZ) * 0.92;
+        const dShd2 = Math.hypot(wx - shdX2, wz - shdZ2) * 1.08;
+        const d = Math.min(dBase, Math.min(dShd1, dShd2));
+        if (d < rOuter) {
+          const f = smoothstep(rCore * 0.62, rOuter, d);
+          const aoByte = Math.round(minAoByte + (255 - minAoByte) * f);
+          const aIdx = (iz * size + ix) * 4 + 3;
+          if (aoByte < data[aIdx]) data[aIdx] = aoByte;
+        }
+      }
+    }
+  };
+
+  const stampSegmentAO = (x0, z0, x1, z1, halfThick, feather, minAoByte = 42) => {
+    const minX = Math.min(x0, x1) - halfThick - feather - 0.8;
+    const maxX = Math.max(x0, x1) + halfThick + feather + 1.8;
+    const minZ = Math.min(z0, z1) - halfThick - feather - 0.8;
+    const maxZ = Math.max(z0, z1) + halfThick + feather + 1.8;
+    const dx = x1 - x0;
+    const dz = z1 - z0;
+    const invLen2 = 1.0 / Math.max(1e-5, dx * dx + dz * dz);
+    const ix0 = Math.max(0, Math.floor(((minX / span) + 0.5) * size));
+    const ix1 = Math.min(size - 1, Math.ceil(((maxX / span) + 0.5) * size));
+    const iz0 = Math.max(0, Math.floor(((minZ / span) + 0.5) * size));
+    const iz1 = Math.min(size - 1, Math.ceil(((maxZ / span) + 0.5) * size));
+    for (let iz = iz0; iz <= iz1; iz++) {
+      const wz = ((iz + 0.5) / size - 0.5) * span;
+      for (let ix = ix0; ix <= ix1; ix++) {
+        const wx = ((ix + 0.5) / size - 0.5) * span;
+        // Shift sample along anime shadow direction (+X, +Z) so walls & fences cast a crisp directional ground shadow
+        const sx = wx - 0.58;
+        const sz = wz - 0.68;
+        const t = clamp(((sx - x0) * dx + (sz - z0) * dz) * invLen2, 0, 1);
+        const dShd = Math.hypot(sx - (x0 + dx * t), sz - (z0 + dz * t));
+        const t0 = clamp(((wx - x0) * dx + (wz - z0) * dz) * invLen2, 0, 1);
+        const dBase = Math.hypot(wx - (x0 + dx * t0), wz - (z0 + dz * t0));
+        const d = Math.min(dBase, dShd * 0.90);
+        if (d < halfThick + feather) {
+          const f = smoothstep(halfThick * 0.65, halfThick + feather, d);
+          const aoByte = Math.round(minAoByte + (255 - minAoByte) * f);
+          const aIdx = (iz * size + ix) * 4 + 3;
+          if (aoByte < data[aIdx]) data[aIdx] = aoByte;
+        }
+      }
+    }
+  };
+
+  for (let i = 0; i < BOULDERS.length; i++) {
+    const b = BOULDERS[i];
+    const r = Math.max(b.rx || 1.2, b.rz || 1.2);
+    stampCircleAO(b.x, b.z, r * 0.92, r * 2.15, 28);
+  }
+  for (let i = 0; i < DRY_STONE_WALLS.length; i++) {
+    const w = DRY_STONE_WALLS[i];
+    stampSegmentAO(w.x0, w.z0, w.x1, w.z1, (w.thickness || 0.52) * 0.85, 1.55, 36);
+  }
+  for (let i = 0; i < ROADSIDE_FENCES.length; i++) {
+    const fn = ROADSIDE_FENCES[i];
+    stampSegmentAO(fn.x0, fn.z0, fn.x1, fn.z1, 0.32, 1.15, 64);
+  }
+  for (let i = 0; i < INSCRIPTION_STONES.length; i++) {
+    const st = INSCRIPTION_STONES[i];
+    stampCircleAO(st.x, st.z, 1.15, 2.55, 96);
   }
 
   const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);

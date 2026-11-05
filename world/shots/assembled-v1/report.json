@@ -1,11 +1,11 @@
 {
   "pass": "assembled-v1",
-  "timestamp": "2026-10-29T14:56:51.056Z",
+  "timestamp": "2026-11-03T10:14:25.862Z",
   "budgets": {
-    "desktopMaxDrawCalls": 60,
-    "desktopMaxTriangles": 620000,
-    "tabletMaxDrawCalls": 48,
-    "tabletMaxTriangles": 380000
+    "desktopMaxDrawCalls": 72,
+    "desktopMaxTriangles": 1850000,
+    "tabletMaxDrawCalls": 58,
+    "tabletMaxTriangles": 1250000
   },
   "consoleErrors": [],
   "shots": {
@@ -14,14 +14,16 @@
       "profile": "desktop",
       "timeOfDay": "day",
       "todT": 0.34,
-      "fps": 107,
-      "frameMs": 0.29,
-      "draws": 41,
-      "composerDraws": 52,
-      "triangles": 596394,
-      "bloomStrength": 0.16,
+      "fps": 101,
+      "frameMs": 0.64,
+      "draws": 35,
+      "composerDraws": 46,
+      "triangles": 1610160,
+      "bloomStrength": 0.14,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
       "playerPos": {
-        "x": 1.5,
+        "x": 0.8,
         "y": 0,
         "z": 11.5
       }
@@ -31,16 +33,18 @@
       "profile": "desktop",
       "timeOfDay": "day",
       "todT": 0.34,
-      "fps": 128,
-      "frameMs": 0.29,
-      "draws": 40,
-      "composerDraws": 51,
-      "triangles": 594246,
-      "bloomStrength": 0.16,
+      "fps": 106,
+      "frameMs": 0.45,
+      "draws": 36,
+      "composerDraws": 47,
+      "triangles": 1611672,
+      "bloomStrength": 0.14,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
       "playerPos": {
-        "x": -38.5,
-        "y": -0.3,
-        "z": 8.5
+        "x": -38.4,
+        "y": -0.2,
+        "z": 9
       }
     },
     "day-arena-wisteria": {
@@ -48,16 +52,18 @@
       "profile": "desktop",
       "timeOfDay": "day",
       "todT": 0.34,
-      "fps": 105,
-      "frameMs": 0.23,
-      "draws": 24,
-      "composerDraws": 35,
-      "triangles": 543930,
-      "bloomStrength": 0.16,
+      "fps": 91,
+      "frameMs": 0.43,
+      "draws": 26,
+      "composerDraws": 37,
+      "triangles": 1591564,
+      "bloomStrength": 0.14,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
       "playerPos": {
-        "x": 46,
+        "x": 50.5,
         "y": 0.6,
-        "z": -3.5
+        "z": -5.8
       }
     },
     "day-shrine-arch": {
@@ -65,16 +71,75 @@
       "profile": "desktop",
       "timeOfDay": "day",
       "todT": 0.34,
-      "fps": 117,
-      "frameMs": 0.14,
-      "draws": 24,
-      "composerDraws": 35,
-      "triangles": 543930,
-      "bloomStrength": 0.16,
+      "fps": 144,
+      "frameMs": 0.4,
+      "draws": 22,
+      "composerDraws": 33,
+      "triangles": 1565580,
+      "bloomStrength": 0.14,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
       "playerPos": {
-        "x": 0,
+        "x": -1.1,
         "y": 8,
-        "z": -76.5
+        "z": -76.2
+      }
+    },
+    "day-flower-lobby": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\assembled-v1\\day-flower-lobby.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 121,
+      "frameMs": 0.79,
+      "draws": 38,
+      "composerDraws": 49,
+      "triangles": 1611728,
+      "bloomStrength": 0.14,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": -1.1,
+        "y": 1.6,
+        "z": 128
+      }
+    },
+    "day-south-road-boulders": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\assembled-v1\\day-south-road-boulders.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 89,
+      "frameMs": 0.82,
+      "draws": 35,
+      "composerDraws": 46,
+      "triangles": 1610160,
+      "bloomStrength": 0.14,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": -5.2,
+        "y": -0.5,
+        "z": 62.5
+      }
+    },
+    "day-sacred-stone-roses": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\world\\shots\\assembled-v1\\day-sacred-stone-roses.png",
+      "profile": "desktop",
+      "timeOfDay": "day",
+      "todT": 0.34,
+      "fps": 86,
+      "frameMs": 0.44,
+      "draws": 33,
+      "composerDraws": 44,
+      "triangles": 1610104,
+      "bloomStrength": 0.14,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
+      "playerPos": {
+        "x": -1.9,
+        "y": 0,
+        "z": -12.2
       }
     },
     "evening-sunset-vista": {
@@ -82,16 +147,18 @@
       "profile": "desktop",
       "timeOfDay": "evening",
       "todT": 0.76,
-      "fps": 117,
-      "frameMs": 0.29,
-      "draws": 45,
-      "composerDraws": 56,
-      "triangles": 605090,
-      "bloomStrength": 0.24,
+      "fps": 73,
+      "frameMs": 1.83,
+      "draws": 38,
+      "composerDraws": 49,
+      "triangles": 1611728,
+      "bloomStrength": 0.22,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
       "playerPos": {
-        "x": 0,
-        "y": 7.5,
-        "z": -68
+        "x": -0.9,
+        "y": 2.8,
+        "z": -36.5
       }
     },
     "night-moon-shrine": {
@@ -99,16 +166,18 @@
       "profile": "desktop",
       "timeOfDay": "night",
       "todT": 0.96,
-      "fps": 108,
-      "frameMs": 0.15,
-      "draws": 24,
-      "composerDraws": 35,
-      "triangles": 543930,
-      "bloomStrength": 0.32,
+      "fps": 107,
+      "frameMs": 0.46,
+      "draws": 22,
+      "composerDraws": 33,
+      "triangles": 1565580,
+      "bloomStrength": 0.28,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
       "playerPos": {
-        "x": 0,
+        "x": -1.1,
         "y": 8,
-        "z": -76.5
+        "z": -76.2
       }
     },
     "night-plaza-lanterns": {
@@ -117,13 +186,15 @@
       "timeOfDay": "night",
       "todT": 0.96,
       "fps": 144,
-      "frameMs": 0.22,
-      "draws": 43,
-      "composerDraws": 54,
-      "triangles": 596042,
-      "bloomStrength": 0.32,
+      "frameMs": 0.57,
+      "draws": 38,
+      "composerDraws": 49,
+      "triangles": 1611728,
+      "bloomStrength": 0.28,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
       "playerPos": {
-        "x": 1.8,
+        "x": 1.1,
         "y": 0,
         "z": 8.5
       }
@@ -133,12 +204,14 @@
       "profile": "desktop",
       "timeOfDay": "day",
       "todT": 0.34,
-      "fps": 110,
-      "frameMs": 0.28,
-      "draws": 51,
-      "composerDraws": 62,
-      "triangles": 611102,
-      "bloomStrength": 0.16,
+      "fps": 106,
+      "frameMs": 0.55,
+      "draws": 38,
+      "composerDraws": 49,
+      "triangles": 1611728,
+      "bloomStrength": 0.14,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
       "playerPos": {
         "x": 0,
         "y": 0,
@@ -152,13 +225,15 @@
       "timeOfDay": "day",
       "todT": 0.34,
       "fps": 144,
-      "frameMs": 0.28,
-      "draws": 41,
-      "composerDraws": 52,
-      "triangles": 596394,
-      "bloomStrength": 0.16,
+      "frameMs": 0.56,
+      "draws": 35,
+      "composerDraws": 46,
+      "triangles": 1610160,
+      "bloomStrength": 0.14,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
       "playerPos": {
-        "x": 1.5,
+        "x": 0.8,
         "y": 0,
         "z": 11.5
       }
@@ -168,27 +243,29 @@
       "timeOfDay": "day",
       "todT": 0.34,
       "fps": 144,
-      "frameMs": 0.25,
-      "draws": 41,
-      "composerDraws": 52,
-      "triangles": 368929,
-      "bloomStrength": 0.16,
+      "frameMs": 0.54,
+      "draws": 35,
+      "composerDraws": 46,
+      "triangles": 1082846,
+      "bloomStrength": 0.14,
+      "activeHero": "Knight",
+      "partnerHero": "Mage",
       "playerPos": {
-        "x": 1.5,
+        "x": 0.8,
         "y": 0,
         "z": 11.5
       }
     }
   },
   "summary": {
-    "maxSceneDrawCalls": 51,
-    "minSceneDrawCalls": 24,
-    "maxSceneTriangles": 611102,
-    "minSceneTriangles": 543930,
-    "desktopDraws": 41,
-    "desktopTriangles": 596394,
-    "tabletDraws": 41,
-    "tabletTriangles": 368929,
+    "maxSceneDrawCalls": 38,
+    "minSceneDrawCalls": 22,
+    "maxSceneTriangles": 1611728,
+    "minSceneTriangles": 1565580,
+    "desktopDraws": 35,
+    "desktopTriangles": 1610160,
+    "tabletDraws": 35,
+    "tabletTriangles": 1082846,
     "consoleErrorCount": 0,
     "passesAllBudgets": true
   }

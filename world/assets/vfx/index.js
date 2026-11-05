@@ -60,8 +60,15 @@ import {
 import {
   ArtoriousVfxSystem,
   createArtoriousVfxSystem,
+  createSacredLotusPetalGeometry,
   ARTORIOUS_VFX_DEFAULTS,
 } from './artorious-vfx.js';
+import {
+  AimArrowSystem,
+  createAimArrowSystem,
+  createAimArrowGeometry,
+  AIM_ARROW_DEFAULTS,
+} from './aim-arrow.js';
 
 export {
   createNoiseAtlas,
@@ -99,11 +106,16 @@ export {
   MAGE_BOLT_DEFAULTS,
   ArtoriousVfxSystem,
   createArtoriousVfxSystem,
+  createSacredLotusPetalGeometry,
   ARTORIOUS_VFX_DEFAULTS,
+  AimArrowSystem,
+  createAimArrowSystem,
+  createAimArrowGeometry,
+  AIM_ARROW_DEFAULTS,
 };
 
 /**
- * Convenience factory for the complete Stage 4 VFX, Mage Bolts, Sword Breathing & Artorious Kit.
+ * Convenience factory for the complete Stage 4 VFX, Mage Bolts, Sword Breathing, Aim Arrow & Artorious Kit.
  */
 export function createVfxKit({
   scene,
@@ -114,6 +126,7 @@ export function createVfxKit({
   stormLanceConfig = {},
   mageBoltConfig = {},
   artoriousConfig = {},
+  aimArrowConfig = {},
   onApexImpact = null,
 } = {}) {
   const noiseAtlas = getSharedNoiseAtlas();
@@ -156,6 +169,11 @@ export function createVfxKit({
     getGroundHeight,
     config: artoriousConfig,
   });
+  const aimArrow = createAimArrowSystem({
+    scene,
+    getGroundHeight,
+    config: aimArrowConfig,
+  });
 
   const allSystems = [
     frostLance,
@@ -165,6 +183,7 @@ export function createVfxKit({
     swordVfx,
     mageBolt,
     artoriousVfx,
+    aimArrow,
   ];
   const _tmpShake = new THREE.Vector3();
 
@@ -177,6 +196,10 @@ export function createVfxKit({
     swordVfx,
     mageBolt,
     artoriousVfx,
+    aimArrow,
+    showAimArrow: (options = {}) => aimArrow.show(options),
+    updateAimArrow: (dt, options = null) => aimArrow.update(dt, options),
+    hideAimArrow: () => aimArrow.hide(),
     castFrostLance: (origin, direction, options = {}) =>
       frostLance.cast(origin, direction, options),
     castShatterlance: (origin, direction, options = {}) =>
@@ -235,6 +258,7 @@ export function createVfxKit({
       swordVfx: swordVfx.getStats(),
       mageBolt: mageBolt.getStats(),
       artoriousVfx: artoriousVfx.getStats(),
+      aimArrow: aimArrow.getStats(),
     }),
     clear: () => {
       for (const sys of allSystems) sys.clear();

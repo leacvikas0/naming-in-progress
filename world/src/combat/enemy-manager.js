@@ -1,16 +1,18 @@
 // ============================================================================
 // world/src/combat/enemy-manager.js
 //
-// Stage 5 Pooled Enemy Manager:
+// Stage 5 / Wave 2B Pooled Enemy Manager:
 // - Pre-allocates a fixed pool of 6 KayKit Skeleton character instances at boot:
 //   2 Skeleton_Warrior, 1 Skeleton_Minion, 1 Skeleton_Rogue, 1 Skeleton_Mage,
 //   and 1 Boss Sovereign (1.42x scale with obsidian-crimson-gold cellOverrides).
 // - Enforces Max 5 Concurrent Visible Enemies (<= 10 draw calls): inactive,
 //   queued, or dead pool slots stay at `slot.char.group.visible = false` (0 draws).
 // - Implements 3-Attacker Token AI, standoff strafe-orbiting (3.2..4.5m),
-//   0.65s ground telegraph windups, knockback/launch physics with
-//   `walkableHeightAt` & `resolveCollisions` (plus Shrine pedestal/planters),
-//   70ms local animation-mixer hitstop, and deterministic `setFrozenForShot()`.
+//   Ice Sword slow (movement, attack speed & outgoing damage), Fire Sword
+//   persistent burn DoT, knockback/launch physics with `walkableHeightAt` &
+//   `resolveCollisions` (plus Shrine pedestal/planters), 70ms local
+//   animation-mixer hitstop, and deterministic `setFrozenForShot()`.
+// - Keeps `telegraphRingMesh.visible = false` (zero red under-enemy indicator clutter).
 // ============================================================================
 
 import * as THREE from 'three';
@@ -105,6 +107,12 @@ export async function createEnemyManager({
     scene.add(rootGroup);
   }
 
+  // Red under-enemy telegraph rings are permanently hidden (Wave 2B anti-slop rule)
+  const telegraphRingMesh = new THREE.Group();
+  telegraphRingMesh.name = 'enemyTelegraphRingMeshHidden';
+  telegraphRingMesh.visible = false;
+  telegraphRingMesh.count = 0;
+
   // Pre-allocate the fixed 6-slot Skeleton + Boss Sovereign pool in parallel
   const [
     skelWarrior0,
@@ -170,7 +178,6 @@ export async function createEnemyManager({
   }
 
   function acquireSlot(archetypeSpec) {
-    // Enforce strict max 5 concurrent visible enemies (<= 10 draw calls)
     const activeVisible = poolSlots.filter((s) => s.busy && s.char.group.visible).length;
     if (activeVisible >= MAX_CONCURRENT_ENEMIES) return null;
 
@@ -179,7 +186,6 @@ export async function createEnemyManager({
       if (!bossSlot.busy) return bossSlot;
     }
 
-    // 1. Prefer exact poolRole match among standard slots 0..4
     for (let i = 0; i < 5; i++) {
       const s = poolSlots[i];
       if (!s.busy && s.poolRole === archetypeSpec.poolRole) {
@@ -187,7 +193,6 @@ export async function createEnemyManager({
       }
     }
 
-    // 2. Fallback to any free standard slot 0..4 so waves with 3 Warriors or 2 Rogues never stall
     for (let i = 0; i < 5; i++) {
       if (!poolSlots[i].busy) {
         return poolSlots[i];
@@ -214,7 +219,6 @@ export async function createEnemyManager({
         nz = cz + (dz / d) * maxR;
       }
     } else if (currentActId === 'act2_plaza') {
-      // Keep outside the central Roofed Stone Well collider (r >= 2.35 + radius)
       const minWellR = 2.35 + radius;
       const dWell = Math.hypot(nx, nz);
       if (dWell < minWellR) {
@@ -225,7 +229,6 @@ export async function createEnemyManager({
           nz = minWellR;
         }
       }
-      // Keep clear of the 4 Well Plaza bollard-and-rail wooden fence segments (r = 6.05m)
       const plazaFenceAngles = [0.72, 2.38, -2.35, -0.74];
       const rFence = 6.05;
       const hx = 1.38;
@@ -328,13 +331,21 @@ export async function createEnemyManager({
       vz: 0,
       grounded: true,
       dead: false,
+      xpAwarded: false,
       deathTimer: 0,
       active: true,
       mark: null,
       markTimer: 0,
       stunTimer: 0,
+      knockdownTimer: 0,
+      prayerAirborneSlowMo: false,
       hitstopTimer: 0,
       slowTimer: 0,
+      slowFactor: 0,
+      iceSlowTimer: 0,
+      iceSlowFactor: 0,
+      burnTimer: 0,
+      burnDps: 0,
       spawnAnimTimer: 0.48,
       attackAnimTimer: 0,
       aiState: 'orbit',
@@ -372,7 +383,6 @@ export async function createEnemyManager({
     enemy.active = false;
     activeEnemies = activeEnemies.filter((e) => e !== enemy);
 
-    // Spawn queued reinforcements while keeping concurrent visible enemies <= 5
     while (spawnQueue.length > 0 && activeEnemies.length < MAX_CONCURRENT_ENEMIES) {
       const nextSpec = spawnQueue.shift();
       spawnImmediateFromSpec(nextSpec);
@@ -407,11 +417,27 @@ export async function createEnemyManager({
   function playEnemyLocomotion(enemy, clipKey) {
     if (enemy.dead || enemy.spawnAnimTimer > 0 || enemy.attackAnimTimer > 0) return;
     if (enemy.char.anim.currentKey === clipKey) return;
+    const slowMult = 1.0 - clamp(enemy.iceSlowFactor || 0, 0, 0.75);
     enemy.char.play(clipKey, {
       loop: true,
       fade: 0.15,
-      timeScale: enemy.isBoss ? 0.92 : 1.0,
+      timeScale: (enemy.isBoss ? 0.92 : 1.0) * slowMult,
     });
+  }
+
+  function markEnemyDeadAndNotify(e, result = {}) {
+    if (e.deathTimer > 0) return;
+    e.dead = true;
+    e.deathTimer = 0.58;
+    e.hasAttackToken = false;
+    e.aiState = 'dead';
+    e.windupTimer = 0;
+    e.telegraphProgress = 0;
+    e.char.play('downed', { loop: false, fade: 0.08, force: true });
+    if (onEnemyKilled && !e.xpAwarded) {
+      e.xpAwarded = true;
+      onEnemyKilled(e, result);
+    }
   }
 
   function applyHitToEnemy(enemy, hitSpec = {}) {
@@ -419,7 +445,6 @@ export async function createEnemyManager({
 
     const result = applyHitAndResolveDetonation(enemy, hitSpec, activeEnemies);
 
-    // Trigger 70ms local animation-mixer hitstop on detonation (or 35ms on normal hit)
     const hitstopSec = result.detonation ? 0.07 : 0.035;
     enemy.hitstopTimer = Math.max(enemy.hitstopTimer, hitstopSec);
     enemy.char.mixer.timeScale = 0.05;
@@ -452,20 +477,10 @@ export async function createEnemyManager({
       }
     }
 
-    // Handle death vs hit reaction animation
     for (let i = 0; i < activeEnemies.length; i++) {
       const e = activeEnemies[i];
       if ((e.dead || e.hp <= 0) && e.deathTimer <= 0) {
-        e.dead = true;
-        e.deathTimer = 0.58;
-        e.hasAttackToken = false;
-        e.aiState = 'dead';
-        e.windupTimer = 0;
-        e.telegraphProgress = 0;
-        e.char.play('downed', { loop: false, fade: 0.08, force: true });
-        if (onEnemyKilled) {
-          onEnemyKilled(e, result);
-        }
+        markEnemyDeadAndNotify(e, result);
       }
     }
 
@@ -481,10 +496,6 @@ export async function createEnemyManager({
     return result;
   }
 
-  /**
-   * Resolves line/cone/circle hits across all active enemies (used by spells,
-   * sword combo arcs, Chivalric Intercept, and Couples Resonance Ultimate).
-   */
   function applyAreaOrLineHit({
     origin,
     direction = null,
@@ -520,7 +531,6 @@ export async function createEnemyManager({
           candidates.push({ enemy: e, dist: Math.max(0, along) });
         }
       } else {
-        // Melee arc check
         if (dist <= range + e.radius) {
           if (hitSpec.yaw !== undefined) {
             const ang = Math.atan2(dx, dz);
@@ -546,11 +556,6 @@ export async function createEnemyManager({
     return hits;
   }
 
-  /**
-   * Checks if any enemy is within the final 0.25s of its attack telegraph
-   * against `heroState`. If so, triggers Perfect Dodge: slows the enemy's
-   * animation mixer to 0.30x for 0.6s and cancels its pending hit.
-   */
   function checkPerfectDodge(heroState) {
     if (!heroState) return { triggered: false };
     for (let i = 0; i < activeEnemies.length; i++) {
@@ -576,8 +581,10 @@ export async function createEnemyManager({
   }
 
   function update(dt, heroStates = {}, camera = null) {
+    telegraphRingMesh.visible = false;
+    telegraphRingMesh.count = 0;
+
     if (frozenShotId) {
-      // Keep architectural shot distance culling synchronized if camera moves
       if (camera && ARCHITECTURAL_SHOT_SKELETON_POSES[frozenShotId]) {
         const camDistSq = camera.position.distanceToSquared(arenaCenterVec);
         const show = camDistSq <= 92 * 92;
@@ -590,7 +597,6 @@ export async function createEnemyManager({
     const knight = heroStates.Knight;
     const mage = heroStates.Mage;
 
-    // 1. Update death timers, hitstops, stuns, vertical physics & knockbacks
     const toRelease = [];
     for (let i = 0; i < activeEnemies.length; i++) {
       const e = activeEnemies[i];
@@ -605,16 +611,53 @@ export async function createEnemyManager({
         continue;
       }
 
-      if (e.hitstopTimer > 0) {
+      // Tick persistent Fire Sword Burn DoT
+      if (e.burnTimer > 0 && e.burnDps > 0) {
+        const tickDt = Math.min(dt, e.burnTimer);
+        e.burnTimer = Math.max(0, e.burnTimer - dt);
+        const burnDmg = e.burnDps * tickDt;
+        e.hp = Math.max(0, Number((e.hp - burnDmg).toFixed(2)));
+        if (e.hp <= 0) {
+          markEnemyDeadAndNotify(e, { killed: true, source: 'fire_burn', damageDealt: burnDmg });
+          continue;
+        }
+      }
+
+      // Tick Knight Ice Sword Slow
+      if (e.iceSlowTimer > 0) {
+        e.iceSlowTimer = Math.max(0, e.iceSlowTimer - dt);
+        if (e.iceSlowTimer <= 0) {
+          e.iceSlowFactor = 0;
+          e.slowFactor = 0;
+        }
+      }
+
+      const iceTimeMult = 1.0 - clamp(e.iceSlowFactor || 0, 0, 0.75);
+
+      if (e.prayerAirborneSlowMo && !e.grounded) {
+        if (e.slowTimer > 0) {
+          e.slowTimer = Math.max(0, e.slowTimer - dt);
+        }
+        e.char.mixer.timeScale = 0.15;
+      } else if (e.hitstopTimer > 0) {
         e.hitstopTimer = Math.max(0, e.hitstopTimer - dt);
         if (e.hitstopTimer <= 0) {
-          e.char.mixer.timeScale = e.slowTimer > 0 ? 0.3 : 1.0;
+          e.char.mixer.timeScale =
+            e.slowTimer > 0 && e.slowFactor !== 0.85
+              ? Math.min(0.3, iceTimeMult)
+              : iceTimeMult;
         }
       } else if (e.slowTimer > 0) {
         e.slowTimer = Math.max(0, e.slowTimer - dt);
-        e.char.mixer.timeScale = e.slowTimer > 0 ? 0.3 : 1.0;
+        if (e.slowTimer <= 0 && !e.iceSlowTimer) {
+          e.slowFactor = 0;
+        }
+        e.char.mixer.timeScale =
+          e.slowTimer > 0 && e.slowFactor !== 0.85
+            ? Math.min(0.3, iceTimeMult)
+            : iceTimeMult;
       } else {
-        e.char.mixer.timeScale = 1.0;
+        e.char.mixer.timeScale = iceTimeMult;
       }
 
       if (e.spawnAnimTimer > 0) e.spawnAnimTimer = Math.max(0, e.spawnAnimTimer - dt);
@@ -626,12 +669,14 @@ export async function createEnemyManager({
       if (e.stunTimer > 0) {
         e.stunTimer = Math.max(0, e.stunTimer - dt);
       }
+      if (e.knockdownTimer > 0) {
+        e.knockdownTimer = Math.max(0, e.knockdownTimer - dt);
+      }
       if (e.cooldownTimer > 0) {
-        e.cooldownTimer = Math.max(0, e.cooldownTimer - dt);
+        e.cooldownTimer = Math.max(0, e.cooldownTimer - dt * iceTimeMult);
       }
 
-      // Horizontal knockback / pull integration
-      if (Math.hypot(e.vx, e.vz) > 0.05) {
+      if (!e.grounded || Math.hypot(e.vx, e.vz) > 0.05) {
         const nextPos = applyEnemySpatialConstraints(
           e.x + e.vx * dt,
           e.z + e.vz * dt,
@@ -639,15 +684,19 @@ export async function createEnemyManager({
         );
         e.x = nextPos.x;
         e.z = nextPos.z;
-        const drag = Math.max(0, 1.0 - 6.5 * dt);
+        const dragRate = !e.grounded ? 2.8 : 6.5;
+        const drag = Math.max(0, 1.0 - dragRate * dt);
         e.vx *= drag;
         e.vz *= drag;
+        if (Math.hypot(e.vx, e.vz) <= 0.05) {
+          e.vx = 0;
+          e.vz = 0;
+        }
       } else {
         e.vx = 0;
         e.vz = 0;
       }
 
-      // Vertical launch physics (Solar Flare vy = 7.5)
       const groundY = walkableHeightAt(e.x, e.z);
       if (!e.grounded) {
         e.vy -= 19.0 * dt;
@@ -656,12 +705,21 @@ export async function createEnemyManager({
           e.y = groundY;
           e.vy = 0;
           e.grounded = true;
+          if (e.prayerAirborneSlowMo) {
+            e.prayerAirborneSlowMo = false;
+            e.char.mixer.timeScale = iceTimeMult;
+          }
+        } else if (e.prayerAirborneSlowMo) {
+          e.char.mixer.timeScale = 0.15;
         }
       } else {
         e.y = groundY;
+        if (e.prayerAirborneSlowMo) {
+          e.prayerAirborneSlowMo = false;
+          e.char.mixer.timeScale = iceTimeMult;
+        }
       }
 
-      // Choose nearest non-downed hero target
       let targetHero = knight || mage;
       if (knight && mage) {
         if (knight.downed && !mage.downed) targetHero = mage;
@@ -682,33 +740,36 @@ export async function createEnemyManager({
       releaseSlot(toRelease[i]);
     }
 
-    // 2. Allocate up to 3 Attack Tokens across alive, unstunned enemies
     allocateAttackTokens(activeEnemies, MAX_ATTACK_TOKENS);
 
-    // 3. Soft separation + Token Windup vs Standoff Strafe-Orbit AI
     for (let i = 0; i < activeEnemies.length; i++) {
       const e = activeEnemies[i];
       if (!e || e.dead || !e.active) continue;
 
       const targetHero =
         (e.targetHeroId === 'Mage' ? mage : knight) || knight || mage;
+      const slowMult =
+        e.slowTimer > 0 && !e.iceSlowFactor
+          ? e.slowFactor > 0
+            ? 1.0 - clamp(e.slowFactor, 0, 0.85)
+            : 0.3
+          : 1.0 - clamp(e.iceSlowFactor || 0, 0, 0.75);
 
-      if (e.stunTimer <= 0 && e.hitstopTimer <= 0 && targetHero) {
+      if (e.stunTimer <= 0 && e.knockdownTimer <= 0 && e.hitstopTimer <= 0 && e.grounded && targetHero) {
         const dx = targetHero.x - e.x;
         const dz = targetHero.z - e.z;
         const dist = Math.hypot(dx, dz) || 1;
         const dirX = dx / dist;
         const dirZ = dz / dist;
         const desiredYaw = Math.atan2(dx, dz);
-        e.yaw += shortestAngleDiff(desiredYaw, e.yaw) * Math.min(1, 10 * dt);
+        e.yaw += shortestAngleDiff(desiredYaw, e.yaw) * Math.min(1, 10 * dt * slowMult);
 
         if (e.aiState === 'windup') {
-          e.windupTimer += dt * (e.slowTimer > 0 ? 0.3 : 1.0);
+          e.windupTimer += dt * slowMult;
           e.telegraphProgress = clamp(e.windupTimer / e.windupDuration, 0, 1);
           e.telegraphY = walkableHeightAt(e.telegraphX, e.telegraphZ) + 0.04;
 
           if (e.windupTimer >= e.windupDuration) {
-            // Resolve attack impact!
             e.aiState = 'orbit';
             e.windupTimer = 0;
             e.telegraphProgress = 0;
@@ -725,14 +786,15 @@ export async function createEnemyManager({
               (targetHero.iframeTimer || 0) <= 0
             ) {
               if (onPlayerHit) {
-                onPlayerHit(targetHero, e, e.dmg);
+                const dmgReduction = clamp(e.iceSlowFactor || 0, 0, 0.75);
+                const outgoingDmg = Math.max(1, Math.round(e.dmg * (1.0 - dmgReduction)));
+                onPlayerHit(targetHero, e, outgoingDmg);
               }
             }
           }
         } else if (e.hasAttackToken) {
-          // Move into attack range, then start 0.65s windup telegraph
           if (dist > e.attackRange * 0.92) {
-            const step = Math.min(dist - e.attackRange * 0.8, e.speed * dt);
+            const step = Math.min(dist - e.attackRange * 0.8, e.speed * slowMult * dt);
             const nextPos = applyEnemySpatialConstraints(
               e.x + dirX * step,
               e.z + dirZ * step,
@@ -760,18 +822,17 @@ export async function createEnemyManager({
             e.char.play(atkClip, {
               loop: false,
               fade: 0.1,
-              timeScale: 0.85,
+              timeScale: 0.85 * slowMult,
               force: true,
             });
           } else {
             playEnemyLocomotion(e, 'idle');
           }
         } else {
-          // Non-token holder: standoff strafe-orbit at 3.2..4.5m
           const radialErr = dist - e.standoffDist;
-          const radialSpeed = clamp(radialErr * 1.8, -e.speed * 0.65, e.speed * 0.85);
-          const tangX = -dirZ * e.orbitSpeed;
-          const tangZ = dirX * e.orbitSpeed;
+          const radialSpeed = clamp(radialErr * 1.8, -e.speed * 0.65, e.speed * 0.85) * slowMult;
+          const tangX = -dirZ * e.orbitSpeed * slowMult;
+          const tangZ = dirX * e.orbitSpeed * slowMult;
           const vxMove = dirX * radialSpeed + tangX * 1.45;
           const vzMove = dirZ * radialSpeed + tangZ * 1.45;
 
@@ -787,7 +848,6 @@ export async function createEnemyManager({
         }
       }
 
-      // Pairwise separation between active enemies so they never stack on one spot
       for (let j = i + 1; j < activeEnemies.length; j++) {
         const o = activeEnemies[j];
         if (!o || o.dead || !o.active) continue;
@@ -799,27 +859,41 @@ export async function createEnemyManager({
           const push = (minSep - sd) * 0.5;
           const nx = (sdx / sd) * push;
           const nz = (sdz / sd) * push;
-          e.x += nx;
-          e.z += nz;
-          o.x -= nx;
-          o.z -= nz;
+          const clampedE = applyEnemySpatialConstraints(e.x + nx, e.z + nz, e.radius);
+          const clampedO = applyEnemySpatialConstraints(o.x - nx, o.z - nz, o.radius);
+          e.x = clampedE.x;
+          e.z = clampedE.z;
+          o.x = clampedO.x;
+          o.z = clampedO.z;
         }
       }
 
+      const finalClamped = applyEnemySpatialConstraints(e.x, e.z, e.radius);
+      e.x = finalClamped.x;
+      e.z = finalClamped.z;
+      if (e.grounded) {
+        e.y = walkableHeightAt(e.x, e.z);
+        e.group.rotation.set(0, e.yaw, 0, 'YXZ');
+      } else if (e.prayerAirborneSlowMo) {
+        const airTilt = clamp((e.y - walkableHeightAt(e.x, e.z)) / 1.4, 0.25, 1.0);
+        e.group.rotation.set(
+          (e.airPitch ?? -0.72) * airTilt,
+          e.yaw,
+          (e.airRoll ?? 0.36) * airTilt,
+          'YXZ'
+        );
+      } else {
+        e.group.rotation.set(0, e.yaw, 0, 'YXZ');
+      }
+
       e.group.position.set(e.x, e.y, e.z);
-      e.group.rotation.y = e.yaw;
       e.char.update(dt);
     }
   }
 
-  /**
-   * Freezes or unfreezes enemy AI for deterministic `window.__WORLD__.setShot(shotId)`
-   * captures so automated verification screenshots pose cleanly without live AI interference.
-   */
   function setFrozenForShot(shotId = null, camera = null, customPoses = null) {
     frozenShotId = shotId;
     if (!shotId) {
-      // Restore visibility of active combat wave enemies
       for (let i = 0; i < poolSlots.length; i++) {
         const s = poolSlots[i];
         s.char.group.visible = Boolean(s.busy && s.enemy && !s.enemy.dead);
@@ -827,7 +901,6 @@ export async function createEnemyManager({
       return;
     }
 
-    // Hide all 6 pool slots first so zero stray draw calls leak
     for (let i = 0; i < poolSlots.length; i++) {
       poolSlots[i].char.group.visible = false;
       poolSlots[i].char.group.scale.setScalar(1.0);
@@ -838,10 +911,7 @@ export async function createEnemyManager({
       const count = Math.min(customPoses.length, MAX_CONCURRENT_ENEMIES);
       for (let i = 0; i < count; i++) {
         const p = customPoses[i];
-        const slot =
-          p.isBoss
-            ? poolSlots[5]
-            : poolSlots[p.slotIndex ?? (i % 5)];
+        const slot = p.isBoss ? poolSlots[5] : poolSlots[p.slotIndex ?? (i % 5)];
         const y = p.y ?? walkableHeightAt(p.x, p.z);
         slot.char.group.scale.setScalar(p.scale ?? 1.0);
         slot.char.group.position.set(p.x, y, p.z);
@@ -853,7 +923,6 @@ export async function createEnemyManager({
       return;
     }
 
-    // Standard Stage 3/4 architectural shot poses (Skeleton_Warrior in slot 0 + Skeleton_Mage in slot 4)
     const preset =
       ARCHITECTURAL_SHOT_SKELETON_POSES[shotId] ||
       ARCHITECTURAL_SHOT_SKELETON_POSES['day-arena-wisteria'];
@@ -882,11 +951,75 @@ export async function createEnemyManager({
   }
 
   /**
-   * 6.0m Sacred Commune Ward: pushes nearby skeletons outward and pauses
-   * windup attacks while the couple is channeling their prayer to Artorious.
+   * Frame 37 Prayer Start: Launches all living enemies within `throwRadius` (`6.5m`)
+   * off their feet into an airborne arc (`vy = 8.8..12.2 m/s`, radial `vx/vz = 11.5 m/s`,
+   * `0.15x` slow-mo `'Hit_B'`), dealing ZERO (`0`) HP damage and cancelling any active windup.
    */
-  function applySacredWardPushback(centerPos, wardRadius = 6.0) {
-    if (!centerPos) return 0;
+  function applyPrayerAirborneThrow(centerPos, throwRadius = 6.5) {
+    if (!centerPos) return { thrownCount: 0, enemies: [] };
+    const cx = centerPos.x ?? 0;
+    const cz = centerPos.z ?? 0;
+    const radius = Math.max(0.1, Number(throwRadius) || 6.5);
+    const thrownEnemies = [];
+
+    for (let i = 0; i < activeEnemies.length; i++) {
+      const e = activeEnemies[i];
+      if (!e || e.dead || e.hp <= 0 || !e.active) continue;
+      const dx = e.x - cx;
+      const dz = e.z - cz;
+      const dist = Math.hypot(dx, dz);
+      if (dist <= radius) {
+        const nx = dist > 1e-4 ? dx / dist : 1.0;
+        const nz = dist > 1e-4 ? dz / dist : 0.0;
+        const distFrac = clamp(dist / radius, 0, 1);
+
+        // Zero HP damage; cancel any active windup immediately
+        e.aiState = 'orbit';
+        e.windupTimer = 0;
+        e.telegraphProgress = 0;
+        e.hasAttackToken = false;
+
+        // Launch off their feet into an airborne arc with backward pitch/roll tilt
+        e.vy = 8.8 + (1.0 - distFrac) * 3.4;
+        e.grounded = false;
+        e.vx = nx * 11.5;
+        e.vz = nz * 11.5;
+        e.airPitch = -0.74;
+        e.airRoll = (i % 2 === 0 ? 1 : -1) * 0.42;
+        e.stunTimer = Math.max(e.stunTimer || 0, 2.6);
+        e.knockdownTimer = Math.max(e.knockdownTimer || 0, 2.4);
+        e.slowTimer = Math.max(e.slowTimer || 0, 3.0);
+        e.slowFactor = 0.85;
+        e.prayerAirborneSlowMo = true;
+        e.attackAnimTimer = Math.max(e.attackAnimTimer || 0, 2.4);
+        e.cooldownTimer = Math.max(e.cooldownTimer || 0, 2.6);
+
+        e.yaw = Math.atan2(-nx, -nz);
+        e.group.rotation.set(e.airPitch, e.yaw, e.airRoll, 'YXZ');
+        e.char.play('Hit_B', {
+          fade: 0.06,
+          loopOnce: true,
+          loop: false,
+          timeScale: 0.15,
+          force: true,
+        });
+        e.char.mixer.timeScale = 0.15;
+        thrownEnemies.push(e);
+      }
+    }
+
+    return {
+      thrownCount: thrownEnemies.length,
+      enemies: thrownEnemies,
+    };
+  }
+
+  function applySacredWardPushback(centerPos, wardRadius = 6.5, options = {}) {
+    if (!centerPos) return options?.initialBurst ? { thrownCount: 0, enemies: [] } : 0;
+    if (options?.initialBurst || centerPos?.initialBurst) {
+      return applyPrayerAirborneThrow(centerPos, wardRadius);
+    }
+
     let pushedCount = 0;
     const cx = centerPos.x ?? 0;
     const cz = centerPos.z ?? 0;
@@ -894,6 +1027,7 @@ export async function createEnemyManager({
     for (let i = 0; i < activeEnemies.length; i++) {
       const e = activeEnemies[i];
       if (!e || e.dead || !e.active) continue;
+      if (!e.grounded) continue;
       const dx = e.x - cx;
       const dz = e.z - cz;
       const d = Math.hypot(dx, dz);
@@ -926,6 +1060,7 @@ export async function createEnemyManager({
 
   return {
     rootGroup,
+    telegraphRingMesh,
     poolSlots,
     get activeEnemies() {
       return activeEnemies;
@@ -951,6 +1086,7 @@ export async function createEnemyManager({
     applyHitToEnemy,
     applyAreaOrLineHit,
     checkPerfectDodge,
+    applyPrayerAirborneThrow,
     applySacredWardPushback,
     setFrozenForShot,
     update,

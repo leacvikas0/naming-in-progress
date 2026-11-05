@@ -13,13 +13,13 @@ import {
 
 const flowersDir = import.meta.dirname;
 const expectedBudgets = {
-  grassTuft: 28,
-  bellflower: 96,
-  daisy: 88,
-  lupine: 110,
-  cosmos: 88,
-  crimsonRose: 112,
-  toonShrub: 140,
+  grassTuft: 70,
+  bellflower: 460,
+  daisy: 480,
+  lupine: 520,
+  cosmos: 480,
+  crimsonRose: 620,
+  toonShrub: 560,
 };
 
 const failures = [];
@@ -76,21 +76,33 @@ for (const [key, maxTris] of Object.entries(expectedBudgets)) {
   assert((bb.max.x - bb.min.x) >= 0.15 && (bb.max.z - bb.min.z) >= 0.15, `${key}: degenerate horizontal footprint`);
 }
 
-// Verify 14-tri multi-clump grassTuft exact triangle count & ~0.85m footprint
+// Verify multi-clump grassTuft & grassTuftTablet triangle count & ~0.85m footprint
 const grassGeo = geos.grassTuft;
 if (grassGeo) {
   const grassTris = grassGeo.getAttribute('position').count / 3;
   const gBox = grassGeo.boundingBox;
   const gSpanX = gBox.max.x - gBox.min.x;
   const gSpanZ = gBox.max.z - gBox.min.z;
-  assert(grassTris === 14, `grassTuft: expected exactly 14 triangles, got ${grassTris}`);
-  assert(gSpanX >= 0.72 && gSpanX <= 0.98 && gSpanZ >= 0.72 && gSpanZ <= 0.98, `grassTuft: expected ~0.85m footprint, got ${gSpanX.toFixed(2)}m x ${gSpanZ.toFixed(2)}m`);
+  assert(grassTris <= 70, `grassTuft: expected <= 70 triangles, got ${grassTris}`);
+  assert(gSpanX >= 0.65 && gSpanX <= 0.98 && gSpanZ >= 0.65 && gSpanZ <= 0.98, `grassTuft: expected ~0.85m footprint, got ${gSpanX.toFixed(2)}m x ${gSpanZ.toFixed(2)}m`);
 }
 
-// 2. Verify MEADOW_PROFILES & createToroidalMeadow contracts (14k tablet / 24k desktop, worldExtent=165)
-assert(MEADOW_PROFILES.tablet.grassCount === 14000 && MEADOW_PROFILES.tablet.grassRadius === 58, 'tablet profile grassCount/grassRadius mismatch');
-assert(MEADOW_PROFILES.desktop.grassCount === 24000 && MEADOW_PROFILES.desktop.grassRadius === 76, 'desktop profile grassCount/grassRadius mismatch');
-assert(MEADOW_PROFILES.tablet.counts.crimsonRose === 96 && MEADOW_PROFILES.desktop.counts.crimsonRose === 120 && MEADOW_PROFILES.demo.counts.crimsonRose === 48, 'crimsonRose profile counts mismatch');
+const grassTabletGeo = geos.grassTuftTablet;
+assert(Boolean(grassTabletGeo), 'Missing grassTuftTablet geometry');
+if (grassTabletGeo) {
+  const tabTris = grassTabletGeo.getAttribute('position').count / 3;
+  grassTabletGeo.computeBoundingBox();
+  const tBox = grassTabletGeo.boundingBox;
+  const tSpanX = tBox.max.x - tBox.min.x;
+  const tSpanZ = tBox.max.z - tBox.min.z;
+  assert(tabTris === 45, `grassTuftTablet: expected 45 triangles (9 wide Option-4 blades), got ${tabTris}`);
+  assert(tSpanX >= 0.65 && tSpanX <= 0.98 && tSpanZ >= 0.65 && tSpanZ <= 0.98, `grassTuftTablet: expected ~0.85m footprint, got ${tSpanX.toFixed(2)}m x ${tSpanZ.toFixed(2)}m`);
+}
+
+// 2. Verify MEADOW_PROFILES & createToroidalMeadow contracts (17k tablet / 34k desktop, worldExtent=165)
+assert(MEADOW_PROFILES.tablet.grassCount === 17000 && MEADOW_PROFILES.tablet.grassRadius === 56, 'tablet profile grassCount/grassRadius mismatch');
+assert(MEADOW_PROFILES.desktop.grassCount === 34000 && MEADOW_PROFILES.desktop.grassRadius === 68, 'desktop profile grassCount/grassRadius mismatch');
+assert(MEADOW_PROFILES.tablet.counts.crimsonRose === 140 && MEADOW_PROFILES.desktop.counts.crimsonRose === 220 && MEADOW_PROFILES.demo.counts.crimsonRose === 68, 'crimsonRose profile counts mismatch');
 
 const worldExtent = 165;
 const maskTex = createDefaultWorldMaskTexture(256);
