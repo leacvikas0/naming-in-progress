@@ -1,0 +1,277 @@
+{
+  "timestamp": "2026-11-05T09:29:57.620Z",
+  "ephemeralPort": 58942,
+  "consoleErrors": [],
+  "pageErrors": [],
+  "failedRequests": [
+    "HEAD http://127.0.0.1:58942/world/index.html -> net::ERR_ABORTED",
+    "HEAD http://127.0.0.1:58942/world/index.html -> net::ERR_ABORTED"
+  ],
+  "screenshots": [
+    "01-title-pixel-to-clear.png",
+    "02-open-join-domain.png",
+    "03-flower-lobby-3d-claim.png",
+    "04-hud-bare-desktop.png",
+    "05-hud-bare-tablet-two-handed.png",
+    "06-stone-3s-gaze-commune.png",
+    "07-hud-tablet-full-fan-arc-day.png",
+    "08-hud-tablet-golden-hour-polarity.png",
+    "09-hud-tablet-night-eclipse-polarity.png",
+    "10-pause-sky-atmosphere.png"
+  ],
+  "checks": {
+    "shot01_title": {
+      "step": "title",
+      "title": "Amarante",
+      "subtitle": "The Unfading Bloom",
+      "ctaText": "Step into the Domain",
+      "hudHidden": true,
+      "backdropFilter": "none"
+    },
+    "shot02_openJoin": {
+      "step": "create_join",
+      "activePhrase": "Rain on warm limestone",
+      "createBtnText": "Enter",
+      "joinBtnText": "Join",
+      "createRect": {
+        "x": 596,
+        "y": 387.921875,
+        "width": 350,
+        "height": 300.140625,
+        "top": 387.921875,
+        "right": 946,
+        "bottom": 688.0625,
+        "left": 596
+      },
+      "joinRect": {
+        "x": 974,
+        "y": 387.921875,
+        "width": 350,
+        "height": 300.140625,
+        "top": 387.921875,
+        "right": 1324,
+        "bottom": 688.0625,
+        "left": 974
+      }
+    },
+    "shot03_flowerLobby": {
+      "step": "flower_lobby",
+      "typedName": "Vikas",
+      "partnerTagText": "Ishika · Mage",
+      "bottomPhraseText": "Rain on warm limestone",
+      "kBtn": {
+        "x": 582.59375,
+        "y": 411,
+        "width": 148,
+        "height": 220,
+        "top": 411,
+        "right": 730.59375,
+        "bottom": 631,
+        "left": 582.59375
+      },
+      "mBtn": {
+        "x": 1154.6875,
+        "y": 415.6875,
+        "width": 148,
+        "height": 220,
+        "top": 415.6875,
+        "right": 1302.6875,
+        "bottom": 635.6875,
+        "left": 1154.6875
+      },
+      "bubble": {
+        "x": 262.59375,
+        "y": 452.828125,
+        "width": 236,
+        "height": 88.34375,
+        "top": 452.828125,
+        "right": 498.59375,
+        "bottom": 541.171875,
+        "left": 262.59375
+      },
+      "partnerTag": {
+        "x": 1171.9921875,
+        "y": 96.15625,
+        "width": 128.390625,
+        "height": 31.4375,
+        "top": 96.15625,
+        "right": 1300.3828125,
+        "bottom": 127.59375,
+        "left": 1171.9921875
+      },
+      "bottomPhrase": {
+        "x": 825.328125,
+        "y": 1012,
+        "width": 269.328125,
+        "height": 40,
+        "top": 1012,
+        "right": 1094.65625,
+        "bottom": 1052,
+        "left": 825.328125
+      }
+    },
+    "shot04_bareDesktop": {
+      "step": "in_game",
+      "profile": "desktop",
+      "primaryName": "Vikas",
+      "partnerName": "Ishika",
+      "vitalityText": "220 / 220",
+      "hasLv1Text": false,
+      "legacyTopBarDisplay": "none",
+      "slotEUnlocked": false,
+      "slotTabUnlocked": false,
+      "slotQUnlocked": false,
+      "communeUnlocked": false
+    },
+    "shot05_bareTablet": {
+      "profile": "tablet",
+      "joyRect": {
+        "x": 44,
+        "y": 824,
+        "width": 132,
+        "height": 132,
+        "top": 824,
+        "right": 176,
+        "bottom": 956,
+        "left": 44
+      },
+      "atkRect": {
+        "x": 1480,
+        "y": 880,
+        "width": 84,
+        "height": 84,
+        "top": 880,
+        "right": 1564,
+        "bottom": 964,
+        "left": 1480
+      },
+      "dashRect": {
+        "x": 1389,
+        "y": 917,
+        "width": 54,
+        "height": 54,
+        "top": 917,
+        "right": 1443,
+        "bottom": 971,
+        "left": 1389
+      },
+      "jumpRect": {
+        "x": 1480,
+        "y": 788,
+        "width": 54,
+        "height": 54,
+        "top": 788,
+        "right": 1534,
+        "bottom": 842,
+        "left": 1480
+      }
+    },
+    "shot06_stoneGazeCommune": {
+      "activeStoneId": "stone_plaza",
+      "shoulderBlend": 1,
+      "gazeElapsed": 3,
+      "stoneUnlocked": true,
+      "communeBtnVisible": true,
+      "readPillHidden": true,
+      "modalHidden": true
+    },
+    "shot07_tabletFullArcDay": {
+      "envPolarity": "day",
+      "minClearGapPx": 22.06,
+      "minPair": "sculpted-jump-btn <-> sculpted-commune-btn",
+      "circles": [
+        {
+          "id": "sculpted-attack-btn",
+          "cx": 1522,
+          "cy": 922,
+          "radius": 42,
+          "w": 84,
+          "h": 84
+        },
+        {
+          "id": "sculpted-dash-btn",
+          "cx": 1416,
+          "cy": 944,
+          "radius": 27,
+          "w": 54,
+          "h": 54
+        },
+        {
+          "id": "sculpted-jump-btn",
+          "cx": 1507,
+          "cy": 815,
+          "radius": 27,
+          "w": 54,
+          "h": 54
+        },
+        {
+          "id": "sculpted-slot-tab",
+          "cx": 1335,
+          "cy": 953,
+          "radius": 23,
+          "w": 46,
+          "h": 46
+        },
+        {
+          "id": "sculpted-slot-e",
+          "cx": 1345,
+          "cy": 873,
+          "radius": 31,
+          "w": 62,
+          "h": 62
+        },
+        {
+          "id": "sculpted-slot-q",
+          "cx": 1399,
+          "cy": 785,
+          "radius": 31,
+          "w": 62,
+          "h": 62
+        },
+        {
+          "id": "sculpted-commune-btn",
+          "cx": 1504,
+          "cy": 738,
+          "radius": 28,
+          "w": 56,
+          "h": 56
+        }
+      ],
+      "activeDamageNumbers": 2,
+      "tabCaptionVisible": true
+    },
+    "shot08_tabletGoldenHour": {
+      "envPolarity": "golden",
+      "hudInk": "#ffeed6",
+      "hudAccent": "#fb923c",
+      "slotEElement": "fire"
+    },
+    "shot09_tabletNightEclipse": {
+      "envPolarity": "eclipse",
+      "hudInk": "#ffe8ee",
+      "hudAccent": "#e11d48",
+      "timerText": "00:24",
+      "listeningActive": true,
+      "roseRingState": {
+        "visible": true,
+        "elapsed": 6,
+        "maxDuration": 30,
+        "remainingFraction": 0.8,
+        "bloomingRoseCount": 20,
+        "shedRoseCount": 4,
+        "activeDriftingPetals": 10,
+        "radius": 1.65,
+        "totalRoses": 24,
+        "totalPetals": 48
+      }
+    },
+    "shot10_pauseSkyAtmosphere": {
+      "modalOpen": true,
+      "selectedTodAfterClickTwilight": "twilight",
+      "twilightAriaPressed": "true",
+      "skyMode": "twilight",
+      "skyT": 0.84,
+      "envPolarity": "night"
+    }
+  }
+}

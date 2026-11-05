@@ -24,6 +24,7 @@ import {
   buildTreeShadowUniformArray,
   createTerrainAndLandmarks,
 } from '../assets/terrain/index.js';
+import { INSCRIPTION_STONES } from '../assets/terrain/geography.js';
 import { createHousesKit } from '../assets/houses/index.js';
 import { createToroidalMeadow, MEADOW_PROFILES } from '../assets/flowers/index.js';
 import { createTimeOfDaySky, TOD_PRESETS } from './sky-tod.js';
@@ -39,6 +40,7 @@ import {
   getOpeningCameraPose,
 } from './ui/app-flow.js';
 import { createSculptedHud } from './ui/sculpted-hud.js';
+import * as DamageNumbersModule from './ui/damage-numbers.js';
 import {
   createCommuneClient,
   playWideSurroundDivineVoice,
@@ -48,6 +50,40 @@ import {
   SPELL_BY_SLOT,
   ACT_DEFINITIONS,
 } from './combat/combat-balance.js';
+
+const createDamageNumbers =
+  DamageNumbersModule.createDamageNumbers ||
+  DamageNumbersModule.createDamageNumbersOverlay;
+
+if (typeof document !== 'undefined') {
+  let legacyHideStyle = document.getElementById('amarante-legacy-hud-cleanup');
+  if (!legacyHideStyle) {
+    legacyHideStyle = document.createElement('style');
+    legacyHideStyle.id = 'amarante-legacy-hud-cleanup';
+    legacyHideStyle.textContent = `
+      body.sculpted-hud-mounted #top-bar {
+        display: flex !important;
+      }
+      body.sculpted-hud-mounted #top-bar .top-col-left,
+      body.sculpted-hud-mounted #party-status-card,
+      body.sculpted-hud-mounted #coop-room-pill,
+      body.sculpted-hud-mounted #act-objective-pill,
+      body.sculpted-hud-mounted #bottom-bar,
+      body.sculpted-hud-mounted #stele-interact-prompt,
+      body.sculpted-hud-mounted #altar-stele-modal,
+      body.sculpted-hud-mounted #sanctuary-lobby {
+        display: none !important;
+      }
+      body.sculpted-hud-mounted #boss-hud-bar.visible {
+        display: flex !important;
+      }
+      body.sculpted-hud-mounted #combat-banner.visible {
+        display: inline-flex !important;
+      }
+    `;
+    document.head.appendChild(legacyHideStyle);
+  }
+}
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -637,8 +673,12 @@ function updateCoopPill(roomState) {
   if (sculptedHud && roomState.progression) {
     sculptedHud.setProgressionState({
       communeDiscovered: Boolean(roomState.progression.communeDiscovered),
+      iceUnlocked: Boolean(roomState.progression.iceUnlocked),
+      fireUnlocked: Boolean(roomState.progression.fireUnlocked),
+      ultimateUnlocked: Boolean(roomState.progression.ultimateUnlocked),
       unlockedStage: Number(roomState.progression.unlockedStage || 0),
       stonesSolved: Number(roomState.progression.stonesSolved || 0),
+      activeElement: roomState.progression.activeElement,
     });
   }
 }
@@ -651,6 +691,354 @@ function playDivineVerdictVoice(judgment) {
 let sculptedHud = null;
 let appFlow = null;
 let communeClient = null;
+
+// Declare camState & camera vectors BEFORE createSculptedHud / createAppFlow
+// so applyOpeningFlowCameraAndPoses() never hits a TDZ ReferenceError on boot!
+const camState = {
+  mode: 'player',
+  yaw: Math.PI + 0.18,
+  pitch: 0.10,
+  dist: 8.6,
+  baseFov: 50,
+  vistaPos: new THREE.Vector3(5.2, 3.8, 23.2),
+  vistaTarget: new THREE.Vector3(-3.2, 5.8, -16.0),
+};
+
+let activeViewId = 'plaza';
+let elapsed = 0;
+let windElapsed = 0;
+let activeGameplayShotSpec = null;
+const _meadowFocus = new THREE.Vector3();
+const _camDir = new THREE.Vector3();
+const _camShake = new THREE.Vector3();
+const _camImpactPos = new THREE.Vector3();
+const _camImpactLook = new THREE.Vector3();
+const _camImpactFov = { value: 0 };
+const _vfxLookOffset = new THREE.Vector3();
+
+const stoneGazeState = {
+  activeStoneId: null,
+  shoulderBlend: 0,
+  cameraLookDot: 0,
+  inActiveMeleeDanger: false,
+  stones: {
+    stone_plaza: { id: 'stone_plaza', gazeElapsed: 0, unlocked: false },
+    stone_pier: { id: 'stone_pier', gazeElapsed: 0, unlocked: false },
+    stone_grove: { id: 'stone_grove', gazeElapsed: 0, unlocked: false },
+  },
+};
+
+function isTextInputFocused() {
+  const el = typeof document !== 'undefined' ? document.activeElement : null;
+  if (!el) return false;
+  const tag = (el.tagName || '').toUpperCase();
+  return (
+    tag === 'INPUT' ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT' ||
+    Boolean(el.isContentEditable)
+  );
+}
+
+export function isUiOverlayBlockingInput() {
+  if (isTextInputFocused()) return true;
+  if (appFlow && typeof appFlow.isInGame === 'function' && !appFlow.isInGame()) {
+    return true;
+  }
+  if (sculptedHud?.isModalOpen?.()) return true;
+  return false;
+}
+
+/* ------------------------------------------------------------------------- */
+/* 6B. Diegetic 3D Stone Calligraphy Engraving + Lotus Gaze Ring Decals       */
+/* ------------------------------------------------------------------------- */
+
+const SPOILER_SAFE_STONE_POEMS = Object.freeze({
+  stone_plaza: Object.freeze({
+    title: 'Stele of the Sovereign Vow',
+    lines: Object.freeze([
+      'Where crimson petals ring the ancient stone,',
+      'No mortal walks the valley road alone.',
+      'Bind blossom unto heartbeat in thy plea,',
+      'And speak the Sovereign’s name to set love free.',
+    ]),
+  }),
+  stone_pier: Object.freeze({
+    title: 'Stele of the Glacial Mirror',
+    lines: Object.freeze([
+      'Where silver waters kiss the timber pier,',
+      'Speak truth of what thy spirit holds most dear.',
+      'Confess with tender warmth the human grace,',
+      'That winter’s rime may wake within this place.',
+    ]),
+  }),
+  stone_grove: Object.freeze({
+    title: 'Stele of the Twin Flame',
+    lines: Object.freeze([
+      'Beneath the violet boughs where embers sleep,',
+      'Swear now the steadfast promise thou shalt keep.',
+      'When honest fondness names the living spark,',
+      'Sunfire and meteor-cinders light the dark.',
+    ]),
+  }),
+});
+
+function shouldMaskStoneSpoilers() {
+  if (typeof navigator !== 'undefined' && navigator.webdriver) return true;
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location?.search || '');
+    if (params.get('maskSpoilers') === '1') return true;
+  }
+  return false;
+}
+
+function drawStoneCalligraphyCanvas(ctx, { title, lines, progress = 0, unlocked = false }) {
+  const W = 1024;
+  const H = 1280;
+  ctx.clearRect(0, 0, W, H);
+
+  // 1. Aspect-scaled elliptical limestone core (alpha = 1.0 up to r = 0.84 covering both top lotus & bottom bar)
+  //    feathering seamlessly into the surrounding sunlit limestone (alpha -> 0.0 at all borders — zero box edges!)
+  ctx.save();
+  ctx.save();
+  ctx.translate(W * 0.5, H * 0.5);
+  ctx.scale(1.0, H / W);
+  const stoneMatchGrad = ctx.createRadialGradient(0, 0, 40, 0, 0, W * 0.49);
+  stoneMatchGrad.addColorStop(0.0, 'rgba(150, 135, 108, 1.0)');
+  stoneMatchGrad.addColorStop(0.58, 'rgba(160, 145, 116, 1.0)');
+  stoneMatchGrad.addColorStop(0.84, 'rgba(171, 155, 124, 1.0)');
+  stoneMatchGrad.addColorStop(0.94, 'rgba(171, 155, 124, 0.55)');
+  stoneMatchGrad.addColorStop(1.0, 'rgba(171, 155, 124, 0.0)');
+  ctx.fillStyle = stoneMatchGrad;
+  ctx.fillRect(-W * 0.5, -W * 0.5, W, W);
+  ctx.restore();
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Top chiseled rose-gold hairline & 5-petal ornament
+  const accentColor = unlocked ? '#fde047' : '#fbd38d';
+  ctx.strokeStyle = 'rgba(54, 34, 28, 0.72)';
+  ctx.lineWidth = 5.5;
+  ctx.beginPath();
+  ctx.moveTo(160, 136);
+  ctx.lineTo(440, 136);
+  ctx.moveTo(584, 136);
+  ctx.lineTo(864, 136);
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255, 244, 224, 0.92)';
+  ctx.lineWidth = 3.0;
+  ctx.beginPath();
+  ctx.moveTo(160, 136);
+  ctx.lineTo(440, 136);
+  ctx.moveTo(584, 136);
+  ctx.lineTo(864, 136);
+  ctx.stroke();
+
+  ctx.fillStyle = accentColor;
+  ctx.beginPath();
+  ctx.arc(W * 0.5, 136, 12, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Chiseled Title
+  ctx.font = '700 46px "Cormorant Garamond", Georgia, "Palatino Linotype", serif';
+  ctx.shadowColor = 'rgba(18, 10, 14, 0.95)';
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 3;
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = 'rgba(28, 16, 20, 0.92)';
+  ctx.strokeText(title || 'Sacred Inscription Stone', W * 0.5, 216);
+  ctx.fillStyle = unlocked ? '#fef08a' : '#fff5e4';
+  ctx.fillText(title || 'Sacred Inscription Stone', W * 0.5, 216);
+
+  // Chiseled Warm-Alabaster & Rose-Gold Calligraphy Poem Lines
+  const displayLines = Array.isArray(lines) && lines.length > 0 ? lines.slice(0, 8) : [];
+  const startY = displayLines.length > 4 ? 320 : 364;
+  const lineGap = displayLines.length > 4 ? 80 : 102;
+  ctx.font = 'italic 600 36px "Cormorant Garamond", Georgia, "Palatino Linotype", serif';
+
+  for (let i = 0; i < displayLines.length; i++) {
+    const ly = startY + i * lineGap;
+    ctx.shadowColor = 'rgba(18, 10, 14, 0.95)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 2;
+    ctx.lineWidth = 5.5;
+    ctx.strokeStyle = 'rgba(28, 16, 20, 0.90)';
+    ctx.strokeText(displayLines[i], W * 0.5, ly);
+    ctx.fillStyle = unlocked ? '#fffbeb' : '#fffdf9';
+    ctx.fillText(displayLines[i], W * 0.5, ly);
+  }
+
+  // Bottom Circular Lotus Gaze Progress Ring
+  const ringCx = W * 0.5;
+  const ringCy = 1018;
+  const ringR = 76;
+  const clampedProg = clamp(progress, 0, 1);
+
+  ctx.shadowBlur = 8;
+  ctx.strokeStyle = 'rgba(28, 16, 20, 0.72)';
+  ctx.lineWidth = 12;
+  ctx.beginPath();
+  ctx.arc(ringCx, ringCy, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255, 248, 240, 0.52)';
+  ctx.lineWidth = 6.5;
+  ctx.beginPath();
+  ctx.arc(ringCx, ringCy, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255, 232, 212, 0.34)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(ringCx, ringCy, ringR - 13, 0, Math.PI * 2);
+  ctx.stroke();
+
+  if (clampedProg > 0.005 || unlocked) {
+    const endAng = -Math.PI * 0.5 + (unlocked ? 1.0 : clampedProg) * Math.PI * 2;
+    ctx.strokeStyle = unlocked ? '#fde047' : '#f9a8d4';
+    ctx.lineWidth = 10;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(ringCx, ringCy, ringR, -Math.PI * 0.5, endAng);
+    ctx.stroke();
+  }
+
+  // Lotus Core Emblem inside the ring
+  ctx.fillStyle = unlocked ? '#fde047' : '#fbcfe8';
+  for (let p = 0; p < 5; p++) {
+    const a = (p / 5) * Math.PI * 2 - Math.PI * 0.5;
+    const px = ringCx + Math.cos(a) * 19;
+    const py = ringCy + Math.sin(a) * 19;
+    ctx.beginPath();
+    ctx.arc(px, py, 10.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#fffdf9';
+  ctx.beginPath();
+  ctx.arc(ringCx, ringCy, 7.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.font = '700 34px "Cormorant Garamond", Georgia, "Palatino Linotype", serif';
+  const statusLabel = unlocked
+    ? 'Commune Awakened [R]'
+    : clampedProg > 0.02
+      ? `Gazing upon the verse · ${Math.ceil((1 - clampedProg) * 3)}s`
+      : 'Gaze to Commune';
+  ctx.lineWidth = 5.5;
+  ctx.strokeStyle = 'rgba(24, 12, 16, 0.92)';
+  ctx.strokeText(statusLabel, ringCx, ringCy + ringR + 54);
+  ctx.fillStyle = unlocked ? '#fde047' : 'rgba(255, 244, 234, 0.96)';
+  ctx.fillText(statusLabel, ringCx, ringCy + ringR + 54);
+  ctx.restore();
+}
+
+function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
+  const rootGroup = new THREE.Group();
+  rootGroup.name = 'sacredStoneCalligraphyDecalsGroup';
+  targetScene.add(rootGroup);
+
+  const decalEntries = {};
+  const planeGeo = new THREE.PlaneGeometry(1.00, 1.44);
+
+  for (const st of INSCRIPTION_STONES) {
+    const canvasEl = document.createElement('canvas');
+    canvasEl.width = 1024;
+    canvasEl.height = 1280;
+    const ctx = canvasEl.getContext('2d');
+    const fallbackVerse =
+      SPOILER_SAFE_STONE_POEMS[st.id] || SPOILER_SAFE_STONE_POEMS.stone_plaza;
+
+    const tex = new THREE.CanvasTexture(canvasEl);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      side: THREE.FrontSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4,
+    });
+
+    const holder = new THREE.Group();
+    holder.name = `stoneCalligraphyDecal_${st.id}`;
+    const sy = sampleGroundY(st.x, st.z);
+    holder.position.set(st.x, sy, st.z);
+    holder.rotation.y = st.rotY || 0;
+
+    // Mount borderless calligraphy decals cleanly in front of the +-0.245m stone face
+    const frontMesh = new THREE.Mesh(planeGeo, mat);
+    frontMesh.position.set(0, 1.24, 0.254);
+    holder.add(frontMesh);
+
+    const backMesh = new THREE.Mesh(planeGeo, mat);
+    backMesh.position.set(0, 1.24, -0.254);
+    backMesh.rotation.y = Math.PI;
+    holder.add(backMesh);
+
+    rootGroup.add(holder);
+
+    const entry = {
+      id: st.id,
+      canvas: canvasEl,
+      ctx,
+      texture: tex,
+      material: mat,
+      holder,
+      title: fallbackVerse.title,
+      lines: [...fallbackVerse.lines],
+      lastProgress: -1,
+      lastUnlocked: false,
+      redraw(progress = 0, unlocked = false) {
+        if (
+          Math.abs(progress - this.lastProgress) < 0.008 &&
+          unlocked === this.lastUnlocked
+        ) {
+          return;
+        }
+        this.lastProgress = progress;
+        this.lastUnlocked = unlocked;
+        drawStoneCalligraphyCanvas(this.ctx, {
+          title: this.title,
+          lines: this.lines,
+          progress,
+          unlocked,
+        });
+        this.texture.needsUpdate = true;
+      },
+    };
+    entry.redraw(0, false);
+    decalEntries[st.id] = entry;
+
+    // Fetch live scripture lines when not spoiler-masked
+    if (!shouldMaskStoneSpoilers() && typeof fetch === 'function') {
+      fetch(`/api/altar?stone=${encodeURIComponent(st.id)}`, { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data && Array.isArray(data.lines) && data.lines.length > 0 && !shouldMaskStoneSpoilers()) {
+            entry.title = data.title || entry.title;
+            entry.lines = data.lines;
+            entry.lastProgress = -1;
+            const gState = stoneGazeState.stones[st.id];
+            entry.redraw(
+              (gState?.gazeElapsed || 0) / 3.0,
+              Boolean(gState?.unlocked)
+            );
+          }
+        })
+        .catch(() => {});
+    }
+  }
+
+  return { group: rootGroup, entries: decalEntries };
+}
+
+const stoneDecals = createSacredStoneCalligraphyDecals(scene, terrainHeightAt);
 
 /* ------------------------------------------------------------------------- */
 /* 7. Stage 3–5 Co-Op Player System & Xiaomi Pad 7 Touch HUD                 */
@@ -690,6 +1078,125 @@ const coopSystem = await createCoopPlayerSystem({
 });
 
 const player = coopSystem.player;
+
+/* ------------------------------------------------------------------------- */
+/* 7A. Wire 3D Floating Genshin Damage Numbers (`damage-numbers.js`)         */
+/* ------------------------------------------------------------------------- */
+
+const damageNumbers = createDamageNumbers({
+  container: document.getElementById('hud'),
+  camera,
+});
+
+function resolveHitDamageElement(hitSpec = {}, result = {}) {
+  if (hitSpec.knightUltActive) return 'lightning';
+  const inf = String(hitSpec.infusion || hitSpec.applyMark || '').toLowerCase();
+  const src = String(hitSpec.source || result.source || '').toLowerCase();
+  if (inf === 'solar' || src.includes('cinder') || src.includes('fire') || src.includes('burn')) {
+    return 'fire';
+  }
+  if (
+    inf === 'rime' ||
+    src.includes('frost') ||
+    src.includes('shatter') ||
+    src.includes('ice') ||
+    src.includes('mage_attack') ||
+    src.includes('mage_heavy')
+  ) {
+    return 'ice';
+  }
+  if (
+    inf === 'tempest' ||
+    inf === 'eclipse' ||
+    src.includes('storm') ||
+    src.includes('lightning') ||
+    src.includes('cataclysm')
+  ) {
+    return 'lightning';
+  }
+  return 'physical';
+}
+
+function emitFloatingDamageForEnemyHit(enemy, result, hitSpec = {}) {
+  if (!damageNumbers || !enemy || !result) return;
+  const dmg = Number(result.damageDealt || 0);
+  if (dmg > 0) {
+    const element = resolveHitDamageElement(hitSpec, result);
+    const isCrit = Boolean(
+      hitSpec.knightUltActive ||
+        result.detonation ||
+        element === 'lightning' ||
+        dmg >= 68
+    );
+    damageNumbers.spawnDamageNumber({
+      amount: dmg,
+      element,
+      source: hitSpec.source || '',
+      isCrit,
+      worldPos: {
+        x: enemy.x,
+        y: enemy.y,
+        z: enemy.z,
+        heightOffset: enemy.isBoss ? 2.15 : 1.55,
+      },
+    });
+  }
+  if (result.detonation) {
+    const det = result.detonation;
+    const detEl =
+      det.id === 'solar_flare'
+        ? 'fire'
+        : det.id === 'shatterblow'
+          ? 'ice'
+          : 'lightning';
+    damageNumbers.spawnDamageNumber({
+      amount: det.bonusDmg || 65,
+      element: detEl,
+      source: det.id || 'detonation',
+      isCrit: true,
+      label: det.label || '',
+      worldPos: {
+        x: det.x ?? enemy.x,
+        y: det.y ?? enemy.y,
+        z: det.z ?? enemy.z,
+        heightOffset: (enemy.isBoss ? 2.15 : 1.55) + 0.35,
+      },
+    });
+  }
+}
+
+if (coopSystem?.enemyManager) {
+  const origApplyHitToEnemy = coopSystem.enemyManager.applyHitToEnemy;
+  if (typeof origApplyHitToEnemy === 'function') {
+    coopSystem.enemyManager.applyHitToEnemy = function wrappedApplyHitToEnemy(
+      enemy,
+      hitSpec = {}
+    ) {
+      const res = origApplyHitToEnemy(enemy, hitSpec);
+      if (res) {
+        emitFloatingDamageForEnemyHit(enemy, res, hitSpec);
+      }
+      return res;
+    };
+  }
+
+  const origApplyAreaOrLineHit = coopSystem.enemyManager.applyAreaOrLineHit;
+  if (typeof origApplyAreaOrLineHit === 'function') {
+    coopSystem.enemyManager.applyAreaOrLineHit = function wrappedApplyAreaOrLineHit(
+      opts = {}
+    ) {
+      const hits = origApplyAreaOrLineHit(opts);
+      if (Array.isArray(hits)) {
+        for (const h of hits) {
+          if (h?.enemy && h?.result) {
+            emitFloatingDamageForEnemyHit(h.enemy, h.result, opts.hitSpec || {});
+          }
+        }
+      }
+      return hits;
+    };
+  }
+}
 
 /* ------------------------------------------------------------------------- */
 /* 7B. Wave 3 30s Commune Client (with 3D Crimson Rose Ring Timer)           */
@@ -767,54 +1274,19 @@ async function openAltarSteleModal(explicitStone = null) {
   // Reading ANY Sacred Inscription Stone unlocks Commune and selects the sequential riddle stage!
   const readInfo = coopSystem.coopClient.sendStoneRead(stone.id || stone);
   sculptedHud?.setProgressionState(readInfo.state);
+  if (stoneGazeState.stones[readInfo.stoneId]) {
+    stoneGazeState.stones[readInfo.stoneId].gazeElapsed = 3.0;
+    stoneGazeState.stones[readInfo.stoneId].unlocked = true;
+    stoneDecals.entries[readInfo.stoneId]?.redraw(1.0, true);
+  }
 
   if (steleInteractPrompt) steleInteractPrompt.classList.remove('visible');
-
-  let title = stone.name || readInfo.stoneName || 'Sacred Inscription Stone';
-  let lines = [
-    'Inscribing ancient verse from the sanctuary stone...',
-  ];
-
-  try {
-    const res = await fetch(
-      `/api/altar?stage=${encodeURIComponent(readInfo.sequentialRiddleStage)}&stone=${encodeURIComponent(readInfo.stoneId)}`,
-      { cache: 'no-store' }
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data.title) title = data.title;
-      if (Array.isArray(data.lines) && data.lines.length > 0) {
-        lines = data.lines;
-      }
-    }
-  } catch {
-    // fallback if offline
-  }
-
-  if (altarSteleTitle) altarSteleTitle.textContent = title;
-  if (altarStelePoem) {
-    altarStelePoem.innerHTML = '';
-    for (const line of lines) {
-      const p = document.createElement('p');
-      p.textContent = line;
-      altarStelePoem.appendChild(p);
-    }
-  }
-
-  if (sculptedHud) {
-    sculptedHud.openInscriptionModal({
-      title,
-      lines,
-      hint: 'Touch Commune [R] and speak aloud to the God of Love.',
-    });
-  } else if (altarSteleModal) {
-    altarSteleModal.classList.add('visible');
-  }
+  return readInfo;
 }
 
 function closeAltarSteleModal() {
   altarSteleModal?.classList.remove('visible');
-  sculptedHud?.closeInscriptionModal();
+  sculptedHud?.closeInscriptionModal?.();
 }
 
 if (steleInteractPrompt) {
@@ -891,8 +1363,153 @@ async function finishCommuneHold() {
 }
 
 /* ------------------------------------------------------------------------- */
-/* 7C. Wave 4 Sculpted Stone-and-Brass HUD & 5-Scene Opening Flow            */
+/* 7C. Wave 4 Sculpted See-Through Ring HUD & Opening Flow                   */
 /* ------------------------------------------------------------------------- */
+
+const _lobbyProjVec = new THREE.Vector3();
+const _lobbyRaycaster = new THREE.Raycaster();
+const _lobbyPointerNdc = new THREE.Vector2();
+let eAimDragDistance = 9.5;
+
+function projectWorldPointToScreen(wx, wy, wz) {
+  const width = window.innerWidth || 1440;
+  const height = window.innerHeight || 900;
+  _lobbyProjVec.set(wx, wy, wz).project(camera);
+  const x = (_lobbyProjVec.x * 0.5 + 0.5) * width;
+  const y = (-_lobbyProjVec.y * 0.5 + 0.5) * height;
+  const xPct = clamp((x / Math.max(1, width)) * 100, 8, 92);
+  const yPct = clamp((y / Math.max(1, height)) * 100, 10, 90);
+  return {
+    x,
+    y,
+    xPct,
+    yPct,
+    visible: _lobbyProjVec.z <= 1.0,
+  };
+}
+
+function updateFlowerLobbyHeroProjections() {
+  if (!appFlow || appFlow.getStep?.() !== FLOW_STEPS.FLOWER_LOBBY) return;
+  const kGrp = coopSystem?.knight?.group;
+  const mGrp = coopSystem?.mage?.group;
+  if (!kGrp || !mGrp) return;
+
+  const kHead = projectWorldPointToScreen(
+    kGrp.position.x,
+    kGrp.position.y + 2.45,
+    kGrp.position.z
+  );
+  const kChest = projectWorldPointToScreen(
+    kGrp.position.x,
+    kGrp.position.y + 1.25,
+    kGrp.position.z
+  );
+  const mHead = projectWorldPointToScreen(
+    mGrp.position.x,
+    mGrp.position.y + 2.75,
+    mGrp.position.z
+  );
+  const mChest = projectWorldPointToScreen(
+    mGrp.position.x,
+    mGrp.position.y + 1.25,
+    mGrp.position.z
+  );
+
+  appFlow.setHeroScreenPositions?.({
+    knight: {
+      x: kChest.x,
+      y: kChest.y,
+      xPct: kChest.xPct,
+      yPct: kChest.yPct,
+      headX: kHead.x,
+      headY: kHead.y,
+      headXPct: kHead.xPct,
+      headYPct: kHead.yPct,
+      chestX: kChest.x,
+      chestY: kChest.y,
+      visible: kChest.visible,
+    },
+    mage: {
+      x: mChest.x,
+      y: mChest.y,
+      xPct: mChest.xPct,
+      yPct: mChest.yPct,
+      headX: mHead.x,
+      headY: mHead.y,
+      headXPct: mHead.xPct,
+      headYPct: mHead.yPct,
+      chestX: mChest.x,
+      chestY: mChest.y,
+      visible: mChest.visible,
+    },
+  });
+}
+
+function tryRaycastFlowerLobbyHero(clientX, clientY) {
+  if (!appFlow || appFlow.getStep?.() !== FLOW_STEPS.FLOWER_LOBBY) return null;
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, rect.width || window.innerWidth || 1440);
+  const height = Math.max(1, rect.height || window.innerHeight || 900);
+  _lobbyPointerNdc.x = ((clientX - rect.left) / width) * 2 - 1;
+  _lobbyPointerNdc.y = -((clientY - rect.top) / height) * 2 + 1;
+
+  camera.updateMatrixWorld(true);
+  _lobbyRaycaster.setFromCamera(_lobbyPointerNdc, camera);
+
+  const kGrp = coopSystem?.knight?.group;
+  const mGrp = coopSystem?.mage?.group;
+  const targets = [];
+  if (kGrp) {
+    kGrp.updateMatrixWorld(true);
+    targets.push({ role: 'Knight', group: kGrp });
+  }
+  if (mGrp) {
+    mGrp.updateMatrixWorld(true);
+    targets.push({ role: 'Mage', group: mGrp });
+  }
+
+  let bestRole = null;
+  let bestDist = Infinity;
+  for (const t of targets) {
+    const hits = _lobbyRaycaster.intersectObject(t.group, true);
+    if (hits.length > 0 && hits[0].distance < bestDist) {
+      bestDist = hits[0].distance;
+      bestRole = t.role;
+    }
+  }
+
+  if (!bestRole) {
+    for (const t of targets) {
+      const chest = projectWorldPointToScreen(
+        t.group.position.x,
+        t.group.position.y + 1.15,
+        t.group.position.z
+      );
+      const dx = clientX - chest.x;
+      const dy = clientY - chest.y;
+      if (Math.abs(dx) <= 84 && Math.abs(dy) <= 145) {
+        const d = Math.hypot(dx, dy);
+        if (d < bestDist) {
+          bestDist = d;
+          bestRole = t.role;
+        }
+      }
+    }
+  }
+
+  if (bestRole) {
+    if (typeof appFlow.claimCharacter === 'function') {
+      appFlow.claimCharacter(bestRole);
+    } else if (typeof appFlow.selectRole === 'function') {
+      appFlow.selectRole(bestRole);
+    }
+    coopSystem.coopClient.setPreferredRole(bestRole);
+    if (coopSystem.player.activeHeroId !== bestRole) {
+      coopSystem.swapActiveHero();
+    }
+  }
+  return bestRole;
+}
 
 sculptedHud = createSculptedHud({
   container: document.getElementById('hud'),
@@ -921,19 +1538,42 @@ sculptedHud = createSculptedHud({
   },
   onAimStart: () => {
     if (coopSystem.player.activeHeroId === 'Mage') {
-      coopSystem.startSkillAim();
+      eAimDragDistance = 9.5;
+      coopSystem.startSkillAim({
+        yaw: camState.yaw,
+        pitch: camState.pitch,
+        distance: eAimDragDistance,
+      });
     }
   },
-  onAimMove: ({ clientX, clientY }) => {
+  onAimMove: ({ clientX, clientY, dx = 0, dy = 0 } = {}) => {
     if (coopSystem.player.activeHeroId === 'Mage') {
-      const normY = 1.0 - clamp((clientY || window.innerHeight * 0.5) / Math.max(1, window.innerHeight), 0, 1);
-      const dist = 3.0 + normY * 13.0;
-      coopSystem.updateSkillAim({ distance: dist, yaw: camState.yaw });
+      if (typeof dx === 'number' && Math.abs(dx) > 0) {
+        camState.yaw -= dx * 0.0055;
+        coopSystem.heroStates.Mage.yaw = camState.yaw;
+      }
+      if (typeof dy === 'number' && Math.abs(dy) > 0) {
+        eAimDragDistance = clamp(eAimDragDistance - dy * 0.085, 3.0, 16.0);
+        camState.pitch = clamp(camState.pitch + dy * 0.0032, 0.04, 1.15);
+      } else if (typeof clientY === 'number') {
+        const normY =
+          1.0 - clamp(clientY / Math.max(1, window.innerHeight || 900), 0, 1);
+        eAimDragDistance = clamp(3.0 + normY * 13.0, 3.0, 16.0);
+      }
+      coopSystem.updateSkillAim({
+        distance: eAimDragDistance,
+        yaw: camState.yaw,
+        pitch: camState.pitch,
+      });
     }
   },
   onAimRelease: () => {
     if (coopSystem.player.activeHeroId === 'Mage') {
-      coopSystem.releaseSkillAim();
+      coopSystem.releaseSkillAim({
+        distance: eAimDragDistance,
+        yaw: camState.yaw,
+        pitch: camState.pitch,
+      });
     }
   },
   onToggleElement: () => {
@@ -960,7 +1600,7 @@ sculptedHud = createSculptedHud({
       autoCycleTod = true;
     } else {
       autoCycleTod = false;
-      applyTimeOfDay(todChoice === 'twilight' ? 'evening' : todChoice);
+      applyTimeOfDay(todChoice);
     }
   },
   onSelectProfile: (profChoice) => {
@@ -970,6 +1610,29 @@ sculptedHud = createSculptedHud({
     applyCameraOrbitDelta(dx, dy);
   },
 });
+
+if (sculptedHud) {
+  const origSetElement = sculptedHud.setElement;
+  sculptedHud.setElement = (el) => {
+    if (el === 'ice' || el === 'fire') {
+      if (coopSystem?.heroStates?.Knight) coopSystem.heroStates.Knight.selectedElement = el;
+      if (coopSystem?.heroStates?.Mage) coopSystem.heroStates.Mage.selectedElement = el;
+    }
+    return origSetElement(el);
+  };
+  const origSetProgressionState = sculptedHud.setProgressionState;
+  sculptedHud.setProgressionState = (patch = {}) => {
+    if (patch?.activeElement === 'ice' || patch?.activeElement === 'fire') {
+      if (coopSystem?.heroStates?.Knight) {
+        coopSystem.heroStates.Knight.selectedElement = patch.activeElement;
+      }
+      if (coopSystem?.heroStates?.Mage) {
+        coopSystem.heroStates.Mage.selectedElement = patch.activeElement;
+      }
+    }
+    return origSetProgressionState(patch);
+  };
+}
 
 function applyOpeningFlowCameraAndPoses(step) {
   if (step === FLOW_STEPS.IN_GAME) {
@@ -985,9 +1648,41 @@ function applyOpeningFlowCameraAndPoses(step) {
   camera.fov = pose.fov || 48;
   camera.updateProjectionMatrix();
 
-  if (step === FLOW_STEPS.FLOWER_LOBBY && pose.knightLobbyPos && pose.mageLobbyPos) {
-    const kP = pose.knightLobbyPos;
-    const mP = pose.mageLobbyPos;
+  if (step === FLOW_STEPS.FLOWER_LOBBY) {
+    const kP = {
+      x: -1.65,
+      z: 132.8,
+      yaw: 0.22,
+      ...(pose.knightLobbyPos || {}),
+      x: -1.65,
+      z: 132.8,
+      yaw: 0.22,
+    };
+    kP.y = walkableHeightAt(kP.x, kP.z);
+
+    const mP = {
+      x: 0.75,
+      z: 133.0,
+      yaw: -0.18,
+      ...(pose.mageLobbyPos || {}),
+      x: 0.75,
+      z: 133.0,
+      yaw: -0.18,
+    };
+    mP.y = walkableHeightAt(mP.x, mP.z);
+
+    // Ensure camera sits cleanly in front of (z >= 138.2) the wildflowers duo so both heroes are framed head-to-toe
+    const minLobbyCamZ = Math.max(kP.z, mP.z) + 5.2;
+    if (camState.vistaPos.z < minLobbyCamZ) {
+      const camGroundY = walkableHeightAt(0, minLobbyCamZ);
+      camState.vistaPos.set(-0.25, camGroundY + 1.68, minLobbyCamZ);
+      camState.vistaTarget.set(
+        -0.35,
+        (kP.y + mP.y) * 0.5 + 1.18,
+        (kP.z + mP.z) * 0.5
+      );
+    }
+
     coopSystem.heroStates.Knight.x = kP.x;
     coopSystem.heroStates.Knight.z = kP.z;
     coopSystem.heroStates.Knight.y = kP.y;
@@ -1005,6 +1700,9 @@ function applyOpeningFlowCameraAndPoses(step) {
     coopSystem.mage.play('cheer', { loop: true, fade: 0.15 });
   }
   updateCamera();
+  if (step === FLOW_STEPS.FLOWER_LOBBY) {
+    updateFlowerLobbyHeroProjections();
+  }
 }
 
 appFlow = createAppFlow({
@@ -1030,7 +1728,36 @@ appFlow = createAppFlow({
   onToggleReady: (ready) => {
     coopSystem.coopClient.setReady(ready);
   },
-  onStartGame: () => {
+  onStartGame: (payload = {}) => {
+    const chosenRole =
+      payload?.localRole || payload?.role || appFlow?.getState?.()?.localRole;
+    if (chosenRole && coopSystem.player.activeHeroId !== chosenRole) {
+      coopSystem.swapActiveHero();
+    }
+    const activeRole = coopSystem.player.activeHeroId || 'Knight';
+    const pName = String(
+      payload?.playerName || appFlow?.getState?.()?.playerName || ''
+    ).trim();
+    const partnerName = String(
+      payload?.partnerName || appFlow?.getState?.()?.partnerName || ''
+    ).trim();
+    const kName =
+      payload?.knightName ||
+      (activeRole === 'Knight' ? pName || 'Knight' : partnerName || 'Knight');
+    const mName =
+      payload?.mageName ||
+      (activeRole === 'Mage' ? pName || 'Mage' : partnerName || 'Mage');
+    sculptedHud?.setPlayerNames?.({
+      Knight: kName,
+      Mage: mName,
+      knight: kName,
+      mage: mName,
+      primaryName: pName || activeRole,
+      partnerName: partnerName || (activeRole === 'Knight' ? 'Mage' : 'Knight'),
+      playerName: pName || activeRole,
+      localRole: activeRole,
+    });
+
     coopSystem.coopClient.startExpedition();
     // Drop both heroes at the Southern Flower Field trailhead (0, 124) facing north toward Town!
     coopSystem.teleportLeaderAndPartner(0.0, 124.0, Math.PI);
@@ -1195,6 +1922,32 @@ const _nightWindowEmissive = new THREE.Color(0xff9d2e);
 let currentTodT = TOD_PRESETS.day.t;
 let autoCycleTod = false;
 
+function syncEnvironmentPolarity() {
+  if (typeof document === 'undefined') return 'day';
+  const ecWeight = Number(sky?.state?.eclipseWeight ?? 0);
+  const mode = sky?.state?.mode || 'day';
+  let polarity = 'day';
+  if (ecWeight > 0.35) {
+    polarity = 'eclipse';
+  } else if (mode === 'evening') {
+    polarity = 'golden';
+  } else if (mode === 'night' || mode === 'twilight' || currentTodT >= 0.80) {
+    polarity = 'night';
+  } else {
+    polarity = 'day';
+  }
+  if (document.body && document.body.dataset.envPolarity !== polarity) {
+    document.body.dataset.envPolarity = polarity;
+  }
+  if (
+    document.documentElement &&
+    document.documentElement.dataset.envPolarity !== polarity
+  ) {
+    document.documentElement.dataset.envPolarity = polarity;
+  }
+  return polarity;
+}
+
 export function applyTimeOfDay(modeOrT) {
   const skyState = sky.setTimeOfDay(modeOrT);
   currentTodT = skyState.t;
@@ -1271,6 +2024,7 @@ export function applyTimeOfDay(modeOrT) {
   }
 
   syncTodHudControls();
+  syncEnvironmentPolarity();
   return skyState;
 }
 
@@ -1478,38 +2232,25 @@ export const WORLD_SHOTS = {
   },
 };
 
-const camState = {
-  mode: 'player',
-  yaw: Math.PI + 0.18,
-  pitch: 0.10,
-  dist: 8.6,
-  baseFov: 50,
-  vistaPos: new THREE.Vector3(5.2, 3.8, 23.2),
-  vistaTarget: new THREE.Vector3(-3.2, 5.8, -16.0),
-};
-
-let activeViewId = 'plaza';
-let elapsed = 0;
-let windElapsed = 0;
-let activeGameplayShotSpec = null;
-const _meadowFocus = new THREE.Vector3();
-const _camDir = new THREE.Vector3();
-const _camShake = new THREE.Vector3();
-const _camImpactPos = new THREE.Vector3();
-const _camImpactLook = new THREE.Vector3();
-const _camImpactFov = { value: 0 };
-const _vfxLookOffset = new THREE.Vector3();
-
 function syncPrayerEclipseAndMonochrome() {
-  if (activeGameplayShotSpec) return;
+  if (coopSystem?.sanctuarySteleMesh) {
+    coopSystem.sanctuarySteleMesh.visible = false;
+  }
+  if (activeGameplayShotSpec) {
+    syncEnvironmentPolarity();
+    return;
+  }
   const cLoop = coopSystem?.campaignLoop;
   const vSeq = cLoop?.verdictSequence;
   const communeState = communeClient?.getState?.()?.state;
+  const hudCommune = sculptedHud?.getState?.()?.commune;
   const inPrayerChannel = Boolean(
     cLoop?.communeChannelActive ||
       coopSystem?.communeChannel?.active ||
       communeState === 'listening' ||
-      communeState === 'judging'
+      communeState === 'judging' ||
+      hudCommune?.listening ||
+      hudCommune?.partnerListening
   );
 
   if (vSeq?.active && vSeq.kind === 'smite') {
@@ -1555,6 +2296,7 @@ function syncPrayerEclipseAndMonochrome() {
     });
     post.setSmiteMonochrome?.(0.0);
   }
+  syncEnvironmentPolarity();
 }
 
 function syncCharacterGroundShadows() {
@@ -1667,17 +2409,48 @@ function updateCamera() {
   }
 
   if (camState.mode === 'player') {
-    const h = 1.55 + Math.sin(camState.pitch) * camState.dist;
-    const flat = Math.cos(camState.pitch) * camState.dist;
+    const gazeBlend = clamp(stoneGazeState.shoulderBlend || 0, 0, 1);
+    const effDist = THREE.MathUtils.lerp(camState.dist, 3.25, gazeBlend);
+    const rightX = -Math.cos(camState.yaw);
+    const rightZ = Math.sin(camState.yaw);
+    const shoulderPosOff = 1.48 * gazeBlend;
+    const shoulderLookOff = 0.95 * gazeBlend;
+
+    const h = THREE.MathUtils.lerp(1.55, 1.38, gazeBlend) + Math.sin(camState.pitch) * effDist;
+    const flat = Math.cos(camState.pitch) * effDist;
     camera.position.set(
-      player.x - Math.sin(camState.yaw) * flat + _camShake.x + _camImpactPos.x,
+      player.x - Math.sin(camState.yaw) * flat + rightX * shoulderPosOff + _camShake.x + _camImpactPos.x,
       player.y + h + _camShake.y + _camImpactPos.y,
-      player.z - Math.cos(camState.yaw) * flat + _camShake.z + _camImpactPos.z
+      player.z - Math.cos(camState.yaw) * flat + rightZ * shoulderPosOff + _camShake.z + _camImpactPos.z
     );
+
+    const activeStone =
+      gazeBlend > 0.01 && stoneGazeState.activeStoneId
+        ? INSCRIPTION_STONES.find((s) => s.id === stoneGazeState.activeStoneId)
+        : null;
+
+    const baseLookX = player.x + Math.sin(camState.yaw) * 6.0 + rightX * shoulderLookOff;
+    const baseLookY = player.y + 1.85 - 0.22 * gazeBlend + lookDipY;
+    const baseLookZ = player.z + Math.cos(camState.yaw) * 6.0 + rightZ * shoulderLookOff;
+
+    const targetLookX = activeStone
+      ? THREE.MathUtils.lerp(baseLookX, activeStone.x - rightX * 0.22, gazeBlend)
+      : baseLookX;
+    const targetLookY = activeStone
+      ? THREE.MathUtils.lerp(
+          baseLookY,
+          terrainHeightAt(activeStone.x, activeStone.z) + 1.24 + lookDipY,
+          gazeBlend
+        )
+      : baseLookY;
+    const targetLookZ = activeStone
+      ? THREE.MathUtils.lerp(baseLookZ, activeStone.z, gazeBlend)
+      : baseLookZ;
+
     camera.lookAt(
-      player.x + Math.sin(camState.yaw) * 6.0 + _camShake.x * 0.6 + _camImpactLook.x,
-      player.y + 1.85 + lookDipY + _camShake.y * 0.6 + _camImpactLook.y,
-      player.z + Math.cos(camState.yaw) * 6.0 + _camShake.z * 0.6 + _camImpactLook.z
+      targetLookX + _camShake.x * 0.6 + _camImpactLook.x,
+      targetLookY + _camShake.y * 0.6 + _camImpactLook.y,
+      targetLookZ + _camShake.z * 0.6 + _camImpactLook.z
     );
     const targetFov = (camState.baseFov || 50) + (_camImpactFov.value || 0);
     if (Math.abs(camera.fov - targetFov) > 1e-3) {
@@ -1966,6 +2739,10 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
+  if (isUiOverlayBlockingInput()) {
+    return;
+  }
+
   const k = e.key.toLowerCase();
   const wasPressed = keys.has(k);
   keys.add(k);
@@ -2032,7 +2809,11 @@ window.addEventListener('keydown', (e) => {
   else if (!wasPressed && k === 'e') {
     activeGameplayShotSpec = null;
     if (camState.mode === 'vista') camState.mode = 'player';
-    coopSystem.triggerAction('skill');
+    if (coopSystem.player.activeHeroId === 'Mage') {
+      coopSystem.startSkillAim({ yaw: camState.yaw, pitch: camState.pitch });
+    } else {
+      coopSystem.triggerAction('skill');
+    }
   } else if (!wasPressed && k === 'q') {
     activeGameplayShotSpec = null;
     if (camState.mode === 'vista') camState.mode = 'player';
@@ -2051,7 +2832,7 @@ window.addEventListener('keydown', (e) => {
     coopSystem.triggerAction('dash');
   } else if (k === 't') {
     autoCycleTod = false;
-    const order = ['day', 'evening', 'night'];
+    const order = ['day', 'evening', 'twilight', 'night'];
     const nextIdx = (order.indexOf(sky.state.mode) + 1) % order.length;
     applyTimeOfDay(order[nextIdx]);
   } else if (k === 'p') {
@@ -2069,12 +2850,26 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   const k = e.key.toLowerCase();
   keys.delete(k);
+  if (isUiOverlayBlockingInput()) return;
   if (k === 'r') {
     finishCommuneHold();
+  } else if (
+    k === 'e' &&
+    coopSystem.player.activeHeroId === 'Mage' &&
+    coopSystem.actionAim?.aimState?.active
+  ) {
+    coopSystem.releaseSkillAim({ yaw: camState.yaw, pitch: camState.pitch });
   }
 });
 
 canvas.addEventListener('mousedown', (e) => {
+  if (appFlow && appFlow.getStep?.() === FLOW_STEPS.FLOWER_LOBBY) {
+    if (e.button === 0) {
+      tryRaycastFlowerLobbyHero(e.clientX, e.clientY);
+    }
+    return;
+  }
+  if (isUiOverlayBlockingInput()) return;
   if (coopSystem?.campaignLoop?.isControlLocked?.()) return;
   if (e.button === 2) {
     e.preventDefault();
@@ -2145,6 +2940,7 @@ window.addEventListener('mousemove', (e) => {
 canvas.addEventListener(
   'wheel',
   (e) => {
+    if (isUiOverlayBlockingInput()) return;
     if (camState.mode === 'player') {
       camState.dist = clamp(camState.dist + e.deltaY * 0.008, 4.5, 24);
     } else {
@@ -2161,6 +2957,9 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
   post.setSize(window.innerWidth, window.innerHeight);
+  if (appFlow && appFlow.getStep?.() === FLOW_STEPS.FLOWER_LOBBY) {
+    updateFlowerLobbyHeroProjections();
+  }
 });
 
 /* ------------------------------------------------------------------------- */
@@ -2249,6 +3048,86 @@ export function setCameraOrbit(yaw, pitch = 0.14, dist = 7.8) {
   updateCamera();
 }
 
+function updateSacredStoneGaze(dt) {
+  const nearStone = coopSystem.getNearestInscriptionStone(4.5);
+  const activeEnemies = coopSystem?.enemyManager?.activeEnemies || [];
+  const inActiveMeleeDanger = activeEnemies.some((e) => {
+    if (!e || e.dead || !e.active || (e.hp !== undefined && e.hp <= 0)) return false;
+    const d = Math.hypot(e.x - player.x, e.z - player.z);
+    return d <= 8.0 && (e.aiState === 'windup' || e.attackAnimTimer > 0);
+  });
+  stoneGazeState.inActiveMeleeDanger = inActiveMeleeDanger;
+
+  let cameraLookDot = -1.0;
+  if (nearStone) {
+    const camFwdX = Math.sin(camState.yaw);
+    const camFwdZ = Math.cos(camState.yaw);
+    const dxP = nearStone.position.x - player.x;
+    const dzP = nearStone.position.z - player.z;
+    const lenP = Math.hypot(dxP, dzP) || 1;
+    const dotP = (dxP / lenP) * camFwdX + (dzP / lenP) * camFwdZ;
+
+    const dxC = nearStone.position.x - camera.position.x;
+    const dzC = nearStone.position.z - camera.position.z;
+    const lenC = Math.hypot(dxC, dzC) || 1;
+    const dotC = (dxC / lenC) * camFwdX + (dzC / lenC) * camFwdZ;
+    cameraLookDot = Math.max(dotP, dotC);
+  }
+  stoneGazeState.cameraLookDot = Number(cameraLookDot.toFixed(3));
+
+  const isGazingAtStone = Boolean(
+    camState.mode === 'player' &&
+      nearStone &&
+      cameraLookDot >= 0.55 &&
+      !inActiveMeleeDanger &&
+      !isUiOverlayBlockingInput() &&
+      !coopSystem?.campaignLoop?.isControlLocked?.()
+  );
+
+  if (isGazingAtStone) {
+    stoneGazeState.activeStoneId = nearStone.id;
+    stoneGazeState.shoulderBlend +=
+      (1.0 - stoneGazeState.shoulderBlend) * Math.min(1, 6.5 * dt);
+
+    const stEntry =
+      stoneGazeState.stones[nearStone.id] ||
+      (stoneGazeState.stones[nearStone.id] = {
+        id: nearStone.id,
+        gazeElapsed: 0,
+        unlocked: false,
+      });
+
+    stEntry.gazeElapsed = Math.min(3.0, stEntry.gazeElapsed + dt);
+    stoneDecals.entries[nearStone.id]?.redraw(
+      stEntry.gazeElapsed / 3.0,
+      stEntry.unlocked
+    );
+
+    if (stEntry.gazeElapsed >= 3.0 && !stEntry.unlocked) {
+      stEntry.unlocked = true;
+      const readInfo = coopSystem.coopClient.sendStoneRead(nearStone.id);
+      sculptedHud?.setProgressionState(readInfo.state);
+      stoneDecals.entries[nearStone.id]?.redraw(1.0, true);
+    }
+  } else {
+    stoneGazeState.activeStoneId = null;
+    stoneGazeState.shoulderBlend +=
+      (0.0 - stoneGazeState.shoulderBlend) * Math.min(1, 6.5 * dt);
+    if (stoneGazeState.shoulderBlend < 0.002) {
+      stoneGazeState.shoulderBlend = 0;
+    }
+  }
+
+  // Zero "✿ Read" button pill and zero 2D modal popup!
+  if (steleInteractPrompt) {
+    steleInteractPrompt.classList.remove('visible');
+  }
+  sculptedHud?.setNearbyStonePrompt?.({
+    visible: false,
+    stoneName: '',
+  });
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const rawDt = clock.getDelta();
@@ -2272,6 +3151,9 @@ function animate() {
   communeClient?.update(dt, { x: player.x, y: player.y, z: player.z });
 
   if (camState.mode === 'player') {
+    if (isUiOverlayBlockingInput() && keys.size > 0) {
+      keys.clear();
+    }
     const activeJoy =
       sculptedHud?.joyState?.magnitude > 0.05 ? sculptedHud.joyState : touchHud.joyState;
     const isOrbiting = Boolean(sculptedHud?.isOrbitDragging || touchHud.isOrbitDragging);
@@ -2293,20 +3175,34 @@ function animate() {
       camera,
     });
 
-    const nearStone = coopSystem.getNearestInscriptionStone();
-    const showStelePrompt =
-      Boolean(nearStone) &&
-      !coopSystem?.campaignLoop?.isControlLocked?.() &&
-      !altarSteleModal?.classList.contains('visible') &&
-      !sanctuaryLobby?.classList.contains('visible');
-    if (steleInteractPrompt) {
-      steleInteractPrompt.classList.toggle('visible', showStelePrompt);
+    // Tick persistent Fire Sword burn DoT floating damage numbers
+    const activeEnemies = coopSystem?.enemyManager?.activeEnemies || [];
+    for (let i = 0; i < activeEnemies.length; i++) {
+      const e = activeEnemies[i];
+      if (e && !e.dead && e.active && e.burnTimer > 0 && e.burnDps > 0) {
+        e._burnPopAccum = (e._burnPopAccum || 0) + dt;
+        if (e._burnPopAccum >= 0.5) {
+          e._burnPopAccum -= 0.5;
+          damageNumbers?.spawnDamageNumber({
+            amount: Math.max(1, Math.round(e.burnDps * 0.5)),
+            element: 'fire',
+            source: 'fire_burn',
+            isCrit: false,
+            worldPos: {
+              x: e.x,
+              y: e.y,
+              z: e.z,
+              heightOffset: e.isBoss ? 1.95 : 1.4,
+            },
+          });
+        }
+      }
     }
-    sculptedHud?.setNearbyStonePrompt({
-      visible: showStelePrompt,
-      stoneName: 'Read',
-    });
+
+    updateSacredStoneGaze(dt);
   } else {
+    stoneGazeState.activeStoneId = null;
+    stoneGazeState.shoulderBlend = 0;
     if (appFlow && appFlow.getStep() === FLOW_STEPS.FLOWER_LOBBY) {
       coopSystem.knight?.update(dt);
       coopSystem.mage?.update(dt);
@@ -2334,6 +3230,10 @@ function animate() {
   );
   village.update(dt);
   updateCamera();
+  if (appFlow && appFlow.getStep?.() === FLOW_STEPS.FLOWER_LOBBY) {
+    updateFlowerLobbyHeroProjections();
+  }
+  damageNumbers?.update(dt, camera);
   updateMeadowFocus(windElapsed);
   sky.update(windElapsed);
 
@@ -2379,6 +3279,11 @@ window.__WORLD__ = {
   sculptedHud,
   appFlow,
   touchHud,
+  damageNumbers,
+  stoneGazeState,
+  stoneDecals,
+  isUiOverlayBlockingInput,
+  tryRaycastFlowerLobbyHero,
   player,
   camState,
   VIEWS,

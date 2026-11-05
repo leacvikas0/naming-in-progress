@@ -46,6 +46,12 @@ export const TOD_PRESETS = {
     t: 0.76,
     timeLabel: '18:15 · Sunset Twilight',
   },
+  twilight: {
+    id: 'twilight',
+    label: '🌆 Twilight',
+    t: 0.84,
+    timeLabel: '19:45 · Indigo Twilight',
+  },
   night: {
     id: 'night',
     label: '🌙 Night',
@@ -653,6 +659,38 @@ const TOD_KEYS = [
     waterTint: [0.90, 0.74, 0.74],
     windowGlow: 0.88,
     daylight: 0.72,
+  },
+  {
+    // Deep Indigo-Violet Twilight Dusk (t = 0.84)
+    t: 0.84,
+    zen: 0x161f4d,
+    mid: 0x45356b,
+    hor: 0x8e5678,
+    fog: 0x6c4868,
+    sunCore: 0xffebd6,
+    sunRim: 0xe86248,
+    sunCorona: 0xd87462,
+    sunVis: 0.32,
+    moonCore: 0xeef5ff,
+    moonShadow: 0x4d4e7a,
+    moonCorona: 0x8ab4f8,
+    moonVis: 0.82,
+    starAlpha: 0.72,
+    cloudWarm: 0xc88aa8,
+    cloudCool: 0x3d3866,
+    sunPos: [-0.28, 0.04, 0.96],
+    moonPos: [0.22, 0.24, -0.95],
+    keyLightPos: [-0.43, 0.58, 0.69],
+    sunLightColor: 0xc898d8,
+    sunIntensity: 1.12,
+    hemiSky: 0x72649e,
+    hemiGround: 0x342c44,
+    hemiIntensity: 0.62,
+    ambIntensity: 0.16,
+    worldTint: [0.58, 0.54, 0.72],
+    waterTint: [0.52, 0.50, 0.68],
+    windowGlow: 0.96,
+    daylight: 0.46,
   },
   {
     // Starlit Moonlit Night (t = 0.96)
@@ -1475,12 +1513,18 @@ export function createTimeOfDaySky({
   function setTimeOfDay(modeOrT) {
     const tt = resolveT(modeOrT);
     state.t = tt;
-    state.mode =
-      tt >= 0.20 && tt < 0.64
-        ? 'day'
-        : tt >= 0.64 && tt < 0.86
-        ? 'evening'
-        : 'night';
+    if (typeof modeOrT === 'string' && TOD_PRESETS[modeOrT]) {
+      state.mode = modeOrT;
+    } else {
+      state.mode =
+        tt >= 0.20 && tt < 0.64
+          ? 'day'
+          : tt >= 0.64 && tt < 0.80
+          ? 'evening'
+          : tt >= 0.80 && tt < 0.90
+          ? 'twilight'
+          : 'night';
+    }
 
     let idx = 0;
     while (idx < TOD_KEYS.length - 2 && TOD_KEYS[idx + 1].t < tt) idx++;
@@ -1541,13 +1585,19 @@ export function createTimeOfDaySky({
 
     // Sync 3D Canopy Sunbeams, Valley Mist Cushions & Toroidal Living Air with Time of Day
     sunbeamUniforms.uBeamColor.value.copy(sun.color).lerp(skyUniforms.uSunCore.value, 0.45);
-    sunbeamUniforms.uStrength.value = state.mode === 'night' ? 0.42 : 1.0;
+    sunbeamUniforms.uStrength.value =
+      state.mode === 'night' ? 0.42 : state.mode === 'twilight' ? 0.62 : 1.0;
     mistCushionUniforms.uSunDir.value.copy(activeLightDir);
     if (state.mode === 'night') {
       mistCushionUniforms.uMistCool.value.setHex(0x1b2d52);
       mistCushionUniforms.uMistWarm.value.setHex(0x324d80);
       mistCushionUniforms.uMistOpacity.value = 0.52;
       livingAirUniforms.uWindTint.value.setRGB(0.78, 0.92, 1.15); // Luminous silver-cyan night wind!
+    } else if (state.mode === 'twilight') {
+      mistCushionUniforms.uMistCool.value.setHex(0x483868);
+      mistCushionUniforms.uMistWarm.value.setHex(0x9a6484);
+      mistCushionUniforms.uMistOpacity.value = 0.64;
+      livingAirUniforms.uWindTint.value.setRGB(0.92, 0.84, 1.08); // Indigo-violet dusk wind!
     } else if (state.mode === 'evening') {
       mistCushionUniforms.uMistCool.value.setHex(0x986888);
       mistCushionUniforms.uMistWarm.value.setHex(0xffb278);
