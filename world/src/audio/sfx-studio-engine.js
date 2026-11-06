@@ -27,6 +27,8 @@ export const FOLEY_MANIFEST = {
   'petals-flutter': 'sfx/foley/petals-flutter.mp3',
   'cello-harmonic': 'sfx/foley/cello-harmonic.mp3',
   'whip-crack': 'sfx/foley/whip-crack.mp3',
+  // V2A Reference Stems (Frame-locked full-clip stereo tracks)
+  'omni-briar-v2a': 'sfx/v2a/omni-video5-audio.wav',
   // Existing studio transient & bass layers
   'whoosh-cinematic': 'sfx/whoosh-cinematic.mp3',
   'whoosh-short': 'sfx/whoosh-short.mp3',
@@ -285,6 +287,33 @@ export function createStudioAudioDirector({ basePath = './audio' } = {}) {
     activeNodes.push(osc);
   }
 
+  /**
+   * Starts a continuous frame-locked V2A stereo stem (such as `omni-video5-audio.wav`)
+   * from `fromTime` whenever an Option using a full-clip V2A stem is active.
+   */
+  function startSceneStemIfNeeded(sceneId, optionNum, fromTime = 0) {
+    const opt = Number.isFinite(Number(optionNum)) ? Number(optionNum) : 1;
+    if (sceneId === 'briar' && (opt === 0 || opt === 6)) {
+      const buf = buffers.get('omni-briar-v2a');
+      if (!buf) return false;
+      const offset = Math.max(0, Math.min(fromTime, Math.max(0, buf.duration - 0.05)));
+      playSample('omni-briar-v2a', {
+        delay: 0,
+        offset,
+        duration: Math.max(0.1, buf.duration - offset),
+        rate: 1.0,
+        gain: opt === 0 ? 0.98 : 0.88,
+        attack: 0.01,
+        release: 0.08,
+        freqStart: 20000,
+        reverbSend: opt === 0 ? 0.04 : 0.14,
+        saturate: opt === 6,
+      });
+      return true;
+    }
+    return false;
+  }
+
   // ==========================================================================
   // SCENE 1: BRIAR OPTION 09 (BLESSING & UNDERGROUND RESURRECTION)
   // Beat markers in `clip-blessing-resurrection.webm`:
@@ -295,14 +324,39 @@ export function createStudioAudioDirector({ basePath = './audio' } = {}) {
   //   4.45s: Beat 3  — Subterranean Flower Slump & Smooth HP Fill
   //   6.38s: Beat 4  — Side-by-Side Pop-Up & 64-Petal Scatter!
   // ==========================================================================
-  function triggerBriarCue(beatId, optionNum = 1) {
-    // 5 Distinct Sound Direction Styles for Briar Option 09:
+  function triggerBriarCue(beatId, optionNum = 0) {
+    // Sound Direction Styles for Briar Option 09:
+    // Option 0: ★ Omni V2A Reference Track (`omni-video5-audio.wav` — Raw Frame-Locked Stereo V2A)
     // Option 1: Witcher 3 Iris Manor — Heavy Gnarled Chestnut Bark, Whip Snaps & Deep Earth Tomb
     // Option 2: Sacred Botanical Cathedral — Warm Tibetan Singing Bowl, Woody Roots & Subterranean Heartbeat
     // Option 3: Visceral Thicket — Crisp Whip-Crack Lattice, Heavy Soil Submerge & Lush Cello Bloom
     // Option 4: Dark Eclipse Ritual — Tectonic Rumble, Snapping Briars & Resonant Bell Awakening
     // Option 5: Pure Organic Foley — Intimate Close-Mic Wood Creaks, Thick Foliage & Soft Petal Burst
-    const opt = Number(optionNum) || 1;
+    // Option 6: Hybrid Omni V2A Stem + 34Hz Sub-Bass Membrane & Singing Bowl
+    const opt = Number.isFinite(Number(optionNum)) ? Number(optionNum) : 0;
+
+    // Option 0 plays the pure continuous Omni V2A stem (`omni-video5-audio.wav`) started by `startSceneStemIfNeeded`
+    if (opt === 0) {
+      return;
+    }
+
+    // Option 6 layers cinema sub-bass + harmonic bowl underneath the continuous Omni V2A stem
+    if (opt === 6) {
+      if (beatId === 'briar_whip_lock') {
+        playSubMembrane({ delay: 0.35, freqStart: 76, freqEnd: 34, duration: 0.48, gain: 0.65 });
+      } else if (beatId === 'earth_plunge') {
+        playSample('impact-bass-2', { delay: 0.14, rate: 0.75, gain: 0.78, saturate: true });
+        playSubMembrane({ delay: 0.12, freqStart: 88, freqEnd: 28, duration: 0.62, gain: 0.85 });
+      } else if (beatId === 'underground_heal') {
+        playSample('heartbeat', { delay: 0.10, rate: 0.85, gain: 0.68, freqStart: 320 });
+        playSample('heartbeat', { delay: 0.78, rate: 0.92, gain: 0.74, freqStart: 380 });
+        playSample('singing-bowl', { delay: 0.08, offset: 0.2, duration: 1.8, rate: 0.74, gain: 0.42, freqStart: 680, freqEnd: 1600, reverbSend: 0.55 });
+      } else if (beatId === 'pop_up_emerge') {
+        playSample('chime', { rate: 0.88, gain: 0.46, freqStart: 3400, reverbSend: 0.50 });
+        playSubMembrane({ freqStart: 74, freqEnd: 40, duration: 0.35, gain: 0.58 });
+      }
+      return;
+    }
 
     if (beatId === 'prayer_start') {
       playSample('wind-gust', { offset: 0.4, duration: 1.3, rate: 0.72, gain: 0.32, freqStart: 1200, reverbSend: 0.35 });
@@ -710,6 +764,7 @@ export function createStudioAudioDirector({ basePath = './audio' } = {}) {
   return {
     preloadAll,
     stopAllActive,
+    startSceneStemIfNeeded,
     triggerBriarCue,
     triggerSmiteCue,
     triggerKnightComboCue,
