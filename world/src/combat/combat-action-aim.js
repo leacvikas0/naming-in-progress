@@ -46,11 +46,13 @@ export const KNIGHT_COMBO_SPECS = [
     index: 0,
     clip: 'combo1',
     startTime: 0,
+    animStartTime: 0.1,
+    animTimeScale: 1.22,
     baseTimeScale: 1.0,
     timeScale: 1.0,
-    duration: 0.56,
+    duration: 0.52,
     contactFrac: 0.4,
-    stepDist: 0.22,
+    stepDist: 0.24,
     hopVy: 0,
     cameraImpulse: 0,
   },
@@ -58,11 +60,13 @@ export const KNIGHT_COMBO_SPECS = [
     index: 1,
     clip: 'combo2',
     startTime: 0,
+    animStartTime: 0.2,
+    animTimeScale: 1.25,
     baseTimeScale: 1.0,
     timeScale: 1.0,
-    duration: 0.56,
+    duration: 0.52,
     contactFrac: 0.42,
-    stepDist: 0.24,
+    stepDist: 0.26,
     hopVy: 0,
     cameraImpulse: 0,
   },
@@ -70,11 +74,13 @@ export const KNIGHT_COMBO_SPECS = [
     index: 2,
     clip: 'combo3',
     startTime: 0,
+    animStartTime: 0.26,
+    animTimeScale: 1.28,
     baseTimeScale: 1.0,
     timeScale: 1.0,
-    duration: 0.6,
+    duration: 0.54,
     contactFrac: 0.44,
-    stepDist: 0.28,
+    stepDist: 0.3,
     hopVy: 0,
     cameraImpulse: 0,
   },
@@ -82,11 +88,13 @@ export const KNIGHT_COMBO_SPECS = [
     index: 3,
     clip: 'combo4',
     startTime: 0,
+    animStartTime: 0.16,
+    animTimeScale: 1.25,
     baseTimeScale: 1.0,
     timeScale: 1.0,
-    duration: 0.66,
+    duration: 0.58,
     contactFrac: 0.46,
-    stepDist: 0.36,
+    stepDist: 0.38,
     hopVy: 0,
     cameraImpulse: 0,
   },
@@ -246,6 +254,8 @@ export function createCombatActionAimController({
       comboIndex: h.comboIndex,
       clip: baseSpec.clip,
       startTime: 0,
+      animStartTime: baseSpec.animStartTime ?? 0,
+      animTimeScale: (baseSpec.animTimeScale ?? 1.0) * effectiveTimeScale,
       hopVy: 0,
       baseDuration: baseSpec.duration,
       duration: effectiveDuration,
@@ -335,11 +345,7 @@ export function createCombatActionAimController({
     const h = heroes[normId];
 
     if (normId === 'Knight') {
-      // If a tap swing was started < 0.30s ago from LMB mousedown before hold timer fired
-      // and hasn't hit contact yet, cancel it cleanly to raise the shield.
-      if (h.activeSwing && !h.activeSwing.contactFired) {
-        h.activeSwing = null;
-      }
+      h.activeSwing = null;
       h.bufferedAttack = false;
       h.shieldBlocking = true;
       onShieldBlockChanged?.(true, h);
@@ -433,6 +439,20 @@ export function createCombatActionAimController({
       return { shieldBlocking: false };
     }
     return { shieldBlocking: h.shieldBlocking };
+  }
+
+  function cancelSwing(heroId = 'Knight', { resetCombo = false } = {}) {
+    const normId = heroId === 'Mage' ? 'Mage' : 'Knight';
+    const h = heroes[normId];
+    h.activeSwing = null;
+    h.bufferedAttack = false;
+    h.mashTimeScale = MASH_TIMESCALE_MIN;
+    if (resetCombo) {
+      h.comboIndex = -1;
+      h.comboResetTimer = 0;
+      h.mashCount = 0;
+    }
+    return { canceled: true, heroId: normId };
   }
 
   function notifyHeroMoved(heroId = 'Mage') {
@@ -655,6 +675,7 @@ export function createCombatActionAimController({
     pressAttack,
     pressHeavy,
     releaseHeavy,
+    cancelSwing,
     notifyHeroMoved,
     toggleElement,
     startSkillAim,

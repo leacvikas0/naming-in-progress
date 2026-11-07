@@ -39,8 +39,9 @@ const TAU = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
 
 // Exact sword_1handed.gltf local blade coordinates inside `knightChar.equippedWeapons['handSlot.r']`
-export const LOCAL_BLADE_GUARD = Object.freeze(new THREE.Vector3(0, 0.32, 0));
-export const LOCAL_BLADE_TIP = Object.freeze(new THREE.Vector3(0, 1.92, 0));
+// (Crossguard top = 0.20m, physical blade tip = 1.4095m -> strictly never longer than the real blade!)
+export const LOCAL_BLADE_GUARD = Object.freeze(new THREE.Vector3(0, 0.20, 0));
+export const LOCAL_BLADE_TIP = Object.freeze(new THREE.Vector3(0, 1.41, 0));
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const saturate = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -175,43 +176,52 @@ export const BREATHING_PALETTES = Object.freeze({
 export const SWING_CONFIGS = Object.freeze({
   combo1: {
     clip: '1H_Melee_Attack_Slice_Horizontal',
-    startTime: 0.10,
-    timeScale: 1.25,
-    duration: 0.48,
+    startTime: 0.14,
+    timeScale: 1.18,
+    duration: 0.52,
     activeStart: 0.01,
-    activeEnd: 0.25,
+    activeEnd: 0.26,
+    clipCleaveStart: 0.11,
+    clipCleaveEnd: 0.5,
     tiltZ: -0.18,
-    arcSpan: Math.PI * 1.15,
+    arcSpan: Math.PI * 1.18,
   },
   combo2: {
     clip: '1H_Melee_Attack_Slice_Diagonal',
     startTime: 0.28,
     timeScale: 1.15,
-    duration: 0.48,
-    activeStart: 0.03,
-    activeEnd: 0.24,
+    duration: 0.52,
+    activeStart: 0.02,
+    activeEnd: 0.25,
+    clipCleaveStart: 0.21,
+    clipCleaveEnd: 0.58,
     tiltZ: -0.58,
     arcSpan: Math.PI * 1.24,
   },
   combo3: {
     clip: '1H_Melee_Attack_Chop',
-    startTime: 0.42,
+    startTime: 0.44,
     timeScale: 1.15,
-    duration: 0.50,
-    activeStart: 0.04,
-    activeEnd: 0.25,
+    duration: 0.54,
+    activeStart: 0.02,
+    activeEnd: 0.26,
+    clipCleaveStart: 0.27,
+    clipCleaveEnd: 0.68,
     tiltZ: -1.12,
     arcSpan: Math.PI * 1.18,
   },
   combo4: {
-    clip: '1H_Melee_Attack_Jump_Chop',
-    startTime: 0.52,
-    timeScale: 1.20,
-    duration: 0.54,
-    activeStart: 0.05,
+    clip: '1H_Melee_Attack_Stab',
+    startTime: 0.26,
+    timeScale: 1.15,
+    duration: 0.58,
+    activeStart: 0.02,
     activeEnd: 0.28,
-    tiltZ: -1.25,
-    arcSpan: Math.PI * 1.28,
+    clipCleaveStart: 0.17,
+    clipCleaveEnd: 0.58,
+    tiltZ: -0.26,
+    arcSpan: Math.PI * 1.12,
+    isThrust: true,
   },
   charged: {
     clip: '2H_Melee_Attack_Spinning',
@@ -220,18 +230,23 @@ export const SWING_CONFIGS = Object.freeze({
     duration: 0.58,
     activeStart: 0.01,
     activeEnd: 0.52,
+    clipCleaveStart: 0.01,
+    clipCleaveEnd: 0.6,
     tiltZ: -0.12,
     arcSpan: Math.PI * 2.0,
   },
   intercept: {
     clip: '1H_Melee_Attack_Stab',
-    startTime: 0.28,
+    startTime: 0.26,
     timeScale: 1.25,
-    duration: 0.44,
+    duration: 0.48,
     activeStart: 0.02,
-    activeEnd: 0.24,
-    tiltZ: -0.32,
-    arcSpan: Math.PI * 0.92,
+    activeEnd: 0.26,
+    clipCleaveStart: 0.16,
+    clipCleaveEnd: 0.56,
+    tiltZ: -0.3,
+    arcSpan: Math.PI * 0.96,
+    isThrust: true,
   },
 });
 
@@ -265,37 +280,44 @@ function normalizeStyleKey(style) {
 
 /**
  * Closed 3D Blade Sheath geometry in `sword_1handed.gltf` local coordinates:
- * Encloses KayKit's stylized blade (`widthX = 0.134, thickZ = 0.056`) from crossguard
- * (`y = 0.22`) to tip (`y = 1.48`) without swelling wider than the crossguard.
+ * Encloses KayKit's stylized steel blade (`halfWidthX = 0.1569, halfThickZ = 0.0479`)
+ * with a fuller, artistic Ukiyo-e winged/serrated elemental envelope (`widthX = 0.215, thickZ = 0.072`)
+ * strictly from crossguard (`y = 0.21`) to physical tip (`y = 1.41`) so it is NEVER longer than the sword!
  */
-export function createBladeSheathGeometry({ rings = 16, cols = 10 } = {}) {
+export function createBladeSheathGeometry({ rings = 20, cols = 14 } = {}) {
   const ringPts = [];
   for (let r = 0; r < rings; r++) {
     const v = r / (rings - 1);
-    const y = lerp(0.22, 1.48, v);
+    const y = lerp(0.21, 1.402, v);
     const taper =
-      v < 0.72
-        ? lerp(0.92, 1.0, v / 0.72)
-        : lerp(1.0, 0.08, (v - 0.72) / 0.28);
-    const widthX = 0.134 * taper;
-    const thickZ = 0.056 * taper;
+      v < 0.78
+        ? lerp(0.94, 1.04, v / 0.78)
+        : lerp(1.04, 0.06, (v - 0.78) / 0.22);
+    const widthX = 0.212 * taper;
+    const thickZ = 0.072 * taper;
 
     const pts = [];
     for (let c = 0; c < cols; c++) {
       const u = c / cols;
       const ang = u * TAU;
-      const edgePow = Math.pow(Math.abs(Math.cos(ang)), 2.2);
-      const serration = 1.0 + 0.18 * edgePow * (0.55 + 0.45 * Math.sin(v * Math.PI * 5.0));
-      const x = Math.cos(ang) * widthX * serration;
-      const z = Math.sin(ang) * thickZ;
-      const radialEdge = Math.abs(Math.cos(ang));
+      const cosA = Math.cos(ang);
+      const sinA = Math.sin(ang);
+      const edgePow = Math.pow(Math.abs(cosA), 1.85);
+      const fullerPow = Math.pow(Math.abs(sinA), 1.6);
+      const serration =
+        1.0 +
+        0.16 * edgePow * (0.55 + 0.45 * Math.sin(v * Math.PI * 6.0 - Math.abs(cosA) * 1.2));
+      const fullerRidge = 1.0 + 0.14 * fullerPow * Math.sin(v * Math.PI);
+      const x = cosA * widthX * serration;
+      const z = sinA * thickZ * fullerRidge;
+      const radialEdge = Math.abs(cosA);
       pts.push({ pos: [x, y, z], u, v, radialEdge });
     }
     ringPts.push(pts);
   }
 
-  const baseCenter = [0, 0.20, 0];
-  const tipCenter = [0, 1.52, 0];
+  const baseCenter = [0, 0.195, 0];
+  const tipCenter = [0, 1.41, 0];
   const positions = [];
   const uvs = [];
   const edgeFactors = [];
@@ -473,13 +495,14 @@ function createBladeSheathMaterial(noiseAtlas, sharedUniforms) {
         vec2 scrollUv = vec2(vUv.x * 1.4, vUv.y * 1.35 - uTime * 2.4);
         vec4 nSample = texture2D(uNoiseAtlas, scrollUv);
 
-        float coreSolid = 1.0 - vEdgeFactor * 0.78;
+        // Solid core across the real steel blade (vEdgeFactor < 0.72), with artistic serrated Ukiyo-e tongues along outer edges
+        float coreSolid = 1.0 - smoothstep(0.42, 1.0, vEdgeFactor) * 0.72;
         float flowWave = nSample.b * 0.58 + nSample.g * 0.42;
-        float tongueMask = coreSolid + flowWave * 0.56 * smoothstep(1.0, 0.12, vUv.y * 0.35);
+        float tongueMask = coreSolid + flowWave * 0.58 * smoothstep(1.0, 0.08, vUv.y * 0.28);
         if (tongueMask < 0.45) discard;
 
-        float striation = sin(vEdgeFactor * 10.0 - vUv.y * 8.0 + nSample.b * 3.5) * 0.08;
-        float bandScore = (1.0 - vEdgeFactor) * 0.74 + flowWave * 0.28 + striation;
+        float striation = sin(vEdgeFactor * 12.0 - vUv.y * 9.0 + nSample.b * 3.8) * 0.09;
+        float bandScore = (1.0 - vEdgeFactor * 0.75) * 0.76 + flowWave * 0.30 + striation;
 
         // Intertwined Sunfire & Glacial Tide wave when uDualEclipse > 0.5
         float eclipseWave = sin(vUv.x * 10.0 - vUv.y * 6.0 + uTime * 8.0 + (nSample.b - 0.5) * 2.2);
@@ -490,13 +513,14 @@ function createBladeSheathMaterial(noiseAtlas, sharedUniforms) {
         vec3 inkCol = mix(uColorInk, uRimeInk, tideMix);
 
         vec3 col = b0;
-        col = mix(col, b1 * 1.04, step(0.38, bandScore));
-        col = mix(col, b2 * 1.18, step(0.68, bandScore));
+        col = mix(col, b1 * 1.05, step(0.36, bandScore));
+        col = mix(col, b2 * 1.18, step(0.66, bandScore));
 
         float border = 1.0 - smoothstep(0.45, 0.54, tongueMask);
         float rimInk = 1.0 - smoothstep(0.14, 0.24, ndv);
+        float waveRib = smoothstep(0.032, 0.0, abs(bandScore - 0.36)) * 0.65;
         float streamSeam = uDualEclipse * smoothstep(0.10, 0.0, abs(eclipseWave)) * 0.55;
-        col = mix(col, inkCol, max(max(border, rimInk * 0.82), streamSeam));
+        col = mix(col, inkCol, max(max(border, rimInk * 0.82), max(waveRib, streamSeam)));
 
         gl_FragColor = vec4(col, 1.0);
       }
@@ -560,7 +584,7 @@ function createLiveSwordRibbonMaterial(noiseAtlas, sharedUniforms) {
 
       void main() {
         // vUv.x = u (0.0 at newest live blade edge -> 1.0 at oldest tail)
-        // vUv.y = v (0.0 at inner crossguard 0.20 -> 1.0 at outer razor tip 1.72)
+        // vUv.y = v (0.0 at inner crossguard 0.20 -> 1.0 at outer physical tip 1.41)
         float u = clamp(vUv.x, 0.0, 1.0);
         float v = clamp(vUv.y, 0.0, 1.0);
         float age01 = clamp(vSliceAge, 0.0, 1.0);
@@ -570,13 +594,13 @@ function createLiveSwordRibbonMaterial(noiseAtlas, sharedUniforms) {
         vec4 n0 = texture2D(uNoiseAtlas, nUv);
         vec4 n1 = texture2D(uNoiseAtlas, nUv * 1.85 + vec2(0.37, 0.61));
 
-        // Ukiyo-e woodblock flame/frost/storm tongues trailing off the tail (u -> 1) and inner concave edge (v -> 0)
-        // Carves out the inner hub so the Knight's helmet, body, and sword hilt stay 100% visible inside a sleek crescent!
-        float tailProgress = max(u * 0.90, age01 * 0.92);
-        float tailDissolve = 1.0 - smoothstep(0.42, 0.95, tailProgress);
-        float innerWake = smoothstep(0.10, 0.56, v + (1.0 - u) * 0.16);
+        // Full-bodied Ukiyo-e woodblock crescent spanning the entire physical blade (v = 0.03..1.00)
+        // so the slash ribbon feels wide, artistic, and grounded right on the blade from hilt to tip!
+        float tailProgress = max(u * 0.88, age01 * 0.90);
+        float tailDissolve = 1.0 - smoothstep(0.48, 0.97, tailProgress);
+        float innerWake = smoothstep(0.02, 0.22, v + (1.0 - u) * 0.14);
         float waveNoise = n0.b * 0.62 + n1.g * 0.38;
-        float erodedMask = (innerWake * 0.78 + waveNoise * 0.50) * tailDissolve;
+        float erodedMask = (innerWake * 0.82 + waveNoise * 0.52) * tailDissolve;
 
         // Hard alphaTest cutout (strictly >= 0.45, zero transparent glass!)
         if (erodedMask < 0.45) discard;
@@ -590,18 +614,17 @@ function createLiveSwordRibbonMaterial(noiseAtlas, sharedUniforms) {
         vec3 inkCol = mix(uColorInk, uRimeInk, tideMix);
 
         // Bold Ukiyo-e concentric flow striations + 3-Band Demon Slayer Breathing Crescent
-        // Keeps 75% of the crescent in rich Crimson/Vermilion (or Sapphire/Cerulean) with a tight 22% molten-gold/white outer crest!
-        float striation = sin(v * 22.0 + n0.b * 5.8 + u * 9.0) * 0.16;
-        float celScore = pow(v, 1.38) * 0.72 + (1.0 - u * 0.45) * 0.12 + (n1.b - 0.5) * 0.22 + striation;
+        float striation = sin(v * 20.0 + n0.b * 5.8 + u * 9.0) * 0.16;
+        float celScore = pow(v, 1.22) * 0.74 + (1.0 - u * 0.42) * 0.14 + (n1.b - 0.5) * 0.22 + striation;
         vec3 col = b0;
-        col = mix(col, b1 * 1.04, step(0.36, celScore));
-        col = mix(col, b2 * 1.14, step(0.78, celScore));
+        col = mix(col, b1 * 1.05, step(0.34, celScore));
+        col = mix(col, b2 * 1.16, step(0.74, celScore));
 
         // Crisp sumi-ink woodblock border along cutout tongues, internal wave ribs, and outer razor spine
         float cutoutInk = 1.0 - smoothstep(0.45, 0.54, erodedMask);
         float outerRazorInk = smoothstep(0.935, 0.992, v);
-        float waveRib1 = smoothstep(0.032, 0.0, abs(celScore - 0.36)) * 0.78;
-        float waveRib2 = smoothstep(0.028, 0.0, abs(celScore - 0.78)) * 0.68;
+        float waveRib1 = smoothstep(0.032, 0.0, abs(celScore - 0.34)) * 0.78;
+        float waveRib2 = smoothstep(0.028, 0.0, abs(celScore - 0.74)) * 0.68;
         float eclipseSeam = uDualEclipse * smoothstep(0.09, 0.0, abs(eclipseWave)) * 0.68;
         col = mix(col, inkCol, max(max(cutoutInk, outerRazorInk * 0.90), max(max(waveRib1, waveRib2), eclipseSeam)));
 
@@ -890,7 +913,7 @@ function createDetonationDecalMaterial(noiseAtlas, sharedUniforms) {
 
 const MAX_SHRAPNEL = 42;
 const MAX_DETONATION_DECALS = 3;
-const TRAIL_LIFETIME = 0.24;
+const TRAIL_LIFETIME = 0.28;
 const SPARK_LIFETIME = 0.22;
 const SUB_SLICES_PER_STEP = 4;
 
@@ -1162,15 +1185,22 @@ export class SwordVfxSystem {
     const cz = sw.origin.z + fwdZ * 0.25;
 
     outGuard.set(cx + dx * invLen * 0.52, cy + dy * invLen * 0.52, cz + dz * invLen * 0.52);
-    outTip.set(cx + dx * invLen * 1.88, cy + dy * invLen * 1.88, cz + dz * invLen * 1.88);
+    outTip.set(cx + dx * invLen * 1.73, cy + dy * invLen * 1.73, cz + dz * invLen * 1.73);
     return false;
   }
 
   /**
    * Adds a new `(guardWorld, tipWorld)` control posture and subdivides the step from
-   * `(prevGuard, prevTip)` into 4 Catmull-Rom / radial-preserved sub-slices.
+   * `(prevGuard, prevTip)` into 4 Catmull-Rom / radial-preserved sub-slices ending
+   * 100% on `(guardW, tipW)` at `sub === SUB_SLICES_PER_STEP`.
    */
-  _pushControlPostureAndSubdivide(guardW, tipW, dtStep = 0.012, ageAtEnd = 0.0) {
+  _pushControlPostureAndSubdivide(
+    guardW,
+    tipW,
+    dtStep = 0.012,
+    ageAtEnd = 0.0,
+    activeFracOverride = null
+  ) {
     const newCtrl = {
       guard: guardW.clone(),
       tip: tipW.clone(),
@@ -1188,15 +1218,22 @@ export class SwordVfxSystem {
       return;
     }
 
-    const p2 = this.controlPostures[ctrlCount - 1];
-    const p1 = this.controlPostures[Math.max(0, ctrlCount - 2)];
-    const p0 = this.controlPostures[Math.max(0, ctrlCount - 3)];
-    const p3 = newCtrl;
+    // Catmull-Rom interpolates between q1 (t=0, previous posture) and q2 (t=1, newCtrl)!
+    const q1 = this.controlPostures[ctrlCount - 1];
+    const q0 = this.controlPostures[Math.max(0, ctrlCount - 2)];
+    const q2 = newCtrl;
+    const q3 = {
+      guard: _interpGuard.copy(q2.guard).multiplyScalar(2).sub(q1.guard).clone(),
+      tip: _interpTip.copy(q2.tip).multiplyScalar(2).sub(q1.tip).clone(),
+    };
 
     // Emit tangential airborne blade sparks when the swing crosses their emitFrac
     const sw = this.swingState;
     const activeSpan = Math.max(0.05, sw.activeEnd - sw.activeStart);
-    const currActiveU = saturate((sw.age - ageAtEnd - sw.activeStart) / activeSpan);
+    const currActiveU =
+      activeFracOverride !== null && activeFracOverride !== undefined
+        ? saturate(activeFracOverride)
+        : saturate((sw.age - ageAtEnd - sw.activeStart) / activeSpan);
 
     const fwdX = Math.sin(sw.yaw);
     const fwdZ = Math.cos(sw.yaw);
@@ -1204,7 +1241,7 @@ export class SwordVfxSystem {
     for (let s = 0; s < this.tangentialSparkRecords.length; s++) {
       const sp = this.tangentialSparkRecords[s];
       if (!sp.spawned && currActiveU >= sp.emitFrac) {
-        _tangDir.subVectors(tipW, p2.tip);
+        _tangDir.subVectors(tipW, q1.tip);
         if (_tangDir.lengthSq() < 1e-5) {
           _tangDir.set(fwdX, -0.2, fwdZ);
         }
@@ -1219,7 +1256,7 @@ export class SwordVfxSystem {
           _tangDir.normalize();
         }
         sp.spawned = true;
-        sp.spawnAge = sw.age - ageAtEnd;
+        sp.spawnAge = Math.max(0, sw.age - ageAtEnd);
         sp.spawnPos.lerpVectors(guardW, tipW, sp.bladeFrac);
         _bladeDir.subVectors(tipW, guardW).normalize();
         sp.vel
@@ -1230,7 +1267,7 @@ export class SwordVfxSystem {
       }
     }
 
-    // Knight chest pivot for radial arc preservation on fast 40 m/s swings
+    // Knight chest pivot for radial arc preservation on fast swings
     if (this.knightChar?.group) {
       _pivot.copy(this.knightChar.group.position);
     } else {
@@ -1238,31 +1275,37 @@ export class SwordVfxSystem {
     }
     _pivot.y += 1.12;
 
-    const len2 = p2.guard.distanceTo(p2.tip);
-    const len3 = p3.guard.distanceTo(p3.tip);
-    const rad2 = p2.tip.distanceTo(_pivot);
-    const rad3 = p3.tip.distanceTo(_pivot);
+    const len1 = q1.guard.distanceTo(q1.tip);
+    const len2 = q2.guard.distanceTo(q2.tip);
+    const rad1 = q1.tip.distanceTo(_pivot);
+    const rad2 = q2.tip.distanceTo(_pivot);
 
     for (let sub = 1; sub <= SUB_SLICES_PER_STEP; sub++) {
       const t = sub / SUB_SLICES_PER_STEP;
-      catmullRomVec3(p0.guard, p1.guard, p2.guard, p3.guard, t, _interpGuard);
-      catmullRomVec3(p0.tip, p1.tip, p2.tip, p3.tip, t, _interpTip);
+      if (sub === SUB_SLICES_PER_STEP) {
+        // Exact lock to physical sword blade at t = 1.0 (zero lag or drift!)
+        _interpGuard.copy(guardW);
+        _interpTip.copy(tipW);
+      } else {
+        catmullRomVec3(q0.guard, q1.guard, q2.guard, q3.guard, t, _interpGuard);
+        catmullRomVec3(q0.tip, q1.tip, q2.tip, q3.tip, t, _interpTip);
 
-      // Preserve radial arc curvature around the Knight's shoulder/chest pivot and exact blade length
-      const targetBladeLen = lerp(len2, len3, t);
-      const targetTipRad = lerp(rad2, rad3, t);
+        // Preserve radial arc curvature around the Knight's shoulder/chest pivot and exact blade length
+        const targetBladeLen = lerp(len1, len2, t);
+        const targetTipRad = lerp(rad1, rad2, t);
 
-      _radialVec.subVectors(_interpTip, _pivot);
-      const curRad = _radialVec.length();
-      if (curRad > 1e-4) {
-        _radialVec.multiplyScalar(lerp(curRad, targetTipRad, 0.55) / curRad);
-        _interpTip.copy(_pivot).add(_radialVec);
-      }
+        _radialVec.subVectors(_interpTip, _pivot);
+        const curRad = _radialVec.length();
+        if (curRad > 1e-4) {
+          _radialVec.multiplyScalar(lerp(curRad, targetTipRad, 0.55) / curRad);
+          _interpTip.copy(_pivot).add(_radialVec);
+        }
 
-      _bladeDir.subVectors(_interpTip, _interpGuard);
-      if (_bladeDir.lengthSq() > 1e-5) {
-        _bladeDir.normalize();
-        _interpGuard.copy(_interpTip).addScaledVector(_bladeDir, -targetBladeLen);
+        _bladeDir.subVectors(_interpTip, _interpGuard);
+        if (_bladeDir.lengthSq() > 1e-5) {
+          _bladeDir.normalize();
+          _interpGuard.copy(_interpTip).addScaledVector(_bladeDir, -targetBladeLen);
+        }
       }
 
       const subAge = ageAtEnd + (1.0 - t) * dtStep;
@@ -1299,6 +1342,9 @@ export class SwordVfxSystem {
     // 1. Live Bone-Tracked Sword Trail Ribbon (`u = 0..1` newest blade edge -> oldest tail, `v = 0..1` guard -> tip)
     const sliceCount = Math.min(this.trailSlices.length, MAX_TRAIL_SLICES);
     if (sliceCount >= 2) {
+      const cfg = SWING_CONFIGS[this.swingState.type] || SWING_CONFIGS.combo1;
+      const isThrust = Boolean(cfg.isThrust);
+
       for (let i = 0; i < sliceCount; i++) {
         const s = this.trailSlices[i];
         const sPrev = this.trailSlices[Math.max(0, i - 1)];
@@ -1325,15 +1371,40 @@ export class SwordVfxSystem {
           _arcNorm.normalize();
         }
 
-        // Clean 3D camber along `_arcNorm` so edge-on swings stay ~0.25m thick without ballooning into a sail
-        const twistSpan = (0.16 + 0.08 * Math.sin(u * Math.PI)) * (1.0 - age01 * 0.25);
+        // Orthogonal wing basis perpendicular to `_bladeDir` for thrust wake (`combo4` / `intercept`)
+        // Ensures even a straight forward lunge thrust carves a wide, artistic Ukiyo-e spiral/wing wake
+        // along the blade from hilt (`v=0`) to tip (`v=1`) without EVER extending past `s.tip`!
+        let wingX = 0;
+        let wingY = 0;
+        let wingZ = 0;
+        if (isThrust && u > 0) {
+          _radialVec.crossVectors(_bladeDir, UP);
+          if (_radialVec.lengthSq() < 1e-4) {
+            _radialVec.set(1, 0, 0);
+          } else {
+            _radialVec.normalize();
+          }
+          _pos.crossVectors(_radialVec, _bladeDir).normalize();
+          const spiralAng = u * 1.85 - 0.32;
+          const ca = Math.cos(spiralAng);
+          const sa = Math.sin(spiralAng);
+          wingX = _radialVec.x * ca + _pos.x * sa;
+          wingY = _radialVec.y * ca + _pos.y * sa;
+          wingZ = _radialVec.z * ca + _pos.z * sa;
+          _arcNorm.set(-_radialVec.x * sa + _pos.x * ca, -_radialVec.y * sa + _pos.y * ca, -_radialVec.z * sa + _pos.z * ca).normalize();
+        }
+
+        // Fuller 3D camber along `_arcNorm` so swings have rich sculptural body from every camera angle
+        const twistSpan = (0.21 + 0.11 * Math.sin(u * Math.PI)) * (1.0 - age01 * 0.22);
+        const thrustSpan = isThrust ? Math.sin(u * Math.PI * 0.88) * 0.78 : 0.0;
 
         for (let r = 0; r < RADIAL_VERTS; r++) {
           const v = r / (RADIAL_VERTS - 1);
-          const offsetNorm = Math.sin(v * Math.PI) * twistSpan;
-          const vx = lerp(s.guard.x, s.tip.x, v) + _arcNorm.x * offsetNorm;
-          const vy = lerp(s.guard.y, s.tip.y, v) + _arcNorm.y * offsetNorm;
-          const vz = lerp(s.guard.z, s.tip.z, v) + _arcNorm.z * offsetNorm;
+          const offsetNorm = Math.sin(v * Math.PI) * twistSpan * (u > 0 ? 1.0 : 0.35);
+          const thrustOffset = thrustSpan * (0.28 + 0.72 * Math.sin(v * Math.PI * 0.85));
+          const vx = lerp(s.guard.x, s.tip.x, v) + _arcNorm.x * offsetNorm + wingX * thrustOffset;
+          const vy = lerp(s.guard.y, s.tip.y, v) + _arcNorm.y * offsetNorm + wingY * thrustOffset;
+          const vz = lerp(s.guard.z, s.tip.z, v) + _arcNorm.z * offsetNorm + wingZ * thrustOffset;
 
           const vIdx = vertOffset + r;
           posArr[vIdx * 3 + 0] = vx;
@@ -1485,7 +1556,7 @@ export class SwordVfxSystem {
   /**
    * Starts a live bone-tracked sword swing synced to KayKit's melee animation clip.
    */
-  triggerSwing(swingType = 'combo1', origin = null, yaw = null, styleOverride = null) {
+  triggerSwing(swingType = 'combo1', origin = null, yaw = null, styleOverride = null, opts = {}) {
     const typeKey = SWING_CONFIGS[swingType] ? swingType : 'combo1';
     const cfg = SWING_CONFIGS[typeKey];
     const style = normalizeStyleKey(
@@ -1510,7 +1581,7 @@ export class SwordVfxSystem {
           : 0;
     this.swingState.type = typeKey;
     this.swingState.style = style;
-    this.swingState.duration = cfg.duration;
+    this.swingState.duration = opts.duration ?? cfg.duration;
     this.swingState.activeStart = cfg.activeStart;
     this.swingState.activeEnd = cfg.activeEnd;
     this.swingState.clip = cfg.clip;
@@ -1526,6 +1597,17 @@ export class SwordVfxSystem {
 
     this._applyPaletteToUniforms(style, false);
     this.group.visible = true;
+    return this;
+  }
+
+  /**
+   * Cleanly ends an interrupted swing (e.g. when canceled by Dash or Shield Block).
+   */
+  endSwing() {
+    this.swingState.active = false;
+    this.trailSlices.length = 0;
+    this.controlPostures.length = 0;
+    this._rebuildLiveRibbonBuffer();
     return this;
   }
 
@@ -1572,17 +1654,101 @@ export class SwordVfxSystem {
   }
 
   /**
-   * Reconstructs the exact 16-substep Catmull-Rom bone-tracked sword trail for
-   * the current `this.swingState.age` by sampling `knightChar`'s animation clip
-   * across `[tStart, tEnd]` and restoring the live mixer state afterward.
-   * Guarantees 100% smooth, frame-rate-independent trails whether running at
-   * 144 FPS on Desktop, 90 FPS on Tablet, or 15 FPS in video capture!
+   * Reconstructs the exact 16-substep Catmull-Rom bone-tracked sword trail:
+   * - In live gameplay (`preserveLiveAction === true`), reads the active swing
+   *   `AnimationAction.time` directly from `knightChar` after `knightChar.update(dt)`,
+   *   steps `liveAction.time` across `[clipStart .. clipEnd]` to build the smooth
+   *   16-substep trail, and restores `liveAction.time` without EVER calling
+   *   `poseAt()` (`mixer.stopAllAction()`) or mutating `loop` / `clampWhenFinished`!
+   * - In deterministic screenshot seeker mode (`preserveLiveAction === false`),
+   *   samples `[tStart, tEnd]` via `poseAt()` for static frame capture.
    */
-  _reconstructBoneTrailForCurrentSwing({ preserveLiveAction = false } = {}) {
+  _reconstructBoneTrailForCurrentSwing({ preserveLiveAction = false, dt = 0.016 } = {}) {
     if (!this.swingState.active) return;
     const sw = this.swingState;
     const cfg = SWING_CONFIGS[sw.type] || SWING_CONFIGS.combo1;
     const clipName = sw.clip || cfg.clip;
+
+    if (preserveLiveAction) {
+      const anim = this.knightChar?.anim;
+      const liveClipName = anim?.currentClipName;
+      const liveAction = liveClipName ? anim.rawActions.get(liveClipName) : null;
+      const isPlayingSwing = Boolean(
+        liveAction &&
+          liveAction.isRunning() &&
+          (liveClipName === clipName || anim.currentKey === sw.type)
+      );
+
+      if (!isPlayingSwing) {
+        // Knight has transitioned out of the swing clip (into dash, sprint, run, or idle).
+        // NEVER touch knightChar's mixer; simply age out existing trail slices naturally!
+        for (let i = this.trailSlices.length - 1; i >= 0; i--) {
+          this.trailSlices[i].age += dt;
+          if (this.trailSlices[i].age >= this.trailLifetime) {
+            this.trailSlices.splice(i, 1);
+          }
+        }
+        return;
+      }
+
+      const curClipTime = liveAction.time;
+      const curTimeScale = Math.max(0.2, liveAction.getEffectiveTimeScale() || 1.0);
+      const cleaveStart = cfg.clipCleaveStart ?? cfg.startTime;
+      const cleaveEnd = cfg.clipCleaveEnd ?? cfg.startTime + cfg.activeEnd * cfg.timeScale;
+
+      this.trailSlices.length = 0;
+      this.controlPostures.length = 0;
+      for (const sp of this.tangentialSparkRecords) {
+        sp.spawned = false;
+      }
+
+      if (curClipTime < cleaveStart) {
+        return;
+      }
+
+      const clipEnd = Math.min(curClipTime, cleaveEnd);
+      const fadeAfterCleave = Math.max(0, (curClipTime - cleaveEnd) / curTimeScale);
+      if (fadeAfterCleave >= this.trailLifetime) {
+        return;
+      }
+
+      const clipTrailSpan = Math.max(0.02, (this.trailLifetime - fadeAfterCleave) * curTimeScale);
+      const clipStart = Math.max(cleaveStart, clipEnd - clipTrailSpan);
+
+      if (clipEnd > clipStart + 0.002) {
+        const SUBSTEPS = 16;
+        const dtSub = (clipEnd - clipStart) / curTimeScale / SUBSTEPS;
+        const cleaveSpan = Math.max(0.04, cleaveEnd - cleaveStart);
+
+        for (let step = 0; step <= SUBSTEPS; step++) {
+          const uStep = step / SUBSTEPS;
+          const tClipSample = lerp(clipStart, clipEnd, uStep);
+          const sliceAgeAtTarget = Math.max(0, (curClipTime - tClipSample) / curTimeScale);
+          const activeFrac = saturate((tClipSample - cleaveStart) / cleaveSpan);
+
+          liveAction.time = tClipSample;
+          this.knightChar.mixer.update(0);
+          this.knightChar.group.updateMatrixWorld(true);
+
+          this._sampleCurrentBladeSegment(_guardW, _tipW, activeFrac);
+          this._pushControlPostureAndSubdivide(
+            _guardW,
+            _tipW,
+            dtSub,
+            sliceAgeAtTarget,
+            activeFrac
+          );
+        }
+
+        // Restore exact liveAction.time without stopping or mutating any AnimationAction properties
+        liveAction.time = curClipTime;
+        this.knightChar.mixer.update(0);
+        this.knightChar.group.updateMatrixWorld(true);
+      }
+      return;
+    }
+
+    // Deterministic seeker path (`preserveLiveAction === false`, e.g., `seek()`)
     const targetClipTime =
       sw.clipTime !== null && sw.clipTime !== undefined
         ? sw.clipTime
@@ -1605,43 +1771,30 @@ export class SwordVfxSystem {
       const SUBSTEPS = 16;
       const dtSub = (tEnd - tStart) / SUBSTEPS;
       const activeSpan = Math.max(0.04, cfg.activeEnd - cfg.activeStart);
-
       const canPoseKnight = Boolean(this.knightChar && typeof this.knightChar.poseAt === 'function');
-      const liveKey = preserveLiveAction ? this.knightChar?.anim?.currentKey : null;
 
       for (let step = 0; step <= SUBSTEPS; step++) {
         const uStep = step / SUBSTEPS;
         const tSwing = lerp(tStart, tEnd, uStep);
         const sliceAgeAtTarget = sw.age - tSwing;
-        const tClipSample = Math.max(
-          0.01,
-          cfg.startTime + tSwing * cfg.timeScale
-        );
+        const tClipSample = Math.max(0.01, cfg.startTime + tSwing * cfg.timeScale);
         const activeFrac = saturate((tSwing - cfg.activeStart) / activeSpan);
 
         if (canPoseKnight) {
           this.knightChar.poseAt(clipName, tClipSample);
         }
         this._sampleCurrentBladeSegment(_guardW, _tipW, activeFrac);
-        this._pushControlPostureAndSubdivide(_guardW, _tipW, dtSub, sliceAgeAtTarget);
+        this._pushControlPostureAndSubdivide(
+          _guardW,
+          _tipW,
+          dtSub,
+          sliceAgeAtTarget,
+          activeFrac
+        );
       }
 
-      // Restore exact final Knight pose at `targetClipTime` so sword mesh matches `u = 0` of ribbon
       if (canPoseKnight) {
         this.knightChar.poseAt(clipName, Math.max(0.01, targetClipTime));
-        if (preserveLiveAction && liveKey && this.knightChar?.anim?.play) {
-          const act = this.knightChar.anim.play(liveKey, {
-            loop: false,
-            fade: 0,
-            startTime: Math.max(0.01, targetClipTime),
-            timeScale: cfg.timeScale,
-            force: true,
-          });
-          if (act) {
-            this.knightChar.mixer.update(0);
-            this.knightChar.group.updateMatrixWorld(true);
-          }
-        }
       }
     }
   }
@@ -1866,7 +2019,7 @@ export class SwordVfxSystem {
 
     if (this.swingState.active) {
       this.swingState.age += dt;
-      this._reconstructBoneTrailForCurrentSwing({ preserveLiveAction: true });
+      this._reconstructBoneTrailForCurrentSwing({ preserveLiveAction: true, dt });
     }
 
     if (this.detonationState.active) {

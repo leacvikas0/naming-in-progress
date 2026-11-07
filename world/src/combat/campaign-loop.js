@@ -1345,7 +1345,7 @@ export function createCampaignLoop({
     };
   }
 
-  function performKnightSwing(swingType, knightPos, knightYaw, partnerPos = null) {
+  function performKnightSwing(swingType, knightPos, knightYaw, partnerPos = null, options = {}) {
     if (combatHeroes.Knight.downed) return null;
 
     if (
@@ -1385,12 +1385,16 @@ export function createCampaignLoop({
     }
 
     if (vfxKit?.swordVfx?.triggerSwing) {
-      vfxKit.swordVfx.triggerSwing(
-        swingType,
-        { x: knightPos.x, y: knightPos.y, z: knightPos.z },
-        swingYaw,
-        activeStyle
-      );
+      if (options.skipTriggerSwing && vfxKit.swordVfx.swingState?.active) {
+        vfxKit.swordVfx.swingState.yaw = swingYaw;
+      } else {
+        vfxKit.swordVfx.triggerSwing(
+          swingType,
+          { x: knightPos.x, y: knightPos.y, z: knightPos.z },
+          swingYaw,
+          activeStyle
+        );
+      }
     }
     if (combatSfx) {
       if (swingType === 'charged' || swingType === 'heavy' || swingType === 'combo4') {
