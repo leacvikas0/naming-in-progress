@@ -518,46 +518,46 @@ const APP_FLOW_CSS = `
     margin: 0 0 28px 0;
   }
 
-  /* Morphing Capsule: Starts as Preparation Pill, Transforms into "Enter the Valley" */
+  /* Compact Fixed-Length Morphing Pill (212px x 48px — Always Full, <= 3 Words) */
   .af-enter-btn {
     position: relative;
     overflow: hidden;
-    min-width: 316px;
-    min-height: 56px;
-    padding: 12px 30px;
+    width: 212px;
+    min-width: 212px;
+    max-width: 212px;
+    height: 48px;
+    min-height: 48px;
+    padding: 0 18px;
     background: var(--af-surface);
     border: 1.5px solid var(--af-border-strong);
     color: var(--af-ink);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.08rem;
+    font-size: 0.98rem;
     font-weight: 700;
     transition:
-      min-width 420ms cubic-bezier(0.22, 1, 0.36, 1),
-      background-color 360ms ease,
-      border-color 360ms ease,
-      transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
-      box-shadow 360ms ease;
+      background-color 320ms ease,
+      border-color 320ms ease,
+      transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 320ms ease;
   }
 
   .af-enter-btn.is-loading {
     pointer-events: none;
     cursor: default;
-    min-width: 332px;
-    background: rgba(252, 249, 242, 0.94);
+    background: rgba(252, 249, 242, 0.95);
   }
 
   .af-enter-btn.is-ready {
     pointer-events: auto;
     cursor: pointer;
-    min-width: 256px;
     background: var(--af-cta-bg);
     border-color: var(--af-cta-border);
     color: var(--af-cta-ink);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.65),
-      0 10px 28px rgba(24, 20, 14, 0.22);
+      0 10px 26px rgba(24, 20, 14, 0.22);
   }
 
   @media (hover: hover) {
@@ -567,20 +567,21 @@ const APP_FLOW_CSS = `
     }
   }
 
+  /* Full-width bottom accent line (always 100% full across the fixed pill) */
   .af-morph-progress-fill {
     position: absolute;
     left: 0;
+    right: 0;
     bottom: 0;
-    height: 4px;
-    width: 0%;
-    background: linear-gradient(90deg, #f59e0b 0%, #f6d076 100%);
-    transition: width 220ms ease-out, height 380ms cubic-bezier(0.22, 1, 0.36, 1), opacity 320ms ease;
+    height: 3px;
+    width: 100% !important;
+    background: linear-gradient(90deg, #f59e0b 0%, #f6d076 50%, #f59e0b 100%);
+    transition: height 340ms cubic-bezier(0.22, 1, 0.36, 1), opacity 280ms ease;
     pointer-events: none;
     z-index: 0;
   }
 
   .af-enter-btn.is-ready .af-morph-progress-fill {
-    width: 100% !important;
     height: 100%;
     opacity: 0;
   }
@@ -589,34 +590,37 @@ const APP_FLOW_CSS = `
   .af-morph-ready-layer {
     position: relative;
     z-index: 1;
+    width: 100%;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    transition: opacity 280ms ease, transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+    gap: 8px;
+    transition: opacity 260ms ease, transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .af-morph-loading-layer {
-    font-size: 0.94rem;
+    font-size: 0.92rem;
     font-weight: 600;
-    color: var(--af-ink-muted);
+    color: var(--af-ink);
     white-space: nowrap;
   }
 
   .af-enter-btn.is-ready .af-morph-loading-layer {
     position: absolute;
     opacity: 0;
-    transform: translateY(-14px) scale(0.95);
+    transform: translateY(-12px) scale(0.96);
     pointer-events: none;
   }
 
   .af-morph-ready-layer {
+    position: absolute;
     opacity: 0;
-    transform: translateY(14px) scale(0.95);
+    transform: translateY(12px) scale(0.96);
     pointer-events: none;
-    font-size: 1.12rem;
+    font-size: 1.0rem;
     font-weight: 700;
     color: var(--af-cta-ink);
+    white-space: nowrap;
   }
 
   .af-enter-btn.is-ready .af-morph-ready-layer {
@@ -632,16 +636,16 @@ const APP_FLOW_CSS = `
   }
 
   .af-prep-spark-svg {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     color: var(--af-accent);
     animation: afSpinSpark 3.6s linear infinite;
     flex-shrink: 0;
   }
 
   .af-btn-sprig-svg {
-    width: 22px;
-    height: 18px;
+    width: 18px;
+    height: 15px;
     flex-shrink: 0;
     color: var(--af-accent);
   }
@@ -1395,7 +1399,7 @@ export function createAppFlow({
             <svg class="af-prep-spark-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 2L14.6 9.4L22 12L14.6 14.6L12 22L9.4 14.6L2 12L9.4 9.4L12 2Z" fill="currentColor"/>
             </svg>
-            <span id="app-flow-prep-label">Shaping sunlit hills &amp; quiet waters…</span>
+            <span id="app-flow-prep-label">Shaping the valley</span>
           </span>
           <span class="af-morph-ready-layer" id="app-flow-morph-ready">
             ${SVG_BOTANICAL_SPRIG_LEFT}
@@ -1625,10 +1629,10 @@ export function createAppFlow({
   let mosaicRafId = null;
 
   const PREP_STAGES = [
-    { threshold: 0.0, text: 'Shaping sunlit hills & quiet waters…' },
-    { threshold: 0.28, text: 'Sowing wildflowers across the southern meadow…' },
-    { threshold: 0.58, text: 'Raising timber eaves & wisteria boughs…' },
-    { threshold: 0.84, text: 'Attuning rime & sunfire resonance…' },
+    { threshold: 0.0, text: 'Shaping the valley' },
+    { threshold: 0.28, text: 'Sowing meadow flowers' },
+    { threshold: 0.58, text: 'Raising timber eaves' },
+    { threshold: 0.84, text: 'Kindling sunfire' },
   ];
 
   // Bayer 4x4 ordered-dither matrix (normalized 0..15)
