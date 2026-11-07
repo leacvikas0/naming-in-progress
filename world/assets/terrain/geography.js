@@ -153,11 +153,11 @@ export const INSCRIPTION_STONES = [
   },
   {
     id: 'stone_pier',
-    name: 'Lakeside Pier Sacred Inscription Stone',
-    x: -42.0,
-    z: 18.0,
-    y: -1.08,
-    rotY: 0.48,
+    name: 'Secluded Cottage Wall Sacred Inscription Stone',
+    x: -21.6,
+    z: 20.4,
+    y: 0.0,
+    rotY: 0.45,
   },
   {
     id: 'stone_grove',

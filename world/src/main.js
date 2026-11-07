@@ -853,6 +853,8 @@ function smoothstep(edge0, edge1, x) {
   return t * t * (3.0 - 2.0 * t);
 }
 
+const monumentShaderMats = [];
+
 function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
   const rootGroup = new THREE.Group();
   rootGroup.name = 'sacredStoneCalligraphyDecalsGroup';
@@ -882,37 +884,35 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
 
     const mountTargets = [];
     if (st.id === 'stone_plaza') {
-      // Mounted at the Village Well (0, 0, 0)
+      // Site 1: Mounted at the Village Well (0, 0, 0)
       const wellGroup = new THREE.Group();
       wellGroup.position.set(0 - st.x, 0 - sy, 0 - st.z);
       holder.add(wellGroup);
       mountTargets.push(wellGroup);
     } else if (st.id === 'stone_grove') {
-      // Mounted atop the Whispering Grove Sanctuary Dais (44, sy, 16)
+      // Site 2: Mounted atop the Whispering Grove Sanctuary Dais (44, sy, 16)
       const groveGroup = new THREE.Group();
       groveGroup.position.set(0, 0, 0);
       groveGroup.rotation.y = -(st.rotY || 0);
       holder.add(groveGroup);
       mountTargets.push(groveGroup);
     } else if (st.id === 'stone_pier') {
-      // Mounted at both Lakeside Sanctuary (-42, 18) and Secluded Cottage Alley (-21.6, 20.4)
-      const lakeWallGroup = new THREE.Group();
-      holder.add(lakeWallGroup);
-      mountTargets.push(lakeWallGroup);
-
-      const cottageHolder = new THREE.Group();
+      // Site 3: Mounted strictly at the Secluded Cottage Ornamental Wall (-21.6, sy, 20.4, rotY = 0.45)
+      const cottageWallGroup = new THREE.Group();
       const cwX = -21.6;
       const cwZ = 20.4;
-      cottageHolder.position.set(cwX, sampleGroundY(cwX, cwZ), cwZ);
-      cottageHolder.rotation.y = 0.45;
-      rootGroup.add(cottageHolder);
-      mountTargets.push(cottageHolder);
+      const cwY = sampleGroundY(cwX, cwZ);
+      holder.position.set(cwX, cwY, cwZ);
+      holder.rotation.y = 0.45;
+      holder.add(cottageWallGroup);
+      mountTargets.push(cottageWallGroup);
     }
 
     const entry = {
       id: st.id,
       holder,
       mountTargets,
+      materials: [],
       title: fallbackVerse.title,
       lines: [...fallbackVerse.lines],
       secondStanza: [...fallbackVerse.secondStanza],
@@ -933,32 +933,63 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
       st.id === 'stone_plaza' ? 1.0 : st.id === 'stone_grove' ? 2.0 : 3.0;
 
     const createGhibliMonumentShaderMaterial = (_srcMat, hasColorAttr) => {
-      return new THREE.ShaderMaterial({
+      const mat = new THREE.ShaderMaterial({
         uniforms: {
           uHasVertexColor: { value: hasColorAttr ? 1.0 : 0.0 },
           uSiteId: { value: siteIdValue },
+          uSunDir: {
+            value: sky?.activeLightDir
+              ? sky.activeLightDir.clone()
+              : new THREE.Vector3(-0.38, 0.80, 0.46).normalize(),
+          },
+          uDaylight: { value: sky?.state?.daylight ?? 1.0 },
+          uLightTint: {
+            value: sky?.state?.worldTint
+              ? sky.state.worldTint.clone()
+              : new THREE.Color(1, 1, 1),
+          },
+          uFogColor: {
+            value: sky?.state?.fogColor
+              ? sky.state.fogColor.clone()
+              : new THREE.Color(0xd8eef5),
+          },
+          uFogNear: { value: 185.0 },
+          uFogFar: { value: 580.0 },
         },
         vertexShader: /* glsl */ `
           ${hasColorAttr ? 'attribute vec4 color;' : ''}
           varying vec3 vLocalPos;
+          varying vec3 vLocalNormal;
           varying vec3 vWorldPos;
           varying vec3 vWorldNormal;
           varying vec3 vColor;
+          varying float vViewDist;
           void main() {
             vLocalPos = position.xyz;
+            vLocalNormal = normalize(normal);
             vec4 wp = modelMatrix * vec4(position, 1.0);
             vWorldPos = wp.xyz;
             vWorldNormal = normalize(mat3(modelMatrix) * normal);
             vColor = ${hasColorAttr ? 'color.rgb' : 'vec3(0.68, 0.59, 0.45)'};
-            gl_Position = projectionMatrix * viewMatrix * wp;
+            vec4 mv = viewMatrix * wp;
+            vViewDist = -mv.z;
+            gl_Position = projectionMatrix * mv;
           }
         `,
         fragmentShader: /* glsl */ `
           uniform float uSiteId;
+          uniform vec3 uSunDir;
+          uniform float uDaylight;
+          uniform vec3 uLightTint;
+          uniform vec3 uFogColor;
+          uniform float uFogNear;
+          uniform float uFogFar;
           varying vec3 vLocalPos;
+          varying vec3 vLocalNormal;
           varying vec3 vWorldPos;
           varying vec3 vWorldNormal;
           varying vec3 vColor;
+          varying float vViewDist;
 
           float hash31(vec3 p) {
             p = fract(p * vec3(443.897, 441.423, 437.195));
@@ -986,125 +1017,75 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
           }
 
           void main() {
-            vec3 geoN = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
-            if (dot(geoN, vWorldNormal) < 0.0) geoN = -geoN;
-            vec3 n = normalize(mix(vWorldNormal, geoN, 0.65));
+            vec3 n = normalize(vWorldNormal);
+            vec3 ln = normalize(vLocalNormal);
 
-            vec3 sunDir = normalize(vec3(-0.38, 0.80, 0.46));
-            float ndl = dot(n, sunDir);
+            vec3 sunDir = normalize(uSunDir);
+            vec3 localKey = normalize(vec3(-0.34, 0.68, 0.65));
+            float ndl = mix(dot(ln, localKey), dot(n, sunDir), 0.22);
+            float hemi = n.y * 0.5 + 0.5;
 
             float lum = dot(vColor, vec3(0.2126, 0.7152, 0.0722));
-            bool isPoemDark = (lum < 0.105 && vColor.r >= vColor.g);
-            bool isPoemLip = (lum > 0.86);
-            bool isCrimsonRose = (vColor.r > vColor.g * 2.05 && vColor.r > 0.06);
-            bool isBotanicalGreen = (vColor.g > vColor.r * 1.04 && vColor.g > vColor.b * 1.30);
+            bool isPoemDark = (lum < 0.085 && vColor.r >= vColor.g);
+            bool isPoemLip = (lum > 0.82);
+            bool isBotanicalGreen = (vColor.g > vColor.r * 1.03 && vColor.g > vColor.b * 1.20);
+
+            // Multi-scale 3D procedural travertine / sandstone grain & micro-pitting
+            float strata = noise3(vec3(vLocalPos.x * 3.2 + vLocalPos.y * 1.5, vLocalPos.y * 6.5, vLocalPos.z * 3.2));
+            float medGrain = noise3(vLocalPos * 14.0 + vec3(2.3, 5.1, 1.7));
+            float fineGrain = noise3(vLocalPos * 42.0);
+            float microPit = smoothstep(0.75, 0.94, noise3(vLocalPos * 68.0));
 
             vec3 col = vColor;
 
-            if (isPoemDark || isPoemLip) {
-              // Keep 3-layer V-chiseled Garamond poem razor-sharp and unmottled
-              gl_FragColor = vec4(col, 1.0);
-            } else if (isCrimsonRose) {
-              // Velvet crimson rose petals & buds: directional sun wrap + subtle petal rim glow
-              float sunBoost = 0.88 + 0.24 * smoothstep(-0.25, 0.60, ndl);
-              col *= sunBoost;
-              gl_FragColor = vec4(col, 1.0);
+            if (isPoemDark) {
+              // Deep chiseled V-groove serif inscription
+              float cutGrain = 0.94 + (fineGrain - 0.5) * 0.10;
+              float cutLight = 0.86 + 0.18 * clamp(ndl * 0.5 + 0.5, 0.0, 1.0);
+              col *= cutGrain * cutLight;
+            } else if (isPoemLip) {
+              // Sunlit lower-right bevel edge of chiseled letters
+              col *= 0.95 + 0.14 * clamp(ndl * 0.5 + 0.5, 0.0, 1.0);
             } else if (isBotanicalGreen) {
-              // Serrated ivy leaves & vertex-tagged moss: organic tuft micro-relief & sunlit chartreuse tips
-              float mTuft = noise3(vLocalPos * 14.0 + vec3(3.1, 7.4, 2.6));
-              float mFine = noise3(vLocalPos * 34.0);
-              float sunBoost = 0.86 + 0.26 * smoothstep(-0.20, 0.62, ndl);
-              col *= sunBoost * (0.92 + mTuft * 0.12 + (mFine - 0.5) * 0.08);
-              vec3 mossChartreuse = vec3(0.32, 0.58, 0.11);
-              col = mix(col, mossChartreuse, smoothstep(0.58, 0.88, mTuft * 0.6 + max(0.0, n.y) * 0.4) * 0.26);
-              gl_FragColor = vec4(col, 1.0);
+              // Natural mortar-joint & crevice moss (velvety matte micro-grain)
+              float mossTex = 0.90 + (medGrain - 0.5) * 0.14 + (fineGrain - 0.5) * 0.12;
+              float mossLight = 0.68 + 0.38 * smoothstep(-0.40, 0.75, ndl) + 0.08 * hemi;
+              col *= mossLight * mossTex;
             } else {
-              // Warm sunlit Ghibli limestone & sandstone reading tablets (zero muddy blotches!)
-              float fine = noise3(vLocalPos * 28.0);
-              float dNorm = clamp(length(fwidth(geoN)) * 1.45, 0.0, 1.0);
-              float sunFactor = 0.94 + 0.12 * clamp(ndl * 0.5 + 0.5, 0.0, 1.0);
-              col *= sunFactor * (0.985 + (fine - 0.5) * 0.03);
+              // Smoothly sculpted warm sandstone / travertine relief, honed plaque & quarried ashlar blocks
+              float diffuse = smoothstep(-0.55, 0.85, ndl);
+              float reliefShade = 0.64 + 0.40 * diffuse + 0.10 * hemi;
 
-              // Jagged hairline geological stone fractures (multi-octave high-frequency warp, attenuated in poem center)
-              vec3 jWarp =
-                vec3(
-                  noise3(vLocalPos * 5.2 + vec3(1.1, 4.3, 7.7)),
-                  noise3(vLocalPos * 5.2 + vec3(8.5, 2.1, 3.4)),
-                  noise3(vLocalPos * 5.2 + vec3(4.7, 9.2, 1.8))
-                ) * 0.16 +
-                vec3(
-                  noise3(vLocalPos * 17.5 + vec3(3.2, 7.1, 2.9)),
-                  noise3(vLocalPos * 17.5 + vec3(6.4, 1.8, 5.3)),
-                  noise3(vLocalPos * 17.5 + vec3(9.1, 3.7, 4.2))
-                ) * 0.065 +
-                vec3(noise3(vLocalPos * 42.0) - 0.5) * 0.025;
+              // Subtle travertine strata veining, medium mottling, fine sand grain, and micro-pits
+              float stoneTex = 0.96 + (strata - 0.5) * 0.06 + (medGrain - 0.5) * 0.05 + (fineGrain - 0.5) * 0.05 - microPit * 0.05;
+              col *= reliefShade * stoneTex;
 
-              float cSheet1 = abs(noise3(vLocalPos * 2.4 + jWarp) - 0.50);
-              float cSheet2 = abs(noise3(vLocalPos * 4.6 - jWarp * 1.3 + vec3(5.2, 1.7, 8.4)) - 0.50);
-              float crackGate = smoothstep(0.54, 0.72, noise3(vLocalPos * 2.1 + vec3(2.9, 6.1, 4.4)));
-              float crack1 = (1.0 - smoothstep(0.0015, 0.0065, cSheet1)) * crackGate;
-              float crack2 = (1.0 - smoothstep(0.0018, 0.0070, cSheet2)) * crackGate * 0.55;
-              float crackMask = clamp(crack1 + crack2, 0.0, 1.0);
-              col = mix(col, col * vec3(0.76, 0.72, 0.67), crackMask * 0.45);
-
-              // Crisp chiseled facet edge highlight on upward edges, warm limestone shade on downward edges
-              vec3 edgeHi = min(vec3(0.97, 0.92, 0.80), col * 1.24);
-              vec3 edgeLo = col * 0.78;
-              col = mix(col, edgeHi, dNorm * smoothstep(0.0, 0.65, geoN.y) * 0.40);
-              col = mix(col, edgeLo, dNorm * (1.0 - smoothstep(-0.55, 0.10, geoN.y)) * 0.32);
-
-              // Strictly isolated procedural per-pixel shader moss (Site 3 top brow ONLY, Site 2 mortar crevices ONLY, Site 1 ZERO)
-              float mBroad = noise3(vLocalPos * 3.4 + vec3(2.3, 6.1, 4.8));
-              float mDetail = noise3(vLocalPos * 11.5 + vec3(7.4, 1.9, 5.2));
-              float mMicro = noise3(vLocalPos * 29.0 + vec3(1.7, 8.3, 3.6));
-              float mField = mBroad * 0.52 + mDetail * 0.33 + mMicro * 0.15;
-
-              float procMoss = 0.0;
-              if (abs(uSiteId - 3.0) < 0.2) {
-                // Site 3 top brow moss mask (strictly on protruding rock blocks vLocalPos.z > 0.198, never on tablet!)
-                float s3Shoulder = max(
-                  smoothstep(0.75, 1.30, abs(vLocalPos.x)),
-                  (1.0 - smoothstep(0.06, 0.34, abs(vLocalPos.x + 0.48))) * 0.88
-                );
-                float browY = 2.28 - max(0.0, abs(vLocalPos.x) - 1.15) * 0.36;
-                procMoss =
-                  smoothstep(browY - 0.10, browY + 0.12, vLocalPos.y) *
-                  smoothstep(-0.18, 0.42, geoN.y) *
-                  smoothstep(0.196, 0.214, vLocalPos.z) *
-                  s3Shoulder;
-              } else if (abs(uSiteId - 2.0) < 0.2) {
-                // Site 2 patchy crevice & lower flagstone edge moss mask
-                float rHoriz = length(vLocalPos.xz);
-                float inRing = smoothstep(1.31, 1.37, rHoriz) * (1.0 - smoothstep(3.25, 3.65, rHoriz));
-                float inMortarDepth = 1.0 - smoothstep(0.506, 0.522, vLocalPos.y);
-                float onBevel = (1.0 - smoothstep(0.514, 0.532, vLocalPos.y)) * (1.0 - smoothstep(0.76, 0.92, geoN.y));
-                procMoss = inRing * max(inMortarDepth, onBevel * 0.82);
-              }
-
-              bool isSite2 = (abs(uSiteId - 2.0) < 0.2);
-              float mossCut = isSite2 ? 0.72 : 0.42;
-              float rawMoss = isSite2
-                ? (mField * 0.84 + procMoss * 0.34)
-                : (mField * 0.62 + procMoss * 0.68);
-              float mossAlpha = smoothstep(mossCut, mossCut + 0.08, rawMoss) * step(0.05, procMoss);
-              if (mossAlpha > 0.01) {
-                vec3 cMossRim  = vec3(0.032, 0.095, 0.016);
-                vec3 cMossMid  = vec3(0.105, 0.265, 0.045);
-                vec3 cMossTip  = vec3(0.255, 0.495, 0.088);
-                float innerTuft = smoothstep(mossCut + 0.05, mossCut + 0.20, rawMoss);
-                vec3 mossTone = mix(cMossRim, cMossMid, innerTuft);
-                float sunCrown = smoothstep(0.46, 0.82, mDetail * 0.55 + mMicro * 0.25 + max(0.0, ndl) * 0.35) * innerTuft;
-                mossTone = mix(mossTone, cMossTip, sunCrown * 0.88);
-                col = mix(col, mossTone, mossAlpha * 0.95);
-              }
-
-              gl_FragColor = vec4(col, 1.0);
+              // Soft grazing rim warmth on upward-facing sculpted petals, leaves & coping rims
+              vec3 viewDir = normalize(cameraPosition - vWorldPos);
+              float rim = pow(1.0 - max(0.0, dot(n, viewDir)), 3.0) * max(0.0, n.y) * max(0.0, ndl);
+              col += vec3(0.09, 0.07, 0.05) * rim;
             }
+
+            // Full Day / Evening / Night environment shading modulation (matching trees.js & terrain-water.js!)
+            float dayLuma = dot(uLightTint, vec3(0.3333));
+            float isNight = 1.0 - smoothstep(0.35, 0.65, dayLuma);
+            float isEvening = smoothstep(0.08, 0.22, uLightTint.r - uLightTint.b) * (1.0 - isNight);
+            col = mix(col, col * vec3(1.06, 0.72, 0.58), isEvening * 0.58);
+            col = mix(col, col * vec3(0.36, 0.46, 0.76), isNight * 0.62);
+            col *= uLightTint;
+
+            float fogFactor = smoothstep(uFogNear, uFogFar, vViewDist);
+            col = mix(col, uFogColor, fogFactor);
+
+            gl_FragColor = vec4(col, 1.0);
             #include <tonemapping_fragment>
             #include <colorspace_fragment>
           }
         `,
       });
+      monumentShaderMats.push(mat);
+      entry.materials.push(mat);
+      return mat;
     };
 
     const attachScene = (gltf) => {
@@ -2161,14 +2142,13 @@ export function applyTimeOfDay(modeOrT) {
       skyState.activeLightDir
     );
   }
-  if (typeof stoneDecals !== 'undefined' && stoneDecals?.entries) {
-    for (const entry of Object.values(stoneDecals.entries)) {
-      const mat = entry?.material || entry?.mesh?.material;
-      if (mat?.uniforms?.uSunDir) {
-        mat.uniforms.uSunDir.value.copy(skyState.activeLightDir);
-      }
-      if (mat?.uniforms?.uDaylight) {
-        mat.uniforms.uDaylight.value = skyState.daylight;
+  if (typeof monumentShaderMats !== 'undefined' && Array.isArray(monumentShaderMats)) {
+    for (const mat of monumentShaderMats) {
+      if (mat?.uniforms) {
+        if (mat.uniforms.uSunDir) mat.uniforms.uSunDir.value.copy(skyState.activeLightDir);
+        if (mat.uniforms.uDaylight) mat.uniforms.uDaylight.value = skyState.daylight;
+        if (mat.uniforms.uLightTint) mat.uniforms.uLightTint.value.copy(skyState.worldTint);
+        if (mat.uniforms.uFogColor) mat.uniforms.uFogColor.value.copy(skyState.fogColor);
       }
     }
   }
@@ -3445,30 +3425,31 @@ export function enterStoneInspection(stone = null) {
     (targetStone.id === 'stone_grove'
       ? 'grove'
       : targetStone.id === 'stone_pier'
-        ? 'lake_wall'
+        ? 'cottage_wall'
         : 'well');
 
   if (siteKey === 'well') {
-    // Close-up straight-on framing of the curved front Village Well keystone tablet (all 8 lines + climbing roses + well masonry)
-    stoneGazeState.inspectPos.set(0.0, 0.90, 3.42);
-    stoneGazeState.inspectTarget.set(0.0, 0.48, 0.0);
+    // Elevated 3/4 framing of the 2.48m Village Well matching `pasted-image.jpeg` (bottom-right):
+    // shows both the curved front sandstone plaque + poem and the circular moss-mortared brick interior
+    stoneGazeState.inspectPos.set(0.0, 1.84, 2.72);
+    stoneGazeState.inspectTarget.set(0.0, 0.56, 0.22);
     stoneGazeState.inspectFov = 42;
   } else if (siteKey === 'grove') {
-    // High-angle close-up over the Whispering Grove circular floor medallion (all 8 lines + raised stone curb + relief roses)
+    // High-angle close-up over the 4.30m Whispering Grove circular floor medallion (Hero Rose at North 12 o'clock + 8 heavy floor lines)
     const sy = terrainHeightAt(44.0, 16.0);
-    stoneGazeState.inspectPos.set(44.0, sy + 3.85, 18.25);
-    stoneGazeState.inspectTarget.set(44.0, sy + 0.48, 16.00);
+    stoneGazeState.inspectPos.set(44.0, sy + 3.62, 18.02);
+    stoneGazeState.inspectTarget.set(44.0, sy + 0.16, 15.88);
     stoneGazeState.inspectFov = 44;
   } else {
-    // Close-up framing of the Weathered Monolith Stele (matching Option A framing!)
-    const wx = targetStone.position?.x ?? -42.0;
-    const wz = targetStone.position?.z ?? 18.0;
+    // Close-up framing of the 3.35m Secluded Ornamental Wall at (-21.6, 20.4, rotY = 0.45)
+    const wx = targetStone.position?.x ?? -21.6;
+    const wz = targetStone.position?.z ?? 20.4;
     const wy = terrainHeightAt(wx, wz);
-    const rotY = targetStone.rotY ?? (wx > -30 ? 0.45 : 0.48);
+    const rotY = targetStone.rotY ?? 0.45;
     const nx = Math.sin(rotY);
     const nz = Math.cos(rotY);
-    stoneGazeState.inspectPos.set(wx + nx * 3.92, wy + 1.46, wz + nz * 3.92);
-    stoneGazeState.inspectTarget.set(wx, wy + 1.40, wz);
+    stoneGazeState.inspectPos.set(wx + nx * 3.12, wy + 1.00, wz + nz * 3.12);
+    stoneGazeState.inspectTarget.set(wx, wy + 0.88, wz);
     stoneGazeState.inspectFov = 42;
   }
 

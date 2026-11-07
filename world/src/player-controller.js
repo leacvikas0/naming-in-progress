@@ -1538,24 +1538,19 @@ export async function createCoopPlayerSystem({
         rotY: 0.0,
         position: { x: 0.0, y: 0.0, z: 0.0 },
       },
-      // Site 3B: Secluded Cottage Alley Lovers Wall at (-21.6, 20.4, rotY = 0.45)
+      // Site 2: Whispering Grove Circular Floor Medallion at (44, 16)
       {
         ...SACRED_INSCRIPTION_STONES[1],
+        siteKey: 'grove',
+        rotY: 0.0,
+        position: { x: 44.0, y: 0.42, z: 16.0 },
+      },
+      // Site 3: Secluded Cottage Ornamental Wall at (-21.6, 20.4, rotY = 0.45)
+      {
+        ...SACRED_INSCRIPTION_STONES[2],
         siteKey: 'cottage_wall',
         rotY: 0.45,
         position: { x: -21.6, y: 0.0, z: 20.4 },
-      },
-      // Site 3A: Lakeside Lovers Wall at (-42, 18, rotY = 0.48)
-      {
-        ...SACRED_INSCRIPTION_STONES[1],
-        siteKey: 'lake_wall',
-        rotY: 0.48,
-      },
-      // Site 2: Demon Tree Grove R=4.6m Floor Medallion at (44, 16)
-      {
-        ...SACRED_INSCRIPTION_STONES[2],
-        siteKey: 'grove',
-        rotY: 0.0,
       },
     ];
 

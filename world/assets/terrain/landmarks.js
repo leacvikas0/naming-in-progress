@@ -163,88 +163,8 @@ function buildWellPlaza(colliders) {
   );
   plazaCurbRing.position.y = 0.016;
 
-  const water = addPart(
-    group,
-    new THREE.CircleGeometry(1.18, 12).rotateX(-Math.PI / 2),
-    PALETTE.waterDeep,
-    { unlit: true }
-  );
-  water.position.y = 0.84;
-
-  for (const sx of [-1.25, 1.25]) {
-    const post = addPart(
-      group,
-      new THREE.BoxGeometry(0.22, 2.4, 0.22),
-      PALETTE.timber,
-      { outline: false }
-    );
-    post.position.set(sx, 1.6, 0);
-
-    const brace = addPart(
-      group,
-      new THREE.BoxGeometry(0.14, 0.68, 0.14),
-      PALETTE.timberDark,
-      { outline: false }
-    );
-    brace.position.set(sx * 0.82, 2.38, 0);
-    brace.rotation.z = sx * 0.55;
-  }
-
-  const roller = addPart(
-    group,
-    new THREE.CylinderGeometry(0.12, 0.12, 2.3, 6).rotateZ(Math.PI / 2),
-    PALETTE.timberLight,
-    { outline: false }
-  );
-  roller.position.set(0, 1.92, 0);
-
-  // Warm Hanging Lantern under the Well Roof (`(0, 2.18, 0)`)
-  const lanternChain = addPart(
-    group,
-    new THREE.CylinderGeometry(0.025, 0.025, 0.42, 6),
-    PALETTE.stoneDark,
-    { outline: false }
-  );
-  lanternChain.position.set(0, 2.48, 0);
-  const lanternCap = addPart(
-    group,
-    new THREE.ConeGeometry(0.20, 0.14, 6),
-    PALETTE.timberDark,
-    { outline: false }
-  );
-  lanternCap.position.set(0, 2.28, 0);
-  const lanternCore = addPart(
-    group,
-    new THREE.BoxGeometry(0.22, 0.28, 0.22),
-    PALETTE.lanternGlow,
-    { unlit: true }
-  );
-  lanternCore.position.set(0, 2.10, 0);
-
-  // Wooden Bucket sitting atop the right well coping rim (`(1.32, 1.26, 0.35)`)
-  const bucket = addPart(
-    group,
-    new THREE.CylinderGeometry(0.22, 0.18, 0.38, 8),
-    PALETTE.doorWood,
-    { outline: true }
-  );
-  bucket.position.set(1.32, 1.26, 0.35);
-
-  const wellRoof = addPart(
-    group,
-    buildGableRoofGeometry(2.4, 1.7, 0.95, 0.22),
-    PALETTE.roofRed,
-    { outline: true }
-  );
-  wellRoof.position.y = 2.7;
-
-  const wellRidge = addPart(
-    group,
-    new THREE.BoxGeometry(2.9, 0.16, 0.18),
-    PALETTE.roofRed,
-    { outline: false }
-  );
-  wellRidge.position.set(0, 3.65, 0);
+  // The central Village Well at (0, 0) is rendered by the segmented 3D monument (`site1-well-{live,exposed}.glb`),
+  // an open carved sandstone well with moss-mortared interior brick courses matching `pasted-image.jpeg`.
 
   const arcAngles = [0.72, 2.38, -2.35, -0.74];
   const r = rPlaza - 0.35;
@@ -1214,8 +1134,8 @@ function buildSacredInscriptionStones(colliders) {
 
     group.add(holder);
 
-    if (colliders) {
-      // Place `stone_grove` collider at the north rim so the R=4.6m floor medallion is 100% walkable!
+    if (colliders && st.id !== 'stone_plaza') {
+      // Place `stone_grove` collider at the north rim so the circular floor medallion is 100% walkable!
       const colZ = st.id === 'stone_grove' ? st.z - 4.2 : st.z;
       colliders.push({
         type: 'circle',
@@ -1227,15 +1147,6 @@ function buildSacredInscriptionStones(colliders) {
       });
     }
   }
-
-  // Also place a Secluded Cottage Alley 3D Lovers Wall behind the Shepherd/Gardener Cottage (`(-21.6, 20.4)`)
-  const cottageWallHolder = new THREE.Group();
-  const cwX = -21.6;
-  const cwZ = 20.4;
-  cottageWallHolder.position.set(cwX, terrainHeightAt(cwX, cwZ), cwZ);
-  cottageWallHolder.rotation.y = 0.45;
-  buildHiddenLoversWall3D(cottageWallHolder);
-  group.add(cottageWallHolder);
 
   // Stepping stone slabs along the shallow causeway from the pier shore (-33.5, 10.5) to (-42.0, 18.0)
   const causewaySteps = [
