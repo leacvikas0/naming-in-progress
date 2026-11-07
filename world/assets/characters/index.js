@@ -252,8 +252,8 @@ export const SEMANTIC_ANIMATIONS = {
     loop: false,
   },
   combo4: {
-    candidates: ['2H_Melee_Attack_Spin', '2H_Melee_Attack_Chop', '1H_Melee_Attack_Slice_Diagonal'],
-    aliases: ['Melee_1H_Attack_Jump_Chop'],
+    candidates: ['1H_Melee_Attack_Stab', '1H_Melee_Attack_Chop', '1H_Melee_Attack_Slice_Diagonal'],
+    aliases: ['Melee_1H_Attack_Jump_Chop', 'Melee_1H_Attack_Stab_Finisher'],
     loop: false,
   },
   stab: {
@@ -656,7 +656,9 @@ function stabilizeCombatRootMotion(clip) {
     name.includes('Melee_Attack') ||
     name.includes('Block') ||
     name.includes('Spellcast') ||
-    name.includes('Ranged_');
+    name.includes('Ranged_') ||
+    name.startsWith('Dodge_') ||
+    name.startsWith('Jump_Land');
   const isLocomotion = name.startsWith('Walking_') || name.startsWith('Running_');
   if (!isMeleeAttack && !isLocomotion) return clip;
 

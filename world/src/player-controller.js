@@ -1232,6 +1232,7 @@ export async function createCoopPlayerSystem({
       selectedElement: 'ice',
       dashDirX: 0,
       dashDirZ: 0,
+      dashCooldown: 0,
       lungeRemaining: 0,
       lungeDuration: 0.22,
       praying: false,
@@ -1258,6 +1259,7 @@ export async function createCoopPlayerSystem({
       selectedSpell: 'frost_lance',
       dashDirX: 0,
       dashDirZ: 0,
+      dashCooldown: 0,
       lungeRemaining: 0,
       lungeDuration: 0.22,
       praying: false,
@@ -1336,10 +1338,25 @@ export async function createCoopPlayerSystem({
       applyTransform(st);
 
       startOneShotAction(st, swing.clip, swing.duration, {
-        startTime: 0,
-        timeScale: swing.timeScale,
+        startTime: swing.animStartTime ?? swing.startTime ?? 0,
+        timeScale: swing.animTimeScale ?? swing.timeScale,
         fade: 0.06,
       });
+
+      if (swing.heroId === 'Knight') {
+        const activeStyle =
+          campaignLoop.combatHeroes.Knight.sunSwornBreathing &&
+          campaignLoop.combatHeroes.Knight.breathingStyle === 'none'
+            ? 'eclipse'
+            : campaignLoop.combatHeroes.Knight.breathingStyle || 'none';
+        vfxKit.swordVfx?.triggerSwing?.(
+          swing.clip,
+          { x: st.x, y: st.y, z: st.z },
+          st.yaw,
+          activeStyle,
+          { duration: swing.duration }
+        );
+      }
 
       coopClient.sendActionEvent({
         role: swing.heroId,
@@ -1362,7 +1379,8 @@ export async function createCoopPlayerSystem({
           swing.clip,
           st,
           st.yaw,
-          partner
+          partner,
+          { skipTriggerSwing: true }
         );
         if (swingRes?.swingYaw !== undefined) {
           st.yaw = swingRes.swingYaw;
@@ -1394,6 +1412,8 @@ export async function createCoopPlayerSystem({
       heroStates.Knight.shieldBlocking = blocking;
       campaignLoop.setKnightShieldBlocking(blocking);
       if (blocking) {
+        vfxKit.swordVfx?.endSwing?.();
+        heroStates.Knight.lungeRemaining = 0;
         heroStates.Knight.actionState = 'block';
         heroStates.Knight.actionTimer = 999;
         heroStates.Knight.char.play('block', {
@@ -1902,14 +1922,21 @@ export async function createCoopPlayerSystem({
 
   function playHeroLocomotionClip(st, nextLoco) {
     if (st.actionState) return;
-    if (st.locomotionState === nextLoco && st.char.anim.currentKey === nextLoco) return;
-    st.locomotionState = nextLoco;
     const isOnce = nextLoco === 'jump_start' || nextLoco === 'jump_land';
+    const curAct = st.char.anim?.rawActions?.get(st.char.anim?.currentClipName);
+    const actHealthy =
+      Boolean(curAct && curAct.isRunning()) &&
+      (isOnce || curAct.loop === THREE.LoopRepeat);
+    if (st.locomotionState === nextLoco && st.char.anim.currentKey === nextLoco && actHealthy) {
+      return;
+    }
+    st.locomotionState = nextLoco;
     st.char.play(nextLoco, {
       loop: !isOnce,
       fade: isOnce ? 0.08 : 0.14,
       startTime: 0,
       timeScale: nextLoco === 'sprint' ? 1.22 : 1.0,
+      force: !actHealthy,
     });
   }
 
@@ -2116,6 +2143,11 @@ export async function createCoopPlayerSystem({
         if (leader.id === 'Knight' && leader.shieldBlocking) {
           actionAim.releaseHeavy('Knight');
         }
+        actionAim.cancelSwing(leader.id);
+        if (leader.id === 'Knight') {
+          vfxKit.swordVfx?.endSwing?.();
+        }
+        leader.lungeRemaining = 0;
         leader.vy = 7.4;
         leader.grounded = false;
         leader.actionState = null;
@@ -2129,10 +2161,27 @@ export async function createCoopPlayerSystem({
       if (leader.id === 'Knight' && leader.shieldBlocking) {
         actionAim.releaseHeavy('Knight');
       }
+      actionAim.cancelSwing(leader.id);
+      if (leader.id === 'Knight') {
+        vfxKit.swordVfx?.endSwing?.();
+      }
+      leader.lungeRemaining = 0;
+
+      // Prevent rapid Shift taps from re-locking Dodge_Forward while already dashing or on dash cooldown;
+      // instead cancel any attack action cleanly so WASD + Shift transitions smoothly into sprint!
+      if (leader.dashCooldown > 0 || leader.actionState === 'dash') {
+        if (leader.actionState !== 'dash') {
+          leader.actionState = null;
+          leader.actionTimer = 0;
+        }
+        return { onDashCooldown: true };
+      }
+
+      leader.dashCooldown = 0.58;
       leader.dashDirX = Math.sin(leader.yaw);
       leader.dashDirZ = Math.cos(leader.yaw);
-      startOneShotAction(leader, 'dash', 0.32, {
-        startTime: 0,
+      startOneShotAction(leader, 'dash', 0.30, {
+        startTime: 0.04,
         timeScale: 1.25,
         fade: 0.06,
       });
@@ -2188,20 +2237,25 @@ export async function createCoopPlayerSystem({
 
     if (actionType === 'skill') {
       if (activeHeroId === 'Knight') {
+        if (leader.shieldBlocking) {
+          actionAim.releaseHeavy('Knight');
+        }
+        actionAim.cancelSwing('Knight');
         const res = campaignLoop.performPartnerSkill('Knight', heroStates, actionOptions);
         if (res && !res.onCooldown) {
+          startOneShotAction(leader, 'combo1', 0.46, {
+            startTime: 0.04,
+            timeScale: 1.25,
+            fade: 0.06,
+          });
           applyTransform(leader);
+          leader.char.update(0);
           vfxKit.swordVfx.triggerSwing(
             'combo1',
             leader,
             leader.yaw,
             campaignLoop.combatHeroes.Knight.breathingStyle
           );
-          startOneShotAction(leader, 'pray_channel', 0.48, {
-            startTime: 0,
-            timeScale: 1.15,
-            fade: 0.06,
-          });
           onBanner?.({
             title:
               res.element === 'fire'
@@ -2237,11 +2291,16 @@ export async function createCoopPlayerSystem({
 
     if (actionType === 'ultimate') {
       if (activeHeroId === 'Knight') {
+        if (leader.shieldBlocking) {
+          actionAim.releaseHeavy('Knight');
+        }
+        actionAim.cancelSwing('Knight');
+        vfxKit.swordVfx?.endSwing?.();
         const res = campaignLoop.performKnightUltimate(heroStates);
         if (res && !res.onCooldown) {
-          startOneShotAction(heroStates.Knight, 'pray_channel', 0.72, {
+          startOneShotAction(heroStates.Knight, 'pray_channel', 0.68, {
             startTime: 0,
-            timeScale: 1.0,
+            timeScale: 1.05,
             fade: 0.08,
           });
           triggerCameraImpulse({
@@ -2382,6 +2441,17 @@ export async function createCoopPlayerSystem({
     leader.vy = 0;
     leader.yaw = yaw;
     leader.grounded = true;
+    leader.lungeRemaining = 0;
+    leader.dashCooldown = 0;
+    leader.comboStep = 0;
+    leader.comboResetTimer = 0;
+    if (leader.shieldBlocking) {
+      actionAim.releaseHeavy(leader.id);
+    }
+    actionAim.cancelSwing(leader.id, { resetCombo: true });
+    if (leader.id === 'Knight') {
+      vfxKit.swordVfx?.endSwing?.();
+    }
     leader.actionState = null;
     leader.actionTimer = 0;
     leader.praying = false;
@@ -2397,6 +2467,8 @@ export async function createCoopPlayerSystem({
     partner.vy = 0;
     partner.yaw = yaw - 0.18;
     partner.grounded = true;
+    partner.lungeRemaining = 0;
+    partner.dashCooldown = 0;
     partner.actionState = null;
     partner.actionTimer = 0;
     applyTransform(partner);
@@ -2452,6 +2524,12 @@ export async function createCoopPlayerSystem({
     if (leader.comboResetTimer > 0) {
       leader.comboResetTimer = Math.max(0, leader.comboResetTimer - dt);
     }
+    if (leader.dashCooldown > 0) {
+      leader.dashCooldown = Math.max(0, leader.dashCooldown - dt);
+    }
+    if (partner.dashCooldown > 0) {
+      partner.dashCooldown = Math.max(0, partner.dashCooldown - dt);
+    }
 
     // 1. Gather Keyboard + Touch Joystick input (zeroed during control lockout!)
     let fwd = 0;
@@ -2474,6 +2552,11 @@ export async function createCoopPlayerSystem({
     const isSprinting =
       !controlLocked &&
       (Boolean(keys && keys.has('shift')) || Boolean(joyState && joyState.sprinting));
+
+    // Never allow stationary shield_block (actionTimer = 999) to freeze leg animations while moving or sprinting!
+    if (leader.id === 'Knight' && leader.shieldBlocking && (moveMag > 0.08 || isSprinting)) {
+      actionAim.releaseHeavy('Knight');
+    }
 
     let didWrap = false;
 
@@ -2704,19 +2787,20 @@ export async function createCoopPlayerSystem({
       }
     }
 
-    // 4. Update 3-Act Campaign Loop, Pooled Enemy AI, Stage 4 Opaque VFX Kit & Spring Camera Impact
+    // 4. Update 3-Act Campaign Loop & Pooled Enemy AI, then Hero Skeletons, then Stage 4 Opaque VFX Kit
     campaignLoop.update(dt, {
       heroStates,
       soloWingmanActive: !isPeerLinked,
       camera,
     });
-    vfxKit.update(dt);
 
     applyTransform(leader);
     applyTransform(partner);
     leader.char.update(dt);
     partner.char.update(dt);
     syncSharedPlayerFromLeader();
+
+    vfxKit.update(dt);
 
     coopClient.sendHeroState({
       role: activeHeroId,

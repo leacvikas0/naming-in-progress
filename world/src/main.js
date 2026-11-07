@@ -2974,6 +2974,10 @@ window.addEventListener('keydown', (e) => {
   } else if (!wasPressed && k === 'shift') {
     activeGameplayShotSpec = null;
     if (camState.mode === 'vista') camState.mode = 'player';
+    if (lmbHoldTimer) {
+      clearTimeout(lmbHoldTimer);
+      lmbHoldTimer = null;
+    }
     coopSystem.triggerAction('dash');
   } else if (k === 't') {
     autoCycleTod = false;
@@ -2985,10 +2989,16 @@ window.addEventListener('keydown', (e) => {
     syncTodHudControls();
   } else if (!wasPressed && k === 'h') {
     toggleHud(hudEl && hudEl.style.display === 'none');
-  } else if (['w', 'a', 's', 'd', ' '].includes(k) && camState.mode === 'vista') {
-    activeGameplayShotSpec = null;
-    camState.mode = 'player';
-    updateViewButtons();
+  } else if (['w', 'a', 's', 'd', ' '].includes(k)) {
+    if (lmbHoldTimer) {
+      clearTimeout(lmbHoldTimer);
+      lmbHoldTimer = null;
+    }
+    if (camState.mode === 'vista') {
+      activeGameplayShotSpec = null;
+      camState.mode = 'player';
+      updateViewButtons();
+    }
   }
 });
 
@@ -2998,6 +3008,11 @@ window.addEventListener('keyup', (e) => {
   if (isUiOverlayBlockingInput()) return;
   if (k === 'r') {
     finishCommuneHold();
+  } else if (
+    k === 'f' &&
+    coopSystem?.player?.activeHeroId === 'Knight'
+  ) {
+    coopSystem.triggerAction('release_heavy');
   } else if (
     k === 'e' &&
     coopSystem.player.activeHeroId === 'Mage' &&
@@ -3022,6 +3037,10 @@ canvas.addEventListener('mousedown', (e) => {
     if (camState.mode === 'vista') {
       camState.mode = 'player';
       updateViewButtons();
+    }
+    if (lmbHoldTimer) {
+      clearTimeout(lmbHoldTimer);
+      lmbHoldTimer = null;
     }
     coopSystem.triggerAction('dash');
     return;
@@ -3063,7 +3082,16 @@ canvas.addEventListener('mousedown', (e) => {
           distance: eAimDragDistance,
         });
       } else {
-        coopSystem.triggerAction('heavy');
+        const isMovingOrDashing =
+          keys.has('shift') ||
+          keys.has('w') ||
+          keys.has('a') ||
+          keys.has('s') ||
+          keys.has('d') ||
+          keys.has(' ');
+        if (!isMovingOrDashing) {
+          coopSystem.triggerAction('heavy');
+        }
       }
     }
   }, holdDelay);
@@ -3078,6 +3106,12 @@ window.addEventListener('mouseup', () => {
     lmbHoldTimer = null;
   }
   if (
+    coopSystem?.player?.activeHeroId === 'Knight' &&
+    coopSystem?.heroStates?.Knight?.shieldBlocking
+  ) {
+    coopSystem.triggerAction('release_heavy');
+  }
+  if (
     coopSystem?.player?.activeHeroId === 'Mage' &&
     coopSystem.actionAim?.aimState?.active &&
     coopSystem.actionAim.aimState.spellId === 'shatterlance'
@@ -3087,6 +3121,18 @@ window.addEventListener('mouseup', () => {
       yaw: camState.yaw,
       pitch: camState.pitch,
     });
+  }
+});
+
+window.addEventListener('blur', () => {
+  keys.clear();
+  pointerDragging = false;
+  if (lmbHoldTimer) {
+    clearTimeout(lmbHoldTimer);
+    lmbHoldTimer = null;
+  }
+  if (coopSystem?.heroStates?.Knight?.shieldBlocking) {
+    coopSystem.triggerAction('release_heavy');
   }
 });
 
