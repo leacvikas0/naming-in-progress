@@ -1028,11 +1028,9 @@ export function createWorldServer() {
       return;
     }
 
-    // 4. Static file serving (with path traversal and dotfile protection)
-    let filePath = path.resolve(
-      repoRoot,
-      urlPath === '/' ? 'world/index.html' : urlPath.replace(/^\/+/, '')
-    );
+    // 4. Static file serving (with path traversal, dotfile protection, and worktree asset fallback)
+    const relUrlPath = urlPath === '/' ? 'world/index.html' : urlPath.replace(/^\/+/, '');
+    let filePath = path.resolve(repoRoot, relUrlPath);
     const relPath = path.relative(repoRoot, filePath);
     if (
       relPath.startsWith('..') ||
@@ -1048,6 +1046,30 @@ export function createWorldServer() {
       filePath = path.join(filePath, 'index.html');
     }
     if (!fs.existsSync(filePath)) {
+      const normRoot = repoRoot.replace(/\\/g, '/');
+      const fallbackRoot = normRoot.includes('/.kilo/worktrees/')
+        ? path.resolve(repoRoot, '../../..')
+        : normRoot.includes('/.worktrees/')
+          ? path.resolve(repoRoot, '../..')
+          : null;
+      if (fallbackRoot) {
+        let fallbackPath = path.resolve(fallbackRoot, relUrlPath);
+        const fallbackRel = path.relative(fallbackRoot, fallbackPath);
+        if (
+          !fallbackRel.startsWith('..') &&
+          !path.isAbsolute(fallbackRel) &&
+          !hasDotfileSegment(fallbackRel)
+        ) {
+          if (fs.existsSync(fallbackPath) && fs.statSync(fallbackPath).isDirectory()) {
+            fallbackPath = path.join(fallbackPath, 'index.html');
+          }
+          if (fs.existsSync(fallbackPath)) {
+            filePath = fallbackPath;
+          }
+        }
+      }
+    }
+    if (!fs.existsSync(filePath)) {
       res.writeHead(404);
       res.end('Not found');
       return;
@@ -1056,6 +1078,7 @@ export function createWorldServer() {
     const ext = path.extname(filePath).toLowerCase();
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
       'X-Haru-Coop': '1',
     });
 

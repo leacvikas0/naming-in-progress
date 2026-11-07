@@ -272,7 +272,7 @@
       camera.updateProjectionMatrix();
       camera.updateMatrixWorld();
 
-      kit.update(0.016, 1.25);
+      kit.update(0.016, 1.25, null, null, null, null, camera);
       renderer.render(scene, camera);
 
       for (const b of btnBar.querySelectorAll('button')) {
@@ -291,7 +291,7 @@
     function measurePerformance(iterations = 45) {
       const t0 = performance.now();
       for (let i = 0; i < iterations; i++) {
-        kit.update(1 / 144, 1.25 + i * (1 / 144));
+        kit.update(1 / 144, 1.25 + i * (1 / 144), null, null, null, null, camera);
         renderer.render(scene, camera);
       }
       const t1 = performance.now();

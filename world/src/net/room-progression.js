@@ -1,39 +1,27 @@
 // ============================================================================
 // world/src/net/room-progression.js
 //
-// Wave 3 Co-Op Room Phrase Generator, Invite Link Builder & Sequential 3-Stone
-// Progression State Machine for Haru-machi:
-// - Human-memorable romantic room phrases ("Love is curiosity", etc.)
+// Wave 3 & 4 Co-Op Room Phrase Generator, Invite Link Builder & Non-Linear /
+// Sequential 3-Stone Progression State Machine for Amarante:
+// - Poetic romantic room phrases ("Rain on warm limestone", "Love is curiosity", etc.)
 // - Canonical room code normalization & `?room=` URL builder
-// - Sequential 3-Stage Sacred Inscription Stone Progression (`0 -> 1 -> 2 -> 3`):
-//   * Starts at `unlockedStage = 0`, `communeDiscovered = false`,
-//     `stonesRead = []`, `stonesSolved = 0`.
-//   * Reading ANY of the 3 Sacred Inscription Stones (`stone_plaza`,
-//     `stone_pier`, `stone_grove`) immediately reveals the `Commune` button
-//     (`communeDiscovered = true`) and selects the sequential riddle
-//     (`nextStoneIndex = Math.min(3, stonesSolved + 1)`).
-//   * Solving Stone 1 -> Stage 1: Unlocks `E` (Ice Power: `Frost Lance` for
-//     Mage, `Ice Sword` for Knight).
-//   * Solving Stone 2 -> Stage 2: Unlocks `Fire E` + `Tab` Element Toggle
-//     (`Cinder Fall` for Mage, `Fire Sword` for Knight).
-//   * Solving Stone 3 -> Stage 3: Unlocks Personal `Q` Ultimate (`Storm
-//     Cataclysm` for Mage, `Sky-Lightning Awakening` for Knight).
+// - Non-Linear & Sequential Sacred Inscription Stone Progression:
+//   * Supports `{ iceUnlocked, fireUnlocked, ultimateUnlocked }` so solving
+//     Fire first unlocks `[E]` as Fire (`tabToggleVisible: false`), solving
+//     Ice first unlocks `[E]` as Ice (`tabToggleVisible: false`), and `[Tab]`
+//     only appears when BOTH `iceUnlocked` AND `fireUnlocked` are true!
+//   * Also maintains full backwards compatibility with sequential `0 -> 1 -> 2 -> 3`
+//     (`solveNextStone()`) for existing room tests.
 //   * Zero hand-holding tutorial popups (`showTutorialPopups: false`).
 // ============================================================================
 
 export const ROMANTIC_ROOM_PHRASES = Object.freeze([
+  'Rain on warm limestone',
+  'Two lanterns under wisteria',
+  'Snowmelt in the orchard',
+  'Wild clover at dusk',
+  'Petals on still water',
   'Love is curiosity',
-  'Warm hands in winter',
-  'Two hearts under wisteria',
-  'Crimson roses at dawn',
-  'Moonlight on the lake pier',
-  'Starlight over Haru-machi',
-  'Lanterns in the spring rain',
-  'Wildflowers by the old mill',
-  'Velvet petals in the breeze',
-  'Golden vow beneath the shrine',
-  'Soft footsteps in the meadow',
-  'Promises kept in the storm',
 ]);
 
 export const SACRED_INSCRIPTION_STONES = Object.freeze([
@@ -42,6 +30,7 @@ export const SACRED_INSCRIPTION_STONES = Object.freeze([
     index: 1,
     name: 'Weathered Stele of the Town Plaza',
     zone: 'plaza',
+    elementHint: 'ultimate',
     position: { x: 0, z: -14 },
   },
   {
@@ -49,6 +38,7 @@ export const SACRED_INSCRIPTION_STONES = Object.freeze([
     index: 2,
     name: 'Mist-Carved Stele of the Lakeside Pier',
     zone: 'pier',
+    elementHint: 'ice',
     position: { x: -42, z: 18 },
   },
   {
@@ -56,6 +46,7 @@ export const SACRED_INSCRIPTION_STONES = Object.freeze([
     index: 3,
     name: 'Blossom-Wreathed Stele of the Wisteria Grove',
     zone: 'grove',
+    elementHint: 'fire',
     position: { x: 44, z: 16 },
   },
 ]);
@@ -215,7 +206,7 @@ export const STAGE_ABILITY_UNLOCKS = Object.freeze({
 });
 
 /**
- * Generates a human-memorable romantic room phrase (e.g. `"Love is curiosity"`).
+ * Generates a human-memorable romantic room phrase.
  */
 export function generateRoomPhrase(indexOrRng = null) {
   const count = ROMANTIC_ROOM_PHRASES.length;
@@ -275,7 +266,7 @@ export function buildRoomInviteLink(
   phraseOrCode,
   baseUrl = typeof window !== 'undefined' && window.location?.href
     ? window.location.href
-    : 'https://haru-machi-coop.workers.dev/world/index.html'
+    : 'https://amarante-coop.workers.dev/world/index.html'
 ) {
   const code = normalizeRoomPhraseToCode(phraseOrCode);
   try {
@@ -283,7 +274,7 @@ export function buildRoomInviteLink(
     url.searchParams.set('room', code);
     return url.toString();
   } catch {
-    return `https://haru-machi-coop.workers.dev/world/index.html?room=${encodeURIComponent(code)}`;
+    return `https://amarante-coop.workers.dev/world/index.html?room=${encodeURIComponent(code)}`;
   }
 }
 
@@ -329,27 +320,113 @@ export function resolveInscriptionStone(stoneIdOrIndex) {
   return SACRED_INSCRIPTION_STONES[0];
 }
 
-export function getAbilityUnlocksForStage(stage = 0, communeDiscovered = false) {
+export function getAbilityUnlocksForStage(
+  stage = 0,
+  communeDiscovered = false,
+  explicitUnlocks = null
+) {
   const clampedStage = Math.max(0, Math.min(3, Math.floor(Number(stage) || 0)));
-  const spec = STAGE_ABILITY_UNLOCKS[clampedStage] || STAGE_ABILITY_UNLOCKS[0];
-  const hasCommune = Boolean(communeDiscovered || clampedStage >= 1);
+  const iceUnlocked =
+    typeof explicitUnlocks?.iceUnlocked === 'boolean'
+      ? explicitUnlocks.iceUnlocked
+      : clampedStage >= 1;
+  const fireUnlocked =
+    typeof explicitUnlocks?.fireUnlocked === 'boolean'
+      ? explicitUnlocks.fireUnlocked
+      : clampedStage >= 2;
+  const ultimateUnlocked =
+    typeof explicitUnlocks?.ultimateUnlocked === 'boolean'
+      ? explicitUnlocks.ultimateUnlocked
+      : clampedStage >= 3;
+
+  const bothElements = Boolean(iceUnlocked && fireUnlocked);
+  const anyElement = Boolean(iceUnlocked || fireUnlocked);
+  const effectiveStage = ultimateUnlocked
+    ? 3
+    : bothElements
+      ? 2
+      : anyElement
+        ? 1
+        : clampedStage;
+
+  const spec = STAGE_ABILITY_UNLOCKS[effectiveStage] || STAGE_ABILITY_UNLOCKS[0];
+  const hasCommune = Boolean(communeDiscovered || anyElement || ultimateUnlocked || clampedStage >= 1);
+
+  const knightESkill = bothElements
+    ? 'fire_and_ice_sword'
+    : fireUnlocked
+      ? 'fire_sword'
+      : iceUnlocked
+        ? 'ice_sword'
+        : null;
+  const knightESkillName = bothElements
+    ? 'Fire Sword & Ice Sword'
+    : fireUnlocked
+      ? 'Fire Sword'
+      : iceUnlocked
+        ? 'Ice Sword'
+        : null;
+  const mageESkill = bothElements
+    ? 'cinder_fall_and_frost_lance'
+    : fireUnlocked
+      ? 'cinder_fall'
+      : iceUnlocked
+        ? 'frost_lance'
+        : null;
+  const mageESkillName = bothElements
+    ? 'Cinder Fall & Frost Lance'
+    : fireUnlocked
+      ? 'Cinder Fall'
+      : iceUnlocked
+        ? 'Frost Lance'
+        : null;
+
   return {
-    stage: clampedStage,
+    stage: effectiveStage,
     title: spec.title,
     communeUnlocked: hasCommune,
-    skillEUnlocked: clampedStage >= 1,
-    iceEUnlocked: clampedStage >= 1,
-    fireEUnlocked: clampedStage >= 2,
-    tabToggleUnlocked: clampedStage >= 2,
-    ultimateQUnlocked: clampedStage >= 3,
+    iceUnlocked,
+    fireUnlocked,
+    ultimateUnlocked,
+    skillEUnlocked: anyElement,
+    iceEUnlocked: iceUnlocked,
+    fireEUnlocked: fireUnlocked,
+    tabToggleUnlocked: bothElements,
+    ultimateQUnlocked: ultimateUnlocked,
+    activeElement: fireUnlocked && !iceUnlocked ? 'fire' : 'ice',
     showTutorialPopups: false,
-    knight: { ...spec.knight, abilities: [...spec.knight.abilities] },
-    mage: { ...spec.mage, abilities: [...spec.mage.abilities] },
+    knight: {
+      ...spec.knight,
+      eSkill: knightESkill,
+      eSkillName: knightESkillName,
+      iceSword: iceUnlocked,
+      fireSword: fireUnlocked,
+      tabToggle: bothElements,
+      qUltimate: ultimateUnlocked ? 'sky_lightning_awakening' : null,
+      qUltimateName: ultimateUnlocked ? 'Sky-Lightning Awakening' : null,
+      abilities: [...spec.knight.abilities],
+    },
+    mage: {
+      ...spec.mage,
+      eSkill: mageESkill,
+      eSkillName: mageESkillName,
+      frostLance: iceUnlocked,
+      cinderFall: fireUnlocked,
+      tabToggle: bothElements,
+      qUltimate: ultimateUnlocked ? 'storm_cataclysm' : null,
+      qUltimateName: ultimateUnlocked ? 'Storm Cataclysm' : null,
+      abilities: [...spec.mage.abilities],
+    },
   };
 }
 
 /**
- * Creates the sequential 3-Stage Sacred Inscription Stone Progression state machine.
+ * Creates the Sacred Inscription Stone Progression state machine supporting
+ * BOTH non-linear unlocks (`{ iceUnlocked, fireUnlocked, ultimateUnlocked }`)
+ * and sequential stage progression (`0 -> 1 -> 2 -> 3`):
+ * - Solving `stone_pier` (`(-42, 18)`) or an Ice riddle unlocks `iceUnlocked = true`.
+ * - Solving `stone_grove` (`(44, 16)`) or a Fire riddle unlocks `fireUnlocked = true`.
+ * - Solving `stone_plaza` (`(0, -14)`) or the Sovereign riddle unlocks `ultimateUnlocked = true`.
  */
 export function createRoomProgressionState(initial = {}) {
   let unlockedStage = Math.max(
@@ -362,7 +439,16 @@ export function createRoomProgressionState(initial = {}) {
   );
   unlockedStage = stonesSolved;
 
-  let communeDiscovered = Boolean(initial.communeDiscovered || unlockedStage >= 1);
+  let iceUnlocked =
+    typeof initial.iceUnlocked === 'boolean' ? initial.iceUnlocked : unlockedStage >= 1;
+  let fireUnlocked =
+    typeof initial.fireUnlocked === 'boolean' ? initial.fireUnlocked : unlockedStage >= 2;
+  let ultimateUnlocked =
+    typeof initial.ultimateUnlocked === 'boolean' ? initial.ultimateUnlocked : unlockedStage >= 3;
+
+  let communeDiscovered = Boolean(
+    initial.communeDiscovered || iceUnlocked || fireUnlocked || ultimateUnlocked || unlockedStage >= 1
+  );
   const stonesReadSet = new Set(
     Array.isArray(initial.stonesRead)
       ? initial.stonesRead.map((s) => resolveInscriptionStone(s).id)
@@ -373,30 +459,57 @@ export function createRoomProgressionState(initial = {}) {
   }
   let lastReadStoneId = initial.lastReadStoneId || null;
 
+  function recomputeStageCounts() {
+    const count =
+      (iceUnlocked ? 1 : 0) + (fireUnlocked ? 1 : 0) + (ultimateUnlocked ? 1 : 0);
+    stonesSolved = Math.max(stonesSolved, count);
+    unlockedStage = ultimateUnlocked
+      ? 3
+      : iceUnlocked && fireUnlocked
+        ? 2
+        : iceUnlocked || fireUnlocked
+          ? 1
+          : 0;
+  }
+
   function getNextStoneIndex() {
     return Math.min(3, stonesSolved + 1);
   }
 
   function getHudVisibility() {
+    const bothElements = Boolean(iceUnlocked && fireUnlocked);
+    const anyElement = Boolean(iceUnlocked || fireUnlocked);
     return {
-      communeVisible: Boolean(communeDiscovered || unlockedStage >= 1),
-      skillEVisible: unlockedStage >= 1,
-      tabToggleVisible: unlockedStage >= 2,
-      ultimateQVisible: unlockedStage >= 3,
+      communeVisible: Boolean(communeDiscovered || anyElement || ultimateUnlocked || unlockedStage >= 1),
+      skillEVisible: anyElement,
+      tabToggleVisible: bothElements,
+      ultimateQVisible: Boolean(ultimateUnlocked),
+      iceUnlocked: Boolean(iceUnlocked),
+      fireUnlocked: Boolean(fireUnlocked),
+      ultimateUnlocked: Boolean(ultimateUnlocked),
+      activeElement: fireUnlocked && !iceUnlocked ? 'fire' : 'ice',
       showTutorialPopups: false,
     };
   }
 
   function getState() {
     const nextStoneIndex = getNextStoneIndex();
-    const unlocks = getAbilityUnlocksForStage(unlockedStage, communeDiscovered);
+    const unlocks = getAbilityUnlocksForStage(unlockedStage, communeDiscovered, {
+      iceUnlocked,
+      fireUnlocked,
+      ultimateUnlocked,
+    });
     return {
       unlockedStage,
       communeDiscovered,
+      iceUnlocked: Boolean(iceUnlocked),
+      fireUnlocked: Boolean(fireUnlocked),
+      ultimateUnlocked: Boolean(ultimateUnlocked),
+      activeElement: fireUnlocked && !iceUnlocked ? 'fire' : 'ice',
       stonesRead: Array.from(stonesReadSet),
       stonesSolved,
       nextStoneIndex,
-      allStonesSolved: stonesSolved >= 3,
+      allStonesSolved: stonesSolved >= 3 || Boolean(iceUnlocked && fireUnlocked && ultimateUnlocked),
       lastReadStoneId,
       showTutorialPopups: false,
       hudVisibility: getHudVisibility(),
@@ -404,12 +517,6 @@ export function createRoomProgressionState(initial = {}) {
     };
   }
 
-  /**
-   * Reading ANY of the 3 Sacred Inscription Stones immediately reveals the
-   * `Commune` button (`communeDiscovered = true`) and returns the current
-   * sequential riddle index (`nextStoneIndex = stonesSolved + 1`, so even if
-   * players visit Stone 2 or Stone 3 first, riddles progress `1 -> 2 -> 3`).
-   */
   function readInscriptionStone(stoneIdOrIndex) {
     const stone = resolveInscriptionStone(stoneIdOrIndex);
     stonesReadSet.add(stone.id);
@@ -426,6 +533,105 @@ export function createRoomProgressionState(initial = {}) {
       showTutorialPopups: false,
       state: getState(),
     };
+  }
+
+  /**
+   * Non-linearly unlocks a specific power (`'ice'`, `'fire'`, or `'ultimate'`)
+   * or sets explicit `{ iceUnlocked, fireUnlocked, ultimateUnlocked }` flags.
+   */
+  function setUnlocks(patch = {}) {
+    if (typeof patch.communeDiscovered === 'boolean') {
+      communeDiscovered = patch.communeDiscovered;
+    }
+    if (typeof patch.iceUnlocked === 'boolean') {
+      iceUnlocked = patch.iceUnlocked;
+    }
+    if (typeof patch.fireUnlocked === 'boolean') {
+      fireUnlocked = patch.fireUnlocked;
+    }
+    if (typeof patch.ultimateUnlocked === 'boolean') {
+      ultimateUnlocked = patch.ultimateUnlocked;
+    }
+    if (iceUnlocked || fireUnlocked || ultimateUnlocked) {
+      communeDiscovered = true;
+    }
+    stonesSolved =
+      (iceUnlocked ? 1 : 0) + (fireUnlocked ? 1 : 0) + (ultimateUnlocked ? 1 : 0);
+    recomputeStageCounts();
+    return getState();
+  }
+
+  /**
+   * Solves a specific stone (`'stone_pier'`, `'stone_grove'`, `'stone_plaza'`)
+   * or riddle kind (`'ice'`, `'fire'`, `'ultimate'` / `'sovereign'`) non-linearly:
+   * - `stone_pier` (`(-42, 18)`) or Ice riddle -> `iceUnlocked = true`
+   * - `stone_grove` (`(44, 16)`) or Fire riddle -> `fireUnlocked = true`
+   * - `stone_plaza` (`(0, -14)`) or Sovereign / Ultimate riddle -> `ultimateUnlocked = true`
+   */
+  function solveStone(stoneIdOrKind = 'stone_pier') {
+    communeDiscovered = true;
+    const raw = String(stoneIdOrKind || 'stone_pier').trim().toLowerCase();
+    let unlockedKind = 'ice';
+    let resolvedStoneId = 'stone_pier';
+
+    if (
+      raw === 'stone_grove' ||
+      raw.includes('grove') ||
+      raw.includes('wisteria') ||
+      raw === 'fire' ||
+      raw === 'solar' ||
+      raw === 'cinder' ||
+      raw === 'cinder_fall' ||
+      raw === 'fire_sword'
+    ) {
+      fireUnlocked = true;
+      unlockedKind = 'fire';
+      resolvedStoneId = 'stone_grove';
+    } else if (
+      raw === 'stone_plaza' ||
+      raw.includes('plaza') ||
+      raw.includes('town') ||
+      raw.includes('sovereign') ||
+      raw === 'ultimate' ||
+      raw === 'storm' ||
+      raw === 'tempest' ||
+      raw === 'q' ||
+      raw === 'storm_cataclysm' ||
+      raw === 'sky_lightning_awakening'
+    ) {
+      ultimateUnlocked = true;
+      unlockedKind = 'ultimate';
+      resolvedStoneId = 'stone_plaza';
+    } else {
+      iceUnlocked = true;
+      unlockedKind = 'ice';
+      resolvedStoneId = 'stone_pier';
+    }
+
+    stonesReadSet.add(resolvedStoneId);
+    lastReadStoneId = resolvedStoneId;
+    recomputeStageCounts();
+    const snapshot = getState();
+    return {
+      advanced: true,
+      stoneId: resolvedStoneId,
+      unlockedKind,
+      iceUnlocked: Boolean(iceUnlocked),
+      fireUnlocked: Boolean(fireUnlocked),
+      ultimateUnlocked: Boolean(ultimateUnlocked),
+      communeDiscovered: Boolean(communeDiscovered),
+      stage: unlockedStage,
+      unlockedStage,
+      knightUnlock: snapshot.unlocks.knight,
+      mageUnlock: snapshot.unlocks.mage,
+      hudVisibility: snapshot.hudVisibility,
+      showTutorialPopups: false,
+      state: snapshot,
+    };
+  }
+
+  function solveStoneByElement(elementOrKind = 'ice') {
+    return solveStone(elementOrKind);
   }
 
   /**
@@ -447,7 +653,6 @@ export function createRoomProgressionState(initial = {}) {
       requestedStage !== undefined &&
       Number(requestedStage) !== expectedNext
     ) {
-      // Enforce strict sequential order (1 -> 2 -> 3)
       return {
         advanced: false,
         stage: unlockedStage,
@@ -458,6 +663,10 @@ export function createRoomProgressionState(initial = {}) {
 
     stonesSolved = Math.min(3, expectedNext);
     unlockedStage = stonesSolved;
+    if (unlockedStage >= 1) iceUnlocked = true;
+    if (unlockedStage >= 2) fireUnlocked = true;
+    if (unlockedStage >= 3) ultimateUnlocked = true;
+
     const snapshot = getState();
     return {
       advanced: true,
@@ -472,12 +681,31 @@ export function createRoomProgressionState(initial = {}) {
 
   function applyVerdictProgression(verdictObj) {
     if (!verdictObj || typeof verdictObj !== 'object') return getState();
+    if (typeof verdictObj.communeDiscovered === 'boolean') {
+      communeDiscovered = verdictObj.communeDiscovered;
+    }
+    if (typeof verdictObj.iceUnlocked === 'boolean') iceUnlocked = verdictObj.iceUnlocked;
+    if (typeof verdictObj.fireUnlocked === 'boolean') fireUnlocked = verdictObj.fireUnlocked;
+    if (typeof verdictObj.ultimateUnlocked === 'boolean') {
+      ultimateUnlocked = verdictObj.ultimateUnlocked;
+    }
+    const targetStoneOrElement =
+      verdictObj.unlockedElement ||
+      verdictObj.element ||
+      verdictObj.riddleKind ||
+      verdictObj.stoneId ||
+      verdictObj.stone;
+    if (targetStoneOrElement) {
+      solveStone(targetStoneOrElement);
+      return getState();
+    }
     const awakenedStage = Number(verdictObj.awakenedStage || 0);
     if (verdictObj.verdict === 'awakening' || awakenedStage > unlockedStage) {
       if (awakenedStage === stonesSolved + 1 || !awakenedStage) {
         solveNextStone(stonesSolved + 1);
       }
     }
+    recomputeStageCounts();
     return getState();
   }
 
@@ -501,41 +729,45 @@ export function createRoomProgressionState(initial = {}) {
         Math.floor(Number(remote.unlockedStage ?? remote.stonesSolved ?? 0) || 0)
       )
     );
-    if (remoteStage > stonesSolved) {
-      stonesSolved = remoteStage;
+    if (remoteStage > unlockedStage) {
       unlockedStage = remoteStage;
+      stonesSolved = remoteStage;
+      if (unlockedStage >= 1) iceUnlocked = true;
+      if (unlockedStage >= 2) fireUnlocked = true;
+      if (unlockedStage >= 3) ultimateUnlocked = true;
       communeDiscovered = true;
     }
+    if (typeof remote.iceUnlocked === 'boolean') iceUnlocked = remote.iceUnlocked;
+    if (typeof remote.fireUnlocked === 'boolean') fireUnlocked = remote.fireUnlocked;
+    if (typeof remote.ultimateUnlocked === 'boolean') ultimateUnlocked = remote.ultimateUnlocked;
+    recomputeStageCounts();
     return getState();
   }
 
-  function isAbilityUnlocked(role, abilityKey) {
-    const unlocks = getAbilityUnlocksForStage(unlockedStage, communeDiscovered);
-    const key = String(abilityKey || '').toLowerCase();
-    if (key === 'commune') return unlocks.communeUnlocked;
-    if (key === 'e' || key === 'skille' || key === 'ice' || key === 'icee') {
-      return unlocks.iceEUnlocked;
-    }
-    if (key === 'fire' || key === 'firee') {
-      return unlocks.fireEUnlocked;
-    }
-    if (key === 'tab' || key === 'tabtoggle') {
-      return unlocks.tabToggleUnlocked;
-    }
-    if (key === 'q' || key === 'ultimate' || key === 'ultimateq') {
-      return unlocks.ultimateQUnlocked;
-    }
-    return true;
+  function reset() {
+    unlockedStage = 0;
+    stonesSolved = 0;
+    iceUnlocked = false;
+    fireUnlocked = false;
+    ultimateUnlocked = false;
+    communeDiscovered = false;
+    stonesReadSet.clear();
+    lastReadStoneId = null;
+    return getState();
   }
 
   return {
     getState,
     getHudVisibility,
     readInscriptionStone,
+    solveStone,
+    solveStoneByElement,
     solveNextStone,
-    recordCommuneAwakening: solveNextStone,
+    setUnlocks,
     applyVerdictProgression,
     syncFromRemote,
-    isAbilityUnlocked,
+    reset,
   };
 }
+
+export const createRoomProgressionStateMachine = createRoomProgressionState;

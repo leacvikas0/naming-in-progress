@@ -1,7 +1,7 @@
 {
-  "name": "Haru-machi",
-  "short_name": "Haru-machi",
-  "description": "Haru-machi — A romantic 2-player co-op valley adventure for Vikas & Ishika.",
+  "name": "Amarante — The Unfading Bloom",
+  "short_name": "Amarante",
+  "description": "Amarante (The Unfading Bloom) — A romantic 2-player co-op valley adventure for Vikas & Ishika.",
   "id": "/world/index.html",
   "start_url": "/world/index.html",
   "scope": "/world/",
@@ -11,8 +11,8 @@
     "standalone"
   ],
   "orientation": "landscape",
-  "background_color": "#1c1917",
-  "theme_color": "#eadec8",
+  "background_color": "#24121b",
+  "theme_color": "#fcf2f4",
   "categories": [
     "games",
     "entertainment"

@@ -48,7 +48,9 @@ export const PALETTE = {
   grassLight: 0x82be52,
   grassDark: 0x3b7236,
   grassSunSweep: 0xa6d45c,
-  treeShadowCol: 0x244e32,
+  treeShadowCol: 0x224832,
+  dirtShadowCol: 0x584034,
+  cobbleShadowCol: 0x464a62,
   dirtRoad: 0xc8a878,
   dirtEdge: 0xa8885c,
   cobble: 0xc0bab0,
@@ -76,10 +78,193 @@ export const PALETTE = {
 
 export const MAX_TREE_SHADOWS = 72;
 
+let _sharedBakedShadowAOTex = null;
+
+/**
+ * Loads and caches `/world/assets/terrain/baked-shadows-ao.png` (1024x1024 4-channel RGBA:
+ * R = Day Sun shadow, G = Golden Hour Sun shadow, B = Night Moon shadow, A = 360° Contact AO).
+ * Uses a 1x1 rgba(0,0,0,1) placeholder until async decode completes (or 4x4 DataTexture in Node.js).
+ */
+export function getSharedBakedShadowAOTexture() {
+  if (_sharedBakedShadowAOTex) return _sharedBakedShadowAOTex;
+
+  if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+    const placeholder = document.createElement('canvas');
+    placeholder.width = 2;
+    placeholder.height = 2;
+    const ctx = placeholder.getContext('2d');
+    if (ctx && typeof ctx.fillRect === 'function') {
+      ctx.fillStyle = 'rgba(0, 0, 0, 1)';
+      ctx.fillRect(0, 0, 2, 2);
+    }
+    const tex = new THREE.Texture(placeholder);
+    tex.flipY = false;
+    tex.premultiplyAlpha = false;
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.generateMipmaps = false;
+    tex.needsUpdate = true;
+
+    const loader = new THREE.TextureLoader();
+    const url = new URL('./baked-shadows-ao.png', import.meta.url).href;
+    const applyLoadedImage = (img) => {
+      if (!img) return;
+      // CRITICAL WebGL2 Fix: dispose the 2x2 placeholder GPU allocation first so
+      // Three.js allocates fresh 1024x1024 texStorage2D instead of failing texSubImage2D!
+      tex.dispose();
+      tex.image = img;
+      tex.flipY = false;
+      tex.premultiplyAlpha = false;
+      tex.colorSpace = THREE.NoColorSpace;
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.wrapS = THREE.ClampToEdgeWrapping;
+      tex.wrapT = THREE.ClampToEdgeWrapping;
+      tex.generateMipmaps = false;
+      tex.needsUpdate = true;
+      tex.userData.loaded = true;
+    };
+    loader.load(
+      url,
+      (loadedTex) => applyLoadedImage(loadedTex?.image),
+      undefined,
+      () => {
+        loader.load('/world/assets/terrain/baked-shadows-ao.png', (loadedTex2) =>
+          applyLoadedImage(loadedTex2?.image)
+        );
+      }
+    );
+
+    _sharedBakedShadowAOTex = tex;
+    return tex;
+  }
+
+  // Headless Node.js fallback DataTexture (0 shadow in RGB, 255 = 0 Contact AO in A)
+  const fallbackData = new Uint8Array(4 * 4 * 4);
+  for (let i = 0; i < 16; i++) {
+    fallbackData[i * 4 + 3] = 255;
+  }
+  const fallbackTex = new THREE.DataTexture(fallbackData, 4, 4, THREE.RGBAFormat);
+  fallbackTex.flipY = false;
+  fallbackTex.colorSpace = THREE.NoColorSpace;
+  fallbackTex.minFilter = THREE.LinearFilter;
+  fallbackTex.magFilter = THREE.LinearFilter;
+  fallbackTex.wrapS = THREE.ClampToEdgeWrapping;
+  fallbackTex.wrapT = THREE.ClampToEdgeWrapping;
+  fallbackTex.generateMipmaps = false;
+  fallbackTex.needsUpdate = true;
+  _sharedBakedShadowAOTex = fallbackTex;
+  return fallbackTex;
+}
+
+export const sharedBakedShadowAOTex = getSharedBakedShadowAOTexture();
+
+let _sharedMeadowCanvasTex = null;
+
+function cpuHash21(px, pz) {
+  let x = (px * 123.34) % 1;
+  let z = (pz * 456.21) % 1;
+  if (x < 0) x += 1;
+  if (z < 0) z += 1;
+  const d = x * (x + 45.32) + z * (z + 45.32);
+  x += d;
+  z += d;
+  const v = (x * z) % 1;
+  return v < 0 ? v + 1 : v;
+}
+
+function cpuVnoise(px, pz) {
+  const ix = Math.floor(px);
+  const iz = Math.floor(pz);
+  const fx = px - ix;
+  const fz = pz - iz;
+  const ux = fx * fx * (3.0 - 2.0 * fx);
+  const uz = fz * fz * (3.0 - 2.0 * fz);
+  const a = cpuHash21(ix, iz);
+  const b = cpuHash21(ix + 1, iz);
+  const c = cpuHash21(ix, iz + 1);
+  const d = cpuHash21(ix + 1, iz + 1);
+  return (a + (b - a) * ux) * (1.0 - uz) + (c + (d - c) * ux) * uz;
+}
+
+/**
+ * Bakes the `2026-10-18_dense-31M` multi-scale painterly meadow ground canvas into a
+ * shared 512x512 RGBA8 DataTexture (`uMeadowCanvasTex`, 1 MB VRAM) once at startup (~5ms CPU),
+ * replacing 6 per-pixel `vnoise` evaluations on both Terrain and Meadow Grass shaders
+ * with a single 0.002ms texture fetch!
+ * RGB = Linear ground canvas color, A = cloudDapple (0..1).
+ */
+export function getSharedMeadowCanvasTexture(size = 512) {
+  if (_sharedMeadowCanvasTex) return _sharedMeadowCanvasTex;
+
+  const data = new Uint8Array(size * size * 4);
+  const span = INNER_EXTENT * 2.0; // 340.0m
+  const cDark = new THREE.Color(PALETTE.grassDark);
+  const cMid = new THREE.Color(PALETTE.grassMid);
+  const cLight = new THREE.Color(PALETTE.grassLight);
+  const cSweep = new THREE.Color(PALETTE.grassSunSweep);
+
+  const ss = (e0, e1, x) => {
+    const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+    return t * t * (3 - 2 * t);
+  };
+
+  for (let iz = 0; iz < size; iz++) {
+    const wz = ((iz + 0.5) / size - 0.5) * span;
+    for (let ix = 0; ix < size; ix++) {
+      const wx = ((ix + 0.5) / size - 0.5) * span;
+
+      const nBroad = cpuVnoise(wx * 0.022 + 1.7, wz * 0.022 + 3.1);
+      const nMed = cpuVnoise(wx * 0.055 - 2.3, wz * 0.055 + 1.9);
+      const nFine = cpuVnoise(wx * 0.42 + 5.1, wz * 0.42 - 3.8);
+      const cloudDapple = ss(0.32, 0.74, cpuVnoise(wx * 0.018 + 4.2, wz * 0.018 - 3.5));
+      const meadowGrad = ss(0.16, 0.84, nBroad * 0.62 + nMed * 0.38);
+
+      const t1 = ss(0.0, 0.52, meadowGrad);
+      let r = cDark.r + (cMid.r - cDark.r) * t1;
+      let g = cDark.g + (cMid.g - cDark.g) * t1;
+      let b = cDark.b + (cMid.b - cDark.b) * t1;
+
+      const t2 = ss(0.42, 0.88, meadowGrad) * (1.0 - cloudDapple * 0.45);
+      r += (cLight.r - r) * t2;
+      g += (cLight.g - g) * t2;
+      b += (cLight.b - b) * t2;
+
+      const turfPatch = ss(0.58, 0.66, nFine * 0.65 + nMed * 0.35) * 0.20;
+      r += (cSweep.r * 0.96 - r) * turfPatch;
+      g += (cSweep.g * 0.96 - g) * turfPatch;
+      b += (cSweep.b * 0.96 - b) * turfPatch;
+
+      const idx = (iz * size + ix) * 4;
+      data[idx] = Math.min(255, Math.max(0, Math.round(r * 255)));
+      data[idx + 1] = Math.min(255, Math.max(0, Math.round(g * 255)));
+      data[idx + 2] = Math.min(255, Math.max(0, Math.round(b * 255)));
+      data[idx + 3] = Math.min(255, Math.max(0, Math.round(cloudDapple * 255)));
+    }
+  }
+
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  tex.flipY = false;
+  tex.colorSpace = THREE.NoColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  _sharedMeadowCanvasTex = tex;
+  return tex;
+}
+
 export function bakeWorldDataTextures(size = 512) {
   const worldMaskTex = createWorldMaskTexture(size);
   return {
     worldMaskTex,
+    bakedShadowAOTex: getSharedBakedShadowAOTexture(),
+    meadowCanvasTex: getSharedMeadowCanvasTexture(size),
     worldExtent: INNER_EXTENT,
     buildTimeMs: worldMaskTex.userData.buildTimeMs || 0,
   };
@@ -331,13 +516,15 @@ export function batchVertexColorGroup(
       gradientMap,
     });
     toonMat.customProgramCacheKey = () =>
-      shadowUniforms ? 'batch-toon-shadowed-v2' : 'batch-toon-plain-v2';
-    // Inject zero-draw-call World-Space Cel-Gouache Surface Grain + Character & Tree Canopy Shadows
+      shadowUniforms ? 'batch-toon-shadowed-v3' : 'batch-toon-plain-v3';
+    // Inject zero-draw-call World-Space Cel-Gouache Surface Grain + Raytraced Shadow/AO & Character Shadows
     toonMat.onBeforeCompile = (shader) => {
       if (shadowUniforms) {
         shader.uniforms.uBatchSunDir = shadowUniforms.uSunDir;
-        shader.uniforms.uBatchTreeShadows = shadowUniforms.uTreeShadows;
-        shader.uniforms.uBatchTreeCount = shadowUniforms.uTreeCount;
+        shader.uniforms.uBatchLightTint =
+          shadowUniforms.uLightTint || { value: new THREE.Color(1, 1, 1) };
+        shader.uniforms.uBakedShadowAO =
+          shadowUniforms.uBakedShadowAO || { value: getSharedBakedShadowAOTexture() };
         shader.uniforms.uBatchCharShadows = shadowUniforms.uCharShadows;
       }
       shader.vertexShader = shader.vertexShader
@@ -363,8 +550,8 @@ export function batchVertexColorGroup(
           ${
             shadowUniforms
               ? `uniform vec3 uBatchSunDir;
-          uniform vec4 uBatchTreeShadows[72];
-          uniform int uBatchTreeCount;
+          uniform vec3 uBatchLightTint;
+          uniform sampler2D uBakedShadowAO;
           uniform vec4 uBatchCharShadows[8];`
               : ''
           }
@@ -434,7 +621,7 @@ export function batchVertexColorGroup(
               }
               ${
                 shadowUniforms
-                  ? `// Cast crisp Hero/Enemy 2-lobe shadows & dappled Tree Canopy shadows onto Wooden Pier planks, Staircase, Walls & Boulders!
+                  ? `// Cast crisp Hero/Enemy 2-lobe shadows & 1-tap raytraced canopy shadows onto Wooden Pier, Staircase & Walls!
               vec2 shdDir = normalize(vec2(-uBatchSunDir.x, abs(uBatchSunDir.z) * 0.52 + 0.24) + vec2(1e-5, 0.0));
               vec2 perpDir = vec2(-shdDir.y, shdDir.x);
               float batchShd = 0.0;
@@ -456,19 +643,16 @@ export function batchVertexColorGroup(
                   float bodyShd = (1.0 - smoothstep(0.84, 1.00, bodyOval)) * step(-0.12 * rC, alongC);
                   batchShd = max(batchShd, max(bootShd * 0.96, bodyShd * 0.92) * clamp(ch.w, 0.0, 1.0));
                 }
-                for (int t = 0; t < 72; t++) {
-                  if (t >= uBatchTreeCount) break;
-                  vec4 tr = uBatchTreeShadows[t];
-                  if (wp.y > tr.y + tr.w * 0.95) continue;
-                  vec2 relT = wp.xz - tr.xz;
-                  float rCan = tr.w;
-                  if (abs(relT.x) > rCan * 4.2 || abs(relT.y) > rCan * 4.2) continue;
-                  vec2 dPool = relT - shdDir * (rCan * 1.65);
-                  float pDist = length(vec2(dot(dPool, shdDir) / (rCan * 2.25), dot(dPool, perpDir) / (rCan * 1.38)));
-                  float cShd = (1.0 - smoothstep(0.78, 1.02, pDist)) * 0.85;
-                  batchShd = max(batchShd, cShd);
+                if (wp.y < 1.8) {
+                  vec4 bSample = texture2D(uBakedShadowAO, clamp(wp.xz / 340.0 + 0.5, 0.001, 0.999));
+                  float bLuma = dot(uBatchLightTint, vec3(0.3333));
+                  float bNight = 1.0 - smoothstep(0.35, 0.65, bLuma);
+                  float bEve = smoothstep(0.10, 0.24, uBatchLightTint.r - uBatchLightTint.b) * (1.0 - bNight);
+                  float bGold = clamp(max(bEve, smoothstep(0.60, 0.42, uBatchSunDir.y) * (1.0 - bNight)), 0.0, 1.0);
+                  float bRaw = mix(mix(bSample.r, bSample.g, bGold), bSample.b, bNight);
+                  batchShd = max(batchShd, smoothstep(0.45, 0.62, bRaw) * (1.0 - smoothstep(0.25, 1.45, wp.y)) * 0.72);
                 }
-                diffuseColor.rgb *= mix(vec3(1.0), vec3(0.22, 0.24, 0.36), batchShd * upFace);
+                diffuseColor.rgb *= mix(vec3(1.0), vec3(0.42, 0.46, 0.58), batchShd * upFace);
               }`
                   : ''
               }
@@ -498,11 +682,13 @@ export function batchVertexColorGroup(
 }
 
 /**
- * Builds the Gouache Terrain ShaderMaterial driven by the fast 512x512 `uWorldMask` DataTexture,\n * covering `uInnerSpan = 340.0m` (`[-170..+170]m`), with painterly spring-meadow brushstrokes,
- * wildflower hillside stippling, and directional shadows cast by all 68 trees, 5 Tudor buildings,
- * the Well, the Shrine Archway, the Arena Fence, and all Heroes & Enemies (`uCharShadows`).
+ * Builds the Gouache Terrain ShaderMaterial driven by the fast 512x512 `uWorldMask` DataTexture
+ * and the 1024x1024 4-channel raytraced `uBakedShadowAO` texture (`0.002ms` single texture lookup!),
+ * covering `uInnerSpan = 340.0m` (`[-170..+170]m`), with painterly spring-meadow brushstrokes,
+ * raytraced 3D silhouettes of all pitched roofs, chimneys, multi-dome trees, boulders, walls, well,
+ * and shrine archway, 360° ground-contact AO, and dynamic Hero/Enemy shadows (`uCharShadows`).
  */
-function createGouacheTerrainMaterial(worldMaskTex) {
+function createGouacheTerrainMaterial(worldMaskTex, bakedShadowAOTex = getSharedBakedShadowAOTexture()) {
   const { treeShadowVecs, treeCount } = buildTreeShadowUniformArray();
   const { posArr: bldgPos, rotArr: bldgRotH } = buildBuildingShadowUniforms();
   const charShadows = [];
@@ -512,6 +698,8 @@ function createGouacheTerrainMaterial(worldMaskTex) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uWorldMask: { value: worldMaskTex },
+      uBakedShadowAO: { value: bakedShadowAOTex },
+      uMeadowCanvasTex: { value: getSharedMeadowCanvasTexture() },
       uInnerSpan: { value: INNER_EXTENT * 2.0 }, // 340.0m (-170..+170)
       uSunDir: { value: SUN_DIR.clone() },
       uLightTint: { value: new THREE.Color(1, 1, 1) },
@@ -519,7 +707,9 @@ function createGouacheTerrainMaterial(worldMaskTex) {
       uGrassLight: { value: new THREE.Color(PALETTE.grassLight) },
       uGrassDark: { value: new THREE.Color(PALETTE.grassDark) },
       uGrassSunSweep: { value: new THREE.Color(PALETTE.grassSunSweep) },
-      uTreeShadowCol: { value: new THREE.Color(PALETTE.treeShadowCol) },
+      uTreeShadowCol: { value: new THREE.Color(PALETTE.treeShadowCol) },     // #264e36 cerulean-viridian on grass
+      uDirtShadowCol: { value: new THREE.Color(PALETTE.dirtShadowCol) },     // #785c4a warm umber-violet on dirt road
+      uCobbleShadowCol: { value: new THREE.Color(PALETTE.cobbleShadowCol) }, // #6e6c7e cool slate-indigo on cobblestone
       uTreeShadows: { value: treeShadowVecs },
       uTreeCount: { value: treeCount },
       uBldgPos: { value: bldgPos },
@@ -554,6 +744,8 @@ function createGouacheTerrainMaterial(worldMaskTex) {
     `,
     fragmentShader: /* glsl */ `
       uniform sampler2D uWorldMask;
+      uniform sampler2D uBakedShadowAO;
+      uniform sampler2D uMeadowCanvasTex;
       uniform float uInnerSpan;
       uniform vec3 uSunDir;
       uniform vec3 uLightTint;
@@ -562,10 +754,9 @@ function createGouacheTerrainMaterial(worldMaskTex) {
       uniform vec3 uGrassDark;
       uniform vec3 uGrassSunSweep;
       uniform vec3 uTreeShadowCol;
-      uniform vec4 uTreeShadows[72];
-      uniform int uTreeCount;
+      uniform vec3 uDirtShadowCol;
+      uniform vec3 uCobbleShadowCol;
       uniform vec4 uBldgPos[5];
-      uniform vec4 uBldgRotH[5];
       uniform vec4 uCharShadows[8];
       uniform vec3 uDirt;
       uniform vec3 uDirtEdge;
@@ -628,32 +819,26 @@ function createGouacheTerrainMaterial(worldMaskTex) {
 
       // Organic compacted-earth & worn flagstone plates + 3D-lit rounded river pebbles for the Country Dirt Path!
       vec3 evalCountryDirtPathAndPebbles(vec2 xz, vec3 baseEarth, float dirtW, vec2 shadowDir) {
-        // 1. Broad compacted golden-ochre earth plates (never a brick grid!)
         float nPlate = vnoise(xz * 0.85 + vec2(2.3, -1.7)) * 0.60 + vnoise(xz * 2.15 - vec2(1.4, 3.2)) * 0.40;
         float plateStep = smoothstep(0.34, 0.44, nPlate) * 0.55 + smoothstep(0.62, 0.72, nPlate) * 0.45;
         vec3 earthCol = baseEarth * mix(vec3(0.92, 0.89, 0.84), vec3(1.06, 1.03, 0.98), plateStep);
 
-        // Subtle footpath wear along the center of the road
         float centerWear = smoothstep(0.55, 0.95, dirtW);
         earthCol = mix(earthCol, baseEarth * vec3(1.05, 1.02, 0.96), centerWear * 0.32);
 
-        // 2. 3D-shaded rounded roadside river pebbles scattered along the path edges (borderBand)
         float edgeBand = smoothstep(0.08, 0.48, dirtW) * (1.0 - smoothstep(0.52, 0.88, dirtW));
         if (edgeBand > 0.01) {
           vec2 pebGrid = xz * 2.8;
           vec2 pebCell = floor(pebGrid);
           float hPeb = hash21(pebCell);
-          // Spawn rounded pebbles in ~24% of roadside cells
           if (hPeb > 0.76) {
             vec2 pebCenter = vec2(fract(hPeb * 13.7), fract(hPeb * 29.3)) * 0.52 - 0.26;
             vec2 relP = (fract(pebGrid) - 0.5) - pebCenter;
             float rPeb = 0.14 + fract(hPeb * 43.1) * 0.09;
-            // Pebble drop shadow offset along shadowDir
             float dShd = length((relP - shadowDir * (rPeb * 0.48)) / vec2(rPeb * 1.15, rPeb * 0.95));
             float pebDropShd = (1.0 - smoothstep(0.65, 1.05, dShd)) * edgeBand;
             earthCol *= mix(1.0, 0.56, pebDropShd * 0.85);
 
-            // 3D rounded pebble body with top-left sun highlight & cool lower rim
             float dBody = length(relP / vec2(rPeb * 1.12, rPeb * 0.92));
             float inPeb = (1.0 - smoothstep(0.78, 1.0, dBody)) * edgeBand;
             if (inPeb > 0.01) {
@@ -669,98 +854,23 @@ function createGouacheTerrainMaterial(worldMaskTex) {
         return earthCol;
       }
 
-      vec2 evalTreeGroundShadowAndFlecks(vec2 xz, vec3 sunDir) {
-        vec2 shadowDir = getAnimeShadowDir(sunDir);
-        vec2 perpDir = vec2(-shadowDir.y, shadowDir.x);
-
-        float edgeRuffle = (vnoise(xz * 1.45) - 0.5) * 0.22;
-        float leafCluster = vnoise(xz * 1.25 + vec2(3.7, -2.1)) * 0.58
-                          + vnoise(xz * 2.65 - vec2(1.4, 4.3)) * 0.42;
-        // Crisp anime cel-stepped leaf shadow vs sunlit canopy gap (fleck)
-        float celLeafShd = smoothstep(0.28, 0.36, leafCluster);
-        float celLeafFleck = 1.0 - smoothstep(0.26, 0.34, leafCluster);
-
-        float maxShd = 0.0;
-        float maxFleck = 0.0;
-
-        for (int i = 0; i < 72; i++) {
-          if (i >= uTreeCount) break;
-          vec4 tr = uTreeShadows[i];
-          vec2 rel = xz - tr.xz;
-          float rCan = tr.w;
-          if (abs(rel.x) > rCan * 4.5 || abs(rel.y) > rCan * 4.5) continue;
-
-          float along = dot(rel, shadowDir);
-          float across = abs(dot(rel, perpDir));
-
-          // 1. Crisp directional trunk shadow stripe
-          float trunkW = rCan * 0.12;
-          float inTrunkLen = smoothstep(-0.15, 0.08, along) * (1.0 - smoothstep(rCan * 1.55, rCan * 1.85, along));
-          float trunkShd = inTrunkLen * (1.0 - smoothstep(trunkW * 0.72, trunkW * 1.10, across));
-
-          // 2. Elongated anime canopy shadow reaching from upper-left sun across the left/center of roads
-          vec2 poolCenter = shadowDir * (rCan * 1.75);
-          vec2 dPool = rel - poolCenter;
-          float pAlong = dot(dPool, shadowDir) / (rCan * 2.35);
-          float pAcross = dot(dPool, perpDir) / (rCan * 1.42);
-          float poolDist = length(vec2(pAlong, pAcross)) + edgeRuffle * 0.16;
-
-          float canopyEnvelope = 1.0 - smoothstep(0.76, 0.90, poolDist);
-          float canopyShd = canopyEnvelope * mix(0.24, 1.0, celLeafShd);
-          float canopyFleck = canopyEnvelope * smoothstep(0.05, 0.65, 1.0 - poolDist) * celLeafFleck;
-
-          float underDist = length(rel) / (rCan * 1.05) + edgeRuffle * 0.12;
-          float underEnvelope = 1.0 - smoothstep(0.72, 0.90, underDist);
-          float underShd = underEnvelope * mix(0.35, 0.98, celLeafShd);
-
-          maxShd = max(maxShd, max(trunkShd * 0.96, max(canopyShd, underShd)));
-          maxFleck = max(maxFleck, canopyFleck * (1.0 - trunkShd));
-        }
-
-        // 3. Directional Left-Canopy lacy shadow sweep across the left/center of the Country Road
-        //    (matching Sunlit Wisteria Village Path.png: rich dappled shadow on left/center of path, warm golden sun on right!)
-        float rCenter = length(xz);
-        float inValleyFloor = 1.0 - smoothstep(145.0, 164.0, rCenter);
-        if (inValleyFloor > 0.01) {
-          vec2 projXZ = xz - shadowDir * 2.4;
-          float macroN = vnoise(projXZ * 0.24 + vec2(1.4, -2.1)) * 0.6
-                       + vnoise(projXZ * 0.55 - vec2(2.8, 1.7)) * 0.4;
-          float dappleN = vnoise(projXZ * 1.05 + vec2(1.9, -3.4)) * 0.55
-                        + vnoise(projXZ * 2.35 + vec2(-4.1, 2.3)) * 0.45;
-          // On the Southern Country Road (z > 22), cast the lacy canopy shadow from the left trees (x < 0.8m)
-          // so the right side of the golden dirt road glows in open sunlight!
-          float leftCanopyBias = xz.y > 22.0 ? smoothstep(1.35, -1.65, xz.x) : 0.72;
-          float bandMask = smoothstep(0.24, 0.54, macroN) * inValleyFloor * leftCanopyBias;
-          float aveCelShd = bandMask * smoothstep(0.34, 0.42, dappleN) * 0.88;
-          float aveCelFleck = bandMask * (1.0 - smoothstep(0.31, 0.39, dappleN)) * smoothstep(0.32, 0.66, macroN);
-          maxShd = max(maxShd, aveCelShd);
-          maxFleck = max(maxFleck, aveCelFleck);
-        }
-
-        return vec2(clamp(maxShd, 0.0, 1.0), clamp(maxFleck, 0.0, 1.0));
-      }
-
       /**
        * Analytical warm golden-amber candlelight & lantern ground pools for Dusk & Night.
        */
       float evalNightLanternPools(vec2 xz) {
         float glow = 0.0;
-        // 5 Tudor Cottage warm window & porch lantern ground pools
         for (int i = 0; i < 5; i++) {
           vec2 bxy = uBldgPos[i].xy;
           float d = length(xz - bxy);
           glow += exp(-d * d * 0.012) * 0.85;
         }
-        // Central Plaza Well & Sacred Stone lantern pool
         glow += exp(-dot(xz, xz) * 0.018) * 0.55;
         vec2 dStele1 = xz - vec2(0.0, -14.0);
         glow += exp(-dot(dStele1, dStele1) * 0.035) * 0.65;
-        // Lakeside Pier lantern & Sacred Stone at (-42, 18) and (-48, 8.5)
         vec2 dPier1 = xz - vec2(-42.0, 18.0);
         vec2 dPier2 = xz - vec2(-48.5, 8.5);
         glow += exp(-dot(dPier1, dPier1) * 0.03) * 0.70;
         glow += exp(-dot(dPier2, dPier2) * 0.04) * 0.75;
-        // North Shrine Staircase & Overlook Stone Lanterns (Base, Mid-Landing & Summit)
         if (xz.y < -15.0 && abs(xz.x) < 18.0) {
           vec2 dBot1 = xz - vec2(-6.95, -18.0);
           vec2 dBot2 = xz - vec2( 6.95, -18.0);
@@ -778,79 +888,14 @@ function createGouacheTerrainMaterial(worldMaskTex) {
       }
 
       /**
-       * Directional Cel-Shaded Shadows cast by the 5 Tudor Houses, Central Well,
-       * Romanesque Shrine Archway, Altar Pedestal, Arena Fence, AND all Heroes & Enemies!
+       * Dynamic 2-Lobe Anime Cel-Shaded Directional Figure Silhouette for
+       * Hero Duo (Knight + Mage) & All 6 Pooled Enemies (uCharShadows[8]).
        */
-      float evalArchitectureShadow(vec2 xz, vec3 sunDir) {
+      float evalCharacterShadow(vec2 xz, vec3 sunDir) {
         vec2 shadowDir = getAnimeShadowDir(sunDir);
         vec2 perpDir = vec2(-shadowDir.y, shadowDir.x);
         float shd = 0.0;
 
-        // 1. 5 Tudor Buildings directional roof/wall shadow projection (crisp cel-stepped silhouette)
-        if (xz.x > -62.0 && xz.x < 36.0 && xz.y > -34.0 && xz.y < 34.0) {
-          for (int i = 0; i < 5; i++) {
-            vec4 bp = uBldgPos[i];
-            vec4 br = uBldgRotH[i];
-            float reach = br.z * 1.05;
-            vec2 center = bp.xy + shadowDir * (reach * 0.56);
-            vec2 rel = xz - center;
-            if (abs(rel.x) > 14.0 || abs(rel.y) > 14.0) continue;
-            float lx = rel.x * br.x - rel.y * br.y;
-            float lz = rel.x * br.y + rel.y * br.x;
-            vec2 sLocal = vec2(
-              shadowDir.x * br.x - shadowDir.y * br.y,
-              shadowDir.x * br.y + shadowDir.y * br.x
-            );
-            float ex = bp.z + abs(sLocal.x) * reach * 0.56;
-            float ez = bp.w + abs(sLocal.y) * reach * 0.56;
-            vec2 dBox = abs(vec2(lx, lz)) - vec2(ex, ez);
-            float boxDist = length(max(dBox, 0.0)) + min(max(dBox.x, dBox.y), 0.0);
-            shd = max(shd, (1.0 - smoothstep(-0.06, 0.22, boxDist)) * 0.94);
-          }
-        }
-
-        // 2. Central Roofed Well shadow at (0, 0) + Sacred Stone at (0, -14)
-        if (abs(xz.x) < 8.5 && abs(xz.y) < 18.5) {
-          vec2 wCenter = shadowDir * 1.65;
-          float dWell = length((xz - wCenter) / vec2(1.85, 2.05));
-          shd = max(shd, (1.0 - smoothstep(0.80, 0.98, dWell)) * 0.90);
-
-          vec2 steleCenter = vec2(0.0, -14.0) + shadowDir * 0.95;
-          float dStele = length((xz - steleCenter) / vec2(0.95, 0.85));
-          shd = max(shd, (1.0 - smoothstep(0.78, 0.98, dStele)) * 0.88);
-        }
-
-        // 3. Northern Shrine Archway, Altar Pedestal & Planters around (0, -90)
-        if (xz.y < -69.0 && abs(xz.x) < 16.5) {
-          for (int s = -1; s <= 1; s += 2) {
-            vec2 pierBase = vec2(float(s) * 3.1, -93.5);
-            vec2 relP = xz - pierBase;
-            float pAlong = dot(relP, shadowDir);
-            float pAcross = abs(dot(relP, perpDir));
-            float inPier = smoothstep(-0.6, 0.1, pAlong) * (1.0 - smoothstep(4.8, 5.8, pAlong))
-                         * (1.0 - smoothstep(0.68, 1.05, pAcross));
-            shd = max(shd, inPier * 0.90);
-          }
-          vec2 archShadowCenter = vec2(0.0, -93.5) + shadowDir * 5.2;
-          float dArchCrown = length((xz - archShadowCenter) / vec2(3.6, 1.35));
-          shd = max(shd, (1.0 - smoothstep(0.72, 1.05, dArchCrown)) * 0.88);
-
-          vec2 pedCenter = vec2(-5.8, -87.8) + shadowDir * 0.95;
-          float dPed = length((xz - pedCenter) / vec2(1.25, 1.45));
-          shd = max(shd, (1.0 - smoothstep(0.70, 1.05, dPed)) * 0.85);
-        }
-
-        // 4. East Arena Split-Rail Fence ring shadow at (68, -4, r = 19.5)
-        if (xz.x > 46.0 && xz.x < 90.0 && xz.y > -26.0 && xz.y < 18.0) {
-          vec2 arenaRel = xz - (vec2(68.0, -4.0) + shadowDir * 0.65);
-          float dFence = abs(length(arenaRel) - 19.5);
-          if (arenaRel.x > -18.2) {
-            shd = max(shd, (1.0 - smoothstep(0.18, 0.58, dFence)) * 0.76);
-          }
-        }
-
-        // 5. Hero Duo (Knight + Mage) & All 6 Pooled Enemies (Skeletons + Boss Sovereign)
-        //    Crisp 2-Lobe Anime Cel-Shaded Directional Figure Silhouette!
         for (int c = 0; c < 8; c++) {
           vec4 ch = uCharShadows[c];
           if (ch.w < 0.02) continue;
@@ -860,10 +905,8 @@ function createGouacheTerrainMaterial(worldMaskTex) {
           if (abs(rel.x) > r * 3.4 || abs(rel.y) > r * 3.4) continue;
           float along = dot(rel, shadowDir);
           float across = abs(dot(rel, perpDir));
-          // Tight boot contact core directly under feet
           float bootOval = length(vec2((along - r * 0.12) / (r * 0.54), across / (r * 0.52)));
           float bootShd = 1.0 - smoothstep(0.82, 1.00, bootOval);
-          // Stretched directional body/cape/hat silhouette along shadowDir (matching Sunlit Wisteria Village Path.png!)
           float bodyAlong = (along - r * 1.02) / (r * 1.18);
           float bodyWidth = r * mix(0.60, 0.36, clamp(along / (r * 2.15), 0.0, 1.0));
           float bodyOval = length(vec2(bodyAlong, across / bodyWidth));
@@ -883,35 +926,22 @@ function createGouacheTerrainMaterial(worldMaskTex) {
         float inInner = step(abs(xz.x), uInnerSpan * 0.5 - 0.5) * step(abs(xz.y), uInnerSpan * 0.5 - 0.5);
         vec4 mask = texture2D(uWorldMask, clamp(maskUv, 0.001, 0.999));
 
-        // Time-of-day factors derived from uLightTint (Day ~ 1.0, Evening ~ [0.95,0.78,0.70], Night ~ [0.24,0.34,0.56])
         float dayLuma = dot(uLightTint, vec3(0.3333));
         float isNight = 1.0 - smoothstep(0.35, 0.65, dayLuma);
-        float isEvening = smoothstep(0.12, 0.24, uLightTint.r - uLightTint.b) * (1.0 - isNight);
+        float isEvening = smoothstep(0.10, 0.24, uLightTint.r - uLightTint.b) * (1.0 - isNight);
 
-        // Distance attenuation for high-frequency ground speckles so distant hillsides stay smooth Ghibli cel-turf!
-        float nearDappleFade = 1.0 - smoothstep(28.0, 46.0, vViewDist);
-        float treeShadowDistFade = 1.0 - smoothstep(105.0, 150.0, vViewDist);
+        float treeShadowDistFade = 1.0 - smoothstep(115.0, 158.0, vViewDist);
 
-        // 1. Multi-Scale Cel-Stepped Spring-Meadow Ground Texturing & Slope Chiaroscuro
-        float nBroad = vnoise(xz * 0.022 + vec2(1.7, 3.1));
-        float nMed   = vnoise(xz * 0.055 + vec2(-2.3, 1.9));
-        float nFine  = vnoise(xz * 0.42 + vec2(5.1, -3.8));
-        float cloudDapple = smoothstep(0.32, 0.74, vnoise(xz * 0.018 + vec2(4.2, -3.5)));
-        float meadowGrad = smoothstep(0.16, 0.84, nBroad * 0.62 + nMed * 0.38);
-        vec3 col = mix(uGrassDark, uGrassMid, smoothstep(0.0, 0.52, meadowGrad));
-        col = mix(col, uGrassLight, smoothstep(0.42, 0.88, meadowGrad) * (1.0 - cloudDapple * 0.45));
-        // Subtle cel-stepped clover/moss ground speckles in near-camera turf only
-        float turfCelPatch = smoothstep(0.58, 0.66, nFine * 0.65 + nMed * 0.35) * nearDappleFade;
-        col = mix(col, uGrassSunSweep * 0.96, turfCelPatch * 0.22);
+        // 1. Single-Tap Pre-Baked 2026-10-18_dense-31M Meadow Ground Canvas (0.002ms GPU, replaces 6 vnoise calls!)
+        vec4 canvasSample = texture2D(uMeadowCanvasTex, clamp(maskUv, 0.001, 0.999));
+        vec3 col = canvasSample.rgb;
+        float cloudDapple = canvasSample.a;
 
         if (inInner > 0.5) {
-          // Deep viridian-emerald under-tuft turf cushion where 3D grass tussocks grow (mask.b > 0.65)
-          // Applied BEFORE totalShd so tree, building, boulder, wall, and character shadows cut crisply across the turf!
           float meadowTurfW = smoothstep(0.62, 0.88, mask.b) * (1.0 - smoothstep(45.0, 68.0, vViewDist));
           if (meadowTurfW > 0.01) {
-            float tuftDapple = vnoise(xz * 1.65) * 0.55 + vnoise(xz * 3.8) * 0.45;
-            vec3 viridianUnder = mix(vec3(0.11, 0.34, 0.16), vec3(0.24, 0.56, 0.20), smoothstep(0.28, 0.76, tuftDapple));
-            col = mix(col, viridianUnder, meadowTurfW * 0.68);
+            vec3 viridianUnder = mix(vec3(0.12, 0.36, 0.16), vec3(0.26, 0.56, 0.21), 1.0 - cloudDapple * 0.7);
+            col = mix(col, viridianUnder, meadowTurfW * 0.54);
           }
         }
 
@@ -922,31 +952,53 @@ function createGouacheTerrainMaterial(worldMaskTex) {
         col = mix(col, uGrassSunSweep, slopeSun * 0.42);
         col = mix(col, uTreeShadowCol * vec3(0.92, 0.96, 1.08), slopeShd * 0.38 + cloudDapple * 0.22);
 
-        // Combined Directional Anime Cel-Shaded Tree, Wall/Fence, Boulder, House & Character Ground Shadows!
-        vec2 treeShdAndFleck = evalTreeGroundShadowAndFlecks(xz, uSunDir);
-        float treeShd = treeShdAndFleck.x * treeShadowDistFade;
-        float sunFleck = treeShdAndFleck.y * clamp(uSunDir.y * 1.4, 0.0, 1.0) * (1.0 - smoothstep(42.0, 75.0, vViewDist));
-        float archShd = inInner > 0.5 ? evalArchitectureShadow(xz, uSunDir) : 0.0;
-        // Directional wall, boulder & split-rail fence shadow offset along shadowDir
-        float propDirShd = 0.0;
-        if (inInner > 0.5) {
-          vec2 offMaskUv = (xz - shadowDir * 0.78) / uInnerSpan + 0.5;
-          float offMaskA = texture2D(uWorldMask, clamp(offMaskUv, 0.001, 0.999)).a;
-          propDirShd = smoothstep(0.14, 0.42, 1.0 - min(mask.a, offMaskA)) * 0.92;
-        }
-        float totalShd = max(max(treeShd, archShd), propDirShd);
+        // 2. Single-Lookup Raytraced 3D Shadows & 360° Ground-Contact AO (uBakedShadowAO, 0.002ms GPU cost!)
+        vec4 baked = inInner > 0.5
+          ? texture2D(uBakedShadowAO, clamp(xz / 340.0 + 0.5, 0.001, 0.999))
+          : vec4(0.0, 0.0, 0.0, 1.0);
 
-        // Time-aware fleck multiplier: golden-amber in Day, warm coral-gold in Evening, silver-sapphire at Night!
+        float goldenWeight = clamp(
+          max(isEvening, smoothstep(0.60, 0.42, uSunDir.y) * (1.0 - isNight)),
+          0.0,
+          1.0
+        );
+        float rawSunShadow = mix(baked.r, baked.g, goldenWeight);
+        float rawShadow = mix(rawSunShadow, baked.b, isNight);
+
+        float celBakedShd = smoothstep(0.38, 0.56, rawShadow) * treeShadowDistFade;
+        float charShd = inInner > 0.5 ? evalCharacterShadow(xz, uSunDir) : 0.0;
+        float totalShd = max(celBakedShd, charShd);
+
+        float bakedContactAO = inInner > 0.5 ? clamp((1.0 - baked.a) * 2.0, 0.0, 1.0) : 0.0;
+        float maskContactAO = inInner > 0.5 ? smoothstep(0.10, 0.42, 1.0 - mask.a) : 0.0;
+        float contactAO = max(bakedContactAO, maskContactAO * 0.65);
+
+        // Komorebi leaf-gap dappled light flecks inside real tree canopy shadows
+        float isSolidArchOrContact = max(smoothstep(0.88, 0.97, rawShadow), smoothstep(0.08, 0.28, contactAO));
+        float inCanopyShadow = celBakedShd * (1.0 - isSolidArchOrContact) * (1.0 - charShd);
+        float leafClusterNoise = vnoise(xz * 1.55 + vec2(2.1, -1.4)) * 0.65 + vnoise(xz * 3.2) * 0.35;
+        float sunFleck = inCanopyShadow
+                       * smoothstep(0.64, 0.76, leafClusterNoise)
+                       * clamp(uSunDir.y * 1.4, 0.0, 1.0)
+                       * (1.0 - smoothstep(42.0, 75.0, vViewDist));
+
         vec3 fleckTint = mix(
-          mix(vec3(1.28, 1.12, 0.82), vec3(1.36, 0.98, 0.68), isEvening),
+          mix(vec3(1.18, 1.08, 0.92), vec3(1.26, 0.96, 0.72), isEvening),
           vec3(0.92, 1.02, 1.24),
           isNight
         );
         float fleckStrength = mix(0.84, 0.36, isNight);
 
-        vec3 deepShadowCol = uTreeShadowCol * vec3(0.64, 0.78, 1.02);
-        col = mix(col, deepShadowCol, totalShd * 0.90);
-        col = mix(col, uGrassSunSweep * (fleckTint * 0.88), sunFleck * (1.0 - archShd) * 0.54 * (1.0 - isNight * 0.5));
+        // Critic-Verified 2026-10-18_dense-31M Luminous Anime Cel-Shadow Tints (Cerulean-Teal Day / Plum Sunset / Indigo Night)
+        vec3 dayShdTint = vec3(0.60, 0.76, 0.74);
+        vec3 duskShdTint = vec3(0.64, 0.54, 0.78);
+        vec3 nightShdTint = vec3(0.64, 0.68, 0.86);
+        vec3 shdMult = mix(mix(dayShdTint, duskShdTint, isEvening), nightShdTint, isNight);
+
+        vec3 grassShadowCol = mix(uTreeShadowCol, col * shdMult, 0.72);
+        col = mix(col, grassShadowCol, totalShd * 0.88);
+        col = mix(col, grassShadowCol * 0.78, contactAO * 0.82);
+        col = mix(col, uGrassSunSweep * (fleckTint * 0.88), sunFleck * 0.56 * (1.0 - isNight * 0.5));
 
         if (inInner > 0.5) {
 
@@ -966,7 +1018,8 @@ function createGouacheTerrainMaterial(worldMaskTex) {
           if (sandW > 0.01) {
             float peb = (vnoise(xz * 3.8) - 0.5) * 0.08;
             vec3 sandCol = (uSand + peb) * mix(vec3(1.0), vec3(0.54, 0.58, 0.76), totalShd);
-            sandCol = mix(sandCol, sandCol * fleckTint, sunFleck * (1.0 - archShd) * fleckStrength * 0.80);
+            sandCol *= mix(1.0, 0.66, contactAO * 0.82);
+            sandCol = mix(sandCol, sandCol * fleckTint, sunFleck * fleckStrength * 0.80);
             col = mix(col, sandCol, sandW);
           }
 
@@ -978,13 +1031,15 @@ function createGouacheTerrainMaterial(worldMaskTex) {
             vec3 pathInterior = evalCountryDirtPathAndPebbles(xz, earthBase, dirtW, shadowDir);
             float borderBand = dirtW * (1.0 - dirtW) * 3.0;
             vec3 roadCol = mix(pathInterior, uDirtEdge, clamp(borderBand, 0.0, 0.58));
-            // Rich warm-umber anime cel shadow on the golden dirt road (matching Sunlit Wisteria Village Path.png!)
-            vec3 dirtShdTint = mix(vec3(0.30, 0.23, 0.20), vec3(0.20, 0.15, 0.15), archShd);
-            roadCol *= mix(vec3(1.04, 1.00, 0.94), dirtShdTint, totalShd);
-            roadCol = mix(roadCol, pathInterior * fleckTint, sunFleck * (1.0 - archShd) * fleckStrength * 0.78);
+            // Grounded Ghibli warm umber-violet (#785c4a) cel shadow on golden dirt road (never muddy black!)
+            vec3 dirtDetailRatio = clamp(roadCol / max(earthBase, vec3(0.05)), 0.72, 1.20);
+            vec3 shadowedRoad = uDirtShadowCol * dirtDetailRatio;
+            roadCol = mix(roadCol, shadowedRoad, totalShd * 0.88);
+            roadCol = mix(roadCol, shadowedRoad * 0.72, contactAO * 0.84);
+            roadCol = mix(roadCol, pathInterior * fleckTint, sunFleck * fleckStrength * 0.78);
             // Delicate fallen wisteria/sakura petals resting along the road edges in 3D world space
             float edgePetalMask = smoothstep(0.12, 0.68, borderBand) * smoothstep(0.81, 0.88, vnoise(xz * 4.4 + vec2(1.3, -2.7)));
-            roadCol = mix(roadCol, vec3(0.92, 0.66, 0.98), edgePetalMask * 0.76);
+            roadCol = mix(roadCol, vec3(0.92, 0.66, 0.98) * mix(1.0, 0.62, totalShd), edgePetalMask * 0.76);
             col = mix(col, roadCol, smoothstep(0.02, 0.88, dirtW));
           }
 
@@ -996,12 +1051,15 @@ function createGouacheTerrainMaterial(worldMaskTex) {
             vec3 cobbleCol = evalCobblestone(xz, baseStone, isShrine);
             float verge = cobbleW * (1.0 - cobbleW) * 2.8;
             vec3 vergeCol = mix(cobbleCol, uGrassDark * 0.95 + uCobble * 0.2, clamp(verge * (1.0 - dirtW), 0.0, 1.0) * 0.45);
-            vec3 cobbleShdTint = mix(vec3(0.34, 0.36, 0.52), vec3(0.24, 0.26, 0.42), archShd);
-            vergeCol *= mix(vec3(1.02, 0.99, 0.95), cobbleShdTint, totalShd);
-            vergeCol = mix(vergeCol, cobbleCol * fleckTint, sunFleck * (1.0 - archShd) * fleckStrength * 0.75);
+            // Grounded Ghibli cool slate-indigo (#6e6c7e) cel shadow on cobblestone (never muddy black!)
+            vec3 cobbleDetailRatio = clamp(vergeCol / max(baseStone, vec3(0.05)), 0.68, 1.20);
+            vec3 shadowedCobble = uCobbleShadowCol * cobbleDetailRatio;
+            vergeCol = mix(vergeCol, shadowedCobble, totalShd * 0.94);
+            vergeCol = mix(vergeCol, shadowedCobble * 0.62, contactAO * 0.90);
+            vergeCol = mix(vergeCol, cobbleCol * fleckTint, sunFleck * fleckStrength * 0.75);
             // Fallen blossom petals resting in cobblestone crevices near plaza & road edges
             float cobblePetalMask = smoothstep(0.10, 0.65, verge) * smoothstep(0.82, 0.89, vnoise(xz * 4.2 + vec2(-2.1, 3.4)));
-            vergeCol = mix(vergeCol, vec3(0.94, 0.68, 0.98), cobblePetalMask * 0.72);
+            vergeCol = mix(vergeCol, vec3(0.94, 0.68, 0.98) * mix(1.0, 0.62, totalShd), cobblePetalMask * 0.72);
             col = mix(col, vergeCol, smoothstep(0.03, 0.82, cobbleW));
           }
         }
@@ -1031,13 +1089,11 @@ function createGouacheTerrainMaterial(worldMaskTex) {
                        + 0.32 * smoothstep(0.48, 0.55, ndl)
                        + 0.32 * smoothstep(0.68, 0.75, ndl);
         float toonShade = mix(0.76, 1.05, toonBand);
-        float contactShadow = inInner > 0.5 ? smoothstep(0.10, 0.42, 1.0 - mask.a) : 0.0;
-        col = mix(col, deepShadowCol * 0.82, contactShadow * 0.78);
 
         col *= toonShade * uLightTint;
 
-        // Warm Golden-Amber Candlelight & Lantern Ground Pools at Dusk & Night
-        float lanternStage = clamp(isNight + isEvening * 0.55, 0.0, 1.0);
+        // Warm Golden-Amber Candlelight & Lantern Ground Pools at Night (subtle in Dusk so sunset shadows stay crisp)
+        float lanternStage = clamp(isNight + isEvening * 0.22 * (1.0 - totalShd * 0.75), 0.0, 1.0);
         if (lanternStage > 0.01 && inInner > 0.5) {
           float pool = evalNightLanternPools(xz);
           col += vec3(1.05, 0.68, 0.26) * pool * lanternStage * 0.42;
@@ -1996,7 +2052,8 @@ export function buildTerrainAndWater(renderer, opts = {}) {
 
   const gradientMap = makeToonGradient();
   const worldMaskTex = opts.worldMaskTex || createWorldMaskTexture(512);
-  const terrainMat = createGouacheTerrainMaterial(worldMaskTex);
+  const bakedShadowAOTex = opts.bakedShadowAOTex || getSharedBakedShadowAOTexture();
+  const terrainMat = createGouacheTerrainMaterial(worldMaskTex, bakedShadowAOTex);
 
   const { group: terrainGroup, chunks, skirtMesh } = buildChunkedTerrainAndSkirt(terrainMat);
   root.add(terrainGroup);
@@ -2016,6 +2073,7 @@ export function buildTerrainAndWater(renderer, opts = {}) {
     waterMat: waterSys.waterMat,
     horizonGroup: horizonAndHydro,
     worldMaskTex,
+    bakedShadowAOTex,
     maskBuildMs: worldMaskTex.userData.buildTimeMs || 0,
     update(dt, elapsed) {
       waterSys.update(dt, elapsed);

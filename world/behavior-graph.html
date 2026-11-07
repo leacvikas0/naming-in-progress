@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Amarante - ComfyUI Behavior Graph</title>
+  <style>
+    :root {
+      --bg-canvas: #161618;
+      --bg-node: #222327;
+      --bg-node-header: #2a2b30;
+      --border-node: rgba(255, 255, 255, 0.1);
+      --border-selected: rgba(255, 255, 255, 0.55);
+      --text-main: #e4e4e7;
+      --text-muted: #9ca3af;
+      --font-sans: "Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100dvh;
+      overflow: hidden;
+      background: var(--bg-canvas);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      font-variant-numeric: tabular-nums;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Fullscreen ComfyUI Dot-Grid Canvas */
+    #comfy-viewport {
+      position: fixed;
+      inset: 0;
+      cursor: grab;
+      user-select: none;
+      -webkit-user-select: none;
+      background-color: var(--bg-canvas);
+      background-image: radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+
+    #comfy-viewport.is-panning {
+      cursor: grabbing;
+    }
+
+    #comfy-stage {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 0;
+      height: 0;
+      transform-origin: 0 0;
+      will-change: transform;
+    }
+
+    /* SVG Cubic-Bezier Wires */
+    #comfy-links-svg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 1px;
+      height: 1px;
+      overflow: visible;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .comfy-link {
+      fill: none;
+      stroke-width: 2.2px;
+      stroke-linecap: round;
+      opacity: 0.84;
+    }
+
+    /* Minimal ComfyUI Node Cards (332px width -> 320x180px 16:9 video stage) */
+    #comfy-nodes-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 2;
+    }
+
+    .comfy-node {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 332px;
+      background: var(--bg-node);
+      border: 1px solid var(--border-node);
+      border-radius: 8px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+      overflow: hidden;
+      transition: border-color 120ms ease-out;
+    }
+
+    .comfy-node.is-selected {
+      border-color: var(--border-selected);
+      box-shadow: 0 0 0 1px var(--border-selected), 0 10px 26px rgba(0, 0, 0, 0.6);
+      z-index: 10;
+    }
+
+    .comfy-node-header {
+      height: 28px;
+      padding: 0 10px;
+      background: var(--bg-node-header);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      cursor: grab;
+    }
+
+    .comfy-node-header:active {
+      cursor: grabbing;
+    }
+
+    .header-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--node-accent, #60a5fa);
+      flex-shrink: 0;
+    }
+
+    .header-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Input / Output Socket Rows */
+    .comfy-ports-wrap {
+      padding: 6px 0 4px;
+    }
+
+    .comfy-port-row {
+      height: 22px;
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 0.6875rem;
+      color: var(--text-muted);
+    }
+
+    .comfy-port {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .comfy-port-out {
+      margin-left: auto;
+      text-align: right;
+    }
+
+    .port-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .port-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* Clean 320x180px Video Stage As-Is (Outer 8px - 6px inset = 4px inner radius) */
+    .comfy-media-wrap {
+      position: relative;
+      margin: 2px 6px 6px;
+      width: 320px;
+      height: 180px;
+      border-radius: 4px;
+      background: #0d0e11;
+      overflow: hidden;
+      outline: 1px solid oklch(1 0 0 / 0.1);
+      outline-offset: -1px;
+    }
+
+    .comfy-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* Minimal Floating Corner Pill */
+    .comfy-hud-bar {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 20;
+      background: rgba(28, 29, 34, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 999px;
+      padding: 4px 6px 4px 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    }
+
+    .hud-title {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .hud-zoom {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      min-width: 38px;
+      text-align: center;
+    }
+
+    .hud-btn {
+      appearance: none;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid transparent;
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      font-size: 0.7rem;
+      font-weight: 500;
+      padding: 3px 9px;
+      border-radius: 999px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: background-color 140ms ease-out, transform 140ms ease-out;
+    }
+
+    .hud-btn:not(:disabled):active {
+      transform: scale(0.96);
+    }
+
+    @media (hover: hover) {
+      .hud-btn:hover {
+        background: rgba(255, 255, 255, 0.14);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="comfy-hud-bar">
+    <span class="hud-title">Amarante</span>
+    <span class="hud-zoom" id="comfy-zoom-label">72%</span>
+    <button type="button" class="hud-btn" id="comfy-fit-btn">Fit (F)</button>
+    <button type="button" class="hud-btn" id="comfy-reset-btn">Reset</button>
+  </div>
+
+  <main id="comfy-viewport">
+    <div id="comfy-stage">
+      <svg id="comfy-links-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="comfy-nodes-layer"></div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { mountBehaviorGraphApp } from './behavior-graph/graph-engine.js';
+    mountBehaviorGraphApp();
+  </script>
+</body>
+</html>

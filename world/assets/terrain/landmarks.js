@@ -75,6 +75,76 @@ function buildSlopedStringerGeometry(width, zStart, zEnd, yStart, yEnd) {
   return geo;
 }
 
+function addSculptedRose3D(
+  parent,
+  {
+    x = 0,
+    y = 0,
+    z = 0,
+    scale = 1.0,
+    rotX = 0,
+    rotY = 0,
+    rotZ = 0,
+    outerColor = 0xdad2c2,
+    innerColor = 0xb8b0a0,
+    coreColor = 0x968e80,
+  } = {}
+) {
+  const roseGrp = new THREE.Group();
+  roseGrp.position.set(x, y, z);
+  roseGrp.rotation.set(rotX, rotY, rotZ);
+
+  // 5 outer sculpted 3D petals
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const petalGeo = new THREE.OctahedronGeometry(0.11 * scale, 0);
+    petalGeo.scale(1.15, 0.36, 0.78);
+    const p = addPart(roseGrp, petalGeo, outerColor, { outline: false, flatShading: true });
+    p.position.set(Math.cos(a) * 0.085 * scale, 0.015 * scale, Math.sin(a) * 0.085 * scale);
+    p.rotation.y = -a;
+    p.rotation.z = 0.28;
+  }
+
+  // 5 inner rotated 3D petals
+  for (let i = 0; i < 5; i++) {
+    const a = ((i + 0.5) / 5) * Math.PI * 2;
+    const petalGeo = new THREE.OctahedronGeometry(0.078 * scale, 0);
+    petalGeo.scale(1.05, 0.44, 0.72);
+    const p = addPart(roseGrp, petalGeo, innerColor, { outline: false, flatShading: true });
+    p.position.set(Math.cos(a) * 0.048 * scale, 0.028 * scale, Math.sin(a) * 0.048 * scale);
+    p.rotation.y = -a;
+    p.rotation.z = 0.42;
+  }
+
+  // Central sculpted rose bud
+  const budGeo = new THREE.DodecahedronGeometry(0.046 * scale, 0);
+  budGeo.scale(1.0, 0.65, 1.0);
+  const bud = addPart(roseGrp, budGeo, coreColor, { outline: false, flatShading: true });
+  bud.position.y = 0.036 * scale;
+
+  parent.add(roseGrp);
+  return roseGrp;
+}
+
+function createExtrudedHeartGeometry(scale = 1.0, depth = 0.045) {
+  const shape = new THREE.Shape();
+  const s = 0.16 * scale;
+  shape.moveTo(0, -1.05 * s);
+  shape.bezierCurveTo(-0.15 * s, -0.85 * s, -1.15 * s, -0.25 * s, -1.15 * s, 0.42 * s);
+  shape.bezierCurveTo(-1.15 * s, 0.95 * s, -0.45 * s, 1.12 * s, 0, 0.58 * s);
+  shape.bezierCurveTo(0.45 * s, 1.12 * s, 1.15 * s, 0.95 * s, 1.15 * s, 0.42 * s);
+  shape.bezierCurveTo(1.15 * s, -0.25 * s, 0.15 * s, -0.85 * s, 0, -1.05 * s);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: depth * scale,
+    bevelEnabled: true,
+    bevelSegments: 1,
+    steps: 1,
+    bevelSize: 0.014 * scale,
+    bevelThickness: 0.014 * scale,
+  });
+  return geo.index ? geo.toNonIndexed() : geo;
+}
+
 /* -------------------------------------------------------------------------- */
 /* 1. HAMLET ROOFED STONE WELL & WELL PLAZA (`(0, 0, y = 0.0)`)               */
 /* -------------------------------------------------------------------------- */
@@ -92,38 +162,6 @@ function buildWellPlaza(colliders) {
     { outline: false }
   );
   plazaCurbRing.position.y = 0.016;
-
-  const innerRing = addPart(
-    group,
-    new THREE.RingGeometry(2.85, 3.22, 24).rotateX(-Math.PI / 2),
-    PALETTE.stoneWarm,
-    { outline: false }
-  );
-  innerRing.position.y = 0.018;
-
-  const wellStep = addPart(
-    group,
-    new THREE.CylinderGeometry(1.62, 1.72, 0.20, 12),
-    PALETTE.stone,
-    { outline: false }
-  );
-  wellStep.position.y = 0.10;
-
-  const base = addPart(
-    group,
-    new THREE.CylinderGeometry(1.42, 1.54, 0.88, 12),
-    PALETTE.stoneDark,
-    { outline: true }
-  );
-  base.position.y = 0.52;
-
-  const lip = addPart(
-    group,
-    new THREE.CylinderGeometry(1.52, 1.48, 0.16, 12),
-    PALETTE.stone,
-    { outline: false }
-  );
-  lip.position.y = 0.98;
 
   const water = addPart(
     group,
@@ -160,13 +198,37 @@ function buildWellPlaza(colliders) {
   );
   roller.position.set(0, 1.92, 0);
 
-  const bucket = addPart(
+  // Warm Hanging Lantern under the Well Roof (`(0, 2.18, 0)`)
+  const lanternChain = addPart(
     group,
-    new THREE.CylinderGeometry(0.18, 0.15, 0.34, 6),
-    PALETTE.doorWood,
+    new THREE.CylinderGeometry(0.025, 0.025, 0.42, 6),
+    PALETTE.stoneDark,
     { outline: false }
   );
-  bucket.position.set(0, 1.32, 0);
+  lanternChain.position.set(0, 2.48, 0);
+  const lanternCap = addPart(
+    group,
+    new THREE.ConeGeometry(0.20, 0.14, 6),
+    PALETTE.timberDark,
+    { outline: false }
+  );
+  lanternCap.position.set(0, 2.28, 0);
+  const lanternCore = addPart(
+    group,
+    new THREE.BoxGeometry(0.22, 0.28, 0.22),
+    PALETTE.lanternGlow,
+    { unlit: true }
+  );
+  lanternCore.position.set(0, 2.10, 0);
+
+  // Wooden Bucket sitting atop the right well coping rim (`(1.32, 1.26, 0.35)`)
+  const bucket = addPart(
+    group,
+    new THREE.CylinderGeometry(0.22, 0.18, 0.38, 8),
+    PALETTE.doorWood,
+    { outline: true }
+  );
+  bucket.position.set(1.32, 1.26, 0.35);
 
   const wellRoof = addPart(
     group,
@@ -1123,8 +1185,16 @@ function buildRoadsideSplitRailFences(colliders) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 7. SACRED INSCRIPTION STONES (`(0, -14)`, `(-42, 18)`, `(44, 16)`)         */
+/* 7. 3D SCULPTED DISCOVERY SITES (Well Ring, Grove Medallion & Lovers Wall)  */
 /* -------------------------------------------------------------------------- */
+
+function buildGroveFloorMedallion3D(_holder) {
+  // The complete 3D sculpted circular grove medallion & radial stone dais is loaded from Blender (`site2-grove-*.glb`)
+}
+
+function buildHiddenLoversWall3D(_holder) {
+  // The complete 3D sculpted Weathered Monolith Stele is loaded from Blender (`site3-wall-*.glb`).
+}
 
 function buildSacredInscriptionStones(colliders) {
   const group = new THREE.Group();
@@ -1136,112 +1206,36 @@ function buildSacredInscriptionStones(colliders) {
     holder.position.set(st.x, sy, st.z);
     holder.rotation.y = st.rotY || 0;
 
-    // 1. Irregular chiseled stone base plinth & 2 flanking companion rocks (matching 07-first-poem.png)
-    const lowerStep = addPart(
-      holder,
-      new THREE.CylinderGeometry(1.10, 1.26, 0.24, 7),
-      PALETTE.stoneWarm,
-      { outline: false }
-    );
-    lowerStep.position.y = 0.12;
-
-    const leftRock = addPart(
-      holder,
-      new THREE.DodecahedronGeometry(0.38, 0),
-      PALETTE.limestoneLight,
-      { outline: true }
-    );
-    leftRock.scale.set(1.15, 0.78, 0.95);
-    leftRock.position.set(-0.74, 0.24, 0.18);
-    leftRock.rotation.set(0.15, 0.4, -0.12);
-
-    const rightRock = addPart(
-      holder,
-      new THREE.DodecahedronGeometry(0.32, 0),
-      PALETTE.stoneWarm,
-      { outline: true }
-    );
-    rightRock.scale.set(1.08, 0.72, 0.92);
-    rightRock.position.set(0.68, 0.20, 0.22);
-    rightRock.rotation.set(-0.12, -0.5, 0.18);
-
-    // 2. Weathered ancient limestone monolith stele body (tapered & chiseled, zero green hat)
-    const steleLower = addPart(
-      holder,
-      new THREE.BoxGeometry(1.12, 1.15, 0.44),
-      PALETTE.limestoneLight,
-      { outline: true }
-    );
-    steleLower.position.y = 0.72;
-
-    const steleUpper = addPart(
-      holder,
-      new THREE.BoxGeometry(1.02, 0.86, 0.40),
-      PALETTE.limestoneLight,
-      { outline: true }
-    );
-    steleUpper.position.y = 1.62;
-
-    // Chamfered weathered limestone crown ridge (warm stone, never green)
-    const crownRidge = addPart(
-      holder,
-      new THREE.BoxGeometry(0.92, 0.20, 0.36),
-      PALETTE.stoneWarm,
-      { outline: true }
-    );
-    crownRidge.position.set(0, 2.14, 0);
-
-    // 3. Carved 3-Petal Sacred Lotus & 3 Wave Relief Grooves on front & back faces (matching 07-first-poem.png)
-    for (const fz of [-0.21, 0.21]) {
-      const signZ = Math.sign(fz);
-      // Center lotus petal
-      const petalC = addPart(
-        holder,
-        new THREE.OctahedronGeometry(0.16, 0),
-        PALETTE.stoneDark,
-        { outline: false }
-      );
-      petalC.scale.set(0.62, 1.35, 0.22);
-      petalC.position.set(0, 1.56, fz);
-
-      // Left & right angled lotus petals
-      for (const sx of [-1, 1]) {
-        const petalS = addPart(
-          holder,
-          new THREE.OctahedronGeometry(0.13, 0),
-          PALETTE.stoneDark,
-          { outline: false }
-        );
-        petalS.scale.set(0.58, 1.22, 0.22);
-        petalS.rotation.z = -sx * 0.52;
-        petalS.position.set(sx * 0.19, 1.48, fz);
-      }
-
-      // 3 carved horizontal wave/inscription lines below the lotus emblem
-      for (const [idx, ry] of [1.16, 1.00, 0.84].entries()) {
-        const waveLine = addPart(
-          holder,
-          new THREE.BoxGeometry(0.56 - idx * 0.06, 0.045, 0.04),
-          PALETTE.stoneDark,
-          { outline: false }
-        );
-        waveLine.position.set(0, ry, fz + signZ * 0.005);
-      }
+    if (st.id === 'stone_grove') {
+      buildGroveFloorMedallion3D(holder);
+    } else if (st.id === 'stone_pier') {
+      buildHiddenLoversWall3D(holder);
     }
 
     group.add(holder);
 
     if (colliders) {
+      // Place `stone_grove` collider at the north rim so the R=4.6m floor medallion is 100% walkable!
+      const colZ = st.id === 'stone_grove' ? st.z - 4.2 : st.z;
       colliders.push({
         type: 'circle',
         x: st.x,
-        z: st.z,
+        z: colZ,
         r: 0.92,
         tag: 'inscription_stone',
         id: st.id,
       });
     }
   }
+
+  // Also place a Secluded Cottage Alley 3D Lovers Wall behind the Shepherd/Gardener Cottage (`(-21.6, 20.4)`)
+  const cottageWallHolder = new THREE.Group();
+  const cwX = -21.6;
+  const cwZ = 20.4;
+  cottageWallHolder.position.set(cwX, terrainHeightAt(cwX, cwZ), cwZ);
+  cottageWallHolder.rotation.y = 0.45;
+  buildHiddenLoversWall3D(cottageWallHolder);
+  group.add(cottageWallHolder);
 
   // Stepping stone slabs along the shallow causeway from the pier shore (-33.5, 10.5) to (-42.0, 18.0)
   const causewaySteps = [

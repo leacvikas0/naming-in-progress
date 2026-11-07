@@ -36,7 +36,7 @@ export function createBotanicalPack() {
   for (const key of Object.keys(SPECIES_SPECS)) {
     const geo = geometries[key];
     const spec = SPECIES_SPECS[key];
-    const tris = geo.attributes.position.count / 3;
+    const tris = geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3;
     const mat = createGouacheMaterial({
       isToroidal: false,
       fadeRadius: 500,

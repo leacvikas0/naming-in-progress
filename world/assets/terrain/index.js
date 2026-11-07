@@ -34,6 +34,9 @@ import {
   makeToonGradient,
   makeOutlineMaterial,
   batchVertexColorGroup,
+  getSharedBakedShadowAOTexture,
+  sharedBakedShadowAOTex,
+  getSharedMeadowCanvasTexture,
   bakeWorldDataTextures,
   buildTreeShadowUniformArray,
   buildTerrainAndWater,
@@ -76,6 +79,9 @@ export {
   heightAt,
   sampleWorld,
   createWorldMaskTexture,
+  getSharedBakedShadowAOTexture,
+  sharedBakedShadowAOTex,
+  getSharedMeadowCanvasTexture,
   bakeWorldDataTextures,
   makeToonGradient,
   makeOutlineMaterial,
@@ -99,10 +105,12 @@ export function createTerrainAndLandmarks(renderer, opts = {}) {
 
   const colliders = [];
   const worldMaskTex = opts.worldMaskTex || createWorldMaskTexture(512);
+  const bakedShadowAOTex = opts.bakedShadowAOTex || getSharedBakedShadowAOTexture();
 
   const terrainSys = buildTerrainAndWater(renderer, {
     ...opts,
     worldMaskTex,
+    bakedShadowAOTex,
   });
   root.add(terrainSys.group);
 
@@ -129,16 +137,26 @@ export function createTerrainAndLandmarks(renderer, opts = {}) {
     waterMat: terrainSys.waterMat,
     horizonGroup: terrainSys.horizonGroup,
     worldMaskTex,
+    bakedShadowAOTex,
     maskBuildMs: terrainSys.maskBuildMs,
     landmarksGroup: landmarksSys.group,
     treesGroup: treesSys.group,
     treesSys,
     waterwheel: landmarksSys.waterwheel,
     colliders,
-    update(dt, elapsed, sunDir = null, daylight = null, fogColor = null, lightTint = null) {
+    update(
+      dt,
+      elapsed,
+      sunDir = null,
+      daylight = null,
+      fogColor = null,
+      lightTint = null,
+      camera = null,
+      profile = 'desktop'
+    ) {
       terrainSys.update(dt, elapsed);
       landmarksSys.update(dt, elapsed);
-      treesSys.update(dt, elapsed, sunDir, daylight, fogColor, lightTint);
+      treesSys.update(dt, elapsed, sunDir, daylight, fogColor, lightTint, camera, profile);
     },
   };
 }

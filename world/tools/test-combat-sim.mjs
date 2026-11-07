@@ -465,9 +465,9 @@ await check('7. Mage Kit: Fragile ~3-hit HP, 3-consecutive-charged Shatterlance 
 /* 6. Removal of Partner Distance Restrictions & Indicator Clutter           */
 /* ------------------------------------------------------------------------- */
 
-await check('8. Partner distance restrictions are removed (Infinity) and overhead/underfoot enemy indicator clutter stays hidden', () => {
-  assert.equal(COMMUNE_MAX_DISTANCE, Infinity);
-  assert.equal(POWERUP_TETHER_DISTANCE, Infinity);
+await check('8. Partner Commune (<= 4.0m) & Blessing Tether (<= 5.0m) distances and hidden indicator clutter work deterministically', () => {
+  assert.equal(COMMUNE_MAX_DISTANCE, 4.0);
+  assert.equal(POWERUP_TETHER_DISTANCE, 5.0);
 
   const scene = new THREE.Scene();
   const sfx = createCombatSfx();
@@ -477,13 +477,13 @@ await check('8. Partner distance restrictions are removed (Infinity) and overhea
     combatSfx: sfx,
   });
 
-  // Partners 120m apart can still Commune and share buffs without restriction
+  // Partners within 3.6m can Commune and share Blessing tether
   const heroStates = {
-    Knight: { x: -60, y: 0, z: 0, yaw: 0 },
-    Mage: { x: 60, y: 0, z: 0, yaw: 0 },
+    Knight: { x: -1.8, y: 0, z: 0, yaw: 0 },
+    Mage: { x: 1.8, y: 0, z: 0, yaw: 0 },
   };
   assert.equal(loop.canCommuneTogether(heroStates).allowed, true);
-  assert.equal(loop.isWithinPowerupTether(heroStates.Knight, heroStates.Mage), true);
+  assert.equal(loop.isWithinPowerupTether(heroStates), true);
 
   loop.update(0.016, { heroStates });
   assert.equal(loop.crestAndTetherMesh.visible, false, 'crestAndTetherMesh must remain hidden');
@@ -636,6 +636,260 @@ await check('10. Full 3-Act Valley Expedition & Pooled Enemy Manager (incl. tele
   const downedByOneHit = liveLoop.handlePlayerHit({ id: 'Mage' }, em.activeEnemies[0], 15);
   assert.equal(downedByOneHit.downed, true);
   assert.equal(liveLoop.combatHeroes.Mage.downed, true);
+});
+
+await check('11. Phase 1 Combat Upgrades: Shatterlance (0.8..18.0m single-hit deduplication), 3D Skeleton_Mage dodgeable bolts, and 2.5s Proximity Revive', async () => {
+  // 11A. projectAimRayToGround supports Shatterlance variable 0.8..18.0m range
+  const shatterPointBlank = projectAimRayToGround({
+    origin: { x: 0, y: 0, z: 0 },
+    yaw: 0,
+    pitch: 1.05,
+    spellId: 'shatterlance',
+  });
+  const shatterFar = projectAimRayToGround({
+    origin: { x: 0, y: 0, z: 0 },
+    yaw: 0,
+    pitch: 0.04,
+    spellId: 'shatterlance',
+  });
+  assert.ok(shatterPointBlank.distance >= 0.8 && shatterPointBlank.distance <= 1.6);
+  assert.ok(shatterFar.distance >= 17.5 && shatterFar.distance <= 18.0);
+
+  const { createEnemyManager } = await import('../src/combat/enemy-manager.js');
+  const mockKit = {
+    async loadAnimationPacks() {},
+    async createCharacter(charId) {
+      const group = new THREE.Group();
+      const modelRoot = new THREE.Group();
+      group.add(modelRoot);
+      let currentKey = 'idle';
+      return {
+        id: charId,
+        group,
+        modelRoot,
+        mixer: { timeScale: 1.0 },
+        anim: {
+          get currentKey() {
+            return currentKey;
+          },
+        },
+        play(key) {
+          currentKey = key;
+        },
+        poseAt(key) {
+          currentKey = key;
+        },
+        update() {},
+      };
+    },
+  };
+
+  let playerHits = [];
+  const em = await createEnemyManager({
+    scene: new THREE.Scene(),
+    kit: mockKit,
+    walkableHeightAt: () => 0.0,
+    resolveCollisions: (x, z) => ({ x, z, wrapped: false }),
+    onPlayerHit: (targetHero, enemy, dmg, opts) => {
+      playerHits.push({ heroId: targetHero.id, dmg, opts });
+    },
+  });
+
+  const loop = createCampaignLoop({
+    scene: new THREE.Scene(),
+    walkableHeightAt: () => 0.0,
+    enemyManager: em,
+    combatSfx: createCombatSfx(),
+  });
+
+  // 11B. Shatterlance at 0.8m point-blank hits an enemy at 0.85m AND never double-hits an enemy inside both ray & eruption
+  const closeEnemy = em.spawnImmediateFromSpec({ archetype: 'warrior', x: 68.0, z: -3.15 });
+  closeEnemy.hp = 500;
+  closeEnemy.maxHp = 500;
+  const castClose = loop.castSpell(
+    'shatterlance',
+    { x: 68.0, y: 0, z: -4.0 },
+    0,
+    { x: 66.5, y: 0, z: -4.0 },
+    { distance: 0.8, ignoreCooldown: true }
+  );
+  assert.equal(castClose.distance, 0.8);
+  assert.equal(castClose.hits.length, 1, 'Enemy in both ray and eruption must be hit exactly ONCE');
+  assert.equal(500 - closeEnemy.hp, SPELLS.shatterlance.dmg);
+
+  // 11C. Skeleton_Mage fires a real 3D projectile that can be dodged or intercepted by Knight Shield Block
+  em.clearAllEnemies();
+  playerHits = [];
+  em.spawnEnemyProjectile({
+    origin: { x: 0, y: 1.25, z: 0 },
+    targetPos: { x: 0, y: 1.05, z: 6.0 },
+    speed: 11.5,
+    dmg: 18,
+    targetHeroId: 'Mage',
+  });
+  assert.equal(em.activeProjectiles.length, 1);
+
+  // Step projectile while Knight shields in front at z = 3.0m -> Knight physically intercepts the bolt!
+  for (let i = 0; i < 20; i++) {
+    em.update(0.025, {
+      Knight: { id: 'Knight', x: 0, y: 0, z: 3.0, yaw: Math.PI, shieldBlocking: true },
+      Mage: { id: 'Mage', x: 0, y: 0, z: 6.0, yaw: Math.PI },
+    });
+  }
+  assert.equal(em.activeProjectiles.length, 0, 'Shielding Knight must intercept the projectile');
+  assert.equal(playerHits.length, 1);
+  assert.equal(playerHits[0].heroId, 'Knight');
+  assert.equal(playerHits[0].opts?.interceptedByKnight, true);
+
+  // 11D. 2.5s interruptible co-op proximity revive (<= 2.4m restores 35% Max HP)
+  loop.combatHeroes.Mage.downed = true;
+  loop.combatHeroes.Mage.hp = 0;
+  const nearHeroes = {
+    Knight: { id: 'Knight', x: 0, y: 0, z: 0, yaw: 0 },
+    Mage: { id: 'Mage', x: 1.5, y: 0, z: 0, yaw: 0 },
+  };
+  loop.update(1.2, { heroStates: nearHeroes, soloWingmanActive: false });
+  assert.equal(loop.combatHeroes.Mage.downed, true);
+  assert.ok(loop.combatHeroes.Mage.reviveProgress > 0.4);
+
+  // Taking damage interrupts reviveTimer back to 0!
+  loop.handlePlayerHit(nearHeroes.Knight, closeEnemy, 15);
+  assert.equal(loop.combatHeroes.Mage.reviveTimer, 0);
+
+  // Now hold within 2.4m for 2.55s uninterrupted -> Mage revives at 35% Max HP (32 HP)!
+  for (let s = 0; s < 26; s++) {
+    loop.update(0.1, { heroStates: nearHeroes, soloWingmanActive: false });
+  }
+  assert.equal(loop.combatHeroes.Mage.downed, false);
+  assert.equal(loop.combatHeroes.Mage.hp, Math.round(HERO_STATS.Mage.maxHp * 0.35));
+});
+
+await check('12. Phase 2 Proportional Divine Prayer & Phase 4 Night Demon Tree + Summoned Bats (10.0s summon timer, max 2 bats, 1.2m swoop)', async () => {
+  const { createEnemyManager } = await import('../src/combat/enemy-manager.js');
+  const mockKit = {
+    async loadAnimationPacks() {},
+    async createCharacter(charId) {
+      const group = new THREE.Group();
+      const modelRoot = new THREE.Group();
+      group.add(modelRoot);
+      let currentKey = 'idle';
+      return {
+        id: charId,
+        group,
+        modelRoot,
+        mixer: { timeScale: 1.0 },
+        anim: {
+          get currentKey() {
+            return currentKey;
+          },
+        },
+        play(key) {
+          currentKey = key;
+        },
+        poseAt(key) {
+          currentKey = key;
+        },
+        update() {},
+      };
+    },
+  };
+
+  const em = await createEnemyManager({
+    scene: new THREE.Scene(),
+    kit: mockKit,
+    walkableHeightAt: () => 0.0,
+    resolveCollisions: (x, z) => ({ x, z, wrapped: false }),
+  });
+
+  const loop = createCampaignLoop({
+    scene: new THREE.Scene(),
+    walkableHeightAt: () => 0.0,
+    enemyManager: em,
+    combatSfx: createCombatSfx(),
+  });
+
+  // 12A. Proportional Prayer Verdicts (selfish_penalty -20 HP, sarcastic_pat +1 HP, grace +25 HP)
+  loop.combatHeroes.Knight.hp = 60;
+  loop.combatHeroes.Mage.hp = 50;
+  const hStates = {
+    Knight: { id: 'Knight', x: 0, y: 0, z: 0 },
+    Mage: { id: 'Mage', x: 2, y: 0, z: 0 },
+  };
+  const patRes = loop.applyCommuneVerdict({ verdict: 'sarcastic_pat', hpDelta: 1 }, 'Knight', hStates);
+  assert.equal(patRes.verdict, 'sarcastic_pat');
+  assert.equal(loop.combatHeroes.Knight.hp, 61);
+  assert.equal(loop.combatHeroes.Mage.hp, 51);
+
+  const graceRes = loop.applyCommuneVerdict({ verdict: 'grace', hpDelta: 25 }, 'Knight', hStates);
+  assert.equal(graceRes.verdict, 'grace');
+  assert.equal(loop.combatHeroes.Knight.hp, 86);
+  assert.equal(loop.combatHeroes.Mage.hp, 76);
+
+  const selfishRes = loop.applyCommuneVerdict({ verdict: 'selfish_penalty', hpDelta: -20 }, 'Knight', hStates);
+  assert.equal(selfishRes.verdict, 'selfish_penalty');
+  assert.equal(loop.combatHeroes.Knight.hp, 66);
+
+  // 12B. Night Demon Tree stationary root slam + 10.0s Bat Summon Cooldown (max 2 active bats)
+  em.clearAllEnemies();
+  const tree = em.spawnImmediateFromSpec({ archetype: 'demon_tree', x: 44.0, z: 16.0 });
+  assert.equal(tree.isStationary, true);
+  assert.equal(tree.batSummonCooldown, 10.0);
+  assert.equal(tree.maxActiveBats, 2);
+
+  // First tick triggers summon of 2 bats and sets batSummonTimer = 10.0s immediately
+  em.update(0.1, {
+    Knight: { id: 'Knight', x: 44.0, y: 0, z: 22.0 },
+    Mage: { id: 'Mage', x: 46.0, y: 0, z: 24.0 },
+  });
+  const batsWave1 = em.activeEnemies.filter((e) => e.archetype === 'summoned_bat');
+  assert.equal(batsWave1.length, 2, 'Demon Tree must summon max 2 active bats');
+  assert.equal(tree.batSummonTimer, 10.0, '10.0s cooldown must start at summon timestamp');
+  assert.equal(batsWave1[0].targetHeroId, 'Mage', 'Summoned bats must prioritize Mage (Ishika)');
+  assert.ok(Math.abs(batsWave1[0].y - 2.35) < 0.05, 'Flying bats hover at y = 2.35m while approaching');
+
+  // If players kill both bats after 2.0s, Demon Tree must wait remaining 8.0s before summoning again!
+  em.update(2.0, {
+    Knight: { id: 'Knight', x: 44.0, y: 0, z: 22.0 },
+    Mage: { id: 'Mage', x: 46.0, y: 0, z: 24.0 },
+  });
+  for (const b of batsWave1) {
+    em.applyHitToEnemy(b, { dmg: 200, source: 'combo1' });
+  }
+  for (let k = 0; k < 10; k++) {
+    em.update(0.1, {
+      Knight: { id: 'Knight', x: 44.0, y: 0, z: 22.0 },
+      Mage: { id: 'Mage', x: 46.0, y: 0, z: 24.0 },
+    });
+  }
+  assert.equal(
+    em.activeEnemies.filter((e) => !e.dead && e.archetype === 'summoned_bat').length,
+    0,
+    'No new bats may spawn while batSummonTimer > 0 (remaining ~7.0s)'
+  );
+
+  // Advance remaining 7.2s -> batSummonTimer reaches 0 and 2 new bats summon!
+  for (let k = 0; k < 72; k++) {
+    em.update(0.1, {
+      Knight: { id: 'Knight', x: 44.0, y: 0, z: 22.0 },
+      Mage: { id: 'Mage', x: 46.0, y: 0, z: 24.0 },
+    });
+  }
+  const batsWave2 = em.activeEnemies.filter((e) => !e.dead && e.archetype === 'summoned_bat');
+  assert.equal(batsWave2.length, 2, '2 new bats summon once the 10.0s timer from last summon expires');
+
+  // When a bat enters windup/attack window, it swoops down to y = 1.20m so Knight melee can cleave it!
+  batsWave2[0].aiState = 'windup';
+  batsWave2[0].windupTimer = 0.1;
+  em.update(0.05, {
+    Knight: { id: 'Knight', x: 44.0, y: 0, z: 22.0 },
+    Mage: { id: 'Mage', x: 46.0, y: 0, z: 24.0 },
+  });
+  assert.ok(Math.abs(batsWave2[0].y - 1.2) < 0.05, 'Attacking bat must swoop to y = 1.2m');
+
+  // Vanquishing the Night Demon Tree sets groveTreeVanquished = true (revealing the Grove Medallion!)
+  assert.equal(em.groveTreeVanquished, false);
+  em.applyHitToEnemy(tree, { dmg: 999, source: 'couples_ultimate' });
+  assert.equal(em.groveTreeVanquished, true);
 });
 
 console.log(`\nALL ${passed} WAVE 2B COMBAT & CAMPAIGN TESTS PASSED!\n`);

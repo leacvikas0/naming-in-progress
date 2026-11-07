@@ -1,32 +1,26 @@
 // ============================================================================
 // world/sw.js
 //
-// Haru-machi Service Worker for Xiaomi Pad 7 Fullscreen Landscape PWA / TWA:
-// - Caches core HTML/CSS/JS shell & static 3D assets using Stale-While-Revalidate
-// - Strictly bypasses `/api/`, `/ws`, and WebSocket upgrade requests so live
-//   Cloudflare `CoopRoomDO` synchronization and `/api/commune` prayers are
-//   never intercepted or cached.
+// Amarante Service Worker:
+// - On localhost / 127.0.0.1: Purges all legacy caches (including
+//   `haru-machi-shell-v1`), unregisters itself, and never intercepts requests
+//   so local development always serves fresh HTML/JS from disk.
+// - In production: Uses Network-First with cache fallback so updates take
+//   effect immediately on reload.
 // ============================================================================
 
-const CACHE_NAME = 'haru-machi-shell-v1';
-
-const CORE_SHELL_URLS = [
-  '/world/index.html',
-  '/world/manifest.webmanifest',
-  '/world/src/main.js',
-  '/world/src/ui/app-flow.js',
-  '/world/src/ui/sculpted-hud.js',
-];
+const CACHE_NAME = 'amarante-shell-v4';
+const IS_LOCAL_DEV =
+  self.location.hostname === '127.0.0.1' ||
+  self.location.hostname === 'localhost';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) =>
-      cache.addAll(CORE_SHELL_URLS).catch(() => {
-        // Ignore individual pre-cache misses in dev/offline environments
-      })
-    )
-  );
+  if (IS_LOCAL_DEV) {
+    event.waitUntil(
+      caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+    );
+  }
 });
 
 self.addEventListener('activate', (event) => {
@@ -36,20 +30,25 @@ self.addEventListener('activate', (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key !== CACHE_NAME)
+            .filter((key) => IS_LOCAL_DEV || key !== CACHE_NAME)
             .map((oldKey) => caches.delete(oldKey))
         )
       )
-      .then(() => self.clients.claim())
+      .then(async () => {
+        await self.clients.claim();
+        if (IS_LOCAL_DEV && self.registration) {
+          await self.registration.unregister();
+        }
+      })
   );
 });
 
-function shouldBypassCache(request) {
-  if (!request || request.method !== 'GET') return true;
-  const upgradeHeader = request.headers.get('upgrade');
-  if (upgradeHeader && upgradeHeader.toLowerCase() === 'websocket') {
-    return true;
+self.addEventListener('fetch', (event) => {
+  if (IS_LOCAL_DEV) {
+    return;
   }
+  const { request } = event;
+  if (!request || request.method !== 'GET') return;
   const url = new URL(request.url);
   if (
     url.pathname.startsWith('/api/') ||
@@ -57,30 +56,19 @@ function shouldBypassCache(request) {
     url.searchParams.has('room') ||
     url.searchParams.has('shot')
   ) {
-    return true;
-  }
-  return false;
-}
-
-self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  if (shouldBypassCache(request)) {
     return;
   }
 
+  // Network-First in production so new builds never serve stale JS/HTML
   event.respondWith(
-    caches.open(CACHE_NAME).then(async (cache) => {
-      const cached = await cache.match(request);
-      const networkFetch = fetch(request)
-        .then((response) => {
-          if (response && response.ok && response.status === 200 && response.type === 'basic') {
-            cache.put(request, response.clone()).catch(() => {});
-          }
-          return response;
-        })
-        .catch(() => cached);
-
-      return cached || networkFetch;
-    })
+    fetch(request)
+      .then((response) => {
+        if (response && response.ok && response.status === 200 && response.type === 'basic') {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone)).catch(() => {});
+        }
+        return response;
+      })
+      .catch(() => caches.match(request))
   );
 });

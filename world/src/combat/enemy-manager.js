@@ -160,6 +160,7 @@ export async function createEnemyManager({
 
   let activeEnemies = [];
   let spawnQueue = [];
+  let activeProjectiles = [];
   let nextInstanceSeq = 1;
   let currentActId = 'act1_arena';
   let frozenShotId = null;
@@ -168,6 +169,64 @@ export async function createEnemyManager({
     ACT_DEFINITIONS.act1_arena.center.y,
     ACT_DEFINITIONS.act1_arena.center.z
   );
+
+  // Pooled 3D Dodgeable Spell Bolts for Ranged Enemies (`Skeleton_Mage`, max 8 instances, 0 draws when idle)
+  const MAX_ENEMY_PROJECTILES = 8;
+  const projGeo = new THREE.OctahedronGeometry(0.28, 1);
+  const projMat = new THREE.MeshBasicMaterial({
+    color: 0xd946ef,
+  });
+  const enemyProjectileMesh = new THREE.InstancedMesh(
+    projGeo,
+    projMat,
+    MAX_ENEMY_PROJECTILES
+  );
+  enemyProjectileMesh.name = 'enemySpellProjectileInstancedMesh';
+  enemyProjectileMesh.frustumCulled = false;
+  enemyProjectileMesh.visible = false;
+  enemyProjectileMesh.count = 0;
+  rootGroup.add(enemyProjectileMesh);
+  const _projDummy = new THREE.Object3D();
+
+  function spawnEnemyProjectile({
+    owner = null,
+    origin = { x: 0, y: 1.25, z: 0 },
+    targetPos = { x: 0, y: 1.05, z: 5.0 },
+    speed = 11.5,
+    dmg = 18,
+    radius = 0.42,
+    targetHeroId = 'Knight',
+  } = {}) {
+    if (activeProjectiles.length >= MAX_ENEMY_PROJECTILES) {
+      activeProjectiles.shift();
+    }
+    const dx = (targetPos.x ?? 0) - (origin.x ?? 0);
+    const dy = (targetPos.y ?? 1.05) - (origin.y ?? 1.25);
+    const dz = (targetPos.z ?? 0) - (origin.z ?? 0);
+    const flatDist = Math.hypot(dx, dz) || 1;
+    const travelTime = Math.max(0.18, flatDist / Math.max(1.0, speed));
+    const vx = (dx / flatDist) * speed;
+    const vz = (dz / flatDist) * speed;
+    const vy = clamp(dy / travelTime, -6.0, 6.0);
+    const bolt = {
+      id: `enemy_bolt_${nextInstanceSeq++}`,
+      owner,
+      x: origin.x ?? 0,
+      y: origin.y ?? 1.25,
+      z: origin.z ?? 0,
+      vx,
+      vy,
+      vz,
+      speed,
+      dmg,
+      radius,
+      targetHeroId,
+      age: 0,
+      maxAge: 2.2,
+    };
+    activeProjectiles.push(bolt);
+    return bolt;
+  }
 
   function getVisibleCount() {
     let count = 0;
@@ -285,9 +344,10 @@ export async function createEnemyManager({
     const clampedPos = applyEnemySpatialConstraints(spawnSpec.x, spawnSpec.z, radius);
     const groundY = walkableHeightAt(clampedPos.x, clampedPos.z);
 
+    const initialY = arch.isFlying ? groundY + (arch.hoverHeight ?? 2.35) : groundY;
     const scale = slot.isBossSlot ? 1.0 : arch.scale || 1.0;
     slot.char.group.scale.setScalar(scale);
-    slot.char.group.position.set(clampedPos.x, groundY, clampedPos.z);
+    slot.char.group.position.set(clampedPos.x, initialY, clampedPos.z);
     const initialYaw = spawnSpec.rotY ?? Math.atan2(-clampedPos.x, -clampedPos.z);
     slot.char.group.rotation.y = initialYaw;
     slot.char.group.visible = !frozenShotId;
@@ -314,6 +374,14 @@ export async function createEnemyManager({
       telegraphRadius: arch.telegraphRadius,
       radius,
       isRanged: Boolean(arch.isRanged),
+      isStationary: Boolean(arch.isStationary),
+      isFlying: Boolean(arch.isFlying),
+      hoverHeight: arch.hoverHeight ?? 2.35,
+      swoopHeight: arch.swoopHeight ?? 1.2,
+      preferredTarget: arch.preferredTarget || null,
+      batSummonCooldown: arch.batSummonCooldown || 0,
+      maxActiveBats: arch.maxActiveBats || 0,
+      batSummonTimer: spawnSpec.initialBatCooldown ?? 0,
       isElite: Boolean(arch.isElite),
       isBoss: Boolean(arch.isBoss),
       aegisTriggerHpRatio: arch.aegisTriggerHpRatio ?? 0.5,
@@ -323,7 +391,7 @@ export async function createEnemyManager({
       aegisActive: Boolean(arch.isBoss),
       aegisLayers: arch.isBoss ? (arch.aegisLayersMax ?? 2) : 0,
       x: clampedPos.x,
-      y: groundY,
+      y: initialY,
       z: clampedPos.z,
       yaw: initialYaw,
       vx: 0,
@@ -361,7 +429,7 @@ export async function createEnemyManager({
         ? 6.6 + (slot.slotIndex % 2) * 1.1
         : 3.3 + (slot.slotIndex % 3) * 0.55,
       distToTarget: 10.0,
-      targetHeroId: 'Knight',
+      targetHeroId: arch.preferredTarget || 'Knight',
     };
 
     slot.busy = true;
@@ -389,9 +457,14 @@ export async function createEnemyManager({
     }
   }
 
+  let groveTreeVanquished = false;
+
   function clearAllEnemies() {
     spawnQueue = [];
     activeEnemies = [];
+    activeProjectiles = [];
+    enemyProjectileMesh.count = 0;
+    enemyProjectileMesh.visible = false;
     for (let i = 0; i < poolSlots.length; i++) {
       const s = poolSlots[i];
       s.busy = false;
@@ -433,6 +506,9 @@ export async function createEnemyManager({
     e.aiState = 'dead';
     e.windupTimer = 0;
     e.telegraphProgress = 0;
+    if (e.archetype === 'demon_tree') {
+      groveTreeVanquished = true;
+    }
     e.char.play('downed', { loop: false, fade: 0.08, force: true });
     if (onEnemyKilled && !e.xpAwarded) {
       e.xpAwarded = true;
@@ -503,7 +579,9 @@ export async function createEnemyManager({
     width = 2.6,
     radius = 0,
     coneHalfAngle = (85 * Math.PI) / 180,
+    maxHeightDiff = 3.2,
     maxTargets = 99,
+    excludeEnemies = null,
     hitSpec = {},
   } = {}) {
     if (!origin) return [];
@@ -513,6 +591,14 @@ export async function createEnemyManager({
     for (let i = 0; i < activeEnemies.length; i++) {
       const e = activeEnemies[i];
       if (!e || e.dead || e.hp <= 0 || !e.active) continue;
+      if (excludeEnemies && excludeEnemies.has(e)) continue;
+      if (
+        origin.y !== undefined &&
+        e.y !== undefined &&
+        Math.abs(e.y - origin.y) > maxHeightDiff
+      ) {
+        continue;
+      }
       const dx = e.x - origin.x;
       const dz = e.z - origin.z;
       const dist = Math.hypot(dx, dz);
@@ -585,6 +671,8 @@ export async function createEnemyManager({
     telegraphRingMesh.count = 0;
 
     if (frozenShotId) {
+      enemyProjectileMesh.visible = false;
+      enemyProjectileMesh.count = 0;
       if (camera && ARCHITECTURAL_SHOT_SKELETON_POSES[frozenShotId]) {
         const camDistSq = camera.position.distanceToSquared(arenaCenterVec);
         const show = camDistSq <= 92 * 92;
@@ -596,6 +684,84 @@ export async function createEnemyManager({
 
     const knight = heroStates.Knight;
     const mage = heroStates.Mage;
+
+    // 0. Advance 3D Dodgeable Ranged Enemy Projectiles (`Skeleton_Mage` bolts)
+    if (activeProjectiles.length > 0) {
+      const remainingBolts = [];
+      for (let i = 0; i < activeProjectiles.length; i++) {
+        const p = activeProjectiles[i];
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.z += p.vz * dt;
+        p.age += dt;
+
+        const floorY = walkableHeightAt(p.x, p.z);
+        if (p.age >= p.maxAge || p.y <= floorY + 0.12) {
+          continue;
+        }
+
+        // Physical Knight Shield Block Interception along projectile path
+        let consumed = false;
+        if (knight && !knight.downed && knight.shieldBlocking) {
+          const dk = Math.hypot(p.x - knight.x, p.z - knight.z);
+          if (dk <= 1.25) {
+            const incomingYaw = Math.atan2(-p.vx, -p.vz);
+            const shieldArcOk =
+              knight.yaw === undefined ||
+              Math.abs(shortestAngleDiff(incomingYaw, knight.yaw)) <= (105 * Math.PI) / 180;
+            if (shieldArcOk) {
+              if (onPlayerHit) {
+                onPlayerHit(knight, p.owner, p.dmg, {
+                  projectile: true,
+                  interceptedByKnight: true,
+                });
+              }
+              consumed = true;
+            }
+          }
+        }
+
+        if (!consumed) {
+          const heroCandidates = [knight, mage].filter(
+            (h) => h && !h.downed && (h.iframeTimer || 0) <= 0
+          );
+          for (let hIdx = 0; hIdx < heroCandidates.length; hIdx++) {
+            const h = heroCandidates[hIdx];
+            const dh = Math.hypot(p.x - h.x, p.z - h.z);
+            const hY = h.y ?? walkableHeightAt(h.x, h.z);
+            if (dh <= (h.radius || 0.48) + p.radius && Math.abs(p.y - (hY + 1.0)) <= 1.35) {
+              if (onPlayerHit) {
+                onPlayerHit(h, p.owner, p.dmg, { projectile: true });
+              }
+              consumed = true;
+              break;
+            }
+          }
+        }
+
+        if (!consumed) {
+          remainingBolts.push(p);
+        }
+      }
+      activeProjectiles = remainingBolts;
+
+      enemyProjectileMesh.count = activeProjectiles.length;
+      enemyProjectileMesh.visible = activeProjectiles.length > 0;
+      for (let i = 0; i < activeProjectiles.length; i++) {
+        const p = activeProjectiles[i];
+        _projDummy.position.set(p.x, p.y, p.z);
+        _projDummy.rotation.set(p.age * 7.5, p.age * 9.2, 0);
+        _projDummy.scale.setScalar(1.0);
+        _projDummy.updateMatrix();
+        enemyProjectileMesh.setMatrixAt(i, _projDummy.matrix);
+      }
+      if (activeProjectiles.length > 0) {
+        enemyProjectileMesh.instanceMatrix.needsUpdate = true;
+      }
+    } else {
+      enemyProjectileMesh.count = 0;
+      enemyProjectileMesh.visible = false;
+    }
 
     const toRelease = [];
     for (let i = 0; i < activeEnemies.length; i++) {
@@ -721,7 +887,11 @@ export async function createEnemyManager({
       }
 
       let targetHero = knight || mage;
-      if (knight && mage) {
+      if (e.preferredTarget === 'Mage' && mage && !mage.downed) {
+        targetHero = mage;
+      } else if (e.preferredTarget === 'Knight' && knight && !knight.downed) {
+        targetHero = knight;
+      } else if (knight && mage) {
         if (knight.downed && !mage.downed) targetHero = mage;
         else if (mage.downed && !knight.downed) targetHero = knight;
         else {
@@ -733,6 +903,37 @@ export async function createEnemyManager({
       if (targetHero) {
         e.targetHeroId = targetHero.id || 'Knight';
         e.distToTarget = Math.hypot(e.x - targetHero.x, e.z - targetHero.z);
+      }
+
+      // Night Demon Tree 10.0s Bat Summon Cooldown (measured from summon timestamp, max 2 active bats)
+      if (e.batSummonCooldown > 0) {
+        if (e.batSummonTimer > 0) {
+          e.batSummonTimer = Math.max(0, e.batSummonTimer - dt * iceTimeMult);
+        }
+        const activeBatCount = activeEnemies.filter(
+          (b) => b && !b.dead && b.active && b.archetype === 'summoned_bat'
+        ).length;
+        const maxBats = e.maxActiveBats || 2;
+        if (
+          e.batSummonTimer <= 0 &&
+          activeBatCount < maxBats &&
+          activeEnemies.length < MAX_CONCURRENT_ENEMIES
+        ) {
+          e.batSummonTimer = e.batSummonCooldown;
+          const toSummon = Math.min(
+            maxBats - activeBatCount,
+            MAX_CONCURRENT_ENEMIES - activeEnemies.length
+          );
+          for (let bIdx = 0; bIdx < toSummon; bIdx++) {
+            const side = (activeBatCount + bIdx) % 2 === 0 ? -1 : 1;
+            spawnImmediateFromSpec({
+              archetype: 'summoned_bat',
+              x: e.x + side * 2.2,
+              z: e.z + 1.8,
+            });
+          }
+          e.char.play('cast_shoot', { loop: false, fade: 0.1, force: true });
+        }
       }
     }
 
@@ -762,7 +963,13 @@ export async function createEnemyManager({
         const dirX = dx / dist;
         const dirZ = dz / dist;
         const desiredYaw = Math.atan2(dx, dz);
-        e.yaw += shortestAngleDiff(desiredYaw, e.yaw) * Math.min(1, 10 * dt * slowMult);
+
+        // Lock melee aim rotation during the final 0.26s of windup so late dodges are never tracked
+        const lockWindupAim =
+          e.aiState === 'windup' && !e.isRanged && e.windupDuration - e.windupTimer <= 0.26;
+        if (!lockWindupAim) {
+          e.yaw += shortestAngleDiff(desiredYaw, e.yaw) * Math.min(1, 10 * dt * slowMult);
+        }
 
         if (e.aiState === 'windup') {
           e.windupTimer += dt * slowMult;
@@ -776,21 +983,64 @@ export async function createEnemyManager({
             e.cooldownTimer = e.attackCooldown;
             e.attackAnimTimer = 0.45;
 
-            const hitDist = Math.hypot(
-              targetHero.x - e.telegraphX,
-              targetHero.z - e.telegraphZ
-            );
-            if (
-              hitDist <= e.telegraphRadius + 0.45 &&
-              !targetHero.downed &&
-              (targetHero.iframeTimer || 0) <= 0
-            ) {
-              if (onPlayerHit) {
-                const dmgReduction = clamp(e.iceSlowFactor || 0, 0, 0.75);
-                const outgoingDmg = Math.max(1, Math.round(e.dmg * (1.0 - dmgReduction)));
-                onPlayerHit(targetHero, e, outgoingDmg);
+            const dmgReduction = clamp(e.iceSlowFactor || 0, 0, 0.75);
+            const outgoingDmg = Math.max(1, Math.round(e.dmg * (1.0 - dmgReduction)));
+
+            if (e.isRanged) {
+              // Ranged enemy (`Skeleton_Mage`) fires a real 3D dodgeable spell projectile (11.5 m/s)
+              const castDirX = Math.sin(e.yaw);
+              const castDirZ = Math.cos(e.yaw);
+              spawnEnemyProjectile({
+                owner: e,
+                origin: {
+                  x: e.x + castDirX * 0.7,
+                  y: e.y + 1.25,
+                  z: e.z + castDirZ * 0.7,
+                },
+                targetPos: {
+                  x: targetHero.x,
+                  y: (targetHero.y ?? walkableHeightAt(targetHero.x, targetHero.z)) + 1.05,
+                  z: targetHero.z,
+                },
+                speed: 11.5,
+                dmg: outgoingDmg,
+                radius: 0.42,
+                targetHeroId: targetHero.id || 'Knight',
+              });
+            } else {
+              const hitDist = Math.hypot(
+                targetHero.x - e.telegraphX,
+                targetHero.z - e.telegraphZ
+              );
+              if (
+                hitDist <= e.telegraphRadius + 0.45 &&
+                !targetHero.downed &&
+                (targetHero.iframeTimer || 0) <= 0
+              ) {
+                if (onPlayerHit) {
+                  onPlayerHit(targetHero, e, outgoingDmg);
+                }
               }
             }
+          }
+        } else if (e.isStationary) {
+          // Stationary Night Demon Tree: never translates x/z; slams roots when heroes enter range
+          if (dist <= e.attackRange * 1.15 && e.cooldownTimer <= 0) {
+            e.aiState = 'windup';
+            e.windupTimer = 0;
+            e.telegraphProgress = 0.02;
+            e.telegraphX = e.x + dirX * (e.attackRange * 0.55);
+            e.telegraphZ = e.z + dirZ * (e.attackRange * 0.55);
+            e.telegraphY = walkableHeightAt(e.telegraphX, e.telegraphZ) + 0.04;
+            e.attackAnimTimer = e.windupDuration + 0.25;
+            e.char.play('charged', {
+              loop: false,
+              fade: 0.1,
+              timeScale: 0.85 * slowMult,
+              force: true,
+            });
+          } else {
+            playEnemyLocomotion(e, 'idle');
           }
         } else if (e.hasAttackToken) {
           if (dist > e.attackRange * 0.92) {
@@ -859,12 +1109,16 @@ export async function createEnemyManager({
           const push = (minSep - sd) * 0.5;
           const nx = (sdx / sd) * push;
           const nz = (sdz / sd) * push;
-          const clampedE = applyEnemySpatialConstraints(e.x + nx, e.z + nz, e.radius);
-          const clampedO = applyEnemySpatialConstraints(o.x - nx, o.z - nz, o.radius);
-          e.x = clampedE.x;
-          e.z = clampedE.z;
-          o.x = clampedO.x;
-          o.z = clampedO.z;
+          if (!e.isStationary) {
+            const clampedE = applyEnemySpatialConstraints(e.x + nx, e.z + nz, e.radius);
+            e.x = clampedE.x;
+            e.z = clampedE.z;
+          }
+          if (!o.isStationary) {
+            const clampedO = applyEnemySpatialConstraints(o.x - nx, o.z - nz, o.radius);
+            o.x = clampedO.x;
+            o.z = clampedO.z;
+          }
         }
       }
 
@@ -872,7 +1126,14 @@ export async function createEnemyManager({
       e.x = finalClamped.x;
       e.z = finalClamped.z;
       if (e.grounded) {
-        e.y = walkableHeightAt(e.x, e.z);
+        const baseGroundY = walkableHeightAt(e.x, e.z);
+        if (e.isFlying) {
+          // Flying bats hover at 2.35m and swoop down to 1.20m during their attack window so Knight melee can cleave them!
+          const inSwoopWindow = e.aiState === 'windup' || e.attackAnimTimer > 0;
+          e.y = baseGroundY + (inSwoopWindow ? (e.swoopHeight ?? 1.2) : (e.hoverHeight ?? 2.35));
+        } else {
+          e.y = baseGroundY;
+        }
         e.group.rotation.set(0, e.yaw, 0, 'YXZ');
       } else if (e.prayerAirborneSlowMo) {
         const airTilt = clamp((e.y - walkableHeightAt(e.x, e.z)) / 1.4, 0.25, 1.0);
@@ -893,6 +1154,8 @@ export async function createEnemyManager({
 
   function setFrozenForShot(shotId = null, camera = null, customPoses = null) {
     frozenShotId = shotId;
+    enemyProjectileMesh.visible = false;
+    enemyProjectileMesh.count = 0;
     if (!shotId) {
       for (let i = 0; i < poolSlots.length; i++) {
         const s = poolSlots[i];
@@ -1061,9 +1324,13 @@ export async function createEnemyManager({
   return {
     rootGroup,
     telegraphRingMesh,
+    enemyProjectileMesh,
     poolSlots,
     get activeEnemies() {
       return activeEnemies;
+    },
+    get activeProjectiles() {
+      return activeProjectiles;
     },
     get spawnQueue() {
       return spawnQueue;
@@ -1077,11 +1344,15 @@ export async function createEnemyManager({
     get currentActId() {
       return currentActId;
     },
+    get groveTreeVanquished() {
+      return groveTreeVanquished;
+    },
     setCurrentActId(actId) {
       currentActId = actId;
     },
     spawnWave,
     spawnImmediateFromSpec,
+    spawnEnemyProjectile,
     clearAllEnemies,
     applyHitToEnemy,
     applyAreaOrLineHit,

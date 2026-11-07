@@ -11,6 +11,8 @@ export const SHORELINE_MAX_WADE_DEPTH = 0.35;
 export const FROST_LANCE_AIM_LENGTH = 14.5;
 export const CINDER_FALL_MIN_DISTANCE = 3.0;
 export const CINDER_FALL_MAX_DISTANCE = 16.0;
+export const SHATTERLANCE_MIN_DISTANCE = 0.8;
+export const SHATTERLANCE_MAX_DISTANCE = 18.0;
 
 export function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
@@ -149,8 +151,8 @@ export function projectAimRayToGround({
   pitch = 0.18,
   distance = undefined,
   fixedDistance = null,
-  minDistance = CINDER_FALL_MIN_DISTANCE,
-  maxDistance = CINDER_FALL_MAX_DISTANCE,
+  minDistance = undefined,
+  maxDistance = undefined,
   spellId = null,
   touchTarget = null,
   rayOrigin = null,
@@ -161,6 +163,20 @@ export function projectAimRayToGround({
   const ox = Number(origin?.x) || 0;
   const oz = Number(origin?.z) || 0;
   const oy = origin?.y !== undefined ? Number(origin.y) : Number(heightFn(ox, oz)) || 0;
+
+  const isShatterlance = spellId === 'shatterlance';
+  const effMinDist =
+    typeof minDistance === 'number'
+      ? minDistance
+      : isShatterlance
+        ? SHATTERLANCE_MIN_DISTANCE
+        : CINDER_FALL_MIN_DISTANCE;
+  const effMaxDist =
+    typeof maxDistance === 'number'
+      ? maxDistance
+      : isShatterlance
+        ? SHATTERLANCE_MAX_DISTANCE
+        : CINDER_FALL_MAX_DISTANCE;
 
   const isFrostLance =
     spellId === 'frost_lance' ||
@@ -256,14 +272,14 @@ export function projectAimRayToGround({
       // Flat pitch (looking out toward horizon) -> maxDistance (16.0m)
       const absPitch = Math.abs(Number(pitch) || 0);
       const steepness = clamp((absPitch - 0.04) / 0.85, 0, 1);
-      resolvedDist = lerp(maxDistance, minDistance, steepness);
+      resolvedDist = lerp(effMaxDist, effMinDist, steepness);
     }
   }
 
   const finalDistance =
     lockedLength !== null
       ? lockedLength
-      : clamp(resolvedDist, minDistance, maxDistance);
+      : clamp(resolvedDist, effMinDist, effMaxDist);
 
   const dirX = Math.sin(resolvedYaw);
   const dirZ = Math.cos(resolvedYaw);
