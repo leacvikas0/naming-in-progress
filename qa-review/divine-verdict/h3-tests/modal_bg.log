@@ -1,0 +1,10 @@
+✓ Initialized. View run at 
+https://modal.com/apps/leacvikas0/main/ap-5QYA8A01AT7kCLWXt00Zhs
+✓ Created objects.
+├── 🔨 Created mount 
+│   C:\Users\silen\projects\kilo-3d-kit\world\tools\modal_h3_v2a_runner.py
+└── 🔨 Created function run_spell_worker.
+Spawning parallel H200 workers on Modal cloud and awaiting all results...
+  Spawned shatterlance -> call_id=fc-01M6P68X0WEXDG4MRVPY1A02MC
+  Spawned cinder_fall -> call_id=fc-01M6P68X9TXXFZR622AYCTYC24
+  Spawned storm_lance -> call_id=fc-01M6P68XK4WTDW0QXH7TRDRH1K
