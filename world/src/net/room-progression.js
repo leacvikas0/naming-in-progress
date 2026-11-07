@@ -30,24 +30,24 @@ export const SACRED_INSCRIPTION_STONES = Object.freeze([
     index: 1,
     name: 'Weathered Stele of the Town Plaza',
     zone: 'plaza',
-    elementHint: 'ultimate',
+    elementHint: 'ice',
     position: { x: 0, z: -14 },
   },
   {
-    id: 'stone_pier',
-    index: 2,
-    name: 'Mist-Carved Stele of the Lakeside Pier',
-    zone: 'pier',
-    elementHint: 'ice',
-    position: { x: -42, z: 18 },
-  },
-  {
     id: 'stone_grove',
-    index: 3,
+    index: 2,
     name: 'Blossom-Wreathed Stele of the Wisteria Grove',
     zone: 'grove',
     elementHint: 'fire',
     position: { x: 44, z: 16 },
+  },
+  {
+    id: 'stone_pier',
+    index: 3,
+    name: 'Mist-Carved Stele of the Lakeside Pier',
+    zone: 'pier',
+    elementHint: 'ultimate',
+    position: { x: -42, z: 18 },
   },
 ]);
 
@@ -689,21 +689,22 @@ export function createRoomProgressionState(initial = {}) {
     if (typeof verdictObj.ultimateUnlocked === 'boolean') {
       ultimateUnlocked = verdictObj.ultimateUnlocked;
     }
-    const targetStoneOrElement =
+    const explicitElement =
       verdictObj.unlockedElement ||
       verdictObj.element ||
-      verdictObj.riddleKind ||
-      verdictObj.stoneId ||
-      verdictObj.stone;
-    if (targetStoneOrElement) {
-      solveStone(targetStoneOrElement);
+      verdictObj.riddleKind;
+    if (explicitElement) {
+      solveStone(explicitElement);
       return getState();
     }
     const awakenedStage = Number(verdictObj.awakenedStage || 0);
     if (verdictObj.verdict === 'awakening' || awakenedStage > unlockedStage) {
-      if (awakenedStage === stonesSolved + 1 || !awakenedStage) {
-        solveNextStone(stonesSolved + 1);
-      }
+      solveNextStone(stonesSolved + 1);
+      return getState();
+    }
+    if (verdictObj.stoneId || verdictObj.stone) {
+      solveNextStone(stonesSolved + 1);
+      return getState();
     }
     recomputeStageCounts();
     return getState();

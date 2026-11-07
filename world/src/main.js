@@ -1713,7 +1713,20 @@ sculptedHud = createSculptedHud({
     openAltarSteleModal();
   },
   onSwapHero: () => {
-    coopSystem.swapActiveHero();
+    const isTwoPlayerConnected = Boolean(appFlow?.getState?.()?.peerConnected);
+    if (!isTwoPlayerConnected) {
+      coopSystem.swapActiveHero();
+    }
+  },
+  onDevUnlockNextStage: (nextStage) => {
+    // DEV_SOLO_TEST_REMOVE_FOR_PROD: Sync room progression state with Dev Stage button
+    const updated = coopSystem.coopClient.progression.setUnlocks({
+      communeDiscovered: nextStage >= 1,
+      iceUnlocked: nextStage >= 1,
+      fireUnlocked: nextStage >= 2,
+      ultimateUnlocked: nextStage >= 3,
+    });
+    sculptedHud?.setProgressionState(updated);
   },
   onSelectTimeOfDay: (todChoice) => {
     if (todChoice === 'auto') {
@@ -2885,11 +2898,56 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
+  if (e.key === 'F4') {
+    // DEV_SOLO_TEST_REMOVE_FOR_PROD: Cycle unlocked stage 0 -> 1 -> 2 -> 3 -> 0
+    e.preventDefault();
+    const curProg = coopSystem.coopClient.getProgressionState();
+    const nextStage = ((curProg?.unlockedStage || 0) + 1) % 4;
+    const updated = coopSystem.coopClient.progression.setUnlocks({
+      communeDiscovered: nextStage >= 1,
+      iceUnlocked: nextStage >= 1,
+      fireUnlocked: nextStage >= 2,
+      ultimateUnlocked: nextStage >= 3,
+    });
+    sculptedHud?.setProgressionState(updated);
+    return;
+  }
+
   const k = e.key.toLowerCase();
   const wasPressed = keys.has(k);
   keys.add(k);
 
+  const prog = coopSystem.coopClient.getProgressionState() || {};
+  const hudState = sculptedHud?.getState?.() || {};
+  const communeReady = Boolean(
+    prog.communeDiscovered ||
+      prog.unlockedStage >= 1 ||
+      hudState.communeDiscovered ||
+      hudState.unlockedStage >= 1
+  );
+  const eSkillReady = Boolean(
+    prog.unlockedStage >= 1 ||
+      prog.iceUnlocked ||
+      prog.fireUnlocked ||
+      hudState.unlockedStage >= 1 ||
+      hudState.iceUnlocked ||
+      hudState.fireUnlocked
+  );
+  const tabToggleReady = Boolean(
+    prog.unlockedStage >= 2 ||
+      (prog.iceUnlocked && prog.fireUnlocked) ||
+      hudState.unlockedStage >= 2 ||
+      (hudState.iceUnlocked && hudState.fireUnlocked)
+  );
+  const qUltReady = Boolean(
+    prog.unlockedStage >= 3 ||
+      prog.ultimateUnlocked ||
+      hudState.unlockedStage >= 3 ||
+      hudState.ultimateUnlocked
+  );
+
   if (!wasPressed && k === 'r') {
+    if (!communeReady) return;
     activeGameplayShotSpec = null;
     startCommuneHold();
     return;
@@ -2902,8 +2960,11 @@ window.addEventListener('keydown', (e) => {
   if (k === 'tab') {
     e.preventDefault();
     if (e.altKey) {
-      coopSystem.swapActiveHero();
-    } else {
+      const isTwoPlayerConnected = Boolean(appFlow?.getState?.()?.peerConnected);
+      if (!isTwoPlayerConnected) {
+        coopSystem.swapActiveHero();
+      }
+    } else if (tabToggleReady) {
       const res = coopSystem.toggleElement(coopSystem.player.activeHeroId);
       if (res?.element) {
         sculptedHud?.setElement(res.element);
@@ -2924,7 +2985,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Alt + 1..8 switches camera presets; bare 1..4 casts Spells 1..4!
+  // Alt + 1..8 switches camera presets
   if (e.altKey) {
     if (k === '1') setView('entry');
     else if (k === '2') setView('plaza');
@@ -2937,21 +2998,8 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  if (!wasPressed && (k === '1' || k === '2' || k === '3' || k === '4')) {
-    activeGameplayShotSpec = null;
-    if (camState.mode === 'vista') {
-      camState.mode = 'player';
-      updateViewButtons();
-    }
-    coopSystem.triggerSpell(Number(k));
-    return;
-  }
-
-  if (k === '5') setView('shrine');
-  else if (k === '6') setView('shrineLookback');
-  else if (k === '7') setView('aerial');
-  else if (k === '8') setView('topdown');
-  else if (!wasPressed && k === 'e') {
+  if (!wasPressed && k === 'e') {
+    if (!eSkillReady) return;
     activeGameplayShotSpec = null;
     if (camState.mode === 'vista') camState.mode = 'player';
     if (coopSystem.player.activeHeroId === 'Mage') {
@@ -2960,6 +3008,7 @@ window.addEventListener('keydown', (e) => {
       coopSystem.triggerAction('skill');
     }
   } else if (!wasPressed && k === 'q') {
+    if (!qUltReady) return;
     activeGameplayShotSpec = null;
     if (camState.mode === 'vista') camState.mode = 'player';
     coopSystem.triggerAction('ultimate');
@@ -2967,10 +3016,6 @@ window.addEventListener('keydown', (e) => {
     activeGameplayShotSpec = null;
     if (camState.mode === 'vista') camState.mode = 'player';
     coopSystem.triggerAction('heavy');
-  } else if (!wasPressed && k === 'k') {
-    activeGameplayShotSpec = null;
-    if (camState.mode === 'vista') camState.mode = 'player';
-    coopSystem.triggerSpell(1);
   } else if (!wasPressed && k === 'shift') {
     activeGameplayShotSpec = null;
     if (camState.mode === 'vista') camState.mode = 'player';

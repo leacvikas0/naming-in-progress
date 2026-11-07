@@ -289,51 +289,25 @@ const SVG_CHECK_ICON = `
 
 const APP_FLOW_CSS = `
   :root,
-  [data-env-polarity="day"] {
-    --hud-ink: #fffdf9;
-    --hud-ink-muted: #f7f1e8;
-    --hud-ring-border: #f7efe2;
-    --hud-ring-inner: rgba(251, 211, 107, 0.55);
-    --hud-ring-fill: #1b1822;
-    --hud-shadow: rgba(18, 12, 20, 0.85);
-    --hud-accent: #fbd36b;
-    --ui-ink: var(--hud-ink);
-    --ui-ink-muted: var(--hud-ink-muted);
-    --ui-hairline: var(--hud-ring-border);
-    --ui-hairline-inner: var(--hud-ring-inner);
-    --ui-wash: var(--hud-ring-fill);
-    --ui-contour: 0 2px 6px var(--hud-shadow);
-    --ui-accent: var(--hud-accent);
-  }
-
-  [data-env-polarity="golden"] {
-    --hud-ink: #ffeed6;
-    --hud-ink-muted: #f7d6b5;
-    --hud-ring-border: #ffeed6;
-    --hud-ring-inner: rgba(251, 146, 60, 0.62);
-    --hud-ring-fill: #211624;
-    --hud-shadow: rgba(28, 14, 24, 0.88);
-    --hud-accent: #fb923c;
-  }
-
-  [data-env-polarity="night"] {
-    --hud-ink: #eef4ff;
-    --hud-ink-muted: #cbd8f6;
-    --hud-ring-border: #eef4ff;
-    --hud-ring-inner: rgba(125, 211, 252, 0.55);
-    --hud-ring-fill: #131828;
-    --hud-shadow: rgba(10, 14, 28, 0.90);
-    --hud-accent: #7dd3fc;
-  }
-
+  [data-env-polarity="day"],
+  [data-env-polarity="golden"],
+  [data-env-polarity="night"],
   [data-env-polarity="eclipse"] {
-    --hud-ink: #ffe8ee;
-    --hud-ink-muted: #f9becf;
-    --hud-ring-border: #ffe8ee;
-    --hud-ring-inner: rgba(225, 29, 72, 0.72);
-    --hud-ring-fill: #1e0d16;
-    --hud-shadow: rgba(24, 6, 14, 0.92);
-    --hud-accent: #e11d48;
+    --af-font-sans: "Plus Jakarta Sans", "Outfit", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --af-surface: rgba(252, 249, 242, 0.94);
+    --af-surface-elevated: #ffffff;
+    --af-surface-muted: #f3ede0;
+    --af-border: #dcd0bc;
+    --af-border-strong: #c8b79a;
+    --af-ink: #1f1c18;
+    --af-ink-muted: #5c5346;
+    --af-sky-ink: #ffffff;
+    --af-sky-shadow: 0 2px 12px rgba(15, 23, 42, 0.34), 0 1px 3px rgba(15, 23, 42, 0.28);
+    --af-accent: #b45309;
+    --af-accent-fill: #f59e0b;
+    --af-cta-bg: #f6d076;
+    --af-cta-border: #c9962c;
+    --af-cta-ink: #1f1c18;
   }
 
   html, body {
@@ -349,8 +323,8 @@ const APP_FLOW_CSS = `
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    font-family: "Cormorant Garamond", "Playfair Display", Georgia, "Palatino Linotype", serif;
-    color: var(--hud-ink);
+    font-family: var(--af-font-sans);
+    color: var(--af-ink);
     padding:
       max(18px, env(safe-area-inset-top, 0px))
       max(22px, env(safe-area-inset-right, 0px))
@@ -409,19 +383,19 @@ const APP_FLOW_CSS = `
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Solid Matte Cel-Shaded Sanctuary Tablets & Pill Buttons (ZERO Glass)    */
+  /* Light Warm-Stone Surfaces & High-Contrast Readable Buttons              */
   /* ----------------------------------------------------------------------- */
   .af-hairline-frame {
     position: relative;
     pointer-events: auto;
-    background: #1b1822;
-    border: 2px solid #f7efe2;
-    border-radius: 22px;
+    background: var(--af-surface);
+    border: 1.5px solid var(--af-border);
+    border-radius: 20px;
     box-shadow:
-      inset 0 0 0 4px #1b1822,
-      inset 0 0 0 5.2px rgba(251, 211, 107, 0.52),
-      0 12px 28px rgba(14, 10, 18, 0.72);
-    color: #fffdf9;
+      inset 0 1px 0 #ffffff,
+      0 14px 34px rgba(24, 20, 14, 0.16),
+      0 2px 8px rgba(24, 20, 14, 0.08);
+    color: var(--af-ink);
   }
 
   .af-hairline-pill-btn {
@@ -430,20 +404,17 @@ const APP_FLOW_CSS = `
     pointer-events: auto;
     cursor: pointer;
     border-radius: 999px;
-    border: 2px solid #f7efe2;
-    background: #1b1822;
+    border: 1.5px solid var(--af-border-strong);
+    background: var(--af-surface);
     box-shadow:
-      inset 0 0 0 3px #1b1822,
-      inset 0 0 0 4.2px rgba(251, 211, 107, 0.65),
-      0 6px 18px rgba(18, 12, 20, 0.65);
-    color: #fffdf9;
-    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+      inset 0 1px 0 #ffffff,
+      0 8px 22px rgba(24, 20, 14, 0.16);
+    color: var(--af-ink);
+    font-family: var(--af-font-sans);
+    font-weight: 700;
+    letter-spacing: -0.01em;
     -webkit-tap-highlight-color: transparent;
-    transition-property: transform, border-color, background-color, opacity;
-    transition-duration: 150ms;
-    transition-timing-function: ease-out;
+    transition: transform 150ms ease-out, border-color 150ms ease-out, background-color 150ms ease-out;
   }
 
   .af-hairline-pill-btn:focus-visible,
@@ -452,8 +423,9 @@ const APP_FLOW_CSS = `
   .af-name-input:focus-visible,
   .af-phrase-chip:focus-visible,
   .af-hero-hit-target:focus-visible,
-  .af-name-submit-btn:focus-visible {
-    outline: 2px solid var(--hud-accent);
+  .af-name-submit-btn:focus-visible,
+  .af-solo-dev-btn:focus-visible {
+    outline: 2px solid var(--af-accent);
     outline-offset: 3px;
   }
 
@@ -464,32 +436,33 @@ const APP_FLOW_CSS = `
 
   @media (hover: hover) {
     .af-hairline-pill-btn:not(:disabled):hover {
-      border-color: #fbd36b;
-      background-color: #282332;
+      border-color: var(--af-accent);
+      background-color: #ffffff;
     }
     .af-copy-btn:hover,
     .af-name-submit-btn:hover {
-      border-color: #fbd36b;
-      background-color: #fffdf9;
+      border-color: var(--af-accent);
+      background-color: #322c24;
     }
   }
 
   @media (prefers-reduced-motion: no-preference) {
     .af-hairline-pill-btn:not(:disabled):active,
     .af-hero-hit-target:active,
-    .af-name-submit-btn:active {
-      transform: scale(0.96);
+    .af-name-submit-btn:active,
+    .af-solo-dev-btn:active {
+      transform: scale(0.97);
     }
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Screen 1: Title Screen (FLOW_STEPS.TITLE) — Match Target 01 Panel 1     */
+  /* Screen 1: Title Screen (FLOW_STEPS.TITLE)                               */
   /* ----------------------------------------------------------------------- */
   .af-scene-title {
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    padding-top: min(8.5vh, 72px);
+    padding-top: min(9vh, 76px);
   }
 
   .af-title-stack {
@@ -497,61 +470,47 @@ const APP_FLOW_CSS = `
     flex-direction: column;
     align-items: center;
     text-align: center;
-    max-width: 780px;
+    max-width: 760px;
   }
 
   .af-sakura-divider-svg {
-    width: 248px;
-    height: 30px;
-    color: var(--hud-ink);
-    filter:
-      drop-shadow(0 2px 0 #1b1822)
-      drop-shadow(0 -1px 0 #1b1822)
-      drop-shadow(1px 0 0 #1b1822)
-      drop-shadow(-1px 0 0 #1b1822);
-    margin-bottom: 2px;
+    width: 220px;
+    height: 26px;
+    color: var(--af-sky-ink);
+    filter: drop-shadow(0 2px 6px rgba(15, 23, 42, 0.28));
+    margin-bottom: 6px;
   }
 
   .af-main-title {
-    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
-    font-style: italic;
-    font-size: clamp(5.1rem, 8.8vw, 7.1rem);
-    font-weight: 600;
-    line-height: 0.94;
-    letter-spacing: 0.01em;
-    color: #fffdf9;
-    paint-order: stroke fill;
-    -webkit-text-stroke: 4px #1b1822;
-    text-shadow: 0 3px 0 #1b1822, 0 6px 14px rgba(18, 12, 20, 0.72);
+    font-family: var(--af-font-sans);
+    font-size: clamp(3.8rem, 7.2vw, 5.6rem);
+    font-weight: 800;
+    line-height: 0.98;
+    letter-spacing: -0.03em;
+    color: var(--af-sky-ink);
+    text-shadow: var(--af-sky-shadow);
     margin: 0;
     padding: 0 12px;
   }
 
   .af-title-swash-svg {
-    width: clamp(290px, 34vw, 396px);
-    height: 46px;
-    color: var(--hud-ink);
-    filter:
-      drop-shadow(0 2px 0 #1b1822)
-      drop-shadow(0 -1px 0 #1b1822)
-      drop-shadow(1px 0 0 #1b1822)
-      drop-shadow(-1px 0 0 #1b1822);
-    margin-top: -8px;
+    width: clamp(240px, 28vw, 320px);
+    height: 36px;
+    color: var(--af-sky-ink);
+    filter: drop-shadow(0 2px 6px rgba(15, 23, 42, 0.25));
+    margin-top: -2px;
     margin-bottom: 4px;
   }
 
   .af-subtitle {
-    font-family: "Cormorant Garamond", Georgia, serif;
-    font-size: clamp(1.22rem, 1.9vw, 1.52rem);
-    font-style: italic;
+    font-family: var(--af-font-sans);
+    font-size: clamp(1.05rem, 1.5vw, 1.25rem);
     font-weight: 600;
-    line-height: 1.2;
-    letter-spacing: 0.05em;
-    color: #fffdf9;
-    paint-order: stroke fill;
-    -webkit-text-stroke: 2.5px #1b1822;
-    text-shadow: 0 2px 0 #1b1822, 0 4px 10px rgba(18, 12, 20, 0.72);
-    margin: 0 0 6px 0;
+    line-height: 1.3;
+    letter-spacing: 0.02em;
+    color: var(--af-sky-ink);
+    text-shadow: var(--af-sky-shadow);
+    margin: 0 0 12px 0;
   }
 
   .af-credits-block {
@@ -560,52 +519,44 @@ const APP_FLOW_CSS = `
     align-items: center;
     justify-content: center;
     gap: 8px;
-    color: #fffdf9;
-    font-family: "Cormorant Garamond", Georgia, serif;
-    font-size: clamp(1.02rem, 1.35vw, 1.16rem);
+    color: var(--af-ink);
+    font-family: var(--af-font-sans);
+    font-size: 0.88rem;
     font-weight: 600;
     line-height: 1.35;
-    padding: 4px 16px;
-    background: #1b1822;
-    border: 1.5px solid #f7efe2;
+    padding: 6px 16px;
+    background: rgba(252, 249, 242, 0.88);
+    border: 1px solid var(--af-border);
     border-radius: 999px;
-    box-shadow: 0 4px 12px rgba(18, 12, 20, 0.68);
-    paint-order: stroke fill;
-    -webkit-text-stroke: 2.5px #1b1822;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
     margin-bottom: 22px;
   }
 
   .af-credit-dot {
-    opacity: 0.92;
-    color: var(--hud-accent);
+    opacity: 0.65;
+    color: var(--af-accent);
   }
 
   .af-enter-btn {
-    min-width: 326px;
-    min-height: 60px;
-    padding: 12px 28px;
-    background: #1b1822;
-    border: 2px solid #f7efe2;
-    color: #fffdf9;
-    box-shadow:
-      inset 0 0 0 3px #1b1822,
-      inset 0 0 0 4.2px rgba(251, 211, 107, 0.65),
-      0 6px 18px rgba(18, 12, 20, 0.65);
+    min-width: 240px;
+    min-height: 54px;
+    padding: 12px 32px;
+    background: var(--af-surface);
+    border: 1.5px solid var(--af-border-strong);
+    color: var(--af-ink);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 14px;
-    font-size: 1.48rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    gap: 12px;
+    font-size: 1.12rem;
+    font-weight: 700;
   }
 
   .af-btn-sprig-svg {
-    width: 26px;
-    height: 22px;
+    width: 22px;
+    height: 18px;
     flex-shrink: 0;
-    opacity: 0.96;
-    color: #fbd36b;
+    color: var(--af-accent);
   }
 
   /* ----------------------------------------------------------------------- */
@@ -623,24 +574,23 @@ const APP_FLOW_CSS = `
     flex-direction: column;
     align-items: center;
     gap: 10px;
-    width: min(420px, 86vw);
+    width: min(400px, 86vw);
   }
 
   .af-loading-title {
-    font-size: 1.35rem;
-    font-style: italic;
+    font-size: 0.95rem;
     font-weight: 600;
-    color: #fffdf9;
-    background: #1b1822;
-    border: 1.5px solid #f7efe2;
+    color: var(--af-ink);
+    background: var(--af-surface);
+    border: 1px solid var(--af-border);
     border-radius: 999px;
-    padding: 3px 14px;
+    padding: 4px 14px;
     line-height: 1.2;
   }
 
   .af-loading-stone-bar {
     width: 100%;
-    height: 12px;
+    height: 10px;
     padding: 2px;
     border-radius: 999px;
     display: flex;
@@ -658,19 +608,19 @@ const APP_FLOW_CSS = `
     height: 100%;
     width: 62%;
     border-radius: 999px;
-    background: #fbd36b;
+    background: var(--af-accent-fill);
     transition: width 180ms ease-out;
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Screen 2: Open or Join Domain (FLOW_STEPS.CREATE_JOIN) — Target 01 P2   */
+  /* Screen 2: Meet in the Valley (FLOW_STEPS.CREATE_JOIN)                   */
   /* ----------------------------------------------------------------------- */
   .af-scene-create-join {
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    padding-top: min(8.5vh, 72px);
-    gap: 24px;
+    padding-top: min(8vh, 64px);
+    gap: 20px;
   }
 
   .af-create-join-header-stack {
@@ -682,84 +632,66 @@ const APP_FLOW_CSS = `
   }
 
   .af-create-join-header {
-    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
-    font-size: clamp(2.45rem, 4.2vw, 3.25rem);
-    font-weight: 600;
+    font-family: var(--af-font-sans);
+    font-size: clamp(2.1rem, 3.6vw, 2.8rem);
+    font-weight: 800;
     line-height: 1.1;
-    letter-spacing: 0.015em;
-    color: #fffdf9;
-    paint-order: stroke fill;
-    -webkit-text-stroke: 3.5px #1b1822;
-    text-shadow: 0 3px 0 #1b1822, 0 5px 14px rgba(18, 12, 20, 0.72);
+    letter-spacing: -0.025em;
+    color: var(--af-sky-ink);
+    text-shadow: var(--af-sky-shadow);
     margin: 0;
   }
 
   .af-tablets-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(280px, 344px));
-    gap: 32px;
+    grid-template-columns: repeat(2, minmax(270px, 336px));
+    gap: 24px;
     align-items: stretch;
     max-width: 94vw;
-    margin-top: 8px;
+    margin-top: 4px;
   }
 
   @media (max-width: 640px) {
     .af-tablets-grid {
       grid-template-columns: minmax(260px, 340px);
-      gap: 22px;
+      gap: 18px;
     }
   }
 
   .af-world-tablet {
     position: relative;
-    padding: 32px 28px 26px 28px;
+    padding: 28px 24px 22px 24px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: space-between;
     text-align: center;
-    min-height: 256px;
-    gap: 14px;
+    min-height: 236px;
+    gap: 12px;
   }
 
-  /* Top-border ornament emblem on each domain frame */
   .af-tablet-top-emblem {
     position: absolute;
-    top: -18px;
+    top: -15px;
     left: 50%;
     transform: translateX(-50%);
     padding: 2px 12px;
-    background: #1b1822;
-    border: 1.5px solid #f7efe2;
+    background: var(--af-surface-elevated);
+    border: 1.5px solid var(--af-border);
     border-radius: 999px;
-    color: #fbd36b;
+    color: var(--af-accent);
     pointer-events: none;
+    box-shadow: 0 2px 6px rgba(24, 20, 14, 0.08);
   }
 
   .af-top-emblem-svg {
-    width: 48px;
-    height: 28px;
+    width: 40px;
+    height: 22px;
     display: block;
   }
 
-  /* Left/Right vertical border diamond ornaments */
   .af-side-diamond {
-    position: absolute;
-    top: 50%;
-    width: 9px;
-    height: 9px;
-    background: #fbd36b;
-    border: 1.2px solid #1b1822;
-    transform: translate(-50%, -50%) rotate(45deg);
-    pointer-events: none;
-  }
-
-  .af-side-diamond.is-left {
-    left: 0;
-  }
-
-  .af-side-diamond.is-right {
-    left: 100%;
+    display: none;
   }
 
   .af-tablet-top-block {
@@ -771,37 +703,42 @@ const APP_FLOW_CSS = `
   }
 
   .af-tablet-heading {
-    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
-    font-size: 1.88rem;
-    font-weight: 600;
-    line-height: 1.15;
-    color: #fffdf9;
+    font-family: var(--af-font-sans);
+    font-size: 1.38rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.2;
+    color: var(--af-ink);
     margin: 0;
   }
 
   .af-card-thin-divider-svg {
-    width: 196px;
-    height: 12px;
-    color: #fbd36b;
-    opacity: 0.92;
+    width: 160px;
+    height: 10px;
+    color: var(--af-border-strong);
+    opacity: 0.85;
   }
 
   .af-active-phrase-display {
-    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
-    font-size: 1.56rem;
-    font-style: italic;
+    font-family: var(--af-font-sans);
+    font-size: 1.06rem;
     font-weight: 600;
-    line-height: 1.28;
-    color: #fffdf9;
-    margin: 14px 0 10px 0;
+    line-height: 1.35;
+    color: var(--af-ink);
+    background: var(--af-surface-muted);
+    border: 1px solid var(--af-border);
+    border-radius: 10px;
+    padding: 8px 14px;
+    margin: 10px 0 6px 0;
     cursor: pointer;
     user-select: none;
-    max-width: 240px;
-    transition: transform 140ms ease-out;
+    width: 88%;
+    transition: border-color 140ms ease-out, background-color 140ms ease-out;
   }
 
   .af-active-phrase-display:hover {
-    transform: scale(1.02);
+    border-color: var(--af-accent);
+    background: #ffffff;
   }
 
   /* Keep [data-phrase-chip] in DOM for programmatic tests while hiding stacked boxes */
@@ -826,7 +763,7 @@ const APP_FLOW_CSS = `
     align-items: center;
     gap: 6px;
     text-align: center;
-    margin: 14px 0 8px 0;
+    margin: 10px 0 6px 0;
   }
 
   .af-field-label.sr-only {
@@ -843,49 +780,47 @@ const APP_FLOW_CSS = `
 
   .af-phrase-input {
     width: 88%;
-    height: 42px;
-    padding: 6px 10px;
-    border: 1.5px solid rgba(247, 239, 226, 0.45);
-    border-bottom: 2px solid #f7efe2;
+    height: 40px;
+    padding: 6px 12px;
+    border: 1.5px solid var(--af-border-strong);
     border-radius: 10px;
-    background: #120f18;
-    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
-    font-size: 1.42rem;
-    font-style: italic;
+    background: #ffffff;
+    font-family: var(--af-font-sans);
+    font-size: 1.02rem;
     font-weight: 600;
     text-align: center;
-    color: #fffdf9;
+    color: var(--af-ink);
     transition: border-color 150ms ease-out;
   }
 
   .af-phrase-input:focus {
-    border-color: var(--hud-accent);
+    border-color: var(--af-accent);
     outline: none;
   }
 
   .af-phrase-input::placeholder {
-    color: var(--hud-ink-muted);
-    opacity: 0.72;
+    color: var(--af-ink-muted);
+    opacity: 0.75;
   }
 
   .af-domain-action-btn {
-    width: 82%;
-    min-height: 48px;
-    padding: 8px 24px;
-    background: #f7efe2;
-    color: #1b1822;
-    border: 2px solid #fbd36b;
-    box-shadow: 0 4px 12px rgba(14, 10, 18, 0.55);
-    font-size: 1.35rem;
+    width: 88%;
+    min-height: 44px;
+    padding: 8px 20px;
+    background: var(--af-cta-bg);
+    color: var(--af-cta-ink);
+    border: 1.5px solid var(--af-cta-border);
+    box-shadow: 0 4px 12px rgba(24, 20, 14, 0.12);
+    font-size: 1.02rem;
     font-weight: 700;
     margin: 0 auto;
   }
 
   @media (hover: hover) {
     .af-domain-action-btn:not(:disabled):hover {
-      background-color: #fbd36b;
-      border-color: #fffdf9;
-      color: #1b1822;
+      background-color: #f9dc8f;
+      border-color: #b47d1c;
+      color: #1f1c18;
     }
   }
 
@@ -896,10 +831,10 @@ const APP_FLOW_CSS = `
     gap: 8px;
     padding: 8px 18px;
     border-radius: 999px;
-    background: #1e0d16;
-    border: 1.8px solid #f43f5e;
-    color: #fffdf9;
-    font-size: 1.05rem;
+    background: #fff1f2;
+    border: 1.5px solid #f43f5e;
+    color: #9f1239;
+    font-size: 0.95rem;
     font-weight: 600;
   }
 
@@ -908,7 +843,7 @@ const APP_FLOW_CSS = `
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Screen 3: Flower Field 3D Hero Claim (FLOW_STEPS.FLOWER_LOBBY) — P3     */
+  /* Screen 3: Flower Field 3D Hero Claim (FLOW_STEPS.FLOWER_LOBBY)          */
   /* ----------------------------------------------------------------------- */
   .af-scene-flower-lobby {
     flex-direction: column;
@@ -935,7 +870,7 @@ const APP_FLOW_CSS = `
     border-radius: 24px;
     background: transparent;
     border: 1.5px solid transparent;
-    color: var(--hud-ink);
+    color: var(--af-ink);
     font-family: inherit;
     display: flex;
     flex-direction: column;
@@ -948,11 +883,9 @@ const APP_FLOW_CSS = `
   }
 
   .af-hero-hit-target:hover {
-    border-color: #fbd36b;
+    border-color: rgba(255, 255, 255, 0.65);
   }
 
-  /* Hide redundant overhead role badge when claimed or partner-claimed so only the
-     solid cel-ink pointer callout ("Your name: Vikas") and partner tag ("Ishika") show! */
   .af-hero-hit-target.is-claimed .af-hero-ring-badge,
   .af-hero-hit-target.is-partner-claimed .af-hero-ring-badge {
     opacity: 0;
@@ -979,18 +912,18 @@ const APP_FLOW_CSS = `
     gap: 7px;
     padding: 6px 14px;
     border-radius: 999px;
-    background: #1b1822;
-    border: 1.8px solid #f7efe2;
-    box-shadow: 0 4px 12px rgba(14, 10, 18, 0.72);
+    background: var(--af-surface);
+    border: 1.5px solid var(--af-border);
+    box-shadow: 0 6px 18px rgba(24, 20, 14, 0.16);
     white-space: nowrap;
     transition: opacity 150ms ease-out;
   }
 
   .af-role-mini-svg {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     flex-shrink: 0;
-    color: #fbd36b;
+    color: var(--af-accent);
   }
 
   .af-crest-meta {
@@ -1002,19 +935,18 @@ const APP_FLOW_CSS = `
   }
 
   .af-crest-role {
-    font-size: 1.15rem;
-    font-weight: 600;
-    color: #fffdf9;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--af-ink);
   }
 
   .af-crest-hint {
-    font-size: 0.85rem;
-    font-style: italic;
+    font-size: 0.78rem;
     font-weight: 500;
-    color: var(--hud-ink-muted);
+    color: var(--af-ink-muted);
   }
 
-  /* Solid Matte Cel-Ink Partner Name Pill + Blossom Divider above the other hero */
+  /* Partner Name Pill above the other hero */
   #app-flow-partner-tag {
     position: absolute;
     left: 64%;
@@ -1025,19 +957,16 @@ const APP_FLOW_CSS = `
     flex-direction: column;
     align-items: center;
     gap: 2px;
-    background: #1b1822;
-    border: 1.8px solid #f7efe2;
+    background: var(--af-surface);
+    border: 1.5px solid var(--af-border);
     border-radius: 12px;
-    padding: 8px 16px;
-    box-shadow:
-      inset 0 0 0 2px #1b1822,
-      inset 0 0 0 3.2px rgba(251, 211, 107, 0.52),
-      0 8px 20px rgba(14, 10, 18, 0.75);
-    color: #fffdf9;
-    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
-    font-size: 1.72rem;
-    font-weight: 600;
-    line-height: 1.05;
+    padding: 6px 14px;
+    box-shadow: 0 8px 20px rgba(24, 20, 14, 0.16);
+    color: var(--af-ink);
+    font-family: var(--af-font-sans);
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1.15;
     white-space: nowrap;
     opacity: 0;
     transition: opacity 150ms ease-out;
@@ -1048,26 +977,25 @@ const APP_FLOW_CSS = `
   }
 
   .af-partner-blossom-svg {
-    width: 142px;
-    height: 20px;
-    color: #f7efe2;
+    width: 110px;
+    height: 16px;
+    color: var(--af-border-strong);
   }
 
-  /* Solid Matte Cel-Ink Shoulder Callout Pill ("Your name: Vikas") */
+  /* Light Warm-Stone Shoulder Callout Pill ("Your name: Vikas") */
   #app-flow-name-bubble {
     position: absolute;
     left: 26%;
     top: 31%;
     transform: translate(-50%, -50%);
     width: min(286px, 86vw);
-    background: #1b1822;
-    border: 1.8px solid #f7efe2;
-    border-radius: 12px;
-    padding: 8px 16px;
+    background: var(--af-surface);
+    border: 1.5px solid var(--af-border);
+    border-radius: 14px;
+    padding: 8px 14px;
     box-shadow:
-      inset 0 0 0 2px #1b1822,
-      inset 0 0 0 3.2px rgba(251, 211, 107, 0.52),
-      0 8px 20px rgba(14, 10, 18, 0.75);
+      inset 0 1px 0 #ffffff,
+      0 10px 24px rgba(24, 20, 14, 0.18);
     pointer-events: auto;
     z-index: 4;
     transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 150ms ease-out;
@@ -1100,11 +1028,10 @@ const APP_FLOW_CSS = `
   }
 
   .af-inline-name-prompt {
-    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
-    font-size: 1.44rem;
-    font-style: italic;
+    font-family: var(--af-font-sans);
+    font-size: 0.92rem;
     font-weight: 600;
-    color: #f7efe2;
+    color: var(--af-ink-muted);
     white-space: nowrap;
     flex-shrink: 0;
   }
@@ -1112,27 +1039,26 @@ const APP_FLOW_CSS = `
   .af-name-input {
     flex: 1;
     min-width: 84px;
-    height: 34px;
-    padding: 0 4px;
+    height: 32px;
+    padding: 0 6px;
     border: none;
-    border-bottom: 1.5px solid rgba(251, 211, 107, 0.65);
+    border-bottom: 1.5px solid var(--af-border-strong);
     background: transparent;
-    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
-    font-size: 1.58rem;
-    font-style: italic;
+    font-family: var(--af-font-sans);
+    font-size: 1.05rem;
     font-weight: 700;
-    color: #fffdf9;
+    color: var(--af-ink);
   }
 
   .af-name-input:focus {
     outline: none;
-    border-bottom-color: #fbd36b;
+    border-bottom-color: var(--af-accent);
   }
 
   .af-name-input::placeholder {
-    color: var(--hud-ink-muted);
+    color: var(--af-ink-muted);
     font-weight: 500;
-    opacity: 0.72;
+    opacity: 0.65;
   }
 
   .af-name-submit-btn {
@@ -1141,16 +1067,16 @@ const APP_FLOW_CSS = `
     width: 30px;
     height: 30px;
     border-radius: 50%;
-    border: 1.5px solid #fbd36b;
-    background: #f7efe2;
-    color: #1b1822;
+    border: 1.5px solid var(--af-cta-bg);
+    background: var(--af-cta-bg);
+    color: var(--af-cta-ink);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
     align-self: center;
     -webkit-tap-highlight-color: transparent;
-    transition: transform 150ms ease-out, border-color 150ms ease-out, background-color 150ms ease-out;
+    transition: transform 150ms ease-out, background-color 150ms ease-out;
   }
 
   .af-submit-arrow-svg {
@@ -1160,13 +1086,13 @@ const APP_FLOW_CSS = `
 
   .af-callout-pointer-svg {
     position: absolute;
-    top: calc(100% + 6px);
+    top: calc(100% + 4px);
     left: 50%;
     transform: translateX(-50%);
-    width: 220px;
-    height: 44px;
-    color: #f7efe2;
-    filter: drop-shadow(0 2px 0 #1b1822);
+    width: 200px;
+    height: 40px;
+    color: var(--af-surface);
+    filter: drop-shadow(0 2px 4px rgba(24, 20, 14, 0.2));
     pointer-events: none;
     display: none;
   }
@@ -1179,13 +1105,15 @@ const APP_FLOW_CSS = `
     display: block;
   }
 
-  /* Bottom Solid Matte Cel-Ink Room-Phrase Pill */
+  /* Bottom Light Warm-Stone Room-Phrase Bar + DEV Solo Escape Hatch */
   .af-lobby-bottom-row {
     position: relative;
     z-index: 3;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: center;
+    gap: 12px;
     width: 100%;
     padding-bottom: 6px;
   }
@@ -1195,35 +1123,31 @@ const APP_FLOW_CSS = `
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    background: #1b1822;
-    border: 1.8px solid #f7efe2;
-    border-radius: 12px;
-    padding: 8px 16px;
-    box-shadow:
-      inset 0 0 0 2px #1b1822,
-      inset 0 0 0 3.2px rgba(251, 211, 107, 0.52),
-      0 6px 18px rgba(14, 10, 18, 0.72);
-    color: #fffdf9;
+    background: var(--af-surface);
+    border: 1.5px solid var(--af-border);
+    border-radius: 999px;
+    padding: 6px 8px 6px 16px;
+    box-shadow: 0 6px 18px rgba(24, 20, 14, 0.15);
+    color: var(--af-ink);
   }
 
   .af-room-phrase-lbl {
-    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
-    font-size: 1.42rem;
-    font-style: italic;
+    font-family: var(--af-font-sans);
+    font-size: 0.95rem;
     font-weight: 600;
-    color: #fffdf9;
+    color: var(--af-ink);
     white-space: nowrap;
   }
 
   .af-copy-btn {
     position: relative;
     appearance: none;
-    border: 1.5px solid #fbd36b;
-    background: #282332;
-    color: #fffdf9;
+    border: 1px solid var(--af-border-strong);
+    background: var(--af-surface-muted);
+    color: var(--af-ink);
     width: 30px;
     height: 30px;
-    border-radius: 8px;
+    border-radius: 50%;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1233,17 +1157,15 @@ const APP_FLOW_CSS = `
 
   .af-copy-btn .af-icon-svg {
     position: absolute;
-    width: 20px;
-    height: 20px;
-    transition-property: transform, opacity;
-    transition-duration: 240ms;
-    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+    width: 16px;
+    height: 16px;
+    transition: transform 240ms cubic-bezier(0.2, 0, 0, 1), opacity 240ms cubic-bezier(0.2, 0, 0, 1);
   }
 
   .af-copy-btn .af-check-svg {
     opacity: 0;
     transform: scale(0.4);
-    color: var(--hud-accent);
+    color: #16a34a;
   }
 
   .af-copy-btn.is-copied .af-copy-svg {
@@ -1254,6 +1176,27 @@ const APP_FLOW_CSS = `
   .af-copy-btn.is-copied .af-check-svg {
     opacity: 1;
     transform: scale(1);
+  }
+
+  /* DEV_SOLO_TEST_REMOVE_FOR_PROD: Simple one-click Solo Test escape hatch */
+  .af-solo-dev-btn {
+    pointer-events: auto;
+    appearance: none;
+    cursor: pointer;
+    border-radius: 999px;
+    border: 1.5px solid var(--af-cta-bg);
+    background: var(--af-cta-bg);
+    color: var(--af-cta-ink);
+    padding: 8px 18px;
+    font-family: var(--af-font-sans);
+    font-size: 0.92rem;
+    font-weight: 700;
+    box-shadow: 0 6px 18px rgba(24, 20, 14, 0.18);
+    transition: transform 140ms ease-out, background-color 140ms ease-out;
+  }
+
+  .af-solo-dev-btn:hover {
+    background: #35302a;
   }
 
   @media (max-width: 780px) {
@@ -1357,7 +1300,7 @@ export function createAppFlow({
         </div>
         <button type="button" class="af-hairline-pill-btn af-enter-btn" id="app-flow-enter-btn" data-flow-action="enter">
           ${SVG_BOTANICAL_SPRIG_LEFT}
-          <span>Step into the Domain</span>
+          <span>Enter Valley</span>
           ${SVG_BOTANICAL_SPRIG_RIGHT}
         </button>
       </div>
@@ -1375,44 +1318,44 @@ export function createAppFlow({
       </div>
     </section>
 
-    <!-- 3. OPEN OR JOIN DOMAIN SCENE (FLOW_STEPS.CREATE_JOIN) -->
-    <section class="af-scene af-scene-create-join" data-flow-scene="create_join" aria-label="Open or Join a Domain">
+    <!-- 3. MEET IN THE VALLEY SCENE (FLOW_STEPS.CREATE_JOIN) -->
+    <section class="af-scene af-scene-create-join" data-flow-scene="create_join" aria-label="Create or Join World">
       <div class="af-create-join-header-stack">
         ${SVG_OPEN_AIR_DIVIDER}
-        <h2 class="af-create-join-header">Open or Join Domain</h2>
+        <h2 class="af-create-join-header">Meet in the Valley</h2>
       </div>
 
       <div class="af-tablets-grid">
-        <!-- Left Frame: Open a Domain -->
+        <!-- Left Frame: Create World -->
         <div class="af-hairline-frame af-world-tablet" id="app-flow-create-tablet">
           <span class="af-tablet-top-emblem">${SVG_TOP_EMBLEM_SPRIG}</span>
           <span class="af-side-diamond is-left" aria-hidden="true"></span>
           <span class="af-side-diamond is-right" aria-hidden="true"></span>
 
           <div class="af-tablet-top-block">
-            <h3 class="af-tablet-heading">Open a Domain</h3>
+            <h3 class="af-tablet-heading">Create World</h3>
             ${SVG_CARD_THIN_DIVIDER}
-            <p class="af-active-phrase-display" id="app-flow-active-phrase" title="Click to cycle domain poetry">${state.roomPhrase}</p>
+            <p class="af-active-phrase-display" id="app-flow-active-phrase" title="Click to cycle room phrase">${state.roomPhrase}</p>
             <div class="af-phrase-chips-wrap" id="app-flow-phrase-chips">
               ${phraseChipsHtml}
             </div>
           </div>
           <button type="button" class="af-hairline-pill-btn af-domain-action-btn" id="app-flow-create-btn" data-flow-action="create">
-            Enter
+            Create
           </button>
         </div>
 
-        <!-- Right Frame: Join a Domain -->
+        <!-- Right Frame: Join World -->
         <div class="af-hairline-frame af-world-tablet" id="app-flow-join-tablet">
           <span class="af-tablet-top-emblem">${SVG_TOP_EMBLEM_TRAVELERS}</span>
           <span class="af-side-diamond is-left" aria-hidden="true"></span>
           <span class="af-side-diamond is-right" aria-hidden="true"></span>
 
           <div class="af-tablet-top-block">
-            <h3 class="af-tablet-heading">Join a Domain</h3>
+            <h3 class="af-tablet-heading">Join World</h3>
             ${SVG_CARD_THIN_DIVIDER}
             <div class="af-field-group">
-              <label class="af-field-label sr-only" for="app-flow-phrase-input">Domain phrase</label>
+              <label class="af-field-label sr-only" for="app-flow-phrase-input">Room phrase</label>
               <input
                 type="text"
                 id="app-flow-phrase-input"
@@ -1420,7 +1363,7 @@ export function createAppFlow({
                 name="worldPhrase"
                 autocomplete="off"
                 spellcheck="false"
-                placeholder="Rain on warm limestone"
+                placeholder="Love is curiosity"
               />
             </div>
           </div>
@@ -1473,7 +1416,7 @@ export function createAppFlow({
         <!-- Floating Partner Name + Blossom Divider above the other hero -->
         <div id="app-flow-partner-tag" aria-live="polite"></div>
 
-        <!-- Floating Open-Air Italic Callout with Underline + Angled Helmet Pointer -->
+        <!-- Floating Light Warm-Stone Callout with Angled Helmet Pointer -->
         <div
           id="app-flow-name-bubble"
           data-claimed-role="Knight"
@@ -1510,7 +1453,7 @@ export function createAppFlow({
         </div>
       </div>
 
-      <!-- Bottom-Center Borderless Transparent Phrase Line + Copy Icon -->
+      <!-- Bottom-Center Light Room-Phrase Bar + DEV Solo Test Escape Hatch -->
       <div class="af-lobby-bottom-row">
         <div class="af-lobby-room-bar" id="app-flow-lobby-top-bar">
           <span class="af-room-phrase-lbl" id="app-flow-lobby-phrase">
@@ -1520,13 +1463,23 @@ export function createAppFlow({
             type="button"
             class="af-copy-btn"
             id="app-flow-copy-btn"
-            aria-label="Copy Domain Invite Link"
-            title="Copy Domain Invite Link"
+            aria-label="Copy Invite Link"
+            title="Copy Invite Link"
           >
             ${SVG_COPY_ICON}
             ${SVG_CHECK_ICON}
           </button>
         </div>
+        <!-- DEV_SOLO_TEST_REMOVE_FOR_PROD -->
+        <button
+          type="button"
+          class="af-solo-dev-btn"
+          id="app-flow-solo-test-btn"
+          data-flow-action="solo-test"
+          title="Enter immediately for solo testing (remove for production)"
+        >
+          Test Solo →
+        </button>
       </div>
     </section>
   `;
@@ -1556,6 +1509,7 @@ export function createAppFlow({
   const innerClaimBubble = root.querySelector('#app-flow-claim-bubble');
   const nameInput = root.querySelector('#app-flow-name-input');
   const startBtn = root.querySelector('#app-flow-start-btn');
+  const soloTestBtn = root.querySelector('#app-flow-solo-test-btn');
 
   const roomPhraseEl = root.querySelector('#app-flow-room-phrase');
   const copyBtn = root.querySelector('#app-flow-copy-btn');
@@ -1978,7 +1932,7 @@ export function createAppFlow({
    * - 2-Player (`peerConnected === true`): locks local seat & name, starting immediately
    *   once both seats are claimed & named.
    */
-  function triggerEnterValleyFromLobby() {
+  function triggerEnterValleyFromLobby(forceSoloStart = false) {
     if (nameInput && nameInput.value.trim()) {
       state.playerName = nameInput.value.trim();
     }
@@ -1990,14 +1944,15 @@ export function createAppFlow({
       onToggleReady(true, { ...state });
     }
 
-    const isSoloMode = !state.peerConnected && (state.playerCount || 1) <= 1;
+    const isSoloMode =
+      forceSoloStart || (!state.peerConnected && (state.playerCount || 1) <= 1);
     const bothSeatsReady =
       state.peerConnected && Boolean(state.partnerClaimed || state.guestReady);
 
-    if (isSoloMode || bothSeatsReady || state.isHost) {
+    if (isSoloMode || bothSeatsReady) {
       setStep(FLOW_STEPS.IN_GAME);
       if (typeof onStartGame === 'function') {
-        onStartGame({ ...state });
+        onStartGame({ ...state, soloTest: Boolean(forceSoloStart || isSoloMode) });
       }
     }
   }
@@ -2012,7 +1967,7 @@ export function createAppFlow({
       e.stopPropagation();
       if (e.key === 'Enter') {
         e.preventDefault();
-        triggerEnterValleyFromLobby();
+        triggerEnterValleyFromLobby(false);
       }
     });
   }
@@ -2020,7 +1975,15 @@ export function createAppFlow({
   if (startBtn) {
     startBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      triggerEnterValleyFromLobby();
+      triggerEnterValleyFromLobby(false);
+    });
+  }
+
+  // DEV_SOLO_TEST_REMOVE_FOR_PROD: One-click solo test entry
+  if (soloTestBtn) {
+    soloTestBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      triggerEnterValleyFromLobby(true);
     });
   }
 

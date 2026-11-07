@@ -28,7 +28,7 @@ function formatTimerMMSS(seconds) {
 }
 
 /* ------------------------------------------------------------------------- */
-/* Multi-Layered Crafted Portrait, Weapon & Elemental Medallion SVGs         */
+/* Authentic Chibi Portraits & Flat White Genshin Silhouette Action Icons    */
 /* ------------------------------------------------------------------------- */
 
 const SVG_ROLE_KNIGHT_EMBLEM = `
@@ -36,9 +36,9 @@ const SVG_ROLE_KNIGHT_EMBLEM = `
   <defs>
     <clipPath id="sh-clip-knight-emblem"><circle cx="32" cy="32" r="29.5"/></clipPath>
   </defs>
-  <circle cx="32" cy="32" r="29.5" fill="#1b1822"/>
-  <image href="/world/assets/textures/hud/knight-emblem.png" x="1" y="1" width="62" height="62" preserveAspectRatio="xMidYMid slice" clip-path="url(#sh-clip-knight-emblem)"/>
-  <circle cx="32" cy="32" r="29.5" stroke="#f7efe2" stroke-width="1.5" opacity="0.85"/>
+  <circle cx="32" cy="32" r="29.5" fill="#7dd3fc" opacity="0.35"/>
+  <image href="/world/assets/textures/hud/knight-emblem.png" x="0" y="0" width="64" height="64" preserveAspectRatio="xMidYMid slice" clip-path="url(#sh-clip-knight-emblem)"/>
+  <circle cx="32" cy="32" r="29.5" stroke="#ffffff" stroke-width="2" opacity="0.92"/>
 </svg>
 `;
 
@@ -47,134 +47,127 @@ const SVG_ROLE_MAGE_EMBLEM = `
   <defs>
     <clipPath id="sh-clip-mage-emblem"><circle cx="32" cy="32" r="29.5"/></clipPath>
   </defs>
-  <circle cx="32" cy="32" r="29.5" fill="#1b1822"/>
-  <image href="/world/assets/textures/hud/mage-emblem.png" x="1" y="1" width="62" height="62" preserveAspectRatio="xMidYMid slice" clip-path="url(#sh-clip-mage-emblem)"/>
-  <circle cx="32" cy="32" r="29.5" stroke="#f7efe2" stroke-width="1.5" opacity="0.85"/>
+  <circle cx="32" cy="32" r="29.5" fill="#7dd3fc" opacity="0.35"/>
+  <image href="/world/assets/textures/hud/mage-emblem.png" x="0" y="0" width="64" height="64" preserveAspectRatio="xMidYMid slice" clip-path="url(#sh-clip-mage-emblem)"/>
+  <circle cx="32" cy="32" r="29.5" stroke="#ffffff" stroke-width="2" opacity="0.92"/>
 </svg>
 `;
 
-const SVG_HP_BLOSSOM_CAP = `
-<svg class="sh-hp-blossom-cap-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-  <g transform="translate(12, 12)">
-    <path d="M0 -2 C-4.2 -10.5, 4.2 -10.5, 0 -2 Z" fill="#fffdf9" stroke="rgba(42,24,18,0.55)" stroke-width="0.9" transform="rotate(0)"/>
-    <path d="M0 -2 C-4.2 -10.5, 4.2 -10.5, 0 -2 Z" fill="#fffdf9" stroke="rgba(42,24,18,0.55)" stroke-width="0.9" transform="rotate(72)"/>
-    <path d="M0 -2 C-4.2 -10.5, 4.2 -10.5, 0 -2 Z" fill="#fffdf9" stroke="rgba(42,24,18,0.55)" stroke-width="0.9" transform="rotate(144)"/>
-    <path d="M0 -2 C-4.2 -10.5, 4.2 -10.5, 0 -2 Z" fill="#fffdf9" stroke="rgba(42,24,18,0.55)" stroke-width="0.9" transform="rotate(216)"/>
-    <path d="M0 -2 C-4.2 -10.5, 4.2 -10.5, 0 -2 Z" fill="#fffdf9" stroke="rgba(42,24,18,0.55)" stroke-width="0.9" transform="rotate(288)"/>
-    <circle cx="0" cy="0" r="2.8" fill="#fbbf24"/>
-  </g>
-</svg>
-`;
+const SVG_HP_BLOSSOM_CAP = ``;
 
+/* Genshin-style Normal Attack (Knight): Flat white broadsword over 8-point geometric star crest */
 const SVG_ATTACK_SWORD = `
 <svg class="sh-action-icon-svg sh-sword-svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-  <defs>
-    <clipPath id="sh-clip-atk-sword"><circle cx="32" cy="32" r="29"/></clipPath>
-  </defs>
-  <image href="/world/assets/textures/hud/attack-sword.png" x="1" y="1" width="62" height="62" preserveAspectRatio="xMidYMid slice" clip-path="url(#sh-clip-atk-sword)"/>
+  <!-- Subtle 8-point Genshin geometric star crest behind blade -->
+  <polygon points="32,10 37,25 52,25 40,34 45,49 32,40 19,49 24,34 12,25 27,25" fill="none" stroke="#ffffff" stroke-width="1.8" opacity="0.45"/>
+  <rect x="21" y="21" width="22" height="22" rx="2" transform="rotate(45 32 32)" stroke="#ffffff" stroke-width="1.8" opacity="0.55"/>
+  <!-- Flat white silhouette broadsword (diagonal bottom-left to top-right) -->
+  <path d="M49 13 L51 15 L47 25 L26 44 L20 38 L39 17 Z" fill="#ffffff"/>
+  <!-- Crossguard -->
+  <path d="M16 34 L30 48 L27 51 L13 37 Z" fill="#ffffff"/>
+  <!-- Grip & Pommel -->
+  <path d="M19 43 L13 49 L15 51 L21 45 Z" fill="#ffffff"/>
+  <circle cx="12.5" cy="51.5" r="3" fill="#ffffff"/>
 </svg>
 `;
 
+/* Genshin-style Normal Attack (Mage): Flat white arcane orb-staff over 8-point star crest */
 const SVG_ATTACK_STAFF = `
 <svg class="sh-action-icon-svg sh-staff-svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-  <defs>
-    <clipPath id="sh-clip-atk-staff"><circle cx="32" cy="32" r="29"/></clipPath>
-  </defs>
-  <image href="/world/assets/textures/hud/attack-staff.png" x="1" y="1" width="62" height="62" preserveAspectRatio="xMidYMid slice" clip-path="url(#sh-clip-atk-staff)"/>
+  <!-- Subtle 8-point Genshin geometric star crest behind staff -->
+  <rect x="21" y="21" width="22" height="22" rx="2" transform="rotate(45 32 32)" stroke="#ffffff" stroke-width="1.8" opacity="0.52"/>
+  <rect x="21" y="21" width="22" height="22" rx="2" stroke="#ffffff" stroke-width="1.6" opacity="0.38"/>
+  <!-- Staff Shaft -->
+  <path d="M15 49 L38 26" stroke="#ffffff" stroke-width="4.2" stroke-linecap="round"/>
+  <!-- Crescent Cradle & Floating Arcane Orb -->
+  <path d="M33 29 C31 22, 36 15, 44 15 C40 18, 39 23, 42 27 C45 30, 50 29, 53 25 C53 33, 46 38, 39 36 Z" fill="#ffffff"/>
+  <circle cx="45.5" cy="20.5" r="5.2" fill="#ffffff"/>
 </svg>
 `;
 
+/* Genshin-style Dash/Sprint (matching 1000373930.jpg bottom-right): Dashing silhouette + double chevrons >> */
 const SVG_DASH_GLYPH = `
 <svg class="sh-action-icon-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-  <!-- Crisp Speed Wind Lines -->
-  <line x1="6" y1="19" x2="17" y2="19" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
-  <line x1="4" y1="25.5" x2="14" y2="25.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
-  <line x1="8" y1="32" x2="16" y2="32" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" opacity="0.85"/>
-  <!-- Dynamic Sprinting Figure -->
-  <circle cx="34.5" cy="12.5" r="4.2" fill="currentColor"/>
-  <!-- Torso leaning forward -->
-  <path d="M22 20 L31 18 L39 22.5" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M30.5 18.5 L25.5 27.5 L33.5 31 L30 39.5" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M25.5 27.5 L18.5 31.5 L13.5 37.5" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Double Forward Chevrons & Dashing Silhouette -->
+  <path d="M22 10 L34 22 L22 34 L17 29 L24 22 L17 15 Z" fill="#ffffff"/>
+  <path d="M11 14 L20 23 L11 32 L7.5 28.5 L13 23 L7.5 17.5 Z" fill="#ffffff" opacity="0.82"/>
+  <path d="M26 30 L38 35 L29 40 L23 36 Z" fill="#ffffff"/>
 </svg>
 `;
 
+/* Genshin-style Jump (matching 1000373930.jpg top-right): Curved upward arrow + leaping figure silhouette */
 const SVG_JUMP_GLYPH = `
 <svg class="sh-action-icon-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-  <!-- Sweeping Curved Upward Leap Arrow (Matching Target 02) -->
-  <path
-    d="M24 9 L14.5 20.5 H20.5 C20.5 28, 18.5 33, 14 36.5 C22.5 34.5, 27.5 28.5, 27.5 20.5 H33.5 L24 9 Z"
-    fill="currentColor"
-  />
-  <!-- Ground Launch Arc -->
-  <path d="M12 39.5 Q24 35.5 36 39.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
-  <path d="M16.5 42.5 Q24 40 31.5 42.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity="0.78"/>
+  <!-- Upward Curved Ribbon Arrow on Left -->
+  <path d="M17 10 L9 20 H14.5 C14.5 27.5, 17 34, 23 38 C19.5 32.5, 19.5 26.5, 19.5 20 H25 L17 10 Z" fill="#ffffff"/>
+  <!-- Leaping Figure Silhouette on Right -->
+  <circle cx="31.5" cy="14" r="3.6" fill="#ffffff"/>
+  <path d="M26 21.5 L32.5 19.5 L38 23.5 L35.5 26 L31.5 23.2 L29.5 28.5 L35.5 32 L32.5 38.5 L29.5 37 L31.5 33 L25.5 29.5 Z" fill="#ffffff"/>
 </svg>
 `;
 
+/* Flat White Blooming Rose-Lotus Silhouette for Commune [R] */
 const SVG_SACRED_LOTUS = `
 <svg class="sh-lotus-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-  <defs>
-    <clipPath id="sh-clip-commune-lotus"><circle cx="24" cy="24" r="22"/></clipPath>
-  </defs>
-  <image href="/world/assets/textures/hud/skill-commune.png" x="1" y="1" width="46" height="46" preserveAspectRatio="xMidYMid slice" clip-path="url(#sh-clip-commune-lotus)"/>
+  <!-- Center Petal -->
+  <path d="M24 10 C28.5 17, 29.5 24, 24 31 C18.5 24, 19.5 17, 24 10 Z" fill="#ffffff"/>
+  <!-- Left & Right Inner Petals -->
+  <path d="M22.5 31 C15 28, 12 20.5, 15 14 C18.5 18, 19.5 24, 22.5 31 Z" fill="#ffffff" opacity="0.92"/>
+  <path d="M25.5 31 C33 28, 36 20.5, 33 14 C29.5 18, 28.5 24, 25.5 31 Z" fill="#ffffff" opacity="0.92"/>
+  <!-- Outer Base Petals -->
+  <path d="M21 32.5 C13 32.5, 8 27, 8.5 21 C13 23.5, 16.5 27.5, 21 32.5 Z" fill="#ffffff" opacity="0.78"/>
+  <path d="M27 32.5 C35 32.5, 40 27, 39.5 21 C35 23.5, 31.5 27.5, 27 32.5 Z" fill="#ffffff" opacity="0.78"/>
+  <path d="M16 35.5 Q24 38 32 35.5" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/>
 </svg>
 `;
 
+/* Flat White Cryo Ice-Lance / Lotus Crystal Silhouette for [E] Ice */
 const SVG_ICE_CRYSTAL_GLYPH = `
 <svg class="sh-skill-glyph-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-  <defs>
-    <clipPath id="sh-clip-skill-ice"><circle cx="24" cy="24" r="22"/></clipPath>
-  </defs>
-  <image href="/world/assets/textures/hud/skill-ice.png" x="1" y="1" width="46" height="46" preserveAspectRatio="xMidYMid slice" clip-path="url(#sh-clip-skill-ice)"/>
+  <polygon points="24,7 30,22 24,39 18,22" fill="#ffffff"/>
+  <polygon points="14,15 21,23 16,35 11,24" fill="#ffffff" opacity="0.82"/>
+  <polygon points="34,15 27,23 32,35 37,24" fill="#ffffff" opacity="0.82"/>
+  <circle cx="24" cy="41.5" r="2" fill="#ffffff"/>
 </svg>
 `;
 
+/* Flat White Pyro Sunfire Flame Crest for [E] Fire */
 const SVG_FIRE_SUNFIRE_GLYPH = `
 <svg class="sh-skill-glyph-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-  <defs>
-    <clipPath id="sh-clip-skill-fire"><circle cx="24" cy="24" r="22"/></clipPath>
-  </defs>
-  <image href="/world/assets/textures/hud/skill-fire.png" x="1" y="1" width="46" height="46" preserveAspectRatio="xMidYMid slice" clip-path="url(#sh-clip-skill-fire)"/>
+  <path d="M24 8 C31 15.5, 36 22, 34 30.5 C32.2 36.8, 28.2 40, 24 40 C19.8 40, 15.8 36.8, 14 30.5 C12 22, 17 15.5, 24 8 Z" fill="#ffffff"/>
+  <path d="M24 19 C27 23, 28.5 26.8, 27.2 31.5 C26.2 34.2, 25.1 35.5, 24 35.5 C22.9 35.5, 21.8 34.2, 20.8 31.5 C19.5 26.8, 21 23, 24 19 Z" fill="rgba(251, 146, 60, 0.85)"/>
 </svg>
 `;
 
+/* Clean Left-Side [Tab] Element Switch Pill Content (Ice <-> Fire) */
 const SVG_TAB_SWAP_GLYPH = `
-<svg class="sh-tab-glyph-svg" viewBox="0 0 52 32" fill="none" aria-hidden="true">
-  <!-- Left: Cyan Snowflake Crystal -->
-  <g transform="translate(11, 16)" stroke="#7dd3fc" stroke-width="1.8" stroke-linecap="round">
-    <line x1="0" y1="-7.5" x2="0" y2="7.5"/>
-    <line x1="-6.5" y1="-3.8" x2="6.5" y2="3.8"/>
-    <line x1="-6.5" y1="3.8" x2="6.5" y2="-3.8"/>
-    <circle cx="0" cy="0" r="2.0" fill="#e0f2fe" stroke="none"/>
-  </g>
-  <!-- Center: Crisp Arrow -->
-  <path d="M21 16 H30 M26.8 12.5 L30.5 16 L26.8 19.5" stroke="#fffdf9" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- Right: Warm Amber Flame -->
-  <path
-    d="M40.5 7.5 C44.5 12, 47 15.5, 45.8 20.5 C44.8 23.8, 42.6 25.5, 40.5 25.5 C38.4 25.5, 36.2 23.8, 35.2 20.5 C34 15.5, 36.5 12, 40.5 7.5 Z"
-    fill="#fb923c"
-    stroke="#fde68a"
-    stroke-width="1.2"
-  />
-  <path
-    d="M40.5 14 C42.4 16.5, 43.2 18.8, 42.5 21.5 C41.9 23.2, 41.2 24, 40.5 24 C39.8 24, 39.1 23.2, 38.5 21.5 C37.8 18.8, 38.6 16.5, 40.5 14 Z"
-    fill="#fef08a"
-  />
-</svg>
+<span class="sh-tab-switch-inner">
+  <span class="sh-tab-opt sh-tab-opt-ice" data-el-opt="ice">
+    <svg viewBox="0 0 20 20" width="15" height="15" fill="none" aria-hidden="true">
+      <path d="M10 2V18M3.1 6L16.9 14M3.1 14L16.9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <span>Ice</span>
+  </span>
+  <span class="sh-tab-sep" aria-hidden="true">⇄</span>
+  <span class="sh-tab-opt sh-tab-opt-fire" data-el-opt="fire">
+    <svg viewBox="0 0 20 20" width="15" height="15" fill="none" aria-hidden="true">
+      <path d="M10 2.5C13.5 6.5 15.5 9.8 14.5 13.8C13.7 16.5 11.9 18 10 18C8.1 18 6.3 16.5 5.5 13.8C4.5 9.8 6.5 6.5 10 2.5Z" fill="currentColor"/>
+    </svg>
+    <span>Fire</span>
+  </span>
+</span>
 `;
 
+/* Flat White Elemental Burst Ultimate Crest for [Q] */
 const SVG_ULTIMATE_STORM_VORTEX = `
 <svg class="sh-skill-glyph-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-  <defs>
-    <clipPath id="sh-clip-skill-ult"><circle cx="24" cy="24" r="22"/></clipPath>
-  </defs>
-  <image href="/world/assets/textures/hud/skill-ultimate.png" x="1" y="1" width="46" height="46" preserveAspectRatio="xMidYMid slice" clip-path="url(#sh-clip-skill-ult)"/>
+  <circle cx="24" cy="24" r="16" stroke="#ffffff" stroke-width="1.8" stroke-dasharray="4 3" opacity="0.72"/>
+  <polygon points="24,6 28.5,19.5 42,24 28.5,28.5 24,42 19.5,28.5 6,24 19.5,19.5" fill="#ffffff"/>
 </svg>
 `;
 
 /* ------------------------------------------------------------------------- */
-/* Environment-Adaptive Solid Matte Cel-Shaded Medallion HUD CSS (ZERO Glass)*/
+/* Genshin Impact Clean Translucent HUD CSS + Colored Vertical Fill          */
 /* ------------------------------------------------------------------------- */
 
 const SCULPTED_HUD_CSS = `
@@ -187,44 +180,18 @@ const SCULPTED_HUD_CSS = `
   }
 
   :root,
-  [data-env-polarity="day"] {
-    --hud-ink: #fffdf9;
-    --hud-ink-muted: #f5ede2;
-    --hud-ring-border: #f7efe2;
-    --hud-ring-inner: rgba(251, 211, 107, 0.55);
-    --hud-ring-fill: #1b1822;
-    --hud-shadow: rgba(18, 12, 20, 0.85);
-    --hud-accent: #fbd36b;
-  }
-
-  [data-env-polarity="golden"] {
-    --hud-ink: #ffeed6;
-    --hud-ink-muted: #f7d6b5;
-    --hud-ring-border: #ffeed6;
-    --hud-ring-inner: rgba(251, 146, 60, 0.62);
-    --hud-ring-fill: #211624;
-    --hud-shadow: rgba(28, 14, 24, 0.88);
-    --hud-accent: #fb923c;
-  }
-
-  [data-env-polarity="night"] {
-    --hud-ink: #eef4ff;
-    --hud-ink-muted: #cbd8f6;
-    --hud-ring-border: #eef4ff;
-    --hud-ring-inner: rgba(125, 211, 252, 0.55);
-    --hud-ring-fill: #131828;
-    --hud-shadow: rgba(10, 14, 28, 0.90);
-    --hud-accent: #7dd3fc;
-  }
-
+  [data-env-polarity="day"],
+  [data-env-polarity="golden"],
+  [data-env-polarity="night"],
   [data-env-polarity="eclipse"] {
-    --hud-ink: #ffe8ee;
-    --hud-ink-muted: #f9becf;
-    --hud-ring-border: #ffe8ee;
-    --hud-ring-inner: rgba(225, 29, 72, 0.72);
-    --hud-ring-fill: #1e0d16;
-    --hud-shadow: rgba(24, 6, 14, 0.92);
-    --hud-accent: #e11d48;
+    --hud-font-sans: "Plus Jakarta Sans", "Outfit", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --hud-ink: #ffffff;
+    --hud-ink-muted: rgba(255, 255, 255, 0.82);
+    --hud-ring-border: rgba(255, 255, 255, 0.78);
+    --hud-ring-inner: rgba(255, 255, 255, 0.22);
+    --hud-ring-fill: rgba(34, 38, 46, 0.28);
+    --hud-shadow: rgba(15, 23, 42, 0.24);
+    --hud-accent: #facc15;
   }
 
   #sculpted-hud-root {
@@ -232,7 +199,7 @@ const SCULPTED_HUD_CSS = `
     inset: 0;
     pointer-events: none;
     z-index: 26;
-    font-family: "Cormorant Garamond", "Playfair Display", Georgia, "Palatino Linotype", serif;
+    font-family: var(--hud-font-sans);
     color: var(--hud-ink);
     user-select: none;
     -webkit-user-select: none;
@@ -243,7 +210,7 @@ const SCULPTED_HUD_CSS = `
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Solid Matte Cel-Shaded Double-Ring Medallion Recipe (Zero Glass/Blur)   */
+  /* Genshin Impact Translucent Action Circle + Vertical Elemental Fill      */
   /* ----------------------------------------------------------------------- */
   .sh-open-ring {
     position: absolute;
@@ -253,41 +220,73 @@ const SCULPTED_HUD_CSS = `
     cursor: pointer;
     border-radius: 50%;
     background: var(--hud-ring-fill);
-    border: 2.2px solid var(--hud-ring-border);
+    border: 1.8px solid var(--hud-ring-border);
     box-shadow:
-      inset 0 0 0 3px var(--hud-ring-fill),
-      inset 0 0 0 4.2px var(--hud-ring-inner),
-      0 4px 12px var(--hud-shadow);
-    color: var(--hud-ink);
+      inset 0 0 0 3px var(--hud-ring-inner),
+      0 4px 14px var(--hud-shadow);
+    color: #ffffff;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: 0;
+    overflow: visible;
     -webkit-tap-highlight-color: transparent;
-    transition-property: transform, border-color, background-color, opacity;
-    transition-duration: 150ms;
-    transition-timing-function: ease-out;
+    transition: transform 120ms ease-out, border-color 150ms ease-out, background-color 150ms ease-out;
   }
 
-  [data-env-polarity="eclipse"] #sculpted-attack-btn {
-    border-color: #fb7185;
-    box-shadow:
-      inset 0 0 0 3px var(--hud-ring-fill),
-      inset 0 0 0 4.2px rgba(225, 29, 72, 0.72),
-      0 4px 16px rgba(225, 29, 72, 0.55);
+  /* Inner clip container for vertical up-and-down elemental fill */
+  .sh-ring-clip {
+    position: absolute;
+    inset: 2px;
+    border-radius: 50%;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .sh-vertical-fill {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 100%;
+    transition: height 120ms linear, background-color 180ms ease;
+    pointer-events: none;
+  }
+
+  #sculpted-slot-e[data-element="ice"] .sh-vertical-fill {
+    background: linear-gradient(180deg, rgba(125, 211, 252, 0.78) 0%, rgba(14, 165, 233, 0.62) 100%);
+  }
+
+  #sculpted-slot-e[data-element="fire"] .sh-vertical-fill {
+    background: linear-gradient(180deg, rgba(253, 186, 116, 0.82) 0%, rgba(234, 88, 12, 0.68) 100%);
+  }
+
+  #sculpted-slot-q .sh-vertical-fill {
+    background: linear-gradient(180deg, rgba(253, 224, 71, 0.82) 0%, rgba(56, 189, 248, 0.72) 100%);
+  }
+
+  #sculpted-commune-btn .sh-vertical-fill {
+    background: linear-gradient(180deg, rgba(251, 113, 133, 0.78) 0%, rgba(225, 29, 72, 0.65) 100%);
+  }
+
+  .sh-open-ring > *:not(.sh-ring-clip):not(.sh-keycap-badge):not(#sculpted-partner-commune-tag) {
+    position: relative;
+    z-index: 1;
+    filter: drop-shadow(0 1px 3px rgba(15, 23, 42, 0.35));
   }
 
   @media (hover: hover) {
     .sh-open-ring:not(:disabled):hover {
-      border-color: var(--hud-accent);
-      background-color: #282332;
+      border-color: #ffffff;
+      background-color: rgba(45, 52, 64, 0.38);
     }
   }
 
   @media (prefers-reduced-motion: no-preference) {
     .sh-open-ring:not(:disabled):active,
     .sh-open-ring.is-pressed:not(:disabled) {
-      transform: scale(0.95);
+      transform: scale(0.94);
     }
   }
 
@@ -299,7 +298,7 @@ const SCULPTED_HUD_CSS = `
   }
 
   /* ----------------------------------------------------------------------- */
-  /* 1. Top-Left Party Strip (#sculpted-party-bars) — Target 02 & 03         */
+  /* 1. Top-Left Party Strip (#sculpted-party-bars) — Clean Genshin Style    */
   /* ----------------------------------------------------------------------- */
   #sculpted-party-bars {
     position: absolute;
@@ -308,29 +307,33 @@ const SCULPTED_HUD_CSS = `
     display: flex;
     flex-direction: column;
     gap: 10px;
-    pointer-events: none;
+    pointer-events: auto;
     z-index: 28;
   }
 
   .sh-life-row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    pointer-events: none;
+    gap: 10px;
+    cursor: pointer;
+    pointer-events: auto;
+    padding: 2px 6px 2px 2px;
+    border-radius: 999px;
+    transition: transform 120ms ease-out;
+  }
+
+  .sh-life-row:active {
+    transform: scale(0.97);
   }
 
   .sh-emblem-ring {
     position: relative;
-    width: 54px;
-    height: 54px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
-    background: var(--hud-ring-fill);
-    border: 2.2px solid var(--hud-ring-border);
-    box-shadow:
-      inset 0 0 0 2.5px var(--hud-ring-fill),
-      inset 0 0 0 3.7px var(--hud-ring-inner),
-      0 3px 10px var(--hud-shadow);
-    color: var(--hud-ink);
+    background: rgba(255, 255, 255, 0.22);
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.25);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -339,20 +342,16 @@ const SCULPTED_HUD_CSS = `
   }
 
   .sh-life-row.is-leader .sh-emblem-ring {
-    width: 60px;
-    height: 60px;
-    border-color: var(--hud-accent);
+    width: 54px;
+    height: 54px;
+    border-color: #ffffff;
+    box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.85), 0 4px 12px rgba(15, 23, 42, 0.3);
   }
 
   .sh-role-emblem-svg {
-    width: 50px;
-    height: 50px;
+    width: 100%;
+    height: 100%;
     display: block;
-  }
-
-  .sh-life-row.is-leader .sh-role-emblem-svg {
-    width: 56px;
-    height: 56px;
   }
 
   .sh-party-meta {
@@ -362,23 +361,34 @@ const SCULPTED_HUD_CSS = `
     gap: 4px;
   }
 
+  .sh-name-and-hp-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  /* Floating white Genshin-style name (ZERO black background pill!) */
   .sh-player-name-lbl {
-    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
-    font-size: 1.18rem;
+    font-family: var(--hud-font-sans);
+    font-size: 0.96rem;
     font-weight: 700;
-    line-height: 1.05;
-    letter-spacing: 0.01em;
-    color: var(--hud-ink);
-    background: var(--hud-ring-fill);
-    border: 1.5px solid var(--hud-ring-border);
-    padding: 2px 10px;
-    border-radius: 999px;
-    box-shadow: 0 2px 6px var(--hud-shadow);
+    line-height: 1.1;
+    color: #ffffff;
+    text-shadow: 0 1px 4px rgba(15, 23, 42, 0.75), 0 0 2px rgba(15, 23, 42, 0.65);
     white-space: nowrap;
   }
 
   .sh-life-row.is-leader .sh-player-name-lbl {
-    font-size: 1.26rem;
+    font-size: 1.04rem;
+  }
+
+  .sh-hp-num-inline {
+    font-family: var(--hud-font-sans);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.92);
+    text-shadow: 0 1px 3px rgba(15, 23, 42, 0.75);
   }
 
   .sh-hp-bar-wrap {
@@ -389,18 +399,18 @@ const SCULPTED_HUD_CSS = `
 
   .sh-hp-channel {
     position: relative;
-    width: 198px;
-    height: 11px;
+    width: 148px;
+    height: 8px;
     border-radius: 999px;
-    background: var(--hud-ring-fill);
-    border: 1.8px solid var(--hud-ring-border);
-    box-shadow: 0 2px 6px var(--hud-shadow);
+    background: rgba(15, 23, 42, 0.42);
+    border: 1.2px solid rgba(255, 255, 255, 0.78);
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.25);
     overflow: hidden;
   }
 
   .sh-life-row.is-leader .sh-hp-channel {
-    width: 224px;
-    height: 12px;
+    width: 172px;
+    height: 9px;
   }
 
   .sh-hp-fill {
@@ -408,7 +418,7 @@ const SCULPTED_HUD_CSS = `
     height: 100%;
     width: 100%;
     border-radius: 999px;
-    background: #22c55e;
+    background: #84cc16;
     transition: width 150ms ease-out;
   }
 
@@ -418,17 +428,17 @@ const SCULPTED_HUD_CSS = `
     top: 0;
     left: 0;
     right: 0;
-    height: 42%;
-    background: #4ade80;
+    height: 45%;
+    background: #a3e635;
     pointer-events: none;
   }
 
   .sh-hp-fill.is-low {
-    background: #e11d48;
+    background: #ef4444;
   }
 
   .sh-hp-fill.is-low::after {
-    background: #fb7185;
+    background: #f87171;
   }
 
   .sh-shield-fill {
@@ -443,72 +453,21 @@ const SCULPTED_HUD_CSS = `
     pointer-events: none;
   }
 
-  .sh-hp-blossom-cap-svg {
-    position: absolute;
-    right: -10px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 20px;
-    height: 20px;
-    filter: drop-shadow(0 1px 4px var(--hud-shadow));
-    pointer-events: none;
-  }
-
   /* ----------------------------------------------------------------------- */
-  /* 2. Bottom-Center Active Vitality Bar (#sculpted-vitality-bar)           */
+  /* 2. Redundant Bottom Health Bar — Permanently Hidden (Per Vikas's Rule)  */
   /* ----------------------------------------------------------------------- */
   #sculpted-vitality-bar {
-    position: absolute;
-    left: 50%;
-    bottom: max(18px, env(safe-area-inset-bottom, 0px));
-    transform: translateX(-50%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 5px;
-    pointer-events: none;
-    z-index: 27;
-  }
-
-  .sh-vitality-numbers {
-    font-family: "Cormorant Garamond", "Cinzel", Georgia, serif;
-    font-variant-numeric: tabular-nums;
-    font-size: 1.04rem;
-    font-weight: 700;
-    line-height: 1.05;
-    color: var(--hud-ink);
-    background: var(--hud-ring-fill);
-    border: 1.5px solid var(--hud-ring-border);
-    padding: 2px 10px;
-    border-radius: 999px;
-    box-shadow: 0 2px 6px var(--hud-shadow);
-    letter-spacing: 0.03em;
-  }
-
-  .sh-vitality-track {
-    position: relative;
-    width: 244px;
-    height: 10px;
-    border-radius: 999px;
-    background: var(--hud-ring-fill);
-    border: 1.8px solid var(--hud-ring-border);
-    box-shadow: 0 2px 6px var(--hud-shadow);
-    overflow: hidden;
-  }
-
-  #sculpted-vitality-bar.is-blessed .sh-vitality-track {
-    border-color: #fbd36b;
-    box-shadow: 0 2px 8px var(--hud-shadow);
+    display: none !important;
   }
 
   /* ----------------------------------------------------------------------- */
-  /* 3. Top-Right Minimal Pause Ring (#sculpted-pause-btn)                   */
+  /* 3. Top-Right Minimal Translucent Pause Ring (#sculpted-pause-btn)       */
   /* ----------------------------------------------------------------------- */
   #sculpted-pause-btn {
     top: max(16px, env(safe-area-inset-top, 0px));
     right: max(18px, env(safe-area-inset-right, 0px));
-    width: 48px;
-    height: 48px;
+    width: 44px;
+    height: 44px;
     z-index: 28;
   }
 
@@ -521,20 +480,20 @@ const SCULPTED_HUD_CSS = `
 
   .sh-pause-bars span {
     width: 2.5px;
-    height: 16px;
+    height: 15px;
     border-radius: 1.5px;
-    background: var(--hud-ink);
+    background: #ffffff;
   }
 
   /* ----------------------------------------------------------------------- */
-  /* 4. Left Hand Floating Thumbstick (Tablet Only: 38px, 36px, 152x152px)   */
+  /* 4. Left Hand Floating Thumbstick (Tablet Only: 38px, 36px, 148x148px)   */
   /* ----------------------------------------------------------------------- */
   #sculpted-joystick-zone {
     position: absolute;
     left: 38px;
     bottom: 36px;
-    width: 152px;
-    height: 152px;
+    width: 148px;
+    height: 148px;
     pointer-events: auto;
     touch-action: none;
     z-index: 28;
@@ -547,15 +506,12 @@ const SCULPTED_HUD_CSS = `
 
   .sh-joy-ring {
     position: relative;
-    width: 152px;
-    height: 152px;
+    width: 148px;
+    height: 148px;
     border-radius: 50%;
-    background: var(--hud-ring-fill);
-    border: 2.2px solid var(--hud-ring-border);
-    box-shadow:
-      inset 0 0 0 4px var(--hud-ring-fill),
-      inset 0 0 0 5.2px var(--hud-ring-inner),
-      0 4px 12px var(--hud-shadow);
+    background: rgba(34, 38, 46, 0.22);
+    border: 1.8px solid rgba(255, 255, 255, 0.65);
+    box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.14);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -566,15 +522,12 @@ const SCULPTED_HUD_CSS = `
   }
 
   .sh-joy-puck {
-    width: 58px;
-    height: 58px;
+    width: 54px;
+    height: 54px;
     border-radius: 50%;
-    background: #282332;
-    border: 2.2px solid var(--hud-ring-border);
-    box-shadow:
-      inset 0 0 0 2px #282332,
-      inset 0 0 0 3.2px var(--hud-ring-inner),
-      0 3px 10px var(--hud-shadow);
+    background: rgba(255, 255, 255, 0.38);
+    border: 2px solid #ffffff;
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.25);
     transform: translate3d(0px, 0px, 0px);
     pointer-events: none;
   }
@@ -596,17 +549,13 @@ const SCULPTED_HUD_CSS = `
   }
 
   /* ----------------------------------------------------------------------- */
-  /* 5. Commanding 2-Ring Concentric Fan Arc (Tablet & Desktop)              */
+  /* 5. Left-Side [Tab] Switch (~30% Below Top) & Bottom-Right Genshin Arc   */
   /* ----------------------------------------------------------------------- */
   #sculpted-action-cluster,
   #sculpted-powers-dock,
   #sculpted-commune-wrap {
     position: absolute;
-    right: 0;
-    bottom: 0;
-    width: 0;
-    height: 0;
-    overflow: visible;
+    inset: 0;
     pointer-events: none;
     z-index: 28;
   }
@@ -627,203 +576,234 @@ const SCULPTED_HUD_CSS = `
     display: inline-flex;
   }
 
-  /* --- TABLET 2-RING CONCENTRIC FAN ARC (Verified >= 20.4px Clear Gap) --- */
-  /* Attack (116x116): right: 28px, bottom: 26px (center (86, 84)) */
+  /* LEFT-SIDE [Tab] ELEMENT SWITCH (~30% down from top-left, per Genshin screenshot 1) */
+  #sculpted-slot-tab,
+  #sculpted-hud-root.profile-tablet #sculpted-slot-tab,
+  #sculpted-hud-root.profile-desktop #sculpted-slot-tab {
+    position: fixed;
+    left: max(18px, env(safe-area-inset-left, 0px));
+    top: 30vh;
+    right: auto;
+    bottom: auto;
+    width: auto;
+    height: 38px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: rgba(34, 38, 46, 0.34);
+    border: 1.5px solid rgba(255, 255, 255, 0.78);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.22);
+    gap: 8px;
+  }
+
+  .sh-tab-switch-inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--hud-font-sans);
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.72);
+  }
+
+  .sh-tab-opt {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+
+  #sculpted-slot-tab[data-element="ice"] .sh-tab-opt-ice {
+    background: rgba(56, 189, 248, 0.45);
+    color: #ffffff;
+  }
+
+  #sculpted-slot-tab[data-element="fire"] .sh-tab-opt-fire {
+    background: rgba(251, 146, 60, 0.52);
+    color: #ffffff;
+  }
+
+  .sh-tab-sep {
+    opacity: 0.7;
+    font-size: 0.8rem;
+  }
+
+  #sculpted-slot-tab .sh-keycap-badge {
+    position: static;
+    margin-left: 2px;
+  }
+
+  #sculpted-tab-caption {
+    display: none;
+  }
+
+  /* --- TABLET GENSHIN BOTTOM-RIGHT ACTION CLUSTER (Matches 1000373930.jpg & 1000373931.webp) --- */
+  /* Normal Attack (Large Middle Circle): right: 112px, bottom: 52px */
   #sculpted-hud-root.profile-tablet #sculpted-attack-btn {
-    right: 28px;
-    bottom: 26px;
-    width: 116px;
-    height: 116px;
+    right: 108px;
+    bottom: 48px;
+    width: 104px;
+    height: 104px;
   }
 
-  /* Dash (74x74): right: 168px, bottom: 22px (center (205, 59), gap 26.6px) */
+  /* Dash/Sprint (Bottom-Right Corner Circle): right: 24px, bottom: 22px */
   #sculpted-hud-root.profile-tablet #sculpted-dash-btn {
-    right: 168px;
+    right: 24px;
     bottom: 22px;
-    width: 74px;
-    height: 74px;
+    width: 72px;
+    height: 72px;
   }
 
-  /* Jump (74x74): right: 52px, bottom: 164px (center (89, 201), gap 22.0px) */
+  /* Jump (Top-Right Circle above Dash): right: 24px, bottom: 132px */
   #sculpted-hud-root.profile-tablet #sculpted-jump-btn {
-    right: 52px;
-    bottom: 164px;
-    width: 74px;
-    height: 74px;
+    right: 24px;
+    bottom: 132px;
+    width: 72px;
+    height: 72px;
   }
 
-  /* [Tab] (68x68): right: 264px, bottom: 18px (center (298, 52), gap 22.3px) */
-  #sculpted-hud-root.profile-tablet #sculpted-slot-tab {
-    right: 264px;
-    bottom: 18px;
+  /* Elemental Skill [E] (Bottom-Left of Normal Attack): right: 228px, bottom: 24px */
+  #sculpted-hud-root.profile-tablet #sculpted-slot-e {
+    right: 228px;
+    bottom: 24px;
+    width: 76px;
+    height: 76px;
+  }
+
+  /* Elemental Burst [Q] (Left of E): right: 320px, bottom: 28px */
+  #sculpted-hud-root.profile-tablet #sculpted-slot-q {
+    right: 320px;
+    bottom: 28px;
+    width: 80px;
+    height: 80px;
+  }
+
+  /* Commune [R] (Upper Gadget Slot above Jump): right: 28px, bottom: 224px */
+  #sculpted-hud-root.profile-tablet #sculpted-commune-btn {
+    right: 28px;
+    bottom: 224px;
     width: 68px;
     height: 68px;
   }
 
-  /* [E] (78x78): right: 244px, bottom: 108px (center (283, 147), gap 23.2px) */
-  #sculpted-hud-root.profile-tablet #sculpted-slot-e {
-    right: 244px;
-    bottom: 108px;
-    width: 78px;
-    height: 78px;
-  }
-
-  /* [Q] (76x76): right: 176px, bottom: 204px (center (214, 242), gap 40.4px) */
-  #sculpted-hud-root.profile-tablet #sculpted-slot-q {
-    right: 176px;
-    bottom: 204px;
-    width: 76px;
-    height: 76px;
-  }
-
-  /* Commune [R] (76x76): right: 60px, bottom: 258px (center (98, 296), gap 20.4px) */
-  #sculpted-hud-root.profile-tablet #sculpted-commune-btn {
-    right: 60px;
-    bottom: 258px;
-    width: 76px;
-    height: 76px;
-  }
-
-  /* --- DESKTOP COMMANDING CONCENTRIC FAN ARC (Matching Target 02) --- */
+  /* --- DESKTOP GENSHIN BOTTOM-RIGHT ACTION CLUSTER --- */
   #sculpted-hud-root.profile-desktop #sculpted-attack-btn {
-    right: 28px;
-    bottom: 24px;
-    width: 96px;
-    height: 96px;
+    right: 98px;
+    bottom: 42px;
+    width: 88px;
+    height: 88px;
   }
 
   #sculpted-hud-root.profile-desktop #sculpted-dash-btn {
-    right: 148px;
+    right: 22px;
     bottom: 20px;
-    width: 64px;
-    height: 64px;
+    width: 62px;
+    height: 62px;
   }
 
   #sculpted-hud-root.profile-desktop #sculpted-jump-btn {
-    right: 48px;
-    bottom: 144px;
-    width: 64px;
-    height: 64px;
+    right: 22px;
+    bottom: 114px;
+    width: 62px;
+    height: 62px;
   }
 
-  #sculpted-hud-root.profile-desktop #sculpted-slot-tab {
-    right: 234px;
-    bottom: 18px;
+  #sculpted-hud-root.profile-desktop #sculpted-slot-e {
+    right: 202px;
+    bottom: 20px;
+    width: 66px;
+    height: 66px;
+  }
+
+  #sculpted-hud-root.profile-desktop #sculpted-slot-q {
+    right: 284px;
+    bottom: 24px;
+    width: 70px;
+    height: 70px;
+  }
+
+  #sculpted-hud-root.profile-desktop #sculpted-commune-btn {
+    right: 24px;
+    bottom: 194px;
     width: 60px;
     height: 60px;
   }
 
-  #sculpted-hud-root.profile-desktop #sculpted-slot-e {
-    right: 214px;
-    bottom: 96px;
-    width: 68px;
-    height: 68px;
-  }
-
-  #sculpted-hud-root.profile-desktop #sculpted-slot-q {
-    right: 152px;
-    bottom: 180px;
-    width: 68px;
-    height: 68px;
-  }
-
-  #sculpted-hud-root.profile-desktop #sculpted-commune-btn {
-    right: 52px;
-    bottom: 228px;
-    width: 68px;
-    height: 68px;
-  }
-
   /* Ring Icon Scaling (Tablet & Desktop) */
   #sculpted-attack-btn .sh-action-icon-svg {
-    width: 64px;
-    height: 64px;
+    width: 58px;
+    height: 58px;
   }
 
   #sculpted-hud-root.profile-desktop #sculpted-attack-btn .sh-action-icon-svg {
-    width: 54px;
-    height: 54px;
+    width: 50px;
+    height: 50px;
   }
 
   #sculpted-dash-btn .sh-action-icon-svg,
   #sculpted-jump-btn .sh-action-icon-svg {
-    width: 42px;
-    height: 42px;
+    width: 38px;
+    height: 38px;
   }
 
   #sculpted-hud-root.profile-desktop #sculpted-dash-btn .sh-action-icon-svg,
   #sculpted-hud-root.profile-desktop #sculpted-jump-btn .sh-action-icon-svg {
-    width: 36px;
-    height: 36px;
+    width: 34px;
+    height: 34px;
   }
 
-  .sh-skill-glyph-svg {
-    width: 46px;
-    height: 46px;
-  }
-
-  #sculpted-hud-root.profile-desktop .sh-skill-glyph-svg {
+  .sh-skill-glyph-svg,
+  .sh-lotus-svg {
     width: 40px;
     height: 40px;
   }
 
-  .sh-tab-glyph-svg {
-    width: 46px;
-    height: 30px;
-  }
-
-  #sculpted-hud-root.profile-desktop .sh-tab-glyph-svg {
-    width: 40px;
-    height: 26px;
-  }
-
-  .sh-lotus-svg {
-    width: 46px;
-    height: 42px;
-  }
-
+  #sculpted-hud-root.profile-desktop .sh-skill-glyph-svg,
   #sculpted-hud-root.profile-desktop .sh-lotus-svg {
-    width: 40px;
-    height: 36px;
+    width: 34px;
+    height: 34px;
   }
 
-  /* Literary Serif Keycap Callout Badges (Solid Matte Cel-Ink Pill, Zero Glass) */
+  /* Subtle Keycap Callout Badges (Clean Sans, Light Translucent Pill) */
   .sh-keycap-badge {
     position: absolute;
-    right: -4px;
-    bottom: -6px;
-    min-width: 24px;
-    height: 20px;
-    padding: 2px 7px;
+    right: -2px;
+    bottom: -5px;
+    min-width: 20px;
+    height: 17px;
+    padding: 1px 6px;
     border-radius: 999px;
-    background: var(--hud-ring-fill);
-    border: 1.5px solid var(--hud-ring-border);
-    box-shadow: 0 2px 6px var(--hud-shadow);
-    font-family: "Cormorant Garamond", "Cinzel", Georgia, serif;
-    font-size: 0.78rem;
+    background: rgba(252, 249, 242, 0.92);
+    border: 1px solid #dcd0bc;
+    box-shadow: 0 2px 5px rgba(15, 23, 42, 0.18);
+    font-family: var(--hud-font-sans);
+    font-size: 0.68rem;
     font-weight: 700;
-    color: var(--hud-ink);
+    color: #1f1c18;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     line-height: 1;
     pointer-events: none;
+    z-index: 2;
   }
 
   .sh-slot-cd-badge {
     position: absolute;
     inset: 0;
     border-radius: 50%;
-    background: rgba(27, 24, 34, 0.94);
-    color: var(--hud-ink);
-    font-family: "Cormorant Garamond", "Cinzel", Georgia, serif;
+    background: rgba(15, 23, 42, 0.45);
+    color: #ffffff;
+    font-family: var(--hud-font-sans);
     font-variant-numeric: tabular-nums;
-    font-size: 1.05rem;
-    font-weight: 700;
+    font-size: 0.96rem;
+    font-weight: 800;
     display: none;
     align-items: center;
     justify-content: center;
     pointer-events: none;
+    z-index: 2;
   }
 
   .sh-power-slot.on-cooldown .sh-slot-cd-badge {
@@ -831,49 +811,20 @@ const SCULPTED_HUD_CSS = `
   }
 
   #sculpted-slot-e[data-element="ice"] {
-    border-color: #7dd3fc;
+    border-color: rgba(186, 230, 253, 0.92);
   }
 
   #sculpted-slot-e[data-element="fire"] {
-    border-color: #fb923c;
+    border-color: rgba(254, 215, 170, 0.92);
   }
 
   #sculpted-slot-e.is-active-buff {
     box-shadow:
-      inset 0 0 0 3px var(--hud-ring-fill),
-      inset 0 0 0 4.5px var(--hud-accent),
-      0 4px 14px var(--hud-shadow);
+      0 0 0 2px #facc15,
+      0 4px 16px rgba(250, 204, 21, 0.45);
   }
 
-  /* One-Time "Tab to switch" Solid Matte Cel-Ink Pill Callout to the left of [Tab] */
-  #sculpted-tab-caption {
-    position: absolute;
-    right: calc(100% + 10px);
-    top: 50%;
-    transform: translateY(-50%);
-    background: var(--hud-ring-fill);
-    border: 1.5px solid var(--hud-ring-border);
-    padding: 2px 10px;
-    border-radius: 999px;
-    box-shadow: 0 2px 6px var(--hud-shadow);
-    font-family: "Cormorant Garamond", Georgia, serif;
-    font-size: 0.88rem;
-    font-style: italic;
-    font-weight: 600;
-    color: var(--hud-ink);
-    white-space: nowrap;
-    pointer-events: none;
-    opacity: 1;
-    transition: opacity 150ms ease-out;
-  }
-
-  #sculpted-tab-caption.is-dismissed {
-    opacity: 0;
-    visibility: hidden;
-    display: none;
-  }
-
-  /* Inline Crimson Wave Bars + 00:24 Timer inside Commune [R] when Listening */
+  /* Inline Crimson Wave Bars + Timer inside Commune [R] when Listening */
   .sh-commune-idle-content {
     display: inline-flex;
     align-items: center;
@@ -889,11 +840,8 @@ const SCULPTED_HUD_CSS = `
   }
 
   #sculpted-commune-wrap.is-listening #sculpted-commune-btn {
-    border-color: #e11d48;
-    box-shadow:
-      inset 0 0 0 3px var(--hud-ring-fill),
-      inset 0 0 0 4.2px rgba(225, 29, 72, 0.72),
-      0 4px 16px rgba(225, 29, 72, 0.58);
+    border-color: #fda4af;
+    box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.75), 0 4px 16px rgba(244, 63, 94, 0.45);
   }
 
   #sculpted-commune-wrap.is-listening .sh-commune-idle-content {
@@ -908,52 +856,46 @@ const SCULPTED_HUD_CSS = `
     display: inline-flex;
     align-items: center;
     gap: 2.5px;
-    height: 15px;
+    height: 14px;
   }
 
   .sh-wave-bar {
     width: 2.5px;
-    height: 9px;
+    height: 8px;
     border-radius: 999px;
-    background: #fb7185;
+    background: #ffffff;
   }
 
-  .sh-wave-bar:nth-child(1) { height: 7px; }
-  .sh-wave-bar:nth-child(2) { height: 13px; }
-  .sh-wave-bar:nth-child(3) { height: 16px; background: #e11d48; }
-  .sh-wave-bar:nth-child(4) { height: 12px; }
-  .sh-wave-bar:nth-child(5) { height: 7px; }
+  .sh-wave-bar:nth-child(1) { height: 6px; }
+  .sh-wave-bar:nth-child(2) { height: 12px; }
+  .sh-wave-bar:nth-child(3) { height: 15px; }
+  .sh-wave-bar:nth-child(4) { height: 11px; }
+  .sh-wave-bar:nth-child(5) { height: 6px; }
 
   .sh-listening-timer {
-    font-family: "Cormorant Garamond", "Cinzel", Georgia, serif;
+    font-family: var(--hud-font-sans);
     font-variant-numeric: tabular-nums;
-    font-size: 0.84rem;
-    font-weight: 700;
+    font-size: 0.74rem;
+    font-weight: 800;
     line-height: 1;
-    color: var(--hud-ink);
+    color: #ffffff;
   }
 
-  /* Partner Communing Solid Matte Cel-Ink Pill Indicator */
   #sculpted-partner-commune-tag {
     position: absolute;
     bottom: 100%;
     right: 0;
     margin-bottom: 6px;
-    padding: 2px 9px;
+    padding: 3px 10px;
     border-radius: 999px;
-    background: #1b1822;
-    border: 1.5px solid #fb7185;
-    box-shadow: 0 2px 6px var(--hud-shadow);
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: var(--hud-ink);
+    background: rgba(252, 249, 242, 0.94);
+    border: 1.5px solid #f43f5e;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #9f1239;
     white-space: nowrap;
     pointer-events: none;
     display: none;
-  }
-
-  #sculpted-commune-btn.is-partner-communing {
-    border-color: #fb7185;
   }
 
   #sculpted-commune-btn.is-partner-communing #sculpted-partner-commune-tag {
@@ -961,14 +903,14 @@ const SCULPTED_HUD_CSS = `
   }
 
   /* ----------------------------------------------------------------------- */
-  /* 6. Solid Matte Cel-Shaded Pause Modal (#sculpted-pause-modal)           */
+  /* 6. Light Warm-Stone Pause Modal (#sculpted-pause-modal)                 */
   /* ----------------------------------------------------------------------- */
   .sh-modal-backdrop {
     position: fixed;
     inset: 0;
     z-index: 40;
     pointer-events: auto;
-    background: rgba(18, 14, 22, 0.58);
+    background: rgba(15, 23, 42, 0.32);
     display: none;
     align-items: center;
     justify-content: center;
@@ -985,13 +927,12 @@ const SCULPTED_HUD_CSS = `
     width: min(440px, 90vw);
     padding: 24px 26px;
     border-radius: 20px;
-    border: 2px solid #f7efe2;
-    background: #1b1822;
+    border: 1.5px solid #dcd0bc;
+    background: rgba(252, 249, 242, 0.96);
     box-shadow:
-      inset 0 0 0 3px #1b1822,
-      inset 0 0 0 4.5px var(--hud-ring-inner),
-      0 12px 28px rgba(14, 10, 18, 0.85);
-    color: var(--hud-ink);
+      inset 0 1px 0 #ffffff,
+      0 16px 36px rgba(24, 20, 14, 0.22);
+    color: #1f1c18;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1000,22 +941,22 @@ const SCULPTED_HUD_CSS = `
   }
 
   .sh-modal-title {
-    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
-    font-size: 1.65rem;
-    font-style: italic;
-    font-weight: 600;
+    font-family: var(--hud-font-sans);
+    font-size: 1.42rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
     line-height: 1.15;
-    color: #fffdf9;
+    color: #1f1c18;
     margin: 0;
   }
 
   .sh-stat-lbl {
-    font-family: "Cinzel", "Cormorant Garamond", Georgia, serif;
-    font-size: 0.78rem;
-    font-weight: 600;
+    font-family: var(--hud-font-sans);
+    font-size: 0.76rem;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--hud-ink-muted);
+    color: #5c5346;
   }
 
   .sh-pill-group {
@@ -1030,38 +971,38 @@ const SCULPTED_HUD_CSS = `
   .sh-modal-close-btn {
     appearance: none;
     cursor: pointer;
-    padding: 7px 16px;
+    padding: 7px 14px;
     border-radius: 999px;
-    border: 1.6px solid #f7efe2;
-    background: #282332;
-    color: #fffdf9;
-    font-family: "Cormorant Garamond", Georgia, serif;
-    font-size: 1.02rem;
+    border: 1.5px solid #c8b79a;
+    background: #f3ede0;
+    color: #1f1c18;
+    font-family: var(--hud-font-sans);
+    font-size: 0.9rem;
     font-weight: 600;
     -webkit-tap-highlight-color: transparent;
-    transition: transform 150ms ease-out, border-color 150ms ease-out, background-color 150ms ease-out;
+    transition: transform 140ms ease-out, border-color 140ms ease-out, background-color 140ms ease-out;
   }
 
   .sh-choice-pill.is-selected,
   .sh-choice-pill[aria-pressed="true"] {
-    border-color: #fffdf9;
-    background: #fbd36b;
-    color: #1b1822;
+    border-color: #1f1c18;
+    background: #1f1c18;
+    color: #fdfbf7;
     font-weight: 700;
   }
 
   .sh-modal-close-btn {
     min-width: 140px;
     min-height: 40px;
-    background: #f7efe2;
-    color: #1b1822;
-    border-color: #fbd36b;
+    background: #1f1c18;
+    color: #fdfbf7;
+    border-color: #1f1c18;
     font-weight: 700;
   }
 `;
 
 /**
- * Creates the Amarante High-Craft Botanical-Celestial Medallion HUD & Two-Handed Xiaomi Pad 7 Arc.
+ * Creates the Amarante Genshin-Inspired Translucent HUD & Two-Handed Xiaomi Pad 7 Arc.
  */
 export function createSculptedHud({
   container = null,
@@ -1077,6 +1018,7 @@ export function createSculptedHud({
   onSelectProfile = null,
   onSwapHero = null,
   onCameraOrbit = null,
+  onDevUnlockNextStage = null,
 } = {}) {
   let styleEl = document.getElementById('sculpted-hud-styles');
   if (!styleEl) {
@@ -1131,43 +1073,47 @@ export function createSculptedHud({
   root.id = 'sculpted-hud-root';
 
   root.innerHTML = `
-    <!-- 1. TOP-LEFT: Borderless Party Strip (Chibi Hero Bust Portrait + Name + HP Bar + Blossom Cap) -->
+    <!-- 1. TOP-LEFT: Genshin-Style Party Strip (Authentic Chibi Bust Portrait + Floating White Name + HP Bar) -->
     <div id="sculpted-party-bars" role="region" aria-label="Party Status">
-      <div class="sh-life-row is-leader" id="sh-life-row-primary" data-role="Knight">
+      <div class="sh-life-row is-leader" id="sh-life-row-primary" data-role="Knight" title="Click to swap hero in solo mode">
         <div class="sh-emblem-ring" id="sh-emblem-primary" data-role-emblem="Knight" aria-hidden="true">
           ${SVG_ROLE_KNIGHT_EMBLEM}
         </div>
         <div class="sh-party-meta">
-          <span class="sh-player-name-lbl" id="sh-name-primary">Knight</span>
+          <div class="sh-name-and-hp-row">
+            <span class="sh-player-name-lbl" id="sh-name-primary">Knight</span>
+            <span class="sh-hp-num-inline" id="sh-hp-num-primary">220 / 220</span>
+          </div>
           <div class="sh-hp-bar-wrap">
             <div class="sh-hp-channel">
               <div class="sh-hp-fill" id="sh-hp-fill-primary"></div>
               <div class="sh-shield-fill" id="sh-shield-fill-primary"></div>
             </div>
-            ${SVG_HP_BLOSSOM_CAP}
           </div>
         </div>
       </div>
 
-      <div class="sh-life-row" id="sh-life-row-partner" data-role="Mage">
+      <div class="sh-life-row" id="sh-life-row-partner" data-role="Mage" title="Click to swap hero in solo mode">
         <div class="sh-emblem-ring" id="sh-emblem-partner" data-role-emblem="Mage" aria-hidden="true">
           ${SVG_ROLE_MAGE_EMBLEM}
         </div>
         <div class="sh-party-meta">
-          <span class="sh-player-name-lbl" id="sh-name-partner">Mage</span>
+          <div class="sh-name-and-hp-row">
+            <span class="sh-player-name-lbl" id="sh-name-partner">Mage</span>
+            <span class="sh-hp-num-inline" id="sh-hp-num-partner">90 / 90</span>
+          </div>
           <div class="sh-hp-bar-wrap">
             <div class="sh-hp-channel">
               <div class="sh-hp-fill" id="sh-hp-fill-partner"></div>
               <div class="sh-shield-fill" id="sh-shield-fill-partner"></div>
             </div>
-            ${SVG_HP_BLOSSOM_CAP}
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 2. BOTTOM-CENTER: Active Vitality Bar (tabular-nums) -->
-    <div id="sculpted-vitality-bar" role="status" aria-label="Active Hero Vitality">
+    <!-- 2. BOTTOM-CENTER: Hidden (No duplicate health bar at bottom!) -->
+    <div id="sculpted-vitality-bar" role="status" aria-hidden="true">
       <span class="sh-vitality-numbers" id="sculpted-vitality-text">220 / 220</span>
       <div class="sh-vitality-track">
         <div class="sh-hp-fill" id="sculpted-vitality-hp-fill"></div>
@@ -1175,12 +1121,12 @@ export function createSculptedHud({
       </div>
     </div>
 
-    <!-- 3. TOP-RIGHT: Minimal See-Through Pause Ring -->
+    <!-- 3. TOP-RIGHT: Minimal Translucent Pause Ring -->
     <button
       type="button"
       class="sh-open-ring"
       id="sculpted-pause-btn"
-      aria-label="Pause and Atmosphere Settings"
+      aria-label="Pause and Settings"
       title="Pause (Esc)"
     >
       <span class="sh-pause-bars" aria-hidden="true">
@@ -1198,23 +1144,24 @@ export function createSculptedHud({
 
     <div id="sculpted-orbit-zone"></div>
 
-    <!-- 5. RIGHT HAND OUTER SKILL ARC ([Tab], [E], [Q]) -->
+    <!-- 5. AWAKENED POWERS: Left-Side [Tab] Switch (~30vh) + Bottom-Right [E] & [Q] with Vertical Fill -->
     <div id="sculpted-powers-dock" role="toolbar" aria-label="Awakened Powers">
-      <!-- [Tab] Element Toggle Ring (visible only when BOTH Ice & Fire are unlocked) -->
+      <!-- [Tab] Simple Element Switch on Left Side (~30% down from top) -->
       <button
         type="button"
         class="sh-open-ring sh-power-slot"
         id="sculpted-slot-tab"
         data-power-slot="Tab"
+        data-element="ice"
         aria-label="Switch Ice and Fire Element (Tab)"
         title="Switch Element (Tab)"
       >
         <span id="sculpted-tab-caption">Tab to switch</span>
         <span id="sculpted-slot-tab-label">${SVG_TAB_SWAP_GLYPH}</span>
-        <span class="sh-keycap-badge">[Tab]</span>
+        <span class="sh-keycap-badge">Tab</span>
       </button>
 
-      <!-- [E] Elemental Skill Ring (visible when Ice OR Fire is unlocked) -->
+      <!-- [E] Elemental Skill Ring (Colored Vertical Fill Up & Down) -->
       <button
         type="button"
         class="sh-open-ring sh-power-slot"
@@ -1224,12 +1171,13 @@ export function createSculptedHud({
         aria-label="Elemental Skill E"
         title="Elemental Skill (E)"
       >
+        <span class="sh-ring-clip"><span class="sh-vertical-fill" id="sh-fill-e"></span></span>
         <span id="sculpted-slot-e-icon">${SVG_ICE_CRYSTAL_GLYPH}</span>
         <span class="sh-slot-cd-badge" id="sculpted-slot-e-cd"></span>
-        <span class="sh-keycap-badge">[E]</span>
+        <span class="sh-keycap-badge">E</span>
       </button>
 
-      <!-- [Q] Personal Ultimate Ring (visible when Town Plaza Stone is solved) -->
+      <!-- [Q] Elemental Burst Ultimate Ring (Colored Vertical Fill Up & Down) -->
       <button
         type="button"
         class="sh-open-ring sh-power-slot"
@@ -1238,13 +1186,14 @@ export function createSculptedHud({
         aria-label="Personal Ultimate Q"
         title="Ultimate Awakening (Q)"
       >
+        <span class="sh-ring-clip"><span class="sh-vertical-fill" id="sh-fill-q"></span></span>
         ${SVG_ULTIMATE_STORM_VORTEX}
         <span class="sh-slot-cd-badge" id="sculpted-slot-q-cd"></span>
-        <span class="sh-keycap-badge">[Q]</span>
+        <span class="sh-keycap-badge">Q</span>
       </button>
     </div>
 
-    <!-- 6. RIGHT HAND OUTER ARC: Commune [R] Ring -->
+    <!-- 6. RIGHT HAND GADGET SLOT: Commune [R] Ring (Colored Vertical Fill) -->
     <div id="sculpted-commune-wrap">
       <button
         type="button"
@@ -1253,6 +1202,7 @@ export function createSculptedHud({
         aria-label="Commune with the God of Love (R)"
         title="Tap or hold R to Commune"
       >
+        <span class="sh-ring-clip"><span class="sh-vertical-fill" id="sh-fill-r"></span></span>
         <span id="sculpted-partner-commune-tag">Partner is communing</span>
         <span class="sh-commune-idle-content">
           ${SVG_SACRED_LOTUS}
@@ -1267,11 +1217,11 @@ export function createSculptedHud({
           </span>
           <span class="sh-listening-timer" id="sculpted-commune-timer">00:24</span>
         </span>
-        <span class="sh-keycap-badge">[R]</span>
+        <span class="sh-keycap-badge">R</span>
       </button>
     </div>
 
-    <!-- 7. RIGHT HAND CENTER & INNER ARC: Attack, Dash, Jump Rings -->
+    <!-- 7. RIGHT HAND GENSHIN ACTION CLUSTER: Attack, Dash, Jump Circles -->
     <div id="sculpted-action-cluster" role="group" aria-label="Combat Actions">
       <button
         type="button"
@@ -1307,7 +1257,7 @@ export function createSculptedHud({
       </button>
     </div>
 
-    <!-- 8. MINIMAL TRANSPARENT HAIRLINE PAUSE POPOVER (#sculpted-pause-modal) -->
+    <!-- 8. LIGHT WARM-STONE PAUSE POPOVER (#sculpted-pause-modal) -->
     <div
       class="sh-modal-backdrop"
       id="sculpted-pause-modal"
@@ -1316,10 +1266,10 @@ export function createSculptedHud({
       aria-labelledby="sculpted-pause-title"
     >
       <div class="sh-modal-tablet">
-        <h2 class="sh-modal-title" id="sculpted-pause-title">Sanctuary Pause</h2>
+        <h2 class="sh-modal-title" id="sculpted-pause-title">Game Paused</h2>
 
         <div style="width: 100%;">
-          <div class="sh-stat-lbl" style="margin-bottom: 8px;">Sky Atmosphere</div>
+          <div class="sh-stat-lbl" style="margin-bottom: 8px;">Time of Day</div>
           <div class="sh-pill-group" id="sculpted-tod-group">
             <button type="button" class="sh-choice-pill is-selected" data-tod-choice="day" aria-pressed="true">Morning</button>
             <button type="button" class="sh-choice-pill" data-tod-choice="evening" aria-pressed="false">Golden Hour</button>
@@ -1330,13 +1280,13 @@ export function createSculptedHud({
         </div>
 
         <div style="width: 100%;">
-          <div class="sh-stat-lbl" style="margin-bottom: 8px;">Hardware Profile</div>
+          <div class="sh-stat-lbl" style="margin-bottom: 8px;">Device Layout</div>
           <div class="sh-pill-group" id="sculpted-profile-group">
             <button type="button" class="sh-choice-pill is-selected" data-profile-choice="desktop" aria-pressed="true">
-              Desktop RX 6700
+              Desktop PC
             </button>
             <button type="button" class="sh-choice-pill" data-profile-choice="tablet" aria-pressed="false">
-              Xiaomi Pad 7
+              Tablet Touch
             </button>
           </div>
         </div>
@@ -1344,6 +1294,10 @@ export function createSculptedHud({
         <div class="sh-pill-group" style="margin-top: 4px;">
           <button type="button" class="sh-choice-pill" id="sculpted-pause-swap-btn">
             Swap Hero
+          </button>
+          <!-- DEV_SOLO_TEST_REMOVE_FOR_PROD -->
+          <button type="button" class="sh-choice-pill" id="sculpted-pause-dev-stage-btn" title="Unlock next power stage for solo testing">
+            Dev: Unlock Next Power
           </button>
           <button type="button" class="sh-modal-close-btn" id="sculpted-pause-resume-btn">
             Resume
@@ -1357,10 +1311,14 @@ export function createSculptedHud({
   mountTarget.appendChild(root);
 
   // Cache DOM references
+  const primaryRowEl = root.querySelector('#sh-life-row-primary');
+  const partnerRowEl = root.querySelector('#sh-life-row-partner');
   const primaryEmblemEl = root.querySelector('#sh-emblem-primary');
   const partnerEmblemEl = root.querySelector('#sh-emblem-partner');
   const primaryNameEl = root.querySelector('#sh-name-primary');
   const partnerNameEl = root.querySelector('#sh-name-partner');
+  const primaryHpNumEl = root.querySelector('#sh-hp-num-primary');
+  const partnerHpNumEl = root.querySelector('#sh-hp-num-partner');
   const primaryHpFill = root.querySelector('#sh-hp-fill-primary');
   const primaryShieldFill = root.querySelector('#sh-shield-fill-primary');
   const partnerHpFill = root.querySelector('#sh-hp-fill-partner');
@@ -1380,14 +1338,17 @@ export function createSculptedHud({
   const slotE = root.querySelector('#sculpted-slot-e');
   const slotEIcon = root.querySelector('#sculpted-slot-e-icon');
   const slotECd = root.querySelector('#sculpted-slot-e-cd');
+  const fillE = root.querySelector('#sh-fill-e');
   const slotTab = root.querySelector('#sculpted-slot-tab');
   const tabCaption = root.querySelector('#sculpted-tab-caption');
   const slotQ = root.querySelector('#sculpted-slot-q');
   const slotQCd = root.querySelector('#sculpted-slot-q-cd');
+  const fillQ = root.querySelector('#sh-fill-q');
 
   const communeWrap = root.querySelector('#sculpted-commune-wrap');
   const communeBtn = root.querySelector('#sculpted-commune-btn');
   const communeTimerEl = root.querySelector('#sculpted-commune-timer');
+  const fillR = root.querySelector('#sh-fill-r');
 
   const attackBtn = root.querySelector('#sculpted-attack-btn');
   const attackIconSlot = root.querySelector('#sculpted-attack-icon-slot');
@@ -1396,6 +1357,7 @@ export function createSculptedHud({
 
   const pauseModal = root.querySelector('#sculpted-pause-modal');
   const pauseSwapBtn = root.querySelector('#sculpted-pause-swap-btn');
+  const pauseDevStageBtn = root.querySelector('#sculpted-pause-dev-stage-btn');
   const pauseResumeBtn = root.querySelector('#sculpted-pause-resume-btn');
 
   let lastFocusedBeforePause = null;
@@ -1437,7 +1399,7 @@ export function createSculptedHud({
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Render Synchronizers                                                    */
+  /* Render Synchronizers (Including Genshin Vertical Fill Up & Down)        */
   /* ----------------------------------------------------------------------- */
 
   function renderRoleAndPartyBars() {
@@ -1475,6 +1437,12 @@ export function createSculptedHud({
     if (primaryShieldFill) {
       primaryShieldFill.style.width = `${pShieldPct.toFixed(1)}%`;
     }
+    if (primaryHpNumEl) {
+      const hpInt = Math.max(0, Math.round(pStat.hp));
+      const maxHpInt = Math.max(1, Math.round(pStat.maxHp));
+      const shInt = Math.max(0, Math.round(pStat.shield || 0));
+      primaryHpNumEl.textContent = shInt > 0 ? `${hpInt}+${shInt}/${maxHpInt}` : `${hpInt}/${maxHpInt}`;
+    }
 
     const sPct = clamp((sStat.hp / Math.max(1, sStat.maxHp)) * 100, 0, 100);
     const sShieldPct = clamp((sStat.shield / Math.max(1, sStat.maxHp)) * 100, 0, 100);
@@ -1485,29 +1453,13 @@ export function createSculptedHud({
     if (partnerShieldFill) {
       partnerShieldFill.style.width = `${sShieldPct.toFixed(1)}%`;
     }
-
-    // Bottom-Center Active Vitality Bar
-    if (vitalityText) {
-      const hpInt = Math.max(0, Math.round(pStat.hp));
-      const maxHpInt = Math.max(1, Math.round(pStat.maxHp));
-      const shieldInt = Math.max(0, Math.round(pStat.shield || 0));
-      vitalityText.textContent =
-        shieldInt > 0
-          ? `${hpInt} + ${shieldInt} / ${maxHpInt}`
-          : `${hpInt} / ${maxHpInt}`;
-    }
-    if (vitalityHpFill) {
-      vitalityHpFill.style.width = `${pPct.toFixed(1)}%`;
-      vitalityHpFill.classList.toggle('is-low', pPct < 32);
-    }
-    if (vitalityShieldFill) {
-      vitalityShieldFill.style.width = `${pShieldPct.toFixed(1)}%`;
-    }
-    if (vitalityBar) {
-      vitalityBar.classList.toggle('is-blessed', (pStat.shield || 0) > 0);
+    if (partnerHpNumEl) {
+      const sHpInt = Math.max(0, Math.round(sStat.hp));
+      const sMaxHpInt = Math.max(1, Math.round(sStat.maxHp));
+      partnerHpNumEl.textContent = `${sHpInt}/${sMaxHpInt}`;
     }
 
-    // Attack Ring Glyph: Broadsword for Knight, Crystal Staff for Mage
+    // Attack Ring Glyph: Flat White Broadsword for Knight, Arcane Staff for Mage
     if (attackIconSlot) {
       attackIconSlot.innerHTML =
         primaryRole === 'Mage' ? SVG_ATTACK_STAFF : SVG_ATTACK_SWORD;
@@ -1540,11 +1492,18 @@ export function createSculptedHud({
       const rem = Math.max(0, state.commune.maxSeconds - state.commune.elapsedSeconds);
       communeTimerEl.textContent = formatTimerMMSS(rem);
     }
+    if (fillR) {
+      const rPct = state.commune.listening
+        ? clamp(((state.commune.maxSeconds - state.commune.elapsedSeconds) / Math.max(1, state.commune.maxSeconds)) * 100, 0, 100)
+        : 100;
+      fillR.style.height = `${rPct.toFixed(1)}%`;
+    }
 
     if (slotE) {
       slotE.classList.toggle('is-unlocked', anyElementUnlocked);
       slotE.dataset.element = state.activeElement;
       const eCd = Number(state.cooldowns.E) || 0;
+      const maxECd = state.activeRole === 'Mage' ? 8.5 : 18.0;
       slotE.classList.toggle('on-cooldown', eCd > 0.08);
       slotE.classList.toggle(
         'is-active-buff',
@@ -1552,6 +1511,10 @@ export function createSculptedHud({
       );
       if (slotECd) {
         slotECd.textContent = eCd > 0.08 ? `${eCd.toFixed(1)}s` : '';
+      }
+      if (fillE) {
+        const eFillPct = eCd > 0.08 ? clamp((1 - eCd / maxECd) * 100, 8, 95) : 100;
+        fillE.style.height = `${eFillPct.toFixed(1)}%`;
       }
     }
 
@@ -1562,17 +1525,20 @@ export function createSculptedHud({
 
     if (slotTab) {
       slotTab.classList.toggle('is-unlocked', bothElementsUnlocked);
-    }
-    if (tabCaption) {
-      tabCaption.classList.toggle('is-dismissed', Boolean(state.tabSwitchHintDismissed));
+      slotTab.dataset.element = state.activeElement;
     }
 
     if (slotQ) {
       slotQ.classList.toggle('is-unlocked', ultUnlocked);
       const qCd = Number(state.cooldowns.Q) || 0;
+      const maxQCd = 24.0;
       slotQ.classList.toggle('on-cooldown', qCd > 0.08);
       if (slotQCd) {
         slotQCd.textContent = qCd > 0.08 ? `${qCd.toFixed(1)}s` : '';
+      }
+      if (fillQ) {
+        const qFillPct = qCd > 0.08 ? clamp((1 - qCd / maxQCd) * 100, 8, 95) : 100;
+        fillQ.style.height = `${qFillPct.toFixed(1)}%`;
       }
     }
   }
@@ -2087,6 +2053,13 @@ export function createSculptedHud({
     }
   }
 
+  if (partnerRowEl) {
+    partnerRowEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      triggerHeroSwap();
+    });
+  }
+
   // Pause Popover Controls
   if (pauseBtn) {
     pauseBtn.addEventListener('click', (e) => {
@@ -2110,6 +2083,25 @@ export function createSculptedHud({
     pauseSwapBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       triggerHeroSwap();
+    });
+  }
+
+  // DEV_SOLO_TEST_REMOVE_FOR_PROD: Cycle unlocked stage 0 -> 1 -> 2 -> 3 -> 0
+  if (pauseDevStageBtn) {
+    pauseDevStageBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const nextStage = (state.unlockedStage + 1) % 4;
+      setProgressionState({
+        communeDiscovered: nextStage >= 1,
+        unlockedStage: nextStage,
+        stonesSolved: nextStage,
+        iceUnlocked: nextStage >= 1,
+        fireUnlocked: nextStage >= 2,
+        ultimateUnlocked: nextStage >= 3,
+      });
+      if (typeof onDevUnlockNextStage === 'function') {
+        onDevUnlockNextStage(nextStage);
+      }
     });
   }
 
