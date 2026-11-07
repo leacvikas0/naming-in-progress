@@ -1078,6 +1078,7 @@ export function createWorldServer() {
     const ext = path.extname(filePath).toLowerCase();
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
       'X-Haru-Coop': '1',
     });
 

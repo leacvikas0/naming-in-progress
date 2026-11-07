@@ -1195,10 +1195,13 @@ export async function createCoopPlayerSystem({
         }
       }
     },
-    onPlayerHit: (targetHero, enemy, dmg) => {
+    onPlayerHit: (targetHero, enemy, dmg, hitOpts = {}) => {
       const hState = heroStates[targetHero.id];
       if (campaignLoop) {
-        campaignLoop.handlePlayerHit(hState, enemy, dmg);
+        campaignLoop.handlePlayerHit(hState, enemy, dmg, {
+          ...hitOpts,
+          knightState: heroStates.Knight,
+        });
       }
     },
   });
@@ -1229,6 +1232,8 @@ export async function createCoopPlayerSystem({
       selectedElement: 'ice',
       dashDirX: 0,
       dashDirZ: 0,
+      lungeRemaining: 0,
+      lungeDuration: 0.22,
       praying: false,
       landTimer: 0,
     },
@@ -1253,6 +1258,8 @@ export async function createCoopPlayerSystem({
       selectedSpell: 'frost_lance',
       dashDirX: 0,
       dashDirZ: 0,
+      lungeRemaining: 0,
+      lungeDuration: 0.22,
       praying: false,
       landTimer: 0,
     },
@@ -1315,8 +1322,12 @@ export async function createCoopPlayerSystem({
         st.yaw = Math.atan2(softTarget.x - st.x, softTarget.z - st.z);
       }
 
+      // Smooth per-frame lunge velocity up to contactTime (replaces frame-0 teleport snap!)
       if (swing.stepDist > 0 && !swing.stationary) {
-        advanceHeroStep(st, swing.stepDist);
+        st.lungeRemaining = swing.stepDist;
+        st.lungeDuration = Math.max(0.14, swing.contactTime || 0.22);
+      } else {
+        st.lungeRemaining = 0;
       }
       // Strictly zero hopVy on all combo swings (fixes 4th-hit mid-air jitter)
       if (st.grounded) {
@@ -1494,14 +1505,46 @@ export async function createCoopPlayerSystem({
     );
   }
 
-  function getNearestInscriptionStone(maxRadius = ALTAR_STELE_POS.triggerRadius || 4.5) {
+  function getNearestInscriptionStone(maxRadius = ALTAR_STELE_POS.triggerRadius || 5.2) {
     const leader = heroStates[activeHeroId] || heroStates.Knight;
     let best = null;
     let bestDist = maxRadius;
-    for (const stone of SACRED_INSCRIPTION_STONES) {
+
+    const physicalSites = [
+      // Site 1: Village Well Carved Keystone at (0, 0)
+      {
+        ...SACRED_INSCRIPTION_STONES[0],
+        siteKey: 'well',
+        rotY: 0.0,
+        position: { x: 0.0, y: 0.0, z: 0.0 },
+      },
+      // Site 3B: Secluded Cottage Alley Lovers Wall at (-21.6, 20.4, rotY = 0.45)
+      {
+        ...SACRED_INSCRIPTION_STONES[1],
+        siteKey: 'cottage_wall',
+        rotY: 0.45,
+        position: { x: -21.6, y: 0.0, z: 20.4 },
+      },
+      // Site 3A: Lakeside Lovers Wall at (-42, 18, rotY = 0.48)
+      {
+        ...SACRED_INSCRIPTION_STONES[1],
+        siteKey: 'lake_wall',
+        rotY: 0.48,
+      },
+      // Site 2: Demon Tree Grove R=4.6m Floor Medallion at (44, 16)
+      {
+        ...SACRED_INSCRIPTION_STONES[2],
+        siteKey: 'grove',
+        rotY: 0.0,
+      },
+    ];
+
+    for (const stone of physicalSites) {
+      if (!stone?.position) continue;
+      const siteRadius = stone.id === 'stone_grove' ? Math.max(bestDist, 5.6) : bestDist;
       const d = Math.hypot(leader.x - stone.position.x, leader.z - stone.position.z);
-      if (d <= bestDist) {
-        bestDist = d;
+      if (d <= siteRadius && d <= bestDist + (stone.id === 'stone_grove' ? 1.1 : 0)) {
+        bestDist = Math.min(bestDist, d);
         best = { ...stone, distance: Number(d.toFixed(2)) };
       }
     }
@@ -2038,6 +2081,28 @@ export async function createCoopPlayerSystem({
       return null;
     }
 
+    if (actionType === 'shatterlance_aim_start') {
+      if (activeHeroId === 'Mage') {
+        return startSkillAim({
+          ...actionOptions,
+          spellId: 'shatterlance',
+          distance: actionOptions.distance ?? 7.5,
+        });
+      }
+      return null;
+    }
+
+    if (actionType === 'shatterlance_aim_release') {
+      if (
+        activeHeroId === 'Mage' &&
+        actionAim.aimState.active &&
+        actionAim.aimState.spellId === 'shatterlance'
+      ) {
+        return releaseSkillAim(actionOptions);
+      }
+      return null;
+    }
+
     if (
       actionType === 'shield_block_end' ||
       actionType === 'heavy_release' ||
@@ -2416,7 +2481,16 @@ export async function createCoopPlayerSystem({
     const isMageStationaryCast =
       leader.id === 'Mage' &&
       (campaignLoop.combatHeroes.Mage.stormCataclysmActive ||
-        actionAim.heroes.Mage.activeSwing?.stationary);
+        actionAim.heroes.Mage.activeSwing?.stationary ||
+        (actionAim.aimState.active && actionAim.aimState.spellId === 'shatterlance'));
+
+    // Smooth per-frame lunge velocity during active melee swings (zero frame-0 snap!)
+    if (!controlLocked && leader.lungeRemaining > 1e-4) {
+      const lungeSpeed = leader.lungeRemaining / Math.max(0.06, leader.lungeDuration || 0.2);
+      const step = Math.min(leader.lungeRemaining, lungeSpeed * dt * 1.65);
+      leader.lungeRemaining = Math.max(0, leader.lungeRemaining - step);
+      advanceHeroStep(leader, step);
+    }
 
     if (leader.actionTimer > 0 && !leader.shieldBlocking) {
       leader.actionTimer = Math.max(0, leader.actionTimer - dt);
@@ -2442,6 +2516,7 @@ export async function createCoopPlayerSystem({
       }
       if (leader.actionTimer <= 0 && !campaignLoop.combatHeroes.Mage.stormCataclysmActive) {
         leader.actionState = null;
+        leader.lungeRemaining = 0;
       }
     }
 
@@ -2466,8 +2541,9 @@ export async function createCoopPlayerSystem({
       const moveX = fx * nz + rx * nx;
       const moveZ = fz * nz + rz * nx;
 
+      // Damp WASD movement to 0.18x during active melee attacks so feet stay planted and never skate!
       const blockMult = leader.shieldBlocking ? 0.35 : 1.0;
-      const actionMult = leader.actionState && !leader.shieldBlocking ? 0.35 : 1.0;
+      const actionMult = leader.actionState && !leader.shieldBlocking ? 0.18 : 1.0;
       const spd =
         player.speed *
         (isSprinting ? player.sprintMult : moveMag < 0.55 ? 0.56 : 1.0) *
@@ -2492,8 +2568,14 @@ export async function createCoopPlayerSystem({
       leader.z = next.z;
       didWrap = next.wrapped;
 
-      const targetYaw = Math.atan2(moveX, moveZ);
-      leader.yaw += shortestAngleDiff(targetYaw, leader.yaw) * Math.min(1, 14 * dt);
+      const activeSw = actionAim.heroes[leader.id]?.activeSwing;
+      const lockYawForStrike = Boolean(
+        activeSw && !activeSw.contactFired && activeSw.elapsed < activeSw.contactTime
+      );
+      if (!lockYawForStrike) {
+        const targetYaw = Math.atan2(moveX, moveZ);
+        leader.yaw += shortestAngleDiff(targetYaw, leader.yaw) * Math.min(1, 14 * dt);
+      }
     }
 
     // Vertical physics & Jump state transitions

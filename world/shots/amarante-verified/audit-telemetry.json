@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-11-05T09:29:57.620Z",
-  "ephemeralPort": 58942,
+  "timestamp": "2026-11-05T11:02:43.709Z",
+  "ephemeralPort": 49587,
   "consoleErrors": [],
   "pageErrors": [],
   "failedRequests": [
-    "HEAD http://127.0.0.1:58942/world/index.html -> net::ERR_ABORTED",
-    "HEAD http://127.0.0.1:58942/world/index.html -> net::ERR_ABORTED"
+    "HEAD http://127.0.0.1:49587/world/index.html -> net::ERR_ABORTED",
+    "HEAD http://127.0.0.1:49587/world/index.html -> net::ERR_ABORTED"
   ],
   "screenshots": [
     "01-title-pixel-to-clear.png",
@@ -34,80 +34,80 @@
       "createBtnText": "Enter",
       "joinBtnText": "Join",
       "createRect": {
-        "x": 596,
-        "y": 387.921875,
-        "width": 350,
-        "height": 300.140625,
-        "top": 387.921875,
-        "right": 946,
-        "bottom": 688.0625,
-        "left": 596
+        "x": 600,
+        "y": 197.1875,
+        "width": 344,
+        "height": 256,
+        "top": 197.1875,
+        "right": 944,
+        "bottom": 453.1875,
+        "left": 600
       },
       "joinRect": {
-        "x": 974,
-        "y": 387.921875,
-        "width": 350,
-        "height": 300.140625,
-        "top": 387.921875,
-        "right": 1324,
-        "bottom": 688.0625,
-        "left": 974
+        "x": 976,
+        "y": 197.1875,
+        "width": 344,
+        "height": 256,
+        "top": 197.1875,
+        "right": 1320,
+        "bottom": 453.1875,
+        "left": 976
       }
     },
     "shot03_flowerLobby": {
       "step": "flower_lobby",
       "typedName": "Vikas",
-      "partnerTagText": "Ishika · Mage",
+      "partnerTagText": "Ishika",
       "bottomPhraseText": "Rain on warm limestone",
       "kBtn": {
-        "x": 582.59375,
-        "y": 411,
-        "width": 148,
-        "height": 220,
-        "top": 411,
-        "right": 730.59375,
-        "bottom": 631,
-        "left": 582.59375
+        "x": 578.59375,
+        "y": 406,
+        "width": 156,
+        "height": 230,
+        "top": 406,
+        "right": 734.59375,
+        "bottom": 636,
+        "left": 578.59375
       },
       "mBtn": {
-        "x": 1154.6875,
-        "y": 415.6875,
-        "width": 148,
-        "height": 220,
-        "top": 415.6875,
-        "right": 1302.6875,
-        "bottom": 635.6875,
-        "left": 1154.6875
+        "x": 1150.6875,
+        "y": 410.6875,
+        "width": 156,
+        "height": 230,
+        "top": 410.6875,
+        "right": 1306.6875,
+        "bottom": 640.6875,
+        "left": 1150.6875
       },
       "bubble": {
-        "x": 262.59375,
-        "y": 452.828125,
-        "width": 236,
-        "height": 88.34375,
-        "top": 452.828125,
-        "right": 498.59375,
-        "bottom": 541.171875,
-        "left": 262.59375
+        "x": 458.1875,
+        "y": 162.234375,
+        "width": 268,
+        "height": 98.3125,
+        "top": 162.234375,
+        "right": 726.1875,
+        "bottom": 260.546875,
+        "left": 458.1875
       },
       "partnerTag": {
-        "x": 1171.9921875,
-        "y": 96.15625,
-        "width": 128.390625,
-        "height": 31.4375,
-        "top": 96.15625,
-        "right": 1300.3828125,
-        "bottom": 127.59375,
-        "left": 1171.9921875
+        "x": 1159.1875,
+        "y": 84.84375,
+        "width": 154,
+        "height": 56.75,
+        "top": 84.84375,
+        "right": 1313.1875,
+        "bottom": 141.59375,
+        "left": 1159.1875
       },
       "bottomPhrase": {
-        "x": 825.328125,
-        "y": 1012,
-        "width": 269.328125,
-        "height": 40,
-        "top": 1012,
-        "right": 1094.65625,
-        "bottom": 1052,
-        "left": 825.328125
+        "x": 827.5625,
+        "y": 1011.34375,
+        "width": 264.875,
+        "height": 38.65625,
+        "top": 1011.34375,
+        "right": 1092.4375,
+        "bottom": 1050,
+        "left": 827.5625
       }
     },
     "shot04_bareDesktop": {
@@ -126,44 +126,44 @@
     "shot05_bareTablet": {
       "profile": "tablet",
       "joyRect": {
-        "x": 44,
-        "y": 824,
-        "width": 132,
-        "height": 132,
-        "top": 824,
-        "right": 176,
-        "bottom": 956,
-        "left": 44
+        "x": 38,
+        "y": 812,
+        "width": 152,
+        "height": 152,
+        "top": 812,
+        "right": 190,
+        "bottom": 964,
+        "left": 38
       },
       "atkRect": {
-        "x": 1480,
-        "y": 880,
-        "width": 84,
-        "height": 84,
-        "top": 880,
-        "right": 1564,
-        "bottom": 964,
-        "left": 1480
+        "x": 1456,
+        "y": 858,
+        "width": 116,
+        "height": 116,
+        "top": 858,
+        "right": 1572,
+        "bottom": 974,
+        "left": 1456
       },
       "dashRect": {
-        "x": 1389,
-        "y": 917,
-        "width": 54,
-        "height": 54,
-        "top": 917,
-        "right": 1443,
-        "bottom": 971,
-        "left": 1389
+        "x": 1358,
+        "y": 904,
+        "width": 74,
+        "height": 74,
+        "top": 904,
+        "right": 1432,
+        "bottom": 978,
+        "left": 1358
       },
       "jumpRect": {
-        "x": 1480,
-        "y": 788,
-        "width": 54,
-        "height": 54,
-        "top": 788,
-        "right": 1534,
-        "bottom": 842,
-        "left": 1480
+        "x": 1474,
+        "y": 762,
+        "width": 74,
+        "height": 74,
+        "top": 762,
+        "right": 1548,
+        "bottom": 836,
+        "left": 1474
       }
     },
     "shot06_stoneGazeCommune": {
@@ -177,64 +177,64 @@
     },
     "shot07_tabletFullArcDay": {
       "envPolarity": "day",
-      "minClearGapPx": 22.06,
+      "minClearGapPx": 20.43,
       "minPair": "sculpted-jump-btn <-> sculpted-commune-btn",
       "circles": [
         {
           "id": "sculpted-attack-btn",
-          "cx": 1522,
-          "cy": 922,
-          "radius": 42,
-          "w": 84,
-          "h": 84
+          "cx": 1514,
+          "cy": 916,
+          "radius": 58,
+          "w": 116,
+          "h": 116
         },
         {
           "id": "sculpted-dash-btn",
-          "cx": 1416,
-          "cy": 944,
-          "radius": 27,
-          "w": 54,
-          "h": 54
+          "cx": 1395,
+          "cy": 941,
+          "radius": 37,
+          "w": 74,
+          "h": 74
         },
         {
           "id": "sculpted-jump-btn",
-          "cx": 1507,
-          "cy": 815,
-          "radius": 27,
-          "w": 54,
-          "h": 54
+          "cx": 1511,
+          "cy": 799,
+          "radius": 37,
+          "w": 74,
+          "h": 74
         },
         {
           "id": "sculpted-slot-tab",
-          "cx": 1335,
-          "cy": 953,
-          "radius": 23,
-          "w": 46,
-          "h": 46
+          "cx": 1302,
+          "cy": 948,
+          "radius": 34,
+          "w": 68,
+          "h": 68
         },
         {
           "id": "sculpted-slot-e",
-          "cx": 1345,
-          "cy": 873,
-          "radius": 31,
-          "w": 62,
-          "h": 62
+          "cx": 1317,
+          "cy": 853,
+          "radius": 39,
+          "w": 78,
+          "h": 78
         },
         {
           "id": "sculpted-slot-q",
-          "cx": 1399,
-          "cy": 785,
-          "radius": 31,
-          "w": 62,
-          "h": 62
+          "cx": 1386,
+          "cy": 758,
+          "radius": 38,
+          "w": 76,
+          "h": 76
         },
         {
           "id": "sculpted-commune-btn",
-          "cx": 1504,
-          "cy": 738,
-          "radius": 28,
-          "w": 56,
-          "h": 56
+          "cx": 1502,
+          "cy": 704,
+          "radius": 38,
+          "w": 76,
+          "h": 76
         }
       ],
       "activeDamageNumbers": 2,

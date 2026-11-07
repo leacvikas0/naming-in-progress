@@ -230,13 +230,38 @@ try {
   });
 
   await page.setViewportSize({ width: 1920, height: 1080 });
-  await page.goto(`${baseUrl}?flow=1&step=title&maskSpoilers=1`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}?flow=1&step=title&maskSpoilers=1`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(
     () => Boolean(window.__WORLD__ && window.__WORLD__.ready && window.__WORLD_READY__),
     null,
     { timeout: 30000 }
   );
-  await page.waitForTimeout(250);
+  await page.evaluate(async () => {
+    if (document.fonts) {
+      try {
+        await Promise.race([
+          Promise.all([
+            document.fonts.load('italic 600 64px "Cormorant Garamond"'),
+            document.fonts.load('600 32px "Cormorant Garamond"'),
+            document.fonts.load('700 24px "Cormorant Garamond"'),
+            document.fonts.load('600 24px "Cinzel"'),
+            document.fonts.ready,
+          ]),
+          new Promise((r) => setTimeout(r, 2500)),
+        ]);
+      } catch {
+        // ignore if offline
+      }
+    }
+    const w = window.__WORLD__;
+    if (w?.stoneDecals?.entries) {
+      for (const entry of Object.values(w.stoneDecals.entries)) {
+        entry.lastProgress = -1;
+        entry.redraw(0, false);
+      }
+    }
+  });
+  await page.waitForTimeout(300);
 
   async function renderFrames(count = 6, dt = 0.016) {
     await page.evaluate(
@@ -838,6 +863,12 @@ try {
     console.error('Console/Page Errors:', { consoleErrors, pageErrors });
     process.exitCode = 1;
   }
+} catch (err) {
+  console.error('AUDIT SCRIPT EXCEPTION:', err?.message || err);
+  console.error('PAGE ERRORS:', pageErrors);
+  console.error('CONSOLE ERRORS:', consoleErrors);
+  console.error('FAILED REQUESTS:', failedRequests);
+  process.exitCode = 1;
 } finally {
   await browser.close();
   server.closeAllConnections?.();

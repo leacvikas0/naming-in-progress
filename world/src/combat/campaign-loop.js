@@ -18,6 +18,7 @@
 import * as THREE from 'three';
 import {
   clamp,
+  shortestAngleDiff,
   HERO_STATS,
   BREATHING_STYLES,
   SPELLS,
@@ -708,7 +709,7 @@ export function createCampaignLoop({
     transitionToAct('act2_plaza');
   }
 
-  function handlePlayerHit(targetHeroState, enemy, rawDmg) {
+  function handlePlayerHit(targetHeroState, enemy, rawDmg, hitOptions = {}) {
     const heroId = targetHeroState?.id || 'Knight';
     const h = combatHeroes[heroId] || combatHeroes.Knight;
     if (
@@ -728,32 +729,86 @@ export function createCampaignLoop({
       return { absorbed: 0, hpLost: 0, downed: false, interceptedByKnight: false };
     }
 
-    // If Mage is hit while Knight is holding Shield Block, Knight intercepts & blocks 80%!
+    // If Mage is hit while Knight is holding Shield Block, check physical proximity/line interception!
+    // (When coordinates are omitted in headless tests, allow interception for test compatibility.)
     if (
       heroId === 'Mage' &&
       combatHeroes.Knight.shieldBlocking &&
       !combatHeroes.Knight.downed
     ) {
-      const reducedForKnight = Math.max(
-        1,
-        Math.round(rawDmg * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
-      );
-      const kRes = handlePlayerHit({ id: 'Knight' }, enemy, reducedForKnight);
-      return {
-        absorbed: rawDmg - reducedForKnight + (kRes?.absorbed || 0),
-        hpLost: 0,
-        knightHpLost: kRes?.hpLost || 0,
-        downed: false,
-        interceptedByKnight: true,
-      };
+      let physicallyIntercepted = true;
+      const kPos = hitOptions?.knightState || targetHeroState?.partnerPos;
+      if (
+        typeof targetHeroState?.x === 'number' &&
+        typeof targetHeroState?.z === 'number' &&
+        typeof kPos?.x === 'number' &&
+        typeof kPos?.z === 'number'
+      ) {
+        const dKnightToMage = Math.hypot(
+          kPos.x - targetHeroState.x,
+          kPos.z - targetHeroState.z
+        );
+        let onAttackLine = false;
+        if (typeof enemy?.x === 'number' && typeof enemy?.z === 'number') {
+          const ax = targetHeroState.x - enemy.x;
+          const az = targetHeroState.z - enemy.z;
+          const aLen = Math.hypot(ax, az) || 1;
+          const nx = ax / aLen;
+          const nz = az / aLen;
+          const kx = kPos.x - enemy.x;
+          const kz = kPos.z - enemy.z;
+          const along = kx * nx + kz * nz;
+          const perp = Math.abs(kx * -nz + kz * nx);
+          onAttackLine = along >= -0.6 && along <= aLen + 1.0 && perp <= 1.8;
+        }
+        physicallyIntercepted = dKnightToMage <= 4.5 || onAttackLine;
+      }
+
+      if (physicallyIntercepted) {
+        const reducedForKnight = Math.max(
+          1,
+          Math.round(rawDmg * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
+        );
+        const kRes = handlePlayerHit({ id: 'Knight' }, enemy, reducedForKnight, {
+          ...hitOptions,
+          alreadyReduced: true,
+        });
+        return {
+          absorbed: rawDmg - reducedForKnight + (kRes?.absorbed || 0),
+          hpLost: 0,
+          knightHpLost: kRes?.hpLost || 0,
+          downed: false,
+          interceptedByKnight: true,
+        };
+      }
     }
 
     let effectiveDmg = rawDmg;
-    if (heroId === 'Knight' && combatHeroes.Knight.shieldBlocking) {
-      effectiveDmg = Math.max(
-        1,
-        Math.round(rawDmg * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
-      );
+    if (
+      heroId === 'Knight' &&
+      combatHeroes.Knight.shieldBlocking &&
+      !hitOptions?.alreadyReduced
+    ) {
+      let inFrontalArc = true;
+      if (
+        typeof targetHeroState?.yaw === 'number' &&
+        typeof targetHeroState?.x === 'number' &&
+        typeof enemy?.x === 'number'
+      ) {
+        const angToEnemy = Math.atan2(
+          enemy.x - targetHeroState.x,
+          enemy.z - targetHeroState.z
+        );
+        inFrontalArc =
+          Math.abs(shortestAngleDiff(angToEnemy, targetHeroState.yaw)) <=
+          (105 * Math.PI) / 180;
+      }
+      if (inFrontalArc) {
+        effectiveDmg = Math.max(
+          1,
+          Math.round(rawDmg * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
+        );
+      }
     }
 
     let rem = effectiveDmg;
@@ -764,11 +819,18 @@ export function createCampaignLoop({
       rem -= absorbed;
     }
 
+    // Interrupt any active co-op proximity revive if the reviving hero takes HP damage!
+    if (rem > 0) {
+      combatHeroes.Knight.reviveTimer = 0;
+      combatHeroes.Mage.reviveTimer = 0;
+    }
+
     // Mage Q 6.0s Storm Cataclysm vulnerability: 1 unprotected hit immediately downs her!
     if (heroId === 'Mage' && combatHeroes.Mage.stormCataclysmActive && rem > 0) {
       h.hp = 0;
       h.downed = true;
       h.reviveProgress = 0;
+      h.reviveTimer = 0;
       combatHeroes.Mage.stormCataclysmActive = false;
       combatHeroes.Mage.stormCataclysmTimer = 0;
       if (targetHeroState?.char?.play) {
@@ -779,7 +841,7 @@ export function createCampaignLoop({
       }
       emitBanner(
         'STORM CATACLYSM SHATTERED · MAGE DOWNED!',
-        'Unprotected during Storm Cataclysm! Use Commune to Resurrect!',
+        'Unprotected during Storm Cataclysm! Use Commune or Proximity Revive!',
         'warning'
       );
       return {
@@ -799,16 +861,22 @@ export function createCampaignLoop({
       h.hp = 0;
       h.downed = true;
       h.reviveProgress = 0;
+      h.reviveTimer = 0;
       if (targetHeroState?.char?.play) {
         targetHeroState.char.play('death', { loop: false, fade: 0.1, force: true });
       }
       emitBanner(
         `${heroId.toUpperCase()} HAS FALLEN!`,
-        'Channel Commune to Resurrect Your Beloved!',
+        'Stand Within 2.4m for 2.5s or Channel Commune to Resurrect Your Beloved!',
         'warning'
       );
     }
-    return { absorbed, hpLost: rem, downed: h.downed, interceptedByKnight: false };
+    return {
+      absorbed,
+      hpLost: rem,
+      downed: h.downed,
+      interceptedByKnight: Boolean(hitOptions?.interceptedByKnight),
+    };
   }
 
   function applyCommuneVerdict(judgment = {}, speakerRole = 'Knight', heroStates = null) {
@@ -833,14 +901,22 @@ export function createCampaignLoop({
 
     communeChannelActive = false;
 
-    if (verdict === 'smite') {
+    const isSmiteVerdict =
+      verdict === 'smite' || verdict === 'rude_smite' || verdict === 'rose_gommage';
+    if (isSmiteVerdict) {
       clearDivineBlessing();
-      const partnerAlreadyDowned = Boolean(partnerHero.downed);
+      const killBoth = Boolean(
+        verdict === 'rose_gommage' ||
+          judgment?.killBoth ||
+          judgment?.bothKill ||
+          judgment?.triggerRoseGommageDeath
+      );
+      const partnerAlreadyDowned = Boolean(partnerHero.downed || killBoth);
       const dissolveRole = partnerAlreadyDowned ? speakerKey : partnerKey;
 
       verdictSequence.active = true;
       verdictSequence.kind = 'smite';
-      verdictSequence.verdict = 'smite';
+      verdictSequence.verdict = verdict;
       verdictSequence.elapsed = 0;
       verdictSequence.duration = 2.8;
       verdictSequence.beat = 1;
@@ -848,12 +924,17 @@ export function createCampaignLoop({
       verdictSequence.dissolveRole = dissolveRole;
 
       if (partnerAlreadyDowned) {
-        // Case 2: Partner was ALREADY dead/downed when Smite hit -> Speaker dissolves & dies (Total Party Wipe)
+        // Case 2: Partner was ALREADY dead/downed when Smite hit (or rose_gommage) -> Both dissolve & die (Total Party Wipe)
         speakerHero.shield = 0;
         speakerHero.shieldTimer = 0;
         speakerHero.hp = 0;
         speakerHero.downed = true;
         speakerHero.reviveProgress = 0;
+        partnerHero.shield = 0;
+        partnerHero.shieldTimer = 0;
+        partnerHero.hp = 0;
+        partnerHero.downed = true;
+        partnerHero.reviveProgress = 0;
         vfxKit?.artoriousVfx?.triggerSmite?.(speakerPos, partnerPos);
         if (speakerEntity) {
           speakerEntity.praying = false;
@@ -863,6 +944,9 @@ export function createCampaignLoop({
         }
         if (partnerEntity) {
           partnerEntity.praying = false;
+          partnerEntity.actionState = 'death';
+          partnerEntity.actionTimer = 2.8;
+          partnerEntity.char?.play?.('death', { loop: false, fade: 0.08, force: true });
         }
         combatSfx?.playPlayerHit?.();
         emitBanner(
@@ -911,12 +995,90 @@ export function createCampaignLoop({
 
       onHudStateChanged?.(getStateSnapshot(heroStates));
       return {
-        verdict: 'smite',
+        verdict,
         speakerRole: speakerKey,
         dissolveRole,
         speakerHp: speakerHero.hp,
         partnerHp: partnerHero.hp,
         totalPartyWipe: Boolean(combatHeroes.Knight.downed && combatHeroes.Mage.downed),
+      };
+    }
+
+    // Proportional Minor / Penalty Verdicts (`selfish_penalty`, `sarcastic_pat`, `grace` with small hpDelta)
+    const rawHpDelta =
+      typeof judgment?.hpDelta === 'number' && Number.isFinite(judgment.hpDelta)
+        ? judgment.hpDelta
+        : null;
+    const anyDownedNow = Boolean(combatHeroes.Knight.downed || combatHeroes.Mage.downed);
+
+    if (verdict === 'selfish_penalty' || (rawHpDelta !== null && rawHpDelta < 0)) {
+      const loss = Math.abs(rawHpDelta ?? 20);
+      speakerHero.hp = Math.max(1, speakerHero.hp - loss);
+      if (speakerEntity) {
+        speakerEntity.praying = false;
+        speakerEntity.actionState = 'hit_b';
+        speakerEntity.actionTimer = 0.55;
+        speakerEntity.char?.play?.('hit_b', { loop: false, fade: 0.06, force: true });
+      }
+      if (partnerEntity) partnerEntity.praying = false;
+      combatSfx?.playPlayerHit?.();
+      emitBanner(
+        `SELFISH VOW REBUKED · -${loss} HP`,
+        judgment?.divine_quote ||
+          judgment?.subtitle ||
+          'Love looks outward, mortal — speak for your beloved, not your vanity.',
+        'warning'
+      );
+      onHudStateChanged?.(getStateSnapshot(heroStates));
+      return {
+        verdict: 'selfish_penalty',
+        sequenceActive: false,
+        hpDelta: -loss,
+        speakerRole: speakerKey,
+        partnerRole: partnerKey,
+        speakerHp: speakerHero.hp,
+        partnerHp: partnerHero.hp,
+      };
+    }
+
+    if (
+      !anyDownedNow &&
+      (verdict === 'sarcastic_pat' ||
+        verdict === 'grace' ||
+        (verdict === 'heal' && rawHpDelta !== null && rawHpDelta > 0 && rawHpDelta <= 35))
+    ) {
+      const gain = Math.max(1, Math.round(rawHpDelta ?? (verdict === 'sarcastic_pat' ? 1 : 24)));
+      combatHeroes.Knight.hp = clamp(
+        combatHeroes.Knight.hp + gain,
+        1,
+        combatHeroes.Knight.maxHp
+      );
+      combatHeroes.Mage.hp = clamp(combatHeroes.Mage.hp + gain, 1, combatHeroes.Mage.maxHp);
+      if (speakerEntity) speakerEntity.praying = false;
+      if (partnerEntity) partnerEntity.praying = false;
+      vfxKit?.artoriousVfx?.triggerHeal?.(speakerPos, partnerPos);
+      combatSfx?.playShieldChime?.();
+      addResonance(verdict === 'sarcastic_pat' ? 2 : 12);
+      emitBanner(
+        verdict === 'sarcastic_pat'
+          ? 'AMUSED PAT ON THE HEAD · +1 HP'
+          : `GENTLE GRACE · +${gain} HP`,
+        judgment?.divine_quote ||
+          judgment?.subtitle ||
+          `A modest token of warmth (+${gain} HP).`,
+        'blessing'
+      );
+      onHudStateChanged?.(getStateSnapshot(heroStates));
+      return {
+        verdict,
+        sequenceActive: false,
+        hpDelta: gain,
+        speakerRole: speakerKey,
+        partnerRole: partnerKey,
+        speakerHp: speakerHero.hp,
+        partnerHp: partnerHero.hp,
+        knightHp: combatHeroes.Knight.hp,
+        mageHp: combatHeroes.Mage.hp,
       };
     }
 
@@ -1031,9 +1193,17 @@ export function createCampaignLoop({
     const effectiveRange =
       spell.id === 'frost_lance'
         ? SPELLS.frost_lance.range
-        : explicitDistance !== null
-          ? clamp(explicitDistance, 3.0, 16.0)
-          : spell.range;
+        : spell.id === 'shatterlance'
+          ? explicitDistance !== null
+            ? clamp(
+                explicitDistance,
+                SPELLS.shatterlance.minRange || 0.8,
+                SPELLS.shatterlance.maxRange || 18.0
+              )
+            : spell.range
+          : explicitDistance !== null
+            ? clamp(explicitDistance, 3.0, 16.0)
+            : spell.range;
 
     const enemies = enemyManager ? enemyManager.activeEnemies : [];
     const softTarget =
@@ -1112,6 +1282,26 @@ export function createCampaignLoop({
           maxTargets: spell.chainCount ? spell.chainCount + 1 : 99,
           hitSpec: commonHitSpec,
         });
+      } else if (spell.id === 'shatterlance') {
+        // Hybrid 3D Piercing Ice Lance Ray (`0 .. effectiveRange`) + Ground Crystal Eruption (`radius = 2.8m`)
+        // Deduplicated with `alreadyHitSet` so NO enemy takes duplicate damage from a single cast!
+        const rayHits = enemyManager.applyAreaOrLineHit({
+          origin: casterPos,
+          direction: { x: dirX, z: dirZ },
+          range: effectiveRange,
+          width: spell.width || 2.2,
+          maxHeightDiff: 3.5,
+          hitSpec: commonHitSpec,
+        });
+        const alreadyHitSet = new Set(rayHits.map((h) => h.enemy));
+        const eruptionHits = enemyManager.applyAreaOrLineHit({
+          origin: targetPos,
+          radius: spell.eruptionRadius || 2.8,
+          maxHeightDiff: 3.5,
+          excludeEnemies: alreadyHitSet,
+          hitSpec: commonHitSpec,
+        });
+        hits = [...rayHits, ...eruptionHits];
       } else {
         hits = enemyManager.applyAreaOrLineHit({
           origin: casterPos,
@@ -1385,7 +1575,7 @@ export function createCampaignLoop({
    * - Knight: **Power Sword** — ignites sword with selected element (`ice` or `fire`)
    *   for `13.0s` active duration on an `18.0s` total cooldown (`5.0s` downtime).
    * - Mage: Casts selected `E` spell (`frost_lance` or `cinder_fall`) at aimed distance
-   *   with an `8.5s` cooldown.
+   *   with an `8.5s` cooldown (or `shatterlance` on its `2.8s` cooldown when aimed via Hold Attack).
    */
   function performPartnerSkill(activeHeroId, heroStates, options = {}) {
     const knightState = heroStates?.Knight || { x: 0, y: 0, z: 0, yaw: 0 };
@@ -1422,11 +1612,35 @@ export function createCampaignLoop({
       };
     }
 
+    const spellId = options.spellId || combatHeroes.Mage.selectedSpell || 'frost_lance';
+    if (spellId === 'shatterlance') {
+      if (combatHeroes.Mage.downed) {
+        return { onCooldown: true, cooldownRemaining: 0 };
+      }
+      const castRes = castSpell(
+        'shatterlance',
+        mageState,
+        options.yaw ?? mageState.yaw ?? 0,
+        knightState,
+        {
+          distance: options.distance,
+          targetPos: options.targetPos,
+          ignoreCooldown: true,
+        }
+      );
+      return {
+        skill: 'mage_shatterlance',
+        spellId: 'shatterlance',
+        cooldown: SPELLS.shatterlance.cd,
+        distance: castRes?.distance,
+        castRes,
+      };
+    }
+
     // Mage E: Cast selected spell (frost_lance or cinder_fall) with 8.5s cooldown (4.25s during Blessing)
     if (combatHeroes.Mage.skillCd > 0.05 || combatHeroes.Mage.downed) {
       return { onCooldown: true, cooldownRemaining: combatHeroes.Mage.skillCd };
     }
-    const spellId = options.spellId || combatHeroes.Mage.selectedSpell || 'frost_lance';
     const effectiveMageECd = divineBlessingActive
       ? Number((MAGE_E_COOLDOWN * DIVINE_BLESSING_E_CD_MULT).toFixed(2))
       : MAGE_E_COOLDOWN;
@@ -2197,10 +2411,41 @@ export function createCampaignLoop({
             'blessing'
           );
         }
+      } else if (combatHeroes.Knight.downed || combatHeroes.Mage.downed) {
+        bothDownedTimer = 0;
+        const downedId = combatHeroes.Knight.downed ? 'Knight' : 'Mage';
+        const downedCh = combatHeroes[downedId];
+        const downedSt = downedId === 'Knight' ? knight : mage;
+        const dPartner = getPartnerDistance(knight, mage);
+        if (dPartner <= 2.4 && !communeChannelActive) {
+          downedCh.reviveTimer = (downedCh.reviveTimer || 0) + dt;
+          downedCh.reviveProgress = clamp(downedCh.reviveTimer / 2.5, 0, 1);
+          if (downedCh.reviveTimer >= 2.5) {
+            downedCh.downed = false;
+            downedCh.reviveTimer = 0;
+            downedCh.reviveProgress = 0;
+            downedCh.hp = Math.max(1, Math.round(downedCh.maxHp * 0.35));
+            if (downedSt) {
+              downedSt.actionState = null;
+              downedSt.actionTimer = 0;
+              downedSt.char?.play?.('revive', { loop: false, fade: 0.1, force: true });
+            }
+            combatSfx?.playShieldChime?.();
+            emitBanner(
+              `${downedId.toUpperCase()} REVIVED · 35% VITALITY`,
+              'Your Beloved Pulled You Back From the Brink!',
+              'blessing'
+            );
+          }
+        } else {
+          downedCh.reviveTimer = 0;
+          downedCh.reviveProgress = 0.58 + 0.32 * Math.sin(elapsed * 4.5);
+        }
       } else {
         bothDownedTimer = 0;
         for (const ch of Object.values(combatHeroes)) {
-          ch.reviveProgress = ch.downed ? 0.58 + 0.32 * Math.sin(elapsed * 4.5) : 0;
+          ch.reviveTimer = 0;
+          ch.reviveProgress = 0;
         }
       }
     }

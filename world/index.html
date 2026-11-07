@@ -8,7 +8,27 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <link rel="manifest" href="/world/manifest.webmanifest" />
   <link rel="icon" href="data:," />
-  <title>Amarante — The Unfading Bloom</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400;1,600;1,700&family=Playfair+Display:ital,wght@0,600;0,700;1,500;1,600&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <title>Amarante - The Unfading Bloom</title>
+  <script>
+    if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then((regs) => {
+          for (const r of regs) r.unregister();
+        }).catch(() => {});
+      }
+      if ('caches' in window) {
+        caches.keys().then((keys) => {
+          for (const k of keys) caches.delete(k);
+        }).catch(() => {});
+      }
+    }
+  </script>
   <script type="importmap">
     {
       "imports": {
@@ -54,11 +74,21 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 0.8125rem;
+      font-family: "Cormorant Garamond", "Plus Jakarta Sans", Georgia, serif;
+      font-size: 0.875rem;
       line-height: 1.35;
-      background: #e7e5e4;
+      background: #182232;
       color: var(--text-primary);
+    }
+
+    /* Hide legacy prototype HUD bars from millisecond 0 so they never flash during boot */
+    #top-bar .top-col-left,
+    #act-objective-pill,
+    #bottom-bar,
+    #touch-hud-layer,
+    #altar-stele-modal,
+    #stele-interact-prompt {
+      display: none !important;
     }
 
     #world-canvas {
@@ -209,8 +239,9 @@
 
     .kbd {
       display: inline-block;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 0.65rem;
+      font-family: "Cinzel", "Cormorant Garamond", Georgia, serif;
+      font-variant-numeric: tabular-nums;
+      font-size: 0.68rem;
       font-weight: 700;
       line-height: 1;
       padding: 2px 5px;
@@ -221,9 +252,9 @@
     }
 
     #stats-readout {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-family: "Cormorant Garamond", "Cinzel", Georgia, serif;
       font-variant-numeric: tabular-nums;
-      font-size: 0.72rem;
+      font-size: 0.78rem;
       font-weight: 600;
       color: var(--text-secondary);
       padding: 0 6px 0 2px;
@@ -308,9 +339,9 @@
     }
 
     .hp-num {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-family: "Cormorant Garamond", "Cinzel", Georgia, serif;
       font-variant-numeric: tabular-nums;
-      font-size: 0.68rem;
+      font-size: 0.76rem;
       font-weight: 700;
       color: var(--text-primary);
       min-width: 58px;
@@ -388,7 +419,7 @@
       background: var(--surface-control);
       color: var(--text-primary);
       padding: 2px 8px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-family: "Cinzel", "Cormorant Garamond", Georgia, serif;
       font-weight: 700;
       font-size: 0.68rem;
       border: 1px solid var(--border-kbd);
@@ -634,7 +665,8 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-family: "Cinzel", "Cormorant Garamond", Georgia, serif;
+      font-variant-numeric: tabular-nums;
       font-size: 0.72rem;
       font-weight: 800;
       color: #ffffff;
@@ -689,9 +721,10 @@
       display: none;
       align-items: center;
       justify-content: center;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 0.62rem;
-      font-weight: 800;
+      font-family: "Cormorant Garamond", "Cinzel", Georgia, serif;
+      font-variant-numeric: tabular-nums;
+      font-size: 0.68rem;
+      font-weight: 700;
       line-height: 1;
       flex-shrink: 0;
     }

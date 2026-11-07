@@ -1,11 +1,16 @@
 // ============================================================================
 // world/src/ui/app-flow.js
 //
-// Amarante ("The Unfading Bloom") - Transparent Open-Air Linework & 3D Flower Lobby Flow:
-//   1. `title`        - 36px -> 1px mosaic canvas resolve (2.2s), Amarante title & Step into the Domain
-//   2. `create_join`  - Two open-air 1.5px hairline frames (Open a Domain / Join a Domain)
-//   3. `flower_lobby` - Direct 3D Hero Claim in the Flower Field (0, 128) + shoulder hairline input
-//   4. `in_game`      - Transitions camera behind hero & activates Genshin-style see-through HUD
+// Amarante ("The Unfading Bloom") - High-Craft Calligraphic Open-Air Linework &
+// 3D Flower Field Lobby Flow (Matching `amarante-target-01-opening-flow.png`):
+//   1. `title`        - 36px -> 1px mosaic canvas resolve (2.2s), Italic Calligraphic
+//                       `Amarante` wordmark + blossom swash flourish + botanical sprig CTA
+//   2. `create_join`  - `Open or Join Domain` header + two crystal-clear open-air
+//                       botanical frames with top-border cutout emblems & italic poetry
+//   3. `flower_lobby` - Direct 3D Hero Claim in the Flower Field (0, 128) with
+//                       open-air italic underline + angled helmet pointer (`Your name: Vikas`)
+//                       and open-air blossom partner header (`Ishika`)
+//   4. `in_game`      - Transitions camera behind hero & activates see-through HUD
 // ============================================================================
 
 export const FLOW_STEPS = Object.freeze({
@@ -115,23 +120,133 @@ export function getOpeningCameraPose(step, groundHeightFn = null) {
 }
 
 /* ------------------------------------------------------------------------- */
-/* Minimal Single-Stroke Geometric Linework SVGs (Zero Ivy Clutter)          */
+/* High-Craft Botanical & Calligraphic SVGs (Matching Target 01 Reference)   */
 /* ------------------------------------------------------------------------- */
 
 const SVG_OPEN_AIR_DIVIDER = `
-<svg class="af-sakura-divider-svg" viewBox="0 0 240 28" fill="none" aria-hidden="true">
-  <line x1="18" y1="14" x2="98" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.78"/>
-  <circle cx="102" cy="14" r="1.8" fill="currentColor" opacity="0.85"/>
-  <g transform="translate(120, 14)">
-    <path d="M0 -2 C-4.2 -10.5, 4.2 -10.5, 0 -2 Z" stroke="currentColor" stroke-width="1.25" fill="none" transform="rotate(0)"/>
-    <path d="M0 -2 C-4.2 -10.5, 4.2 -10.5, 0 -2 Z" stroke="currentColor" stroke-width="1.25" fill="none" transform="rotate(72)"/>
-    <path d="M0 -2 C-4.2 -10.5, 4.2 -10.5, 0 -2 Z" stroke="currentColor" stroke-width="1.25" fill="none" transform="rotate(144)"/>
-    <path d="M0 -2 C-4.2 -10.5, 4.2 -10.5, 0 -2 Z" stroke="currentColor" stroke-width="1.25" fill="none" transform="rotate(216)"/>
-    <path d="M0 -2 C-4.2 -10.5, 4.2 -10.5, 0 -2 Z" stroke="currentColor" stroke-width="1.25" fill="none" transform="rotate(288)"/>
-    <circle cx="0" cy="0" r="2.0" stroke="currentColor" stroke-width="1.2"/>
+<svg class="af-sakura-divider-svg" viewBox="0 0 260 32" fill="none" aria-hidden="true">
+  <line x1="16" y1="16" x2="104" y2="16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.86"/>
+  <circle cx="111" cy="16" r="1.9" fill="currentColor" opacity="0.9"/>
+  <g transform="translate(130, 16)">
+    <path d="M0 -2.2 C-4.8 -12.5, 4.8 -12.5, 0 -2.2 Z" fill="currentColor" transform="rotate(0)"/>
+    <path d="M0 -2.2 C-4.8 -12.5, 4.8 -12.5, 0 -2.2 Z" fill="currentColor" transform="rotate(72)"/>
+    <path d="M0 -2.2 C-4.8 -12.5, 4.8 -12.5, 0 -2.2 Z" fill="currentColor" transform="rotate(144)"/>
+    <path d="M0 -2.2 C-4.8 -12.5, 4.8 -12.5, 0 -2.2 Z" fill="currentColor" transform="rotate(216)"/>
+    <path d="M0 -2.2 C-4.8 -12.5, 4.8 -12.5, 0 -2.2 Z" fill="currentColor" transform="rotate(288)"/>
+    <circle cx="0" cy="0" r="2.6" fill="#fbbf24"/>
   </g>
-  <circle cx="138" cy="14" r="1.8" fill="currentColor" opacity="0.85"/>
-  <line x1="142" y1="14" x2="222" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.78"/>
+  <circle cx="149" cy="16" r="1.9" fill="currentColor" opacity="0.9"/>
+  <line x1="156" y1="16" x2="244" y2="16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.86"/>
+</svg>
+`;
+
+const SVG_AMARANTE_SWASH_FLOURISH = `
+<svg class="af-title-swash-svg" viewBox="0 0 420 54" fill="none" aria-hidden="true">
+  <path
+    d="M36 28 C128 8, 254 6, 336 22 C366 28, 372 44, 342 46 C322 47, 314 35, 330 28"
+    stroke="currentColor"
+    stroke-width="2.4"
+    stroke-linecap="round"
+  />
+  <path
+    d="M78 30 C156 14, 248 13, 326 24"
+    stroke="currentColor"
+    stroke-width="1.1"
+    stroke-linecap="round"
+    opacity="0.68"
+  />
+  <!-- Botanical leaves flanking the right blossom -->
+  <path d="M352 25 C344 17, 334 19, 341 27 C345 30, 350 28, 352 25 Z" fill="currentColor" opacity="0.88"/>
+  <path d="M376 33 C386 28, 388 37, 377 39 C373 39, 373 35, 376 33 Z" fill="currentColor" opacity="0.88"/>
+  <path d="M356 41 C350 49, 360 51, 363 42 Z" fill="currentColor" opacity="0.78"/>
+  <!-- 5-petal blossom on the swash tip -->
+  <g transform="translate(364, 28)">
+    <path d="M0 -2.4 C-5.2 -13.5, 5.2 -13.5, 0 -2.4 Z" fill="currentColor" transform="rotate(0)"/>
+    <path d="M0 -2.4 C-5.2 -13.5, 5.2 -13.5, 0 -2.4 Z" fill="currentColor" transform="rotate(72)"/>
+    <path d="M0 -2.4 C-5.2 -13.5, 5.2 -13.5, 0 -2.4 Z" fill="currentColor" transform="rotate(144)"/>
+    <path d="M0 -2.4 C-5.2 -13.5, 5.2 -13.5, 0 -2.4 Z" fill="currentColor" transform="rotate(216)"/>
+    <path d="M0 -2.4 C-5.2 -13.5, 5.2 -13.5, 0 -2.4 Z" fill="currentColor" transform="rotate(288)"/>
+    <circle cx="0" cy="0" r="2.8" fill="#fbbf24"/>
+  </g>
+</svg>
+`;
+
+const SVG_BOTANICAL_SPRIG_LEFT = `
+<svg class="af-btn-sprig-svg is-left" viewBox="0 0 28 24" fill="none" aria-hidden="true">
+  <path d="M22 18 C15 17, 9 13, 5 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M10 12 C8 6, 13 5, 14 10 C14 12, 11 12, 10 12 Z" fill="currentColor"/>
+  <path d="M16 15 C16 9, 21 9, 20 14 C19 15, 17 15, 16 15 Z" fill="currentColor"/>
+  <path d="M9 14 C4 14, 3 10, 8 10 C10 10, 10 13, 9 14 Z" fill="currentColor"/>
+</svg>
+`;
+
+const SVG_BOTANICAL_SPRIG_RIGHT = `
+<svg class="af-btn-sprig-svg is-right" viewBox="0 0 28 24" fill="none" aria-hidden="true">
+  <path d="M6 18 C13 17, 19 13, 23 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M18 12 C20 6, 15 5, 14 10 C14 12, 17 12, 18 12 Z" fill="currentColor"/>
+  <path d="M12 15 C12 9, 7 9, 8 14 C9 15, 11 15, 12 15 Z" fill="currentColor"/>
+  <path d="M19 14 C24 14, 25 10, 20 10 C18 10, 18 13, 19 14 Z" fill="currentColor"/>
+</svg>
+`;
+
+const SVG_TOP_EMBLEM_SPRIG = `
+<svg class="af-top-emblem-svg" viewBox="0 0 56 32" fill="none" aria-hidden="true">
+  <path d="M14 24 C22 19, 32 13, 42 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M22 19 C19 12, 24 9, 26 15 C26 17, 24 19, 22 19 Z" fill="currentColor"/>
+  <path d="M30 14 C28 7, 33 5, 35 11 C35 13, 32 14, 30 14 Z" fill="currentColor"/>
+  <path d="M38 10 C37 4, 42 3, 43 8 C43 10, 40 10, 38 10 Z" fill="currentColor"/>
+  <path d="M25 18 C31 19, 33 24, 27 23 C25 22, 24 20, 25 18 Z" fill="currentColor"/>
+  <path d="M33 13 C39 14, 41 19, 35 18 C33 17, 32 15, 33 13 Z" fill="currentColor"/>
+</svg>
+`;
+
+const SVG_TOP_EMBLEM_TRAVELERS = `
+<svg class="af-top-emblem-svg" viewBox="0 0 56 32" fill="none" aria-hidden="true">
+  <circle cx="23" cy="11" r="4.2" stroke="currentColor" stroke-width="1.6"/>
+  <path d="M15.5 23.5 C15.5 18.8, 18.8 16.5, 23 16.5 C27.2 16.5, 30.5 18.8, 30.5 23.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  <circle cx="34.5" cy="12.5" r="3.6" stroke="currentColor" stroke-width="1.5"/>
+  <path d="M29.5 23.5 C30.2 19.6, 32.5 18, 35.5 18 C38.8 18, 41.2 19.8, 41.8 23.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+</svg>
+`;
+
+const SVG_CARD_THIN_DIVIDER = `
+<svg class="af-card-thin-divider-svg" viewBox="0 0 220 12" fill="none" aria-hidden="true">
+  <line x1="18" y1="6" x2="102" y2="6" stroke="currentColor" stroke-width="1.1" opacity="0.72"/>
+  <polygon points="110,2.5 113.5,6 110,9.5 106.5,6" fill="currentColor" opacity="0.88"/>
+  <line x1="118" y1="6" x2="202" y2="6" stroke="currentColor" stroke-width="1.1" opacity="0.72"/>
+</svg>
+`;
+
+const SVG_PARTNER_BLOSSOM_DIVIDER = `
+<svg class="af-partner-blossom-svg" viewBox="0 0 180 24" fill="none" aria-hidden="true">
+  <line x1="14" y1="12" x2="72" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.88"/>
+  <circle cx="78" cy="12" r="1.5" fill="currentColor"/>
+  <g transform="translate(90, 12)">
+    <path d="M0 -1.8 C-3.8 -9.8, 3.8 -9.8, 0 -1.8 Z" fill="currentColor" transform="rotate(0)"/>
+    <path d="M0 -1.8 C-3.8 -9.8, 3.8 -9.8, 0 -1.8 Z" fill="currentColor" transform="rotate(72)"/>
+    <path d="M0 -1.8 C-3.8 -9.8, 3.8 -9.8, 0 -1.8 Z" fill="currentColor" transform="rotate(144)"/>
+    <path d="M0 -1.8 C-3.8 -9.8, 3.8 -9.8, 0 -1.8 Z" fill="currentColor" transform="rotate(216)"/>
+    <path d="M0 -1.8 C-3.8 -9.8, 3.8 -9.8, 0 -1.8 Z" fill="currentColor" transform="rotate(288)"/>
+    <circle cx="0" cy="0" r="2.1" fill="#fbbf24"/>
+  </g>
+  <circle cx="102" cy="12" r="1.5" fill="currentColor"/>
+  <line x1="108" y1="12" x2="166" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.88"/>
+</svg>
+`;
+
+const SVG_CALLOUT_POINTER_KNIGHT = `
+<svg class="af-callout-pointer-svg is-knight" viewBox="0 0 240 68" fill="none" aria-hidden="true">
+  <line x1="4" y1="3" x2="228" y2="3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="48" y1="3" x2="92" y2="58" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="94" cy="60" r="4.0" fill="#1b1822" stroke="currentColor" stroke-width="1.8"/>
+</svg>
+`;
+
+const SVG_CALLOUT_POINTER_MAGE = `
+<svg class="af-callout-pointer-svg is-mage" viewBox="0 0 240 68" fill="none" aria-hidden="true">
+  <line x1="12" y1="3" x2="236" y2="3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="192" y1="3" x2="148" y2="58" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="146" cy="60" r="4.0" fill="#1b1822" stroke="currentColor" stroke-width="1.8"/>
 </svg>
 `;
 
@@ -151,14 +266,14 @@ const SVG_MAGE_CREST_OUTLINE = `
 
 const SVG_SUBMIT_ARROW = `
 <svg class="af-submit-arrow-svg" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-  <path d="M4.5 10 H15.5 M11 5.5 L15.5 10 L11 14.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M4.5 10 H15.5 M11 5.5 L15.5 10 L11 14.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
 `;
 
 const SVG_COPY_ICON = `
 <svg class="af-icon-svg af-copy-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-  <rect x="8" y="7" width="11" height="13" rx="2" stroke="currentColor" stroke-width="1.6"/>
-  <path d="M15 7V5C15 3.89543 14.1046 3 13 3H6C4.89543 3 4 3.89543 4 5V15C4 16.1046 4.89543 17 6 17H8" stroke="currentColor" stroke-width="1.6"/>
+  <rect x="8" y="7" width="11" height="13" rx="2.2" stroke="currentColor" stroke-width="1.7"/>
+  <path d="M15 7V5C15 3.89543 14.1046 3 13 3H6C4.89543 3 4 3.89543 4 5V15C4 16.1046 4.89543 17 6 17H8" stroke="currentColor" stroke-width="1.7"/>
 </svg>
 `;
 
@@ -169,55 +284,55 @@ const SVG_CHECK_ICON = `
 `;
 
 /* ------------------------------------------------------------------------- */
-/* Environment-Adaptive Transparent Open-Air Linework CSS (Zero Blur)        */
+/* Environment-Adaptive Solid Matte Cel-Shaded UI CSS (Zero Glass, Zero Blur)*/
 /* ------------------------------------------------------------------------- */
 
 const APP_FLOW_CSS = `
   :root,
   [data-env-polarity="day"] {
     --hud-ink: #fffdf9;
-    --hud-ink-muted: #f3ebe1;
-    --hud-ring-border: rgba(255, 253, 249, 0.78);
-    --hud-ring-inner: rgba(255, 253, 249, 0.34);
-    --hud-ring-fill: rgba(20, 14, 22, 0.14);
-    --hud-shadow: rgba(34, 16, 24, 0.82);
+    --hud-ink-muted: #f7f1e8;
+    --hud-ring-border: #f7efe2;
+    --hud-ring-inner: rgba(251, 211, 107, 0.55);
+    --hud-ring-fill: #1b1822;
+    --hud-shadow: rgba(18, 12, 20, 0.85);
     --hud-accent: #fbd36b;
     --ui-ink: var(--hud-ink);
     --ui-ink-muted: var(--hud-ink-muted);
     --ui-hairline: var(--hud-ring-border);
     --ui-hairline-inner: var(--hud-ring-inner);
     --ui-wash: var(--hud-ring-fill);
-    --ui-contour: 0 1px 2px var(--hud-shadow), 0 0 10px rgba(34, 16, 24, 0.45);
+    --ui-contour: 0 2px 6px var(--hud-shadow);
     --ui-accent: var(--hud-accent);
   }
 
   [data-env-polarity="golden"] {
     --hud-ink: #ffeed6;
     --hud-ink-muted: #f7d6b5;
-    --hud-ring-border: rgba(255, 238, 214, 0.80);
-    --hud-ring-inner: rgba(255, 214, 170, 0.36);
-    --hud-ring-fill: rgba(32, 14, 24, 0.15);
-    --hud-shadow: rgba(44, 18, 32, 0.85);
+    --hud-ring-border: #ffeed6;
+    --hud-ring-inner: rgba(251, 146, 60, 0.62);
+    --hud-ring-fill: #211624;
+    --hud-shadow: rgba(28, 14, 24, 0.88);
     --hud-accent: #fb923c;
   }
 
   [data-env-polarity="night"] {
     --hud-ink: #eef4ff;
     --hud-ink-muted: #cbd8f6;
-    --hud-ring-border: rgba(238, 244, 255, 0.76);
-    --hud-ring-inner: rgba(186, 208, 255, 0.32);
-    --hud-ring-fill: rgba(14, 18, 38, 0.16);
-    --hud-shadow: rgba(12, 16, 36, 0.88);
+    --hud-ring-border: #eef4ff;
+    --hud-ring-inner: rgba(125, 211, 252, 0.55);
+    --hud-ring-fill: #131828;
+    --hud-shadow: rgba(10, 14, 28, 0.90);
     --hud-accent: #7dd3fc;
   }
 
   [data-env-polarity="eclipse"] {
     --hud-ink: #ffe8ee;
     --hud-ink-muted: #f9becf;
-    --hud-ring-border: rgba(255, 232, 238, 0.82);
-    --hud-ring-inner: rgba(225, 29, 72, 0.48);
-    --hud-ring-fill: rgba(32, 8, 18, 0.16);
-    --hud-shadow: rgba(28, 6, 14, 0.90);
+    --hud-ring-border: #ffe8ee;
+    --hud-ring-inner: rgba(225, 29, 72, 0.72);
+    --hud-ring-fill: #1e0d16;
+    --hud-shadow: rgba(24, 6, 14, 0.92);
     --hud-accent: #e11d48;
   }
 
@@ -234,7 +349,7 @@ const APP_FLOW_CSS = `
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    font-family: "Cormorant Garamond", Georgia, "Palatino Linotype", Palatino, serif;
+    font-family: "Cormorant Garamond", "Playfair Display", Georgia, "Palatino Linotype", serif;
     color: var(--hud-ink);
     padding:
       max(18px, env(safe-area-inset-top, 0px))
@@ -294,19 +409,19 @@ const APP_FLOW_CSS = `
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Open-Air 1.5px Double-Hairline Frames & See-Through Pill Buttons        */
+  /* Solid Matte Cel-Shaded Sanctuary Tablets & Pill Buttons (ZERO Glass)    */
   /* ----------------------------------------------------------------------- */
   .af-hairline-frame {
     position: relative;
     pointer-events: auto;
-    background: rgba(20, 14, 22, 0.14);
-    border: 1.5px solid var(--hud-ring-border);
-    border-radius: 16px;
+    background: #1b1822;
+    border: 2px solid #f7efe2;
+    border-radius: 22px;
     box-shadow:
-      inset 0 0 0 3px transparent,
-      inset 0 0 0 4px var(--hud-ring-inner);
-    color: var(--hud-ink);
-    filter: drop-shadow(0 2px 8px var(--hud-shadow));
+      inset 0 0 0 4px #1b1822,
+      inset 0 0 0 5.2px rgba(251, 211, 107, 0.52),
+      0 12px 28px rgba(14, 10, 18, 0.72);
+    color: #fffdf9;
   }
 
   .af-hairline-pill-btn {
@@ -315,17 +430,16 @@ const APP_FLOW_CSS = `
     pointer-events: auto;
     cursor: pointer;
     border-radius: 999px;
-    border: 1.5px solid var(--hud-ring-border);
-    background: var(--hud-ring-fill);
+    border: 2px solid #f7efe2;
+    background: #1b1822;
     box-shadow:
-      inset 0 0 0 3px transparent,
-      inset 0 0 0 4px var(--hud-ring-inner);
-    color: var(--hud-ink);
-    font-family: inherit;
+      inset 0 0 0 3px #1b1822,
+      inset 0 0 0 4.2px rgba(251, 211, 107, 0.65),
+      0 6px 18px rgba(18, 12, 20, 0.65);
+    color: #fffdf9;
+    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
     font-weight: 600;
-    letter-spacing: 0.03em;
-    text-shadow: 0 1px 3px var(--hud-shadow);
-    filter: drop-shadow(0 2px 6px var(--hud-shadow));
+    letter-spacing: 0.02em;
     -webkit-tap-highlight-color: transparent;
     transition-property: transform, border-color, background-color, opacity;
     transition-duration: 150ms;
@@ -349,12 +463,14 @@ const APP_FLOW_CSS = `
   }
 
   @media (hover: hover) {
-    .af-hairline-pill-btn:not(:disabled):hover,
-    .af-phrase-chip:hover,
+    .af-hairline-pill-btn:not(:disabled):hover {
+      border-color: #fbd36b;
+      background-color: #282332;
+    }
     .af-copy-btn:hover,
     .af-name-submit-btn:hover {
-      border-color: var(--hud-ink);
-      background-color: rgba(255, 253, 249, 0.18);
+      border-color: #fbd36b;
+      background-color: #fffdf9;
     }
   }
 
@@ -367,13 +483,13 @@ const APP_FLOW_CSS = `
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Screen 1: Title Screen (FLOW_STEPS.TITLE)                               */
+  /* Screen 1: Title Screen (FLOW_STEPS.TITLE) — Match Target 01 Panel 1     */
   /* ----------------------------------------------------------------------- */
   .af-scene-title {
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    padding-top: min(10vh, 84px);
+    padding-top: min(8.5vh, 72px);
   }
 
   .af-title-stack {
@@ -381,39 +497,61 @@ const APP_FLOW_CSS = `
     flex-direction: column;
     align-items: center;
     text-align: center;
-    max-width: 720px;
+    max-width: 780px;
   }
 
   .af-sakura-divider-svg {
-    width: 220px;
-    height: 28px;
+    width: 248px;
+    height: 30px;
     color: var(--hud-ink);
-    filter: drop-shadow(0 1px 4px var(--hud-shadow));
+    filter:
+      drop-shadow(0 2px 0 #1b1822)
+      drop-shadow(0 -1px 0 #1b1822)
+      drop-shadow(1px 0 0 #1b1822)
+      drop-shadow(-1px 0 0 #1b1822);
     margin-bottom: 2px;
   }
 
   .af-main-title {
-    font-family: "Cormorant Garamond", Georgia, "Palatino Linotype", serif;
-    font-size: clamp(3.5rem, 7.2vw, 5.5rem);
+    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+    font-style: italic;
+    font-size: clamp(5.1rem, 8.8vw, 7.1rem);
     font-weight: 600;
-    line-height: 1.08;
-    letter-spacing: 0.02em;
+    line-height: 0.94;
+    letter-spacing: 0.01em;
+    color: #fffdf9;
+    paint-order: stroke fill;
+    -webkit-text-stroke: 4px #1b1822;
+    text-shadow: 0 3px 0 #1b1822, 0 6px 14px rgba(18, 12, 20, 0.72);
+    margin: 0;
+    padding: 0 12px;
+  }
+
+  .af-title-swash-svg {
+    width: clamp(290px, 34vw, 396px);
+    height: 46px;
     color: var(--hud-ink);
-    text-shadow:
-      0 1px 2px var(--hud-shadow),
-      0 4px 18px var(--hud-shadow);
-    margin: 0 0 4px 0;
+    filter:
+      drop-shadow(0 2px 0 #1b1822)
+      drop-shadow(0 -1px 0 #1b1822)
+      drop-shadow(1px 0 0 #1b1822)
+      drop-shadow(-1px 0 0 #1b1822);
+    margin-top: -8px;
+    margin-bottom: 4px;
   }
 
   .af-subtitle {
-    font-size: clamp(1.08rem, 1.75vw, 1.35rem);
+    font-family: "Cormorant Garamond", Georgia, serif;
+    font-size: clamp(1.22rem, 1.9vw, 1.52rem);
     font-style: italic;
-    font-weight: 500;
-    line-height: 1.25;
-    letter-spacing: 0.06em;
-    color: var(--hud-ink-muted);
-    text-shadow: 0 1px 4px var(--hud-shadow);
-    margin: 0 0 12px 0;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0.05em;
+    color: #fffdf9;
+    paint-order: stroke fill;
+    -webkit-text-stroke: 2.5px #1b1822;
+    text-shadow: 0 2px 0 #1b1822, 0 4px 10px rgba(18, 12, 20, 0.72);
+    margin: 0 0 6px 0;
   }
 
   .af-credits-block {
@@ -422,31 +560,52 @@ const APP_FLOW_CSS = `
     align-items: center;
     justify-content: center;
     gap: 8px;
-    color: var(--hud-ink-muted);
-    font-size: clamp(0.92rem, 1.3vw, 1.06rem);
-    font-weight: 500;
-    line-height: 1.4;
-    padding: 4px 8px;
-    background: transparent;
-    border: none;
-    text-shadow: 0 1px 4px var(--hud-shadow);
-    margin-bottom: 26px;
+    color: #fffdf9;
+    font-family: "Cormorant Garamond", Georgia, serif;
+    font-size: clamp(1.02rem, 1.35vw, 1.16rem);
+    font-weight: 600;
+    line-height: 1.35;
+    padding: 4px 16px;
+    background: #1b1822;
+    border: 1.5px solid #f7efe2;
+    border-radius: 999px;
+    box-shadow: 0 4px 12px rgba(18, 12, 20, 0.68);
+    paint-order: stroke fill;
+    -webkit-text-stroke: 2.5px #1b1822;
+    margin-bottom: 22px;
   }
 
   .af-credit-dot {
-    opacity: 0.72;
+    opacity: 0.92;
     color: var(--hud-accent);
   }
 
   .af-enter-btn {
-    min-width: 264px;
-    min-height: 54px;
-    padding: 11px 36px;
+    min-width: 326px;
+    min-height: 60px;
+    padding: 12px 28px;
+    background: #1b1822;
+    border: 2px solid #f7efe2;
+    color: #fffdf9;
+    box-shadow:
+      inset 0 0 0 3px #1b1822,
+      inset 0 0 0 4.2px rgba(251, 211, 107, 0.65),
+      0 6px 18px rgba(18, 12, 20, 0.65);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    font-size: 1.24rem;
+    gap: 14px;
+    font-size: 1.48rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  .af-btn-sprig-svg {
+    width: 26px;
+    height: 22px;
+    flex-shrink: 0;
+    opacity: 0.96;
+    color: #fbd36b;
   }
 
   /* ----------------------------------------------------------------------- */
@@ -468,11 +627,15 @@ const APP_FLOW_CSS = `
   }
 
   .af-loading-title {
-    font-size: 1.2rem;
+    font-size: 1.35rem;
+    font-style: italic;
     font-weight: 600;
-    color: var(--hud-ink);
+    color: #fffdf9;
+    background: #1b1822;
+    border: 1.5px solid #f7efe2;
+    border-radius: 999px;
+    padding: 3px 14px;
     line-height: 1.2;
-    text-shadow: 0 1px 4px var(--hud-shadow);
   }
 
   .af-loading-stone-bar {
@@ -495,143 +658,235 @@ const APP_FLOW_CSS = `
     height: 100%;
     width: 62%;
     border-radius: 999px;
-    background: var(--hud-ink);
+    background: #fbd36b;
     transition: width 180ms ease-out;
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Screen 2: Open or Join Domain (FLOW_STEPS.CREATE_JOIN)                  */
+  /* Screen 2: Open or Join Domain (FLOW_STEPS.CREATE_JOIN) — Target 01 P2   */
   /* ----------------------------------------------------------------------- */
   .af-scene-create-join {
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 20px;
+    justify-content: flex-start;
+    padding-top: min(8.5vh, 72px);
+    gap: 24px;
+  }
+
+  .af-create-join-header-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 4px;
+  }
+
+  .af-create-join-header {
+    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+    font-size: clamp(2.45rem, 4.2vw, 3.25rem);
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: 0.015em;
+    color: #fffdf9;
+    paint-order: stroke fill;
+    -webkit-text-stroke: 3.5px #1b1822;
+    text-shadow: 0 3px 0 #1b1822, 0 5px 14px rgba(18, 12, 20, 0.72);
+    margin: 0;
   }
 
   .af-tablets-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(280px, 350px));
-    gap: 28px;
+    grid-template-columns: repeat(2, minmax(280px, 344px));
+    gap: 32px;
     align-items: stretch;
     max-width: 94vw;
+    margin-top: 8px;
   }
 
   @media (max-width: 640px) {
     .af-tablets-grid {
       grid-template-columns: minmax(260px, 340px);
-      gap: 16px;
+      gap: 22px;
     }
   }
 
   .af-world-tablet {
-    padding: 24px 26px;
+    position: relative;
+    padding: 32px 28px 26px 28px;
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
-    text-align: start;
-    min-height: 236px;
-    gap: 16px;
+    text-align: center;
+    min-height: 256px;
+    gap: 14px;
   }
 
-  .af-tablet-heading {
-    font-size: 1.45rem;
-    font-weight: 600;
-    line-height: 1.2;
-    color: var(--hud-ink);
-    text-shadow: 0 1px 3px var(--hud-shadow);
-    margin: 0 0 8px 0;
+  /* Top-border ornament emblem on each domain frame */
+  .af-tablet-top-emblem {
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 2px 12px;
+    background: #1b1822;
+    border: 1.5px solid #f7efe2;
+    border-radius: 999px;
+    color: #fbd36b;
+    pointer-events: none;
   }
 
-  .af-active-phrase-display {
-    font-size: 1.125rem;
-    font-style: italic;
-    font-weight: 600;
-    line-height: 1.35;
-    color: var(--hud-ink);
-    text-shadow: 0 1px 3px var(--hud-shadow);
-    margin: 0 0 12px 0;
+  .af-top-emblem-svg {
+    width: 48px;
+    height: 28px;
+    display: block;
   }
 
-  .af-phrase-chips-wrap {
+  /* Left/Right vertical border diamond ornaments */
+  .af-side-diamond {
+    position: absolute;
+    top: 50%;
+    width: 9px;
+    height: 9px;
+    background: #fbd36b;
+    border: 1.2px solid #1b1822;
+    transform: translate(-50%, -50%) rotate(45deg);
+    pointer-events: none;
+  }
+
+  .af-side-diamond.is-left {
+    left: 0;
+  }
+
+  .af-side-diamond.is-right {
+    left: 100%;
+  }
+
+  .af-tablet-top-block {
+    width: 100%;
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: center;
     gap: 6px;
   }
 
-  .af-phrase-chip {
-    appearance: none;
-    cursor: pointer;
-    padding: 4px 11px;
-    border-radius: 999px;
-    border: 1px solid var(--hud-ring-inner);
-    background: rgba(20, 14, 22, 0.12);
-    color: var(--hud-ink-muted);
-    font-family: inherit;
-    font-size: 0.82rem;
-    font-weight: 500;
-    text-shadow: 0 1px 2px var(--hud-shadow);
-    transition: border-color 140ms ease-out, background-color 140ms ease-out, color 140ms ease-out;
+  .af-tablet-heading {
+    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+    font-size: 1.88rem;
+    font-weight: 600;
+    line-height: 1.15;
+    color: #fffdf9;
+    margin: 0;
   }
 
-  .af-phrase-chip.is-active {
-    border-color: var(--hud-ring-border);
-    background: rgba(255, 253, 249, 0.16);
-    color: var(--hud-ink);
+  .af-card-thin-divider-svg {
+    width: 196px;
+    height: 12px;
+    color: #fbd36b;
+    opacity: 0.92;
+  }
+
+  .af-active-phrase-display {
+    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+    font-size: 1.56rem;
+    font-style: italic;
+    font-weight: 600;
+    line-height: 1.28;
+    color: #fffdf9;
+    margin: 14px 0 10px 0;
+    cursor: pointer;
+    user-select: none;
+    max-width: 240px;
+    transition: transform 140ms ease-out;
+  }
+
+  .af-active-phrase-display:hover {
+    transform: scale(1.02);
+  }
+
+  /* Keep [data-phrase-chip] in DOM for programmatic tests while hiding stacked boxes */
+  .af-phrase-chips-wrap {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
   }
 
   .af-field-group {
     width: 100%;
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
     gap: 6px;
-    text-align: start;
+    text-align: center;
+    margin: 14px 0 8px 0;
   }
 
-  .af-field-label {
-    font-size: 0.85rem;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    color: var(--hud-ink-muted);
-    text-shadow: 0 1px 2px var(--hud-shadow);
+  .af-field-label.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
-  .af-phrase-input,
-  .af-name-input {
-    width: 100%;
-    height: 40px;
-    padding: 6px 4px;
-    border: none;
-    border-bottom: 1.5px solid var(--hud-ring-border);
-    border-radius: 0;
-    background: transparent;
-    font-family: inherit;
-    font-size: 1rem; /* 16px prevents mobile WebView auto-zoom */
+  .af-phrase-input {
+    width: 88%;
+    height: 42px;
+    padding: 6px 10px;
+    border: 1.5px solid rgba(247, 239, 226, 0.45);
+    border-bottom: 2px solid #f7efe2;
+    border-radius: 10px;
+    background: #120f18;
+    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+    font-size: 1.42rem;
+    font-style: italic;
     font-weight: 600;
-    color: var(--hud-ink);
-    text-shadow: 0 1px 2px var(--hud-shadow);
+    text-align: center;
+    color: #fffdf9;
     transition: border-color 150ms ease-out;
   }
 
-  .af-phrase-input:focus,
-  .af-name-input:focus {
-    border-bottom-color: var(--hud-accent);
+  .af-phrase-input:focus {
+    border-color: var(--hud-accent);
     outline: none;
   }
 
-  .af-phrase-input::placeholder,
-  .af-name-input::placeholder {
+  .af-phrase-input::placeholder {
     color: var(--hud-ink-muted);
-    opacity: 0.68;
+    opacity: 0.72;
   }
 
   .af-domain-action-btn {
-    width: 100%;
-    min-height: 44px;
-    padding: 8px 22px;
-    font-size: 1.1rem;
+    width: 82%;
+    min-height: 48px;
+    padding: 8px 24px;
+    background: #f7efe2;
+    color: #1b1822;
+    border: 2px solid #fbd36b;
+    box-shadow: 0 4px 12px rgba(14, 10, 18, 0.55);
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin: 0 auto;
+  }
+
+  @media (hover: hover) {
+    .af-domain-action-btn:not(:disabled):hover {
+      background-color: #fbd36b;
+      border-color: #fffdf9;
+      color: #1b1822;
+    }
   }
 
   .af-error-banner {
@@ -641,12 +896,11 @@ const APP_FLOW_CSS = `
     gap: 8px;
     padding: 8px 18px;
     border-radius: 999px;
-    background: rgba(36, 8, 18, 0.24);
-    border: 1.5px solid #f43f5e;
-    color: var(--hud-ink);
-    font-size: 0.92rem;
+    background: #1e0d16;
+    border: 1.8px solid #f43f5e;
+    color: #fffdf9;
+    font-size: 1.05rem;
     font-weight: 600;
-    text-shadow: 0 1px 3px var(--hud-shadow);
   }
 
   .af-error-banner.is-visible {
@@ -654,7 +908,7 @@ const APP_FLOW_CSS = `
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Screen 3: Flower Field 3D Hero Claim (FLOW_STEPS.FLOWER_LOBBY)          */
+  /* Screen 3: Flower Field 3D Hero Claim (FLOW_STEPS.FLOWER_LOBBY) — P3     */
   /* ----------------------------------------------------------------------- */
   .af-scene-flower-lobby {
     flex-direction: column;
@@ -668,17 +922,17 @@ const APP_FLOW_CSS = `
     pointer-events: none;
   }
 
-  /* Transparent 3D-Projected Hero Hit Targets */
+  /* 3D-Projected Hero Hit Targets */
   .af-hero-hit-target {
     position: absolute;
     transform: translate(-50%, -50%);
     pointer-events: auto;
     appearance: none;
     cursor: pointer;
-    min-width: 148px;
-    min-height: 220px;
+    min-width: 156px;
+    min-height: 230px;
     padding: 0;
-    border-radius: 22px;
+    border-radius: 24px;
     background: transparent;
     border: 1.5px solid transparent;
     color: var(--hud-ink);
@@ -694,15 +948,15 @@ const APP_FLOW_CSS = `
   }
 
   .af-hero-hit-target:hover {
-    border-color: var(--hud-ring-inner);
+    border-color: #fbd36b;
   }
 
-  .af-hero-hit-target.is-claimed .af-hero-ring-badge {
-    border-color: var(--hud-accent);
-  }
-
+  /* Hide redundant overhead role badge when claimed or partner-claimed so only the
+     solid cel-ink pointer callout ("Your name: Vikas") and partner tag ("Ishika") show! */
+  .af-hero-hit-target.is-claimed .af-hero-ring-badge,
   .af-hero-hit-target.is-partner-claimed .af-hero-ring-badge {
-    display: none;
+    opacity: 0;
+    pointer-events: none;
   }
 
   #app-flow-claim-knight {
@@ -718,27 +972,25 @@ const APP_FLOW_CSS = `
   .af-hero-ring-badge {
     position: absolute;
     left: 50%;
-    top: -18px;
+    top: -16px;
     transform: translate(-50%, -100%);
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 13px 5px 9px;
+    gap: 7px;
+    padding: 6px 14px;
     border-radius: 999px;
-    background: rgba(20, 14, 22, 0.16);
-    border: 1.5px solid var(--hud-ring-border);
-    box-shadow:
-      inset 0 0 0 2px transparent,
-      inset 0 0 0 3px var(--hud-ring-inner);
-    filter: drop-shadow(0 2px 6px var(--hud-shadow));
-    text-shadow: 0 1px 3px var(--hud-shadow);
+    background: #1b1822;
+    border: 1.8px solid #f7efe2;
+    box-shadow: 0 4px 12px rgba(14, 10, 18, 0.72);
     white-space: nowrap;
+    transition: opacity 150ms ease-out;
   }
 
   .af-role-mini-svg {
     width: 20px;
     height: 20px;
     flex-shrink: 0;
+    color: #fbd36b;
   }
 
   .af-crest-meta {
@@ -750,36 +1002,42 @@ const APP_FLOW_CSS = `
   }
 
   .af-crest-role {
-    font-size: 0.92rem;
+    font-size: 1.15rem;
     font-weight: 600;
-    color: var(--hud-ink);
+    color: #fffdf9;
   }
 
   .af-crest-hint {
-    font-size: 0.72rem;
+    font-size: 0.85rem;
+    font-style: italic;
     font-weight: 500;
     color: var(--hud-ink-muted);
   }
 
-  /* Floating Partner Name Badge above the other hero */
+  /* Solid Matte Cel-Ink Partner Name Pill + Blossom Divider above the other hero */
   #app-flow-partner-tag {
     position: absolute;
     left: 64%;
-    top: 19%;
+    top: 28%;
     transform: translate(-50%, -100%);
     pointer-events: none;
-    padding: 5px 14px;
-    border-radius: 999px;
-    background: rgba(20, 14, 22, 0.16);
-    border: 1.5px solid var(--hud-ring-border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    background: #1b1822;
+    border: 1.8px solid #f7efe2;
+    border-radius: 12px;
+    padding: 8px 16px;
     box-shadow:
-      inset 0 0 0 2px transparent,
-      inset 0 0 0 3px var(--hud-ring-inner);
-    color: var(--hud-ink);
-    font-size: 0.9rem;
+      inset 0 0 0 2px #1b1822,
+      inset 0 0 0 3.2px rgba(251, 211, 107, 0.52),
+      0 8px 20px rgba(14, 10, 18, 0.75);
+    color: #fffdf9;
+    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+    font-size: 1.72rem;
     font-weight: 600;
-    text-shadow: 0 1px 4px var(--hud-shadow);
-    filter: drop-shadow(0 2px 6px var(--hud-shadow));
+    line-height: 1.05;
     white-space: nowrap;
     opacity: 0;
     transition: opacity 150ms ease-out;
@@ -789,71 +1047,139 @@ const APP_FLOW_CSS = `
     opacity: 1;
   }
 
-  /* Floating Transparent Hairline Callout beside the claimed hero's outer shoulder */
+  .af-partner-blossom-svg {
+    width: 142px;
+    height: 20px;
+    color: #f7efe2;
+  }
+
+  /* Solid Matte Cel-Ink Shoulder Callout Pill ("Your name: Vikas") */
   #app-flow-name-bubble {
     position: absolute;
-    left: 19%;
-    top: 46%;
+    left: 26%;
+    top: 31%;
     transform: translate(-50%, -50%);
-    width: min(236px, 84vw);
-    padding: 12px 16px;
-    border-radius: 14px;
-    background: rgba(20, 14, 22, 0.16);
-    border: 1.5px solid var(--hud-ring-border);
+    width: min(286px, 86vw);
+    background: #1b1822;
+    border: 1.8px solid #f7efe2;
+    border-radius: 12px;
+    padding: 8px 16px;
     box-shadow:
-      inset 0 0 0 3px transparent,
-      inset 0 0 0 4px var(--hud-ring-inner);
-    filter: drop-shadow(0 2px 8px var(--hud-shadow));
+      inset 0 0 0 2px #1b1822,
+      inset 0 0 0 3.2px rgba(251, 211, 107, 0.52),
+      0 8px 20px rgba(14, 10, 18, 0.75);
     pointer-events: auto;
     z-index: 4;
     transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 150ms ease-out;
   }
 
   #app-flow-name-bubble[data-claimed-role="Knight"] {
-    left: 19%;
-    top: 46%;
+    left: 26%;
+    top: 31%;
   }
 
   #app-flow-name-bubble[data-claimed-role="Mage"] {
-    left: 81%;
-    top: 46%;
+    left: 74%;
+    top: 31%;
   }
 
   .af-name-callout-inner {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    align-items: flex-start;
+    gap: 0;
   }
 
-  .af-name-input-row {
+  .af-name-inline-baseline {
     display: flex;
     align-items: center;
     gap: 8px;
+    width: 100%;
+    padding: 0;
+  }
+
+  .af-inline-name-prompt {
+    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+    font-size: 1.44rem;
+    font-style: italic;
+    font-weight: 600;
+    color: #f7efe2;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .af-name-input {
+    flex: 1;
+    min-width: 84px;
+    height: 34px;
+    padding: 0 4px;
+    border: none;
+    border-bottom: 1.5px solid rgba(251, 211, 107, 0.65);
+    background: transparent;
+    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+    font-size: 1.58rem;
+    font-style: italic;
+    font-weight: 700;
+    color: #fffdf9;
+  }
+
+  .af-name-input:focus {
+    outline: none;
+    border-bottom-color: #fbd36b;
+  }
+
+  .af-name-input::placeholder {
+    color: var(--hud-ink-muted);
+    font-weight: 500;
+    opacity: 0.72;
   }
 
   .af-name-submit-btn {
     appearance: none;
     cursor: pointer;
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
     border-radius: 50%;
-    border: 1.5px solid var(--hud-ring-border);
-    background: var(--hud-ring-fill);
-    color: var(--hud-ink);
+    border: 1.5px solid #fbd36b;
+    background: #f7efe2;
+    color: #1b1822;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    align-self: center;
     -webkit-tap-highlight-color: transparent;
     transition: transform 150ms ease-out, border-color 150ms ease-out, background-color 150ms ease-out;
   }
 
   .af-submit-arrow-svg {
-    width: 16px;
-    height: 16px;
+    width: 15px;
+    height: 15px;
   }
 
-  /* Bottom-Center Borderless Transparent Phrase Line */
+  .af-callout-pointer-svg {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 220px;
+    height: 44px;
+    color: #f7efe2;
+    filter: drop-shadow(0 2px 0 #1b1822);
+    pointer-events: none;
+    display: none;
+  }
+
+  #app-flow-name-bubble[data-claimed-role="Knight"] .af-callout-pointer-svg.is-knight {
+    display: block;
+  }
+
+  #app-flow-name-bubble[data-claimed-role="Mage"] .af-callout-pointer-svg.is-mage {
+    display: block;
+  }
+
+  /* Bottom Solid Matte Cel-Ink Room-Phrase Pill */
   .af-lobby-bottom-row {
     position: relative;
     z-index: 3;
@@ -861,50 +1187,54 @@ const APP_FLOW_CSS = `
     align-items: center;
     justify-content: center;
     width: 100%;
-    padding-bottom: 4px;
+    padding-bottom: 6px;
   }
 
   .af-lobby-room-bar {
     pointer-events: auto;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 4px 10px;
-    background: transparent;
-    border: none;
-    color: var(--hud-ink);
-    text-shadow: 0 1px 4px var(--hud-shadow);
+    gap: 10px;
+    background: #1b1822;
+    border: 1.8px solid #f7efe2;
+    border-radius: 12px;
+    padding: 8px 16px;
+    box-shadow:
+      inset 0 0 0 2px #1b1822,
+      inset 0 0 0 3.2px rgba(251, 211, 107, 0.52),
+      0 6px 18px rgba(14, 10, 18, 0.72);
+    color: #fffdf9;
   }
 
   .af-room-phrase-lbl {
-    font-size: 1.02rem;
+    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+    font-size: 1.42rem;
     font-style: italic;
     font-weight: 600;
-    color: var(--hud-ink);
+    color: #fffdf9;
     white-space: nowrap;
   }
 
   .af-copy-btn {
     position: relative;
     appearance: none;
-    border: 1.5px solid var(--hud-ring-border);
-    background: var(--hud-ring-fill);
-    color: var(--hud-ink);
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
+    border: 1.5px solid #fbd36b;
+    background: #282332;
+    color: #fffdf9;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    filter: drop-shadow(0 1px 4px var(--hud-shadow));
     -webkit-tap-highlight-color: transparent;
   }
 
   .af-copy-btn .af-icon-svg {
     position: absolute;
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     transition-property: transform, opacity;
     transition-duration: 240ms;
     transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
@@ -936,7 +1266,7 @@ const APP_FLOW_CSS = `
 `;
 
 /**
- * Creates the Amarante Transparent Open-Air Opening & 3D Flower Field Lobby Flow.
+ * Creates the Amarante High-Craft Calligraphic Open-Air Opening & 3D Flower Field Lobby Flow.
  */
 export function createAppFlow({
   container = null,
@@ -1016,6 +1346,7 @@ export function createAppFlow({
       <div class="af-title-stack">
         ${SVG_OPEN_AIR_DIVIDER}
         <h1 class="af-main-title">Amarante</h1>
+        ${SVG_AMARANTE_SWASH_FLOURISH}
         <p class="af-subtitle">The Unfading Bloom</p>
         <div class="af-credits-block">
           <span>Developed by Argon &amp; Sol</span>
@@ -1025,7 +1356,9 @@ export function createAppFlow({
           <span>For Ishika</span>
         </div>
         <button type="button" class="af-hairline-pill-btn af-enter-btn" id="app-flow-enter-btn" data-flow-action="enter">
+          ${SVG_BOTANICAL_SPRIG_LEFT}
           <span>Step into the Domain</span>
+          ${SVG_BOTANICAL_SPRIG_RIGHT}
         </button>
       </div>
     </section>
@@ -1044,12 +1377,22 @@ export function createAppFlow({
 
     <!-- 3. OPEN OR JOIN DOMAIN SCENE (FLOW_STEPS.CREATE_JOIN) -->
     <section class="af-scene af-scene-create-join" data-flow-scene="create_join" aria-label="Open or Join a Domain">
+      <div class="af-create-join-header-stack">
+        ${SVG_OPEN_AIR_DIVIDER}
+        <h2 class="af-create-join-header">Open or Join Domain</h2>
+      </div>
+
       <div class="af-tablets-grid">
         <!-- Left Frame: Open a Domain -->
         <div class="af-hairline-frame af-world-tablet" id="app-flow-create-tablet">
-          <div style="width: 100%;">
+          <span class="af-tablet-top-emblem">${SVG_TOP_EMBLEM_SPRIG}</span>
+          <span class="af-side-diamond is-left" aria-hidden="true"></span>
+          <span class="af-side-diamond is-right" aria-hidden="true"></span>
+
+          <div class="af-tablet-top-block">
             <h3 class="af-tablet-heading">Open a Domain</h3>
-            <p class="af-active-phrase-display" id="app-flow-active-phrase">${state.roomPhrase}</p>
+            ${SVG_CARD_THIN_DIVIDER}
+            <p class="af-active-phrase-display" id="app-flow-active-phrase" title="Click to cycle domain poetry">${state.roomPhrase}</p>
             <div class="af-phrase-chips-wrap" id="app-flow-phrase-chips">
               ${phraseChipsHtml}
             </div>
@@ -1061,10 +1404,15 @@ export function createAppFlow({
 
         <!-- Right Frame: Join a Domain -->
         <div class="af-hairline-frame af-world-tablet" id="app-flow-join-tablet">
-          <div style="width: 100%;">
+          <span class="af-tablet-top-emblem">${SVG_TOP_EMBLEM_TRAVELERS}</span>
+          <span class="af-side-diamond is-left" aria-hidden="true"></span>
+          <span class="af-side-diamond is-right" aria-hidden="true"></span>
+
+          <div class="af-tablet-top-block">
             <h3 class="af-tablet-heading">Join a Domain</h3>
+            ${SVG_CARD_THIN_DIVIDER}
             <div class="af-field-group">
-              <label class="af-field-label" for="app-flow-phrase-input">Domain phrase</label>
+              <label class="af-field-label sr-only" for="app-flow-phrase-input">Domain phrase</label>
               <input
                 type="text"
                 id="app-flow-phrase-input"
@@ -1122,10 +1470,10 @@ export function createAppFlow({
           </span>
         </button>
 
-        <!-- Floating Partner Name Badge above the other hero -->
+        <!-- Floating Partner Name + Blossom Divider above the other hero -->
         <div id="app-flow-partner-tag" aria-live="polite"></div>
 
-        <!-- Floating Transparent Hairline Callout beside the claimed hero's shoulder -->
+        <!-- Floating Open-Air Italic Callout with Underline + Angled Helmet Pointer -->
         <div
           id="app-flow-name-bubble"
           data-claimed-role="Knight"
@@ -1133,8 +1481,8 @@ export function createAppFlow({
           aria-label="Character Claim and Name Entry"
         >
           <div class="af-name-callout-inner" id="app-flow-claim-bubble" data-claimed-role="Knight">
-            <label class="af-field-label" for="app-flow-name-input" id="app-flow-bubble-role-title">Your name</label>
-            <div class="af-name-input-row">
+            <div class="af-name-inline-baseline">
+              <label class="af-inline-name-prompt" for="app-flow-name-input" id="app-flow-bubble-role-title">Your name:</label>
               <input
                 type="text"
                 id="app-flow-name-input"
@@ -1143,7 +1491,7 @@ export function createAppFlow({
                 maxlength="24"
                 autocomplete="off"
                 spellcheck="false"
-                placeholder="Type your name"
+                placeholder="Vikas"
               />
               <button
                 type="button"
@@ -1156,6 +1504,8 @@ export function createAppFlow({
                 ${SVG_SUBMIT_ARROW}
               </button>
             </div>
+            ${SVG_CALLOUT_POINTER_KNIGHT}
+            ${SVG_CALLOUT_POINTER_MAGE}
           </div>
         </div>
       </div>
@@ -1304,7 +1654,7 @@ export function createAppFlow({
       claimKnightBtn.style.left = `${kPos.x.toFixed(1)}px`;
       claimKnightBtn.style.top = `${kPos.y.toFixed(1)}px`;
       if (claimKnightBadge && typeof kPos.headY === 'number') {
-        const halfH = (claimKnightBtn.offsetHeight || 220) * 0.5;
+        const halfH = (claimKnightBtn.offsetHeight || 230) * 0.5;
         const dyFromTop = kPos.headY - (kPos.y - halfH) - 18;
         claimKnightBadge.style.top = `${Math.min(-14, dyFromTop).toFixed(1)}px`;
       }
@@ -1313,36 +1663,42 @@ export function createAppFlow({
       claimMageBtn.style.left = `${mPos.x.toFixed(1)}px`;
       claimMageBtn.style.top = `${mPos.y.toFixed(1)}px`;
       if (claimMageBadge && typeof mPos.headY === 'number') {
-        const halfH = (claimMageBtn.offsetHeight || 220) * 0.5;
+        const halfH = (claimMageBtn.offsetHeight || 230) * 0.5;
         const dyFromTop = mPos.headY - (mPos.y - halfH) - 18;
         claimMageBadge.style.top = `${Math.min(-14, dyFromTop).toFixed(1)}px`;
       }
     }
 
+    // Position the open-air italic callout ("Your name: Vikas") right above & slightly outward
+    // from the claimed hero's helmet so the angled pointer line touches the helm crown!
     const activePos = claimedRole === 'Mage' ? mPos : kPos;
     if (activePos && nameBubble) {
-      const shoulderOffsetX = claimedRole === 'Mage' ? 276 : -276;
       const vw = typeof window !== 'undefined' ? window.innerWidth || 1280 : 1280;
       const vh = typeof window !== 'undefined' ? window.innerHeight || 720 : 720;
-      const clampedX = Math.max(142, Math.min(vw - 142, activePos.x + shoulderOffsetX));
-      const clampedY = Math.max(100, Math.min(vh - 100, activePos.y - 24));
-      nameBubble.style.left = `${clampedX.toFixed(1)}px`;
-      nameBubble.style.top = `${clampedY.toFixed(1)}px`;
+      const headX = typeof activePos.headX === 'number' ? activePos.headX : activePos.x;
+      const headY =
+        typeof activePos.headY === 'number' ? activePos.headY : activePos.y - 190;
+      const offsetX = claimedRole === 'Mage' ? 58 : -58;
+      const targetX = Math.max(150, Math.min(vw - 150, headX + offsetX));
+      const targetY = Math.max(96, Math.min(vh - 140, headY - 24));
+      nameBubble.style.left = `${targetX.toFixed(1)}px`;
+      nameBubble.style.top = `${targetY.toFixed(1)}px`;
     } else if (nameBubble) {
       nameBubble.style.left = '';
       nameBubble.style.top = '';
     }
 
+    // Position the partner blossom callout ("Ishika / ── ❀ ──") right above the partner's hat/helm!
     const otherPos = claimedRole === 'Mage' ? kPos : mPos;
     if (otherPos && partnerTagEl) {
       const anchorX = typeof otherPos.headX === 'number' ? otherPos.headX : otherPos.x;
       const anchorY =
-        typeof otherPos.headY === 'number' ? otherPos.headY - 22 : otherPos.y - 210;
+        typeof otherPos.headY === 'number' ? otherPos.headY - 8 : otherPos.y - 205;
       partnerTagEl.style.left = `${anchorX.toFixed(1)}px`;
-      partnerTagEl.style.top = `${Math.max(48, anchorY).toFixed(1)}px`;
+      partnerTagEl.style.top = `${Math.max(64, anchorY).toFixed(1)}px`;
     } else if (partnerTagEl) {
       partnerTagEl.style.left = claimedRole === 'Mage' ? '34%' : '64%';
-      partnerTagEl.style.top = '20%';
+      partnerTagEl.style.top = '28%';
     }
   }
 
@@ -1430,7 +1786,8 @@ export function createAppFlow({
     if (partnerTagEl) {
       partnerTagEl.classList.toggle('is-visible', showPartnerBadge);
       const pName = state.partnerName || (state.peerConnected ? 'Partner' : '');
-      partnerTagEl.textContent = pName ? `${pName} · ${otherRole}` : `${otherRole}`;
+      const displayPartnerLabel = pName || otherRole;
+      partnerTagEl.innerHTML = `<span class="af-partner-name-text">${displayPartnerLabel}</span>${SVG_PARTNER_BLOSSOM_DIVIDER}`;
     }
 
     applyHeroScreenPositions();
@@ -1520,7 +1877,26 @@ export function createAppFlow({
     selectRole(role === 'Mage' ? 'Mage' : 'Knight', { preserveTypedInput: true });
   }
 
-  // Poetic phrase chips in Open a Domain frame
+  // Clicking the italic phrase in Open a Domain cycles through ROMANTIC_ROOM_PHRASES
+  if (activePhraseEl) {
+    activePhraseEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const curIdx = ROMANTIC_ROOM_PHRASES.indexOf(state.roomPhrase);
+      const nextPhrase =
+        ROMANTIC_ROOM_PHRASES[(curIdx + 1) % ROMANTIC_ROOM_PHRASES.length];
+      state.roomPhrase = nextPhrase;
+      activePhraseEl.textContent = nextPhrase;
+      if (phraseInput) phraseInput.value = nextPhrase;
+      root.querySelectorAll('[data-phrase-chip]').forEach((c) => {
+        c.classList.toggle(
+          'is-active',
+          c.getAttribute('data-phrase-chip') === nextPhrase
+        );
+      });
+    });
+  }
+
+  // Poetic phrase chips in Open a Domain frame (kept in DOM for programmatic selection)
   root.querySelectorAll('[data-phrase-chip]').forEach((chip) => {
     chip.addEventListener('click', (e) => {
       e.stopPropagation();

@@ -68,7 +68,7 @@ export const GradeShader = {
      * Complements 4x hardware MSAA by smoothing shader-generated edges (cel-shading steps,
      * water specular glints, roof tile ridges, and outline silhouettes) without blurring foliage.
      */
-    vec3 sampleFXAALinear(vec2 uv) {
+    vec3 sampleFXAALinear(vec2 uv, out float outCavityAO) {
       vec3 rgbM  = clamp(texture2D(tDiffuse, uv).rgb, vec3(0.0), vec3(64.0));
       vec3 rgbNW = clamp(texture2D(tDiffuse, uv + vec2(-0.75, -0.75) * uTexelSize).rgb, vec3(0.0), vec3(64.0));
       vec3 rgbNE = clamp(texture2D(tDiffuse, uv + vec2( 0.75, -0.75) * uTexelSize).rgb, vec3(0.0), vec3(64.0));
@@ -80,6 +80,12 @@ export const GradeShader = {
       float lumaNE = lumaLin(rgbNE);
       float lumaSW = lumaLin(rgbSW);
       float lumaSE = lumaLin(rgbSE);
+
+      // Zero-Extra-Tap Screen-Space Crevice & Contact Cavity AO (reuses the 4 diagonal FXAA luma taps!)
+      float avgSurround = (lumaNW + lumaNE + lumaSW + lumaSE) * 0.25;
+      float diff = max(0.0, avgSurround - lumaM);
+      float weight = smoothstep(0.012, 0.18, diff) * (1.0 - smoothstep(0.35, 0.85, diff));
+      outCavityAO = clamp(weight * (1.0 - smoothstep(0.45, 0.95, lumaM)) * uCavityStrength * 1.45, 0.0, 0.34);
 
       float lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
       float lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
@@ -109,39 +115,6 @@ export const GradeShader = {
     }
 
     /**
-     * Multi-radius Golden-Angle Screen-Space Crevice & Contact AO:
-     * Uses 8 taps on Desktop and 4 taps on Tablet (uAoTaps) to save 50% mobile memory bandwidth.
-     */
-    float evalScreenCavityAO(vec2 uv, float centerLuma) {
-      if (uCavityStrength <= 0.001) return 0.0;
-      const vec2 dirs[8] = vec2[8](
-        vec2( 0.9659,  0.2588),
-        vec2(-0.7071,  0.7071),
-        vec2(-0.2588, -0.9659),
-        vec2( 0.8660, -0.5000),
-        vec2(-0.9659, -0.2588),
-        vec2( 0.2588,  0.9659),
-        vec2( 0.5000, -0.8660),
-        vec2(-0.5000,  0.8660)
-      );
-
-      float occ = 0.0;
-      float tapCount = uAoTaps > 6.0 ? 8.0 : 4.0;
-      for (int i = 0; i < 8; i++) {
-        if (float(i) >= tapCount) break;
-        float rPx = (i < 2 || (i >= 4 && i < 6)) ? 1.65 : 4.25;
-        vec2 sampleUv = clamp(uv + dirs[i] * uTexelSize * rPx, 0.001, 0.999);
-        vec3 sCol = clamp(texture2D(tDiffuse, sampleUv).rgb, vec3(0.0), vec3(8.0));
-        float sLuma = lumaLin(sCol);
-        float diff = sLuma - centerLuma;
-        float weight = smoothstep(0.015, 0.22, diff) * (1.0 - smoothstep(0.35, 0.85, diff));
-        occ += weight;
-      }
-      occ = (occ / tapCount) * (1.0 - smoothstep(0.45, 0.95, centerLuma));
-      return clamp(occ * uCavityStrength * 1.65, 0.0, 0.38);
-    }
-
-    /**
      * AgX-Inspired Inset Filmic Tone-Mapping with Soft Path-to-White Rolloff:
      * Preserves true midtone pigment hues (weathered terracotta, sage-emerald,
      * wisteria violet) without ACES's radioactive orange/lime skew, while rolling
@@ -150,7 +123,6 @@ export const GradeShader = {
     vec3 filmicAgX(vec3 color) {
       vec3 v = max(color * (uExposure * 1.18), vec3(0.0));
 
-      // Subtle AgX chroma inset so intense highlights desaturate naturally toward warm white
       const mat3 agxInset = mat3(
         vec3(0.8566, 0.0951, 0.0483),
         vec3(0.1373, 0.7612, 0.1015),
@@ -164,7 +136,6 @@ export const GradeShader = {
 
       v = agxInset * v;
 
-      // Rational filmic S-curve with gentle toe and soft highlight shoulder
       vec3 a = v * (v + 0.0285) - 0.00008;
       vec3 b = v * (0.965 * v + 0.445) + 0.245;
       vec3 mapped = clamp(a / b, 0.0, 1.0);
@@ -180,22 +151,21 @@ export const GradeShader = {
     }
 
     void main() {
-      vec3 c = sampleFXAALinear(vUv);
+      float cavityAO = 0.0;
+      vec3 c = sampleFXAALinear(vUv, cavityAO);
 
-      // Guard against NaN / Inf from any custom shader
       vec3 bounded = clamp(c, vec3(0.0), vec3(64.0));
       c = all(equal(bounded, bounded)) ? bounded : vec3(0.0);
       vec3 linPreGrade = c;
 
-      // 1. Screen-Space Crevice & Contact Ambient Occlusion in linear space
+      // 1. Zero-Extra-Tap Screen-Space Crevice & Contact Ambient Occlusion in linear space
       float linLuma = lumaLin(c);
-      float cavityAO = evalScreenCavityAO(vUv, linLuma);
       vec3 aoTint = mix(vec3(1.0), vec3(0.58, 0.66, 0.84), cavityAO);
       c *= aoTint * (1.0 - cavityAO * 0.58);
 
-      // 1B. Painterly Orton Highlight Halation & Luminous Anime Glow (Option 4 + Option 2)
-      float highlightMask = smoothstep(0.42, 1.15, linLuma);
-      vec3 ortonGlow = c * vec3(1.06, 1.02, 0.94) * highlightMask * 0.14;
+      // 1B. Single-Pass Painterly Orton Highlight Halation & Luminous Anime Glow (replaces 10-pass UnrealBloom!)
+      float highlightMask = smoothstep(0.38, 1.10, linLuma);
+      vec3 ortonGlow = c * vec3(1.06, 1.02, 0.94) * highlightMask * 0.18;
       c += ortonGlow;
 
       // 2. Single-pass AgX-inspired filmic tone mapping & sRGB encoding
@@ -439,6 +409,8 @@ export function createWorldPost({
       bloomRadius,
       bloomThreshold
     );
+    // Bypass 10-pass HalfFloat bloom ping-ponging for 144 FPS; GradeShader computes single-pass Orton highlight halation
+    bloomPass.enabled = false;
 
     gradePass = new ShaderPass(GradeShader);
     gradePass.material.toneMapped = false;

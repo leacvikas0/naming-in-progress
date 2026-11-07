@@ -252,7 +252,7 @@ export const SEMANTIC_ANIMATIONS = {
     loop: false,
   },
   combo4: {
-    candidates: ['1H_Melee_Attack_Jump_Chop', '2H_Melee_Attack_Chop'],
+    candidates: ['2H_Melee_Attack_Spin', '2H_Melee_Attack_Chop', '1H_Melee_Attack_Slice_Diagonal'],
     aliases: ['Melee_1H_Attack_Jump_Chop'],
     loop: false,
   },
@@ -262,7 +262,7 @@ export const SEMANTIC_ANIMATIONS = {
     loop: false,
   },
   charged: {
-    candidates: ['2H_Melee_Attack_Spinning', '1H_Melee_Attack_Jump_Chop'],
+    candidates: ['2H_Melee_Attack_Spinning', '2H_Melee_Attack_Spin', '2H_Melee_Attack_Chop'],
     aliases: ['Melee_1H_Attack_Spin', 'Melee_2H_Attack_Spin'],
     loop: false,
   },
@@ -645,6 +645,45 @@ function loadRawGltf(loader, url) {
 }
 
 /**
+ * Stabilizes root/hips bone position tracks on combat & locomotion clips so
+ * chained combos (combo1 -> combo2 -> combo3 -> combo4) never snap forward/backward
+ * in bone space or float into the air while world-space movement is driven by player-controller.js.
+ */
+function stabilizeCombatRootMotion(clip) {
+  if (!clip || !Array.isArray(clip.tracks)) return clip;
+  const name = clip.name || '';
+  const isMeleeAttack =
+    name.includes('Melee_Attack') ||
+    name.includes('Block') ||
+    name.includes('Spellcast') ||
+    name.includes('Ranged_');
+  const isLocomotion = name.startsWith('Walking_') || name.startsWith('Running_');
+  if (!isMeleeAttack && !isLocomotion) return clip;
+
+  for (const track of clip.tracks) {
+    if (!track || !track.name || !track.name.endsWith('.position')) continue;
+    const boneName = track.name.slice(0, -'.position'.length).toLowerCase();
+    if (boneName !== 'hips' && boneName !== 'root') continue;
+    const vals = track.values;
+    if (!vals || vals.length < 3) continue;
+
+    const restX = vals[0];
+    const restY = vals[1];
+    const restZ = vals[2];
+    for (let i = 0; i < vals.length; i += 3) {
+      // Lock bone-space X/Z drift to rest pose so chaining combo1->combo2->combo3->combo4 has zero snapback jitter
+      vals[i] = restX;
+      vals[i + 2] = restZ;
+      if (isMeleeAttack) {
+        // Clamp upward Y excursion to +0.035m above stance height so attacks never float in mid-air
+        vals[i + 1] = Math.max(restY - 0.08, Math.min(restY + 0.035, vals[i + 1]));
+      }
+    }
+  }
+  return clip;
+}
+
+/**
  * Loads the complete 95-clip `Rig_Medium` master animation library (spanning all
  * 5 `Rig_Medium_*` animation categories: General, MovementBasic, CombatMelee,
  * CombatRanged, Special).
@@ -657,11 +696,13 @@ export async function loadAnimationPacks(loader = new GLTFLoader()) {
     ]).then(([knightGltf, skelGltf]) => {
       const clipMap = new Map();
       for (const clip of knightGltf.animations || []) {
-        if (clip && clip.name) clipMap.set(clip.name, clip);
+        if (clip && clip.name) {
+          clipMap.set(clip.name, stabilizeCombatRootMotion(clip));
+        }
       }
       for (const clip of skelGltf.animations || []) {
         if (clip && clip.name && !clipMap.has(clip.name)) {
-          clipMap.set(clip.name, clip);
+          clipMap.set(clip.name, stabilizeCombatRootMotion(clip));
         }
       }
       return {

@@ -26,7 +26,11 @@ import {
 } from '../assets/terrain/index.js';
 import { INSCRIPTION_STONES } from '../assets/terrain/geography.js';
 import { createHousesKit } from '../assets/houses/index.js';
-import { createToroidalMeadow, MEADOW_PROFILES } from '../assets/flowers/index.js';
+import {
+  createToroidalMeadow,
+  MEADOW_PROFILES,
+  buildGrassTuft,
+} from '../assets/flowers/index.js';
 import { createTimeOfDaySky, TOD_PRESETS } from './sky-tod.js';
 import { createWorldPost } from './post.js';
 import {
@@ -50,6 +54,7 @@ import {
   SPELL_BY_SLOT,
   ACT_DEFINITIONS,
 } from './combat/combat-balance.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const createDamageNumbers =
   DamageNumbersModule.createDamageNumbers ||
@@ -114,7 +119,7 @@ const PROFILES = {
   desktop: {
     id: 'desktop',
     label: 'Desktop (RX 6700)',
-    dpr: Math.min(window.devicePixelRatio || 1, 2.0),
+    dpr: 1.0,
     aaSamples: 4,
     meadowProfile: 'desktop',
     maxGrassTufts: 34000,
@@ -122,7 +127,7 @@ const PROFILES = {
   tablet: {
     id: 'tablet',
     label: 'Tablet (Xiaomi Pad 7)',
-    dpr: Math.min(window.devicePixelRatio || 1, 1.5),
+    dpr: 1.0,
     aaSamples: 2,
     meadowProfile: 'tablet',
     maxGrassTufts: 17000,
@@ -259,6 +264,10 @@ function populateValleyWildflowerDrifts(meadowInstance) {
 
   keys.forEach((key, sIdx) => {
     const imesh = meadowInstance.flowerMeshes[key];
+    // Preserve toroidal wildflower carpets (uIsToroidal > 0.5) so their camera-anchored toroidal fade radii and matrices stay intact
+    if (imesh?.material?.uniforms?.uIsToroidal?.value > 0.5) {
+      return;
+    }
     if (imesh.material?.uniforms) {
       imesh.material.uniforms.uFadeStart.value = 158.0;
       imesh.material.uniforms.uFadeEnd.value = 172.0;
@@ -310,6 +319,7 @@ function populateValleyWildflowerDrifts(meadowInstance) {
     imesh.instanceMatrix.needsUpdate = true;
     meadowInstance.instanceCounts[key] = placed;
   });
+  meadowInstance.rebuildFlowerSectors?.();
 }
 
 let meadow = null;
@@ -328,9 +338,14 @@ function buildMeadowForProfile(profileName) {
     treeShadows: treeShadowData.treeShadowVecs,
     treeCount: treeShadowData.treeCount,
   });
-  if (meadow.grassMesh && cfg.maxGrassTufts) {
-    meadow.grassMesh.count = Math.min(meadow.grassMesh.count, cfg.maxGrassTufts);
-    meadow.instanceCounts.grassTuft = meadow.grassMesh.count;
+  if (meadow.grassMesh) {
+    if (profileName === 'tablet') {
+      meadow.grassMesh.geometry = buildGrassTuft();
+    }
+    if (cfg.maxGrassTufts) {
+      meadow.grassMesh.count = Math.min(meadow.grassMesh.count, cfg.maxGrassTufts);
+      meadow.instanceCounts.grassTuft = meadow.grassMesh.count;
+    }
   }
   populateValleyWildflowerDrifts(meadow);
   scene.add(meadow.group);
@@ -718,6 +733,12 @@ const _vfxLookOffset = new THREE.Vector3();
 
 const stoneGazeState = {
   activeStoneId: null,
+  nearbyStone: null,
+  inspectActive: false,
+  inspectBlend: 0,
+  inspectPos: new THREE.Vector3(),
+  inspectTarget: new THREE.Vector3(),
+  inspectFov: 38,
   shoulderBlend: 0,
   cameraLookDot: 0,
   inActiveMeleeDanger: false,
@@ -750,35 +771,65 @@ export function isUiOverlayBlockingInput() {
 }
 
 /* ------------------------------------------------------------------------- */
-/* 6B. Diegetic 3D Stone Calligraphy Engraving + Lotus Gaze Ring Decals       */
+/* 6B. Pure 3D Inscribed Stone Geometry (SVG Borders + 3D Vector Font Poems) */
 /* ------------------------------------------------------------------------- */
 
 const SPOILER_SAFE_STONE_POEMS = Object.freeze({
   stone_plaza: Object.freeze({
-    title: 'Stele of the Sovereign Vow',
+    title: 'I · The Wellspring of Union',
     lines: Object.freeze([
       'Where crimson petals ring the ancient stone,',
       'No mortal walks the valley road alone.',
       'Bind blossom unto heartbeat in thy plea,',
       'And speak the Sovereign’s name to set love free.',
+      'Not in lone might nor pride of blade and art,',
+      'Doth grace awaken in the guarded heart;',
+      'Wait till two voices share the quiet night,',
+      'And call upon the Lord of Living Light.',
+    ]),
+    secondStanza: Object.freeze([
+      'Not in lone might nor pride of blade and art,',
+      'Doth grace awaken in the guarded heart;',
+      'Wait till two voices share the quiet night,',
+      'And call upon the Lord of Living Light.',
     ]),
   }),
   stone_pier: Object.freeze({
-    title: 'Stele of the Glacial Mirror',
+    title: 'III · The Manner of Invocation',
     lines: Object.freeze([
       'Where silver waters kiss the timber pier,',
       'Speak truth of what thy spirit holds most dear.',
       'Confess with tender warmth the human grace,',
       'That winter’s rime may wake within this place.',
+      'Come not with hollow flatteries or pride,',
+      'For He who hears walks at thy lover’s side;',
+      'Mock His high throne and watch thy partner fall,',
+      'Ask with a gentle heart and He grants all.',
+    ]),
+    secondStanza: Object.freeze([
+      'Come not with hollow flatteries or pride,',
+      'For He who hears walks at thy lover’s side;',
+      'Mock His high throne and watch thy partner fall,',
+      'Ask with a gentle heart and He grants all.',
     ]),
   }),
   stone_grove: Object.freeze({
-    title: 'Stele of the Twin Flame',
+    title: 'II · The Burial of Obsession',
     lines: Object.freeze([
       'Beneath the violet boughs where embers sleep,',
       'Swear now the steadfast promise thou shalt keep.',
       'When honest fondness names the living spark,',
       'Sunfire and meteor-cinders light the dark.',
+      'Mere hunger claims the bloom and breaks the bough,',
+      'True devotion keeps the unspoken vow;',
+      'Where twisted roots once choked the ancient stone,',
+      'Speak truth of what you cherish as your own.',
+    ]),
+    secondStanza: Object.freeze([
+      'Mere hunger claims the bloom and breaks the bough,',
+      'True devotion keeps the unspoken vow;',
+      'Where twisted roots once choked the ancient stone,',
+      'Speak truth of what you cherish as your own.',
     ]),
   }),
 });
@@ -792,146 +843,9 @@ function shouldMaskStoneSpoilers() {
   return false;
 }
 
-function drawStoneCalligraphyCanvas(ctx, { title, lines, progress = 0, unlocked = false }) {
-  const W = 1024;
-  const H = 1280;
-  ctx.clearRect(0, 0, W, H);
-
-  // 1. Aspect-scaled elliptical limestone core (alpha = 1.0 up to r = 0.84 covering both top lotus & bottom bar)
-  //    feathering seamlessly into the surrounding sunlit limestone (alpha -> 0.0 at all borders — zero box edges!)
-  ctx.save();
-  ctx.save();
-  ctx.translate(W * 0.5, H * 0.5);
-  ctx.scale(1.0, H / W);
-  const stoneMatchGrad = ctx.createRadialGradient(0, 0, 40, 0, 0, W * 0.49);
-  stoneMatchGrad.addColorStop(0.0, 'rgba(150, 135, 108, 1.0)');
-  stoneMatchGrad.addColorStop(0.58, 'rgba(160, 145, 116, 1.0)');
-  stoneMatchGrad.addColorStop(0.84, 'rgba(171, 155, 124, 1.0)');
-  stoneMatchGrad.addColorStop(0.94, 'rgba(171, 155, 124, 0.55)');
-  stoneMatchGrad.addColorStop(1.0, 'rgba(171, 155, 124, 0.0)');
-  ctx.fillStyle = stoneMatchGrad;
-  ctx.fillRect(-W * 0.5, -W * 0.5, W, W);
-  ctx.restore();
-
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  // Top chiseled rose-gold hairline & 5-petal ornament
-  const accentColor = unlocked ? '#fde047' : '#fbd38d';
-  ctx.strokeStyle = 'rgba(54, 34, 28, 0.72)';
-  ctx.lineWidth = 5.5;
-  ctx.beginPath();
-  ctx.moveTo(160, 136);
-  ctx.lineTo(440, 136);
-  ctx.moveTo(584, 136);
-  ctx.lineTo(864, 136);
-  ctx.stroke();
-
-  ctx.strokeStyle = 'rgba(255, 244, 224, 0.92)';
-  ctx.lineWidth = 3.0;
-  ctx.beginPath();
-  ctx.moveTo(160, 136);
-  ctx.lineTo(440, 136);
-  ctx.moveTo(584, 136);
-  ctx.lineTo(864, 136);
-  ctx.stroke();
-
-  ctx.fillStyle = accentColor;
-  ctx.beginPath();
-  ctx.arc(W * 0.5, 136, 12, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Chiseled Title
-  ctx.font = '700 46px "Cormorant Garamond", Georgia, "Palatino Linotype", serif';
-  ctx.shadowColor = 'rgba(18, 10, 14, 0.95)';
-  ctx.shadowBlur = 10;
-  ctx.shadowOffsetY = 3;
-  ctx.lineWidth = 6;
-  ctx.strokeStyle = 'rgba(28, 16, 20, 0.92)';
-  ctx.strokeText(title || 'Sacred Inscription Stone', W * 0.5, 216);
-  ctx.fillStyle = unlocked ? '#fef08a' : '#fff5e4';
-  ctx.fillText(title || 'Sacred Inscription Stone', W * 0.5, 216);
-
-  // Chiseled Warm-Alabaster & Rose-Gold Calligraphy Poem Lines
-  const displayLines = Array.isArray(lines) && lines.length > 0 ? lines.slice(0, 8) : [];
-  const startY = displayLines.length > 4 ? 320 : 364;
-  const lineGap = displayLines.length > 4 ? 80 : 102;
-  ctx.font = 'italic 600 36px "Cormorant Garamond", Georgia, "Palatino Linotype", serif';
-
-  for (let i = 0; i < displayLines.length; i++) {
-    const ly = startY + i * lineGap;
-    ctx.shadowColor = 'rgba(18, 10, 14, 0.95)';
-    ctx.shadowBlur = 8;
-    ctx.shadowOffsetY = 2;
-    ctx.lineWidth = 5.5;
-    ctx.strokeStyle = 'rgba(28, 16, 20, 0.90)';
-    ctx.strokeText(displayLines[i], W * 0.5, ly);
-    ctx.fillStyle = unlocked ? '#fffbeb' : '#fffdf9';
-    ctx.fillText(displayLines[i], W * 0.5, ly);
-  }
-
-  // Bottom Circular Lotus Gaze Progress Ring
-  const ringCx = W * 0.5;
-  const ringCy = 1018;
-  const ringR = 76;
-  const clampedProg = clamp(progress, 0, 1);
-
-  ctx.shadowBlur = 8;
-  ctx.strokeStyle = 'rgba(28, 16, 20, 0.72)';
-  ctx.lineWidth = 12;
-  ctx.beginPath();
-  ctx.arc(ringCx, ringCy, ringR, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.strokeStyle = 'rgba(255, 248, 240, 0.52)';
-  ctx.lineWidth = 6.5;
-  ctx.beginPath();
-  ctx.arc(ringCx, ringCy, ringR, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.strokeStyle = 'rgba(255, 232, 212, 0.34)';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(ringCx, ringCy, ringR - 13, 0, Math.PI * 2);
-  ctx.stroke();
-
-  if (clampedProg > 0.005 || unlocked) {
-    const endAng = -Math.PI * 0.5 + (unlocked ? 1.0 : clampedProg) * Math.PI * 2;
-    ctx.strokeStyle = unlocked ? '#fde047' : '#f9a8d4';
-    ctx.lineWidth = 10;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.arc(ringCx, ringCy, ringR, -Math.PI * 0.5, endAng);
-    ctx.stroke();
-  }
-
-  // Lotus Core Emblem inside the ring
-  ctx.fillStyle = unlocked ? '#fde047' : '#fbcfe8';
-  for (let p = 0; p < 5; p++) {
-    const a = (p / 5) * Math.PI * 2 - Math.PI * 0.5;
-    const px = ringCx + Math.cos(a) * 19;
-    const py = ringCy + Math.sin(a) * 19;
-    ctx.beginPath();
-    ctx.arc(px, py, 10.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.fillStyle = '#fffdf9';
-  ctx.beginPath();
-  ctx.arc(ringCx, ringCy, 7.5, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.font = '700 34px "Cormorant Garamond", Georgia, "Palatino Linotype", serif';
-  const statusLabel = unlocked
-    ? 'Commune Awakened [R]'
-    : clampedProg > 0.02
-      ? `Gazing upon the verse · ${Math.ceil((1 - clampedProg) * 3)}s`
-      : 'Gaze to Commune';
-  ctx.lineWidth = 5.5;
-  ctx.strokeStyle = 'rgba(24, 12, 16, 0.92)';
-  ctx.strokeText(statusLabel, ringCx, ringCy + ringR + 54);
-  ctx.fillStyle = unlocked ? '#fde047' : 'rgba(255, 244, 234, 0.96)';
-  ctx.fillText(statusLabel, ringCx, ringCy + ringR + 54);
-  ctx.restore();
+function smoothstep(edge0, edge1, x) {
+  const t = clamp((x - edge0) / Math.max(1e-6, edge1 - edge0), 0.0, 1.0);
+  return t * t * (3.0 - 2.0 * t);
 }
 
 function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
@@ -939,100 +853,202 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
   rootGroup.name = 'sacredStoneCalligraphyDecalsGroup';
   targetScene.add(rootGroup);
 
+  const gltfLoader = new GLTFLoader();
   const decalEntries = {};
-  const planeGeo = new THREE.PlaneGeometry(1.00, 1.44);
+  const useExposedPreview = shouldMaskStoneSpoilers();
+  const suffix = useExposedPreview ? 'exposed' : 'live';
+
+  const MODEL_PATHS = {
+    stone_plaza: `./assets/models/inscriptions/site1-well-${suffix}.glb`,
+    stone_grove: `./assets/models/inscriptions/site2-grove-${suffix}.glb`,
+    stone_pier: `./assets/models/inscriptions/site3-wall-${suffix}.glb`,
+  };
 
   for (const st of INSCRIPTION_STONES) {
-    const canvasEl = document.createElement('canvas');
-    canvasEl.width = 1024;
-    canvasEl.height = 1280;
-    const ctx = canvasEl.getContext('2d');
     const fallbackVerse =
       SPOILER_SAFE_STONE_POEMS[st.id] || SPOILER_SAFE_STONE_POEMS.stone_plaza;
 
-    const tex = new THREE.CanvasTexture(canvasEl);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 4;
-
-    const mat = new THREE.MeshBasicMaterial({
-      map: tex,
-      transparent: true,
-      depthWrite: false,
-      depthTest: true,
-      side: THREE.FrontSide,
-      polygonOffset: true,
-      polygonOffsetFactor: -4,
-      polygonOffsetUnits: -4,
-    });
-
     const holder = new THREE.Group();
-    holder.name = `stoneCalligraphyDecal_${st.id}`;
+    holder.name = `stoneCalligraphy3D_${st.id}`;
     const sy = sampleGroundY(st.x, st.z);
     holder.position.set(st.x, sy, st.z);
     holder.rotation.y = st.rotY || 0;
-
-    // Mount borderless calligraphy decals cleanly in front of the +-0.245m stone face
-    const frontMesh = new THREE.Mesh(planeGeo, mat);
-    frontMesh.position.set(0, 1.24, 0.254);
-    holder.add(frontMesh);
-
-    const backMesh = new THREE.Mesh(planeGeo, mat);
-    backMesh.position.set(0, 1.24, -0.254);
-    backMesh.rotation.y = Math.PI;
-    holder.add(backMesh);
-
     rootGroup.add(holder);
+
+    const mountTargets = [];
+    if (st.id === 'stone_plaza') {
+      // Mounted at the Village Well (0, 0, 0)
+      const wellGroup = new THREE.Group();
+      wellGroup.position.set(0 - st.x, 0 - sy, 0 - st.z);
+      holder.add(wellGroup);
+      mountTargets.push(wellGroup);
+    } else if (st.id === 'stone_grove') {
+      // Mounted atop the Whispering Grove Sanctuary Dais (44, sy, 16)
+      const groveGroup = new THREE.Group();
+      groveGroup.position.set(0, 0, 0);
+      groveGroup.rotation.y = -(st.rotY || 0);
+      holder.add(groveGroup);
+      mountTargets.push(groveGroup);
+    } else if (st.id === 'stone_pier') {
+      // Mounted at both Lakeside Sanctuary (-42, 18) and Secluded Cottage Alley (-21.6, 20.4)
+      const lakeWallGroup = new THREE.Group();
+      holder.add(lakeWallGroup);
+      mountTargets.push(lakeWallGroup);
+
+      const cottageHolder = new THREE.Group();
+      const cwX = -21.6;
+      const cwZ = 20.4;
+      cottageHolder.position.set(cwX, sampleGroundY(cwX, cwZ), cwZ);
+      cottageHolder.rotation.y = 0.45;
+      rootGroup.add(cottageHolder);
+      mountTargets.push(cottageHolder);
+    }
 
     const entry = {
       id: st.id,
-      canvas: canvasEl,
-      ctx,
-      texture: tex,
-      material: mat,
       holder,
+      mountTargets,
       title: fallbackVerse.title,
       lines: [...fallbackVerse.lines],
-      lastProgress: -1,
-      lastUnlocked: false,
-      redraw(progress = 0, unlocked = false) {
-        if (
-          Math.abs(progress - this.lastProgress) < 0.008 &&
-          unlocked === this.lastUnlocked
-        ) {
-          return;
-        }
-        this.lastProgress = progress;
-        this.lastUnlocked = unlocked;
-        drawStoneCalligraphyCanvas(this.ctx, {
-          title: this.title,
-          lines: this.lines,
-          progress,
-          unlocked,
-        });
-        this.texture.needsUpdate = true;
-      },
+      secondStanza: [...fallbackVerse.secondStanza],
+      redraw() {},
     };
-    entry.redraw(0, false);
     decalEntries[st.id] = entry;
 
-    // Fetch live scripture lines when not spoiler-masked
-    if (!shouldMaskStoneSpoilers() && typeof fetch === 'function') {
-      fetch(`/api/altar?stone=${encodeURIComponent(st.id)}`, { cache: 'no-store' })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (data && Array.isArray(data.lines) && data.lines.length > 0 && !shouldMaskStoneSpoilers()) {
-            entry.title = data.title || entry.title;
-            entry.lines = data.lines;
-            entry.lastProgress = -1;
-            const gState = stoneGazeState.stones[st.id];
-            entry.redraw(
-              (gState?.gazeElapsed || 0) / 3.0,
-              Boolean(gState?.unlocked)
+    const url = MODEL_PATHS[st.id];
+    const fallbackUrl = `./assets/models/inscriptions/${
+      st.id === 'stone_plaza'
+        ? 'site1-well-exposed.glb'
+        : st.id === 'stone_grove'
+          ? 'site2-grove-exposed.glb'
+          : 'site3-wall-exposed.glb'
+    }`;
+
+    const createGhibliMonumentShaderMaterial = (_srcMat, hasColorAttr) => {
+      return new THREE.ShaderMaterial({
+        uniforms: {
+          uHasVertexColor: { value: hasColorAttr ? 1.0 : 0.0 },
+        },
+        vertexShader: /* glsl */ `
+          ${hasColorAttr ? 'attribute vec4 color;' : ''}
+          varying vec3 vWorldPos;
+          varying vec3 vWorldNormal;
+          varying vec3 vColor;
+          void main() {
+            vec4 wp = modelMatrix * vec4(position, 1.0);
+            vWorldPos = wp.xyz;
+            vWorldNormal = normalize(mat3(modelMatrix) * normal);
+            vColor = ${hasColorAttr ? 'color.rgb' : 'vec3(0.45, 0.36, 0.26)'};
+            gl_Position = projectionMatrix * viewMatrix * wp;
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          varying vec3 vWorldPos;
+          varying vec3 vWorldNormal;
+          varying vec3 vColor;
+
+          float hash31(vec3 p) {
+            p = fract(p * vec3(443.897, 441.423, 437.195));
+            p += dot(p, p.yzx + 19.19);
+            return fract((p.x + p.y) * p.z);
+          }
+
+          float noise3(vec3 p) {
+            vec3 i = floor(p);
+            vec3 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(
+              mix(
+                mix(hash31(i + vec3(0,0,0)), hash31(i + vec3(1,0,0)), f.x),
+                mix(hash31(i + vec3(0,1,0)), hash31(i + vec3(1,1,0)), f.x),
+                f.y
+              ),
+              mix(
+                mix(hash31(i + vec3(0,0,1)), hash31(i + vec3(1,0,1)), f.x),
+                mix(hash31(i + vec3(0,1,1)), hash31(i + vec3(1,1,1)), f.x),
+                f.y
+              ),
+              f.z
             );
           }
-        })
-        .catch(() => {});
-    }
+
+          void main() {
+            vec3 geoN = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
+            if (dot(geoN, vWorldNormal) < 0.0) geoN = -geoN;
+            vec3 n = normalize(mix(vWorldNormal, geoN, 0.65));
+
+            vec3 sunDir = normalize(vec3(-0.38, 0.80, 0.46));
+            float ndl = dot(n, sunDir);
+
+            // Detect neutral stone vs botanicals/poem from vColor saturation & luminance
+            float lum = dot(vColor, vec3(0.299, 0.587, 0.114));
+            float maxC = max(vColor.r, max(vColor.g, vColor.b));
+            float minC = min(vColor.r, min(vColor.g, vColor.b));
+            float sat = (maxC - minC) / max(0.001, maxC);
+
+            vec3 col = vColor;
+
+            // If low-saturation mid-tone stone, add subtle screen-space facet edge definition & fine grain
+            if (sat < 0.48 && lum > 0.08 && lum < 0.78) {
+              float fine = noise3(vWorldPos * 19.0);
+              float mottle = noise3(vWorldPos * 3.2);
+              float dNorm = clamp(length(fwidth(geoN)) * 1.65, 0.0, 1.0);
+              float sunFactor = 0.86 + 0.24 * clamp(ndl * 0.5 + 0.5, 0.0, 1.0);
+              col *= sunFactor * (0.94 + mottle * 0.08 + (fine - 0.5) * 0.05);
+              // Crisp chiseled facet edge highlight on upward edges, warm shadow on downward edges
+              vec3 edgeHi = min(vec3(0.95, 0.88, 0.72), col * 1.38);
+              vec3 edgeLo = col * 0.62;
+              col = mix(col, edgeHi, dNorm * smoothstep(0.0, 0.65, geoN.y) * 0.42);
+              col = mix(col, edgeLo, dNorm * smoothstep(0.1, -0.55, geoN.y) * 0.38);
+            } else if (sat >= 0.48) {
+              // Botanicals (roses, serrated leaves, moss): directional cel-rim & petal depth
+              float sunBoost = 0.82 + 0.32 * smoothstep(-0.25, 0.55, ndl);
+              col *= sunBoost;
+            }
+
+            gl_FragColor = vec4(col, 1.0);
+            #include <tonemapping_fragment>
+            #include <colorspace_fragment>
+          }
+        `,
+      });
+    };
+
+    const attachScene = (gltf) => {
+      if (!gltf?.scene) return;
+      gltf.scene.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const geom = child.geometry;
+          if (geom && !geom.attributes.color) {
+            const altAttr =
+              geom.attributes._col_baked ||
+              geom.attributes.col_baked ||
+              geom.attributes._col_curvature ||
+              geom.attributes.col_curvature;
+            if (altAttr) {
+              geom.setAttribute('color', altAttr);
+            }
+          }
+          const hasColor = Boolean(geom?.attributes?.color);
+          child.material = createGhibliMonumentShaderMaterial(child.material, hasColor);
+        }
+      });
+      for (const target of mountTargets) {
+        const clone = gltf.scene.clone(true);
+        target.add(clone);
+      }
+    };
+
+    gltfLoader.load(
+      url,
+      attachScene,
+      undefined,
+      () => {
+        if (url !== fallbackUrl) {
+          gltfLoader.load(fallbackUrl, attachScene, undefined, () => {});
+        }
+      }
+    );
   }
 
   return { group: rootGroup, entries: decalEntries };
@@ -1523,9 +1539,17 @@ sculptedHud = createSculptedHud({
     if (actionName === 'attack') {
       coopSystem.triggerAction('attack');
     } else if (actionName === 'heavy' || actionName === 'block_start') {
-      coopSystem.triggerAction('heavy');
+      if (coopSystem.player.activeHeroId === 'Knight') {
+        coopSystem.triggerAction('heavy');
+      }
     } else if (actionName === 'block_end') {
       coopSystem.actionAim?.releaseHeavy?.('Knight');
+    } else if (actionName === 'shatterlance_release') {
+      coopSystem.triggerAction('shatterlance_aim_release', {
+        distance: eAimDragDistance,
+        yaw: camState.yaw,
+        pitch: camState.pitch,
+      });
     } else if (actionName === 'dash') {
       coopSystem.triggerAction('dash');
     } else if (actionName === 'jump') {
@@ -1536,29 +1560,37 @@ sculptedHud = createSculptedHud({
       coopSystem.triggerAction('ultimate');
     }
   },
-  onAimStart: () => {
+  onAimStart: (payload = {}) => {
     if (coopSystem.player.activeHeroId === 'Mage') {
-      eAimDragDistance = 9.5;
+      const isShatter = payload?.spellId === 'shatterlance' || payload?.slot === 'Attack';
+      eAimDragDistance = isShatter ? 7.5 : 9.5;
       coopSystem.startSkillAim({
+        spellId: isShatter ? 'shatterlance' : undefined,
         yaw: camState.yaw,
         pitch: camState.pitch,
         distance: eAimDragDistance,
       });
     }
   },
-  onAimMove: ({ clientX, clientY, dx = 0, dy = 0 } = {}) => {
+  onAimMove: ({ clientY, dx = 0, dy = 0, spellId, slot } = {}) => {
     if (coopSystem.player.activeHeroId === 'Mage') {
+      const isShatter =
+        spellId === 'shatterlance' ||
+        slot === 'Attack' ||
+        coopSystem.actionAim?.aimState?.spellId === 'shatterlance';
+      const minD = isShatter ? 0.8 : 3.0;
+      const maxD = isShatter ? 18.0 : 16.0;
       if (typeof dx === 'number' && Math.abs(dx) > 0) {
         camState.yaw -= dx * 0.0055;
         coopSystem.heroStates.Mage.yaw = camState.yaw;
       }
       if (typeof dy === 'number' && Math.abs(dy) > 0) {
-        eAimDragDistance = clamp(eAimDragDistance - dy * 0.085, 3.0, 16.0);
+        eAimDragDistance = clamp(eAimDragDistance - dy * 0.095, minD, maxD);
         camState.pitch = clamp(camState.pitch + dy * 0.0032, 0.04, 1.15);
       } else if (typeof clientY === 'number') {
         const normY =
           1.0 - clamp(clientY / Math.max(1, window.innerHeight || 900), 0, 1);
-        eAimDragDistance = clamp(3.0 + normY * 13.0, 3.0, 16.0);
+        eAimDragDistance = clamp(minD + normY * (maxD - minD), minD, maxD);
       }
       coopSystem.updateSkillAim({
         distance: eAimDragDistance,
@@ -2022,6 +2054,17 @@ export function applyTimeOfDay(modeOrT) {
       skyState.activeLightDir
     );
   }
+  if (typeof stoneDecals !== 'undefined' && stoneDecals?.entries) {
+    for (const entry of Object.values(stoneDecals.entries)) {
+      const mat = entry?.material || entry?.mesh?.material;
+      if (mat?.uniforms?.uSunDir) {
+        mat.uniforms.uSunDir.value.copy(skyState.activeLightDir);
+      }
+      if (mat?.uniforms?.uDaylight) {
+        mat.uniforms.uDaylight.value = skyState.daylight;
+      }
+    }
+  }
 
   syncTodHudControls();
   syncEnvironmentPolarity();
@@ -2409,53 +2452,41 @@ function updateCamera() {
   }
 
   if (camState.mode === 'player') {
-    const gazeBlend = clamp(stoneGazeState.shoulderBlend || 0, 0, 1);
-    const effDist = THREE.MathUtils.lerp(camState.dist, 3.25, gazeBlend);
-    const rightX = -Math.cos(camState.yaw);
-    const rightZ = Math.sin(camState.yaw);
-    const shoulderPosOff = 1.48 * gazeBlend;
-    const shoulderLookOff = 0.95 * gazeBlend;
+    const h = 1.55 + Math.sin(camState.pitch) * camState.dist;
+    const flat = Math.cos(camState.pitch) * camState.dist;
+    const basePosX = player.x - Math.sin(camState.yaw) * flat + _camShake.x + _camImpactPos.x;
+    const basePosY = player.y + h + _camShake.y + _camImpactPos.y;
+    const basePosZ = player.z - Math.cos(camState.yaw) * flat + _camShake.z + _camImpactPos.z;
 
-    const h = THREE.MathUtils.lerp(1.55, 1.38, gazeBlend) + Math.sin(camState.pitch) * effDist;
-    const flat = Math.cos(camState.pitch) * effDist;
-    camera.position.set(
-      player.x - Math.sin(camState.yaw) * flat + rightX * shoulderPosOff + _camShake.x + _camImpactPos.x,
-      player.y + h + _camShake.y + _camImpactPos.y,
-      player.z - Math.cos(camState.yaw) * flat + rightZ * shoulderPosOff + _camShake.z + _camImpactPos.z
-    );
+    const baseLookX = player.x + Math.sin(camState.yaw) * 6.0 + _camShake.x * 0.6 + _camImpactLook.x;
+    const baseLookY = player.y + 1.85 + lookDipY + _camShake.y * 0.6 + _camImpactLook.y;
+    const baseLookZ = player.z + Math.cos(camState.yaw) * 6.0 + _camShake.z * 0.6 + _camImpactLook.z;
+    const baseFov = (camState.baseFov || 50) + (_camImpactFov.value || 0);
 
-    const activeStone =
-      gazeBlend > 0.01 && stoneGazeState.activeStoneId
-        ? INSCRIPTION_STONES.find((s) => s.id === stoneGazeState.activeStoneId)
-        : null;
-
-    const baseLookX = player.x + Math.sin(camState.yaw) * 6.0 + rightX * shoulderLookOff;
-    const baseLookY = player.y + 1.85 - 0.22 * gazeBlend + lookDipY;
-    const baseLookZ = player.z + Math.cos(camState.yaw) * 6.0 + rightZ * shoulderLookOff;
-
-    const targetLookX = activeStone
-      ? THREE.MathUtils.lerp(baseLookX, activeStone.x - rightX * 0.22, gazeBlend)
-      : baseLookX;
-    const targetLookY = activeStone
-      ? THREE.MathUtils.lerp(
-          baseLookY,
-          terrainHeightAt(activeStone.x, activeStone.z) + 1.24 + lookDipY,
-          gazeBlend
-        )
-      : baseLookY;
-    const targetLookZ = activeStone
-      ? THREE.MathUtils.lerp(baseLookZ, activeStone.z, gazeBlend)
-      : baseLookZ;
-
-    camera.lookAt(
-      targetLookX + _camShake.x * 0.6 + _camImpactLook.x,
-      targetLookY + _camShake.y * 0.6 + _camImpactLook.y,
-      targetLookZ + _camShake.z * 0.6 + _camImpactLook.z
-    );
-    const targetFov = (camState.baseFov || 50) + (_camImpactFov.value || 0);
-    if (Math.abs(camera.fov - targetFov) > 1e-3) {
-      camera.fov = targetFov;
-      camera.updateProjectionMatrix();
+    const b = smoothstep(0.0, 1.0, stoneGazeState.inspectBlend || 0);
+    if (b > 0.001) {
+      camera.position.set(
+        basePosX + (stoneGazeState.inspectPos.x - basePosX) * b,
+        basePosY + (stoneGazeState.inspectPos.y - basePosY) * b,
+        basePosZ + (stoneGazeState.inspectPos.z - basePosZ) * b
+      );
+      camera.lookAt(
+        baseLookX + (stoneGazeState.inspectTarget.x - baseLookX) * b,
+        baseLookY + (stoneGazeState.inspectTarget.y - baseLookY) * b,
+        baseLookZ + (stoneGazeState.inspectTarget.z - baseLookZ) * b
+      );
+      const targetFov = baseFov + ((stoneGazeState.inspectFov || 38) - baseFov) * b;
+      if (Math.abs(camera.fov - targetFov) > 1e-3) {
+        camera.fov = targetFov;
+        camera.updateProjectionMatrix();
+      }
+    } else {
+      camera.position.set(basePosX, basePosY, basePosZ);
+      camera.lookAt(baseLookX, baseLookY, baseLookZ);
+      if (Math.abs(camera.fov - baseFov) > 1e-3) {
+        camera.fov = baseFov;
+        camera.updateProjectionMatrix();
+      }
     }
   } else {
     camera.position.copy(camState.vistaPos).add(_camShake).add(_camImpactPos);
@@ -2537,7 +2568,9 @@ export function setShot(shotId) {
     sky.activeLightDir,
     sky.state.daylight,
     sky.state.fogColor,
-    sky.state.worldTint
+    sky.state.worldTint,
+    camera,
+    activeProfile
   );
   village.update(0.016);
   updateMeadowFocus(1.25);
@@ -2624,7 +2657,9 @@ export function setGameplayShot(gameplayShotId) {
     sky.activeLightDir,
     sky.state.daylight,
     sky.state.fogColor,
-    sky.state.worldTint
+    sky.state.worldTint,
+    camera,
+    activeProfile
   );
   village.update(0.016);
   updateMeadowFocus(shotWindTime);
@@ -2734,6 +2769,25 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
+  if (stoneGazeState.inspectActive) {
+    const kExit = e.key.toLowerCase();
+    if (
+      e.key === 'Escape' ||
+      kExit === 'g' ||
+      kExit === 'f' ||
+      kExit === 'e' ||
+      kExit === ' ' ||
+      kExit === 'w' ||
+      kExit === 'a' ||
+      kExit === 's' ||
+      kExit === 'd'
+    ) {
+      e.preventDefault();
+      exitStoneInspection();
+      return;
+    }
+  }
+
   if (e.key === 'Escape' && altarSteleModal?.classList.contains('visible')) {
     closeAltarSteleModal();
     return;
@@ -2771,10 +2825,13 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (!wasPressed && k === 'g') {
-    if (altarSteleModal?.classList.contains('visible')) {
-      closeAltarSteleModal();
-    } else if (coopSystem.isNearAltarStele()) {
-      openAltarSteleModal();
+    if (stoneGazeState.inspectActive) {
+      exitStoneInspection();
+    } else {
+      const near = coopSystem.getNearestInscriptionStone(5.6);
+      if (near) {
+        enterStoneInspection(near);
+      }
     }
     return;
   }
@@ -2903,15 +2960,25 @@ canvas.addEventListener('mousedown', (e) => {
     updateViewButtons();
   }
 
-  // Zero-lag 0ms LMB attack + 0.28s Hold Heavy Finisher timer
+  // Zero-lag 0ms LMB attack + Hold (180ms Mage Shatterlance Aim / 280ms Knight Shield Block)
   coopSystem.triggerAction('attack');
   if (lmbHoldTimer) clearTimeout(lmbHoldTimer);
+  const holdDelay = coopSystem.player.activeHeroId === 'Mage' ? 180 : 280;
   lmbHoldTimer = setTimeout(() => {
     lmbHoldTimer = null;
     if (pointerDragging && !coopSystem?.campaignLoop?.isControlLocked?.()) {
-      coopSystem.triggerAction('heavy');
+      if (coopSystem.player.activeHeroId === 'Mage') {
+        eAimDragDistance = 7.5;
+        coopSystem.triggerAction('shatterlance_aim_start', {
+          yaw: camState.yaw,
+          pitch: camState.pitch,
+          distance: eAimDragDistance,
+        });
+      } else {
+        coopSystem.triggerAction('heavy');
+      }
     }
-  }, 280);
+  }, holdDelay);
 });
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -2922,11 +2989,36 @@ window.addEventListener('mouseup', () => {
     clearTimeout(lmbHoldTimer);
     lmbHoldTimer = null;
   }
+  if (
+    coopSystem?.player?.activeHeroId === 'Mage' &&
+    coopSystem.actionAim?.aimState?.active &&
+    coopSystem.actionAim.aimState.spellId === 'shatterlance'
+  ) {
+    coopSystem.triggerAction('shatterlance_aim_release', {
+      distance: eAimDragDistance,
+      yaw: camState.yaw,
+      pitch: camState.pitch,
+    });
+  }
 });
 
 window.addEventListener('mousemove', (e) => {
+  const isShatterAim =
+    coopSystem?.player?.activeHeroId === 'Mage' &&
+    coopSystem.actionAim?.aimState?.active &&
+    coopSystem.actionAim.aimState.spellId === 'shatterlance';
   if (document.pointerLockElement === canvas) {
-    applyCameraOrbitDelta(e.movementX || 0, e.movementY || 0);
+    const mx = e.movementX || 0;
+    const my = e.movementY || 0;
+    applyCameraOrbitDelta(mx, my);
+    if (isShatterAim) {
+      eAimDragDistance = clamp(eAimDragDistance - my * 0.085, 0.8, 18.0);
+      coopSystem.updateSkillAim({
+        distance: eAimDragDistance,
+        yaw: camState.yaw,
+        pitch: camState.pitch,
+      });
+    }
     return;
   }
   if (!pointerDragging) return;
@@ -2935,6 +3027,14 @@ window.addEventListener('mousemove', (e) => {
   lastMouseX = e.clientX;
   lastMouseY = e.clientY;
   applyCameraOrbitDelta(dx, dy);
+  if (isShatterAim) {
+    eAimDragDistance = clamp(eAimDragDistance - dy * 0.085, 0.8, 18.0);
+    coopSystem.updateSkillAim({
+      distance: eAimDragDistance,
+      yaw: camState.yaw,
+      pitch: camState.pitch,
+    });
+  }
 });
 
 canvas.addEventListener(
@@ -2980,8 +3080,10 @@ function getSceneStats() {
   const totalTris = renderer.info.render.triangles;
   renderer.info.autoReset = true;
 
-  const sceneDraws = Math.max(1, totalCalls - 11);
-  const sceneTris = Math.max(0, totalTris - 22);
+  const postDraws = post.bloomPass?.enabled ? 11 : 1;
+  const postTris = postDraws * 2;
+  const sceneDraws = Math.max(1, totalCalls - postDraws);
+  const sceneTris = Math.max(0, totalTris - postTris);
 
   return {
     profile: activeProfile,
@@ -3013,7 +3115,9 @@ function measurePerformance(iterations = 24) {
       sky.activeLightDir,
       sky.state.daylight,
       sky.state.fogColor,
-      sky.state.worldTint
+      sky.state.worldTint,
+      camera,
+      activeProfile
     );
     village.update(1 / 144);
     updateMeadowFocus(simTime);
@@ -3048,8 +3152,193 @@ export function setCameraOrbit(yaw, pitch = 0.14, dist = 7.8) {
   updateCamera();
 }
 
+let stoneWorldReadBtn = null;
+let stoneInspectExitOverlay = null;
+
+function initStoneInspectionUi() {
+  if (typeof document === 'undefined' || stoneWorldReadBtn) return;
+
+  const style = document.createElement('style');
+  style.id = 'amarante-stone-inspect-ui-style';
+  style.textContent = `
+    #stone-world-read-btn {
+      position: fixed;
+      z-index: 880;
+      transform: translate(-50%, -50%) scale(0.92);
+      opacity: 0;
+      pointer-events: none;
+      width: 42px;
+      height: 42px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, rgba(250, 244, 230, 0.96) 0%, rgba(224, 212, 190, 0.96) 100%);
+      border: 2px solid rgba(112, 95, 74, 0.92);
+      box-shadow:
+        0 6px 18px rgba(24, 18, 12, 0.38),
+        inset 0 1.5px 0 rgba(255, 252, 244, 0.9);
+      color: #362c22;
+      font-family: 'EB Garamond', 'Palatino Linotype', Georgia, serif;
+      font-size: 19px;
+      font-weight: 700;
+      cursor: pointer;
+      user-select: none;
+      transition: opacity 0.16s ease, transform 0.16s ease;
+    }
+    #stone-world-read-btn.is-visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translate(-50%, -50%) scale(1);
+    }
+    #stone-world-read-btn:hover {
+      transform: translate(-50%, -52%) scale(1.06);
+    }
+    #stone-world-read-btn:active {
+      transform: translate(-50%, -49%) scale(0.96);
+    }
+    #stone-inspect-exit-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 940;
+      background: transparent;
+      opacity: 0;
+      pointer-events: none;
+      cursor: pointer;
+    }
+    #stone-inspect-exit-overlay.is-active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  `;
+  document.head.appendChild(style);
+
+  stoneWorldReadBtn = document.createElement('button');
+  stoneWorldReadBtn.id = 'stone-world-read-btn';
+  stoneWorldReadBtn.type = 'button';
+  stoneWorldReadBtn.setAttribute('aria-label', 'G');
+  stoneWorldReadBtn.textContent = 'G';
+  stoneWorldReadBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+  });
+  stoneWorldReadBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (stoneGazeState.nearbyStone) {
+      enterStoneInspection(stoneGazeState.nearbyStone);
+    }
+  });
+  document.body.appendChild(stoneWorldReadBtn);
+
+  stoneInspectExitOverlay = document.createElement('div');
+  stoneInspectExitOverlay.id = 'stone-inspect-exit-overlay';
+  stoneInspectExitOverlay.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    exitStoneInspection();
+  });
+  document.body.appendChild(stoneInspectExitOverlay);
+}
+
+initStoneInspectionUi();
+
+export function enterStoneInspection(stone = null) {
+  const targetStone =
+    stone || stoneGazeState.nearbyStone || coopSystem.getNearestInscriptionStone(6.0);
+  if (!targetStone) return null;
+
+  try {
+    if (typeof document !== 'undefined' && document.pointerLockElement) {
+      document.exitPointerLock?.();
+    }
+  } catch {
+    // ignore
+  }
+
+  const siteKey =
+    targetStone.siteKey ||
+    (targetStone.id === 'stone_grove'
+      ? 'grove'
+      : targetStone.id === 'stone_pier'
+        ? 'lake_wall'
+        : 'well');
+
+  if (siteKey === 'well') {
+    // Close-up straight-on framing of the curved front Village Well keystone tablet (all 8 lines + climbing roses + well masonry)
+    stoneGazeState.inspectPos.set(0.0, 0.90, 3.42);
+    stoneGazeState.inspectTarget.set(0.0, 0.48, 0.0);
+    stoneGazeState.inspectFov = 42;
+  } else if (siteKey === 'grove') {
+    // High-angle close-up over the Whispering Grove circular floor medallion (all 8 lines + raised stone curb + relief roses)
+    const sy = terrainHeightAt(44.0, 16.0);
+    stoneGazeState.inspectPos.set(44.0, sy + 3.85, 18.25);
+    stoneGazeState.inspectTarget.set(44.0, sy + 0.48, 16.00);
+    stoneGazeState.inspectFov = 44;
+  } else {
+    // Close-up framing of the Weathered Monolith Stele (matching Option A framing!)
+    const wx = targetStone.position?.x ?? -42.0;
+    const wz = targetStone.position?.z ?? 18.0;
+    const wy = terrainHeightAt(wx, wz);
+    const rotY = targetStone.rotY ?? (wx > -30 ? 0.45 : 0.48);
+    const nx = Math.sin(rotY);
+    const nz = Math.cos(rotY);
+    stoneGazeState.inspectPos.set(wx + nx * 3.92, wy + 1.46, wz + nz * 3.92);
+    stoneGazeState.inspectTarget.set(wx, wy + 1.40, wz);
+    stoneGazeState.inspectFov = 42;
+  }
+
+  stoneGazeState.inspectActive = true;
+  stoneGazeState.activeStoneId = targetStone.id;
+  keys.clear();
+  sculptedHud?.resetJoystick?.();
+  sculptedHud?.setVisible(false);
+
+  if (stoneWorldReadBtn) {
+    stoneWorldReadBtn.classList.remove('is-visible');
+  }
+  if (stoneInspectExitOverlay) {
+    stoneInspectExitOverlay.classList.add('is-active');
+  }
+
+  const readInfo = coopSystem.coopClient.sendStoneRead(targetStone.id);
+  sculptedHud?.setProgressionState(readInfo.state);
+  if (stoneGazeState.stones[targetStone.id]) {
+    stoneGazeState.stones[targetStone.id].gazeElapsed = 3.0;
+    stoneGazeState.stones[targetStone.id].unlocked = true;
+  }
+  return targetStone;
+}
+
+export function exitStoneInspection() {
+  if (!stoneGazeState.inspectActive) return;
+  stoneGazeState.inspectActive = false;
+  if (stoneInspectExitOverlay) {
+    stoneInspectExitOverlay.classList.remove('is-active');
+  }
+  if (hudEl && hudEl.style.display !== 'none') {
+    sculptedHud?.setVisible(true);
+  }
+}
+
 function updateSacredStoneGaze(dt) {
-  const nearStone = coopSystem.getNearestInscriptionStone(4.5);
+  // 1. Advance smooth camera inspection blend (0 -> 1 on inspect, 1 -> 0 on exit)
+  const targetBlend = stoneGazeState.inspectActive ? 1.0 : 0.0;
+  const blendStep = 1.0 - Math.exp(-8.5 * Math.max(0.001, dt));
+  stoneGazeState.inspectBlend += (targetBlend - stoneGazeState.inspectBlend) * blendStep;
+  if (Math.abs(targetBlend - stoneGazeState.inspectBlend) < 0.002) {
+    stoneGazeState.inspectBlend = targetBlend;
+  }
+
+  // Hide local hero meshes during close-up stone inspection so their bodies never block the tablet
+  const hideHeroes = stoneGazeState.inspectBlend > 0.25 && camState.mode === 'player';
+  if (coopSystem?.knight?.group) {
+    coopSystem.knight.group.visible = !hideHeroes;
+  }
+  if (coopSystem?.mage?.group) {
+    coopSystem.mage.group.visible = !hideHeroes;
+  }
+
+  const nearStone = coopSystem.getNearestInscriptionStone(5.5);
+  stoneGazeState.nearbyStone = nearStone;
+
   const activeEnemies = coopSystem?.enemyManager?.activeEnemies || [];
   const inActiveMeleeDanger = activeEnemies.some((e) => {
     if (!e || e.dead || !e.active || (e.hp !== undefined && e.hp <= 0)) return false;
@@ -3058,74 +3347,50 @@ function updateSacredStoneGaze(dt) {
   });
   stoneGazeState.inActiveMeleeDanger = inActiveMeleeDanger;
 
-  let cameraLookDot = -1.0;
-  if (nearStone) {
-    const camFwdX = Math.sin(camState.yaw);
-    const camFwdZ = Math.cos(camState.yaw);
-    const dxP = nearStone.position.x - player.x;
-    const dzP = nearStone.position.z - player.z;
-    const lenP = Math.hypot(dxP, dzP) || 1;
-    const dotP = (dxP / lenP) * camFwdX + (dzP / lenP) * camFwdZ;
-
-    const dxC = nearStone.position.x - camera.position.x;
-    const dzC = nearStone.position.z - camera.position.z;
-    const lenC = Math.hypot(dxC, dzC) || 1;
-    const dotC = (dxC / lenC) * camFwdX + (dzC / lenC) * camFwdZ;
-    cameraLookDot = Math.max(dotP, dotC);
+  if (stoneGazeState.inspectActive && inActiveMeleeDanger) {
+    exitStoneInspection();
   }
-  stoneGazeState.cameraLookDot = Number(cameraLookDot.toFixed(3));
 
-  const isGazingAtStone = Boolean(
+  // Position the world-projected "Read Carved Stone" button right near the stone when in range
+  const showReadBtn = Boolean(
     camState.mode === 'player' &&
       nearStone &&
-      cameraLookDot >= 0.55 &&
+      !stoneGazeState.inspectActive &&
+      stoneGazeState.inspectBlend < 0.15 &&
       !inActiveMeleeDanger &&
       !isUiOverlayBlockingInput() &&
       !coopSystem?.campaignLoop?.isControlLocked?.()
   );
 
-  if (isGazingAtStone) {
-    stoneGazeState.activeStoneId = nearStone.id;
-    stoneGazeState.shoulderBlend +=
-      (1.0 - stoneGazeState.shoulderBlend) * Math.min(1, 6.5 * dt);
-
-    const stEntry =
-      stoneGazeState.stones[nearStone.id] ||
-      (stoneGazeState.stones[nearStone.id] = {
-        id: nearStone.id,
-        gazeElapsed: 0,
-        unlocked: false,
-      });
-
-    stEntry.gazeElapsed = Math.min(3.0, stEntry.gazeElapsed + dt);
-    stoneDecals.entries[nearStone.id]?.redraw(
-      stEntry.gazeElapsed / 3.0,
-      stEntry.unlocked
-    );
-
-    if (stEntry.gazeElapsed >= 3.0 && !stEntry.unlocked) {
-      stEntry.unlocked = true;
-      const readInfo = coopSystem.coopClient.sendStoneRead(nearStone.id);
-      sculptedHud?.setProgressionState(readInfo.state);
-      stoneDecals.entries[nearStone.id]?.redraw(1.0, true);
-    }
-  } else {
-    stoneGazeState.activeStoneId = null;
-    stoneGazeState.shoulderBlend +=
-      (0.0 - stoneGazeState.shoulderBlend) * Math.min(1, 6.5 * dt);
-    if (stoneGazeState.shoulderBlend < 0.002) {
-      stoneGazeState.shoulderBlend = 0;
+  if (stoneWorldReadBtn) {
+    if (showReadBtn && nearStone?.position) {
+      const sx = nearStone.position.x;
+      const sz = nearStone.position.z;
+      const sy = terrainHeightAt(sx, sz);
+      const anchorY =
+        nearStone.siteKey === 'well'
+          ? sy + 1.15
+          : nearStone.siteKey === 'grove'
+            ? sy + 0.85
+            : sy + 1.85;
+      const proj = projectWorldPointToScreen(sx, anchorY, sz);
+      const clampedX = clamp(proj.xPct, 24, 76);
+      const clampedY = clamp(proj.yPct, 22, 74);
+      stoneWorldReadBtn.style.left = `${clampedX.toFixed(1)}%`;
+      stoneWorldReadBtn.style.top = `${clampedY.toFixed(1)}%`;
+      const keyBadge = stoneWorldReadBtn.querySelector('.stone-btn-key');
+      if (keyBadge) {
+        keyBadge.textContent = activeProfile === 'tablet' ? 'Tap' : 'G';
+      }
+      stoneWorldReadBtn.classList.add('is-visible');
+    } else {
+      stoneWorldReadBtn.classList.remove('is-visible');
     }
   }
 
-  // Zero "✿ Read" button pill and zero 2D modal popup!
   if (steleInteractPrompt) {
     steleInteractPrompt.classList.remove('visible');
   }
-  sculptedHud?.setNearbyStonePrompt?.({
-    visible: false,
-    stoneName: '',
-  });
 }
 
 function animate() {
@@ -3147,7 +3412,6 @@ function animate() {
     applyTimeOfDay((currentTodT + dt * 0.025) % 1.0);
   }
 
-  // Advance 30s Commune Crimson Rose Ring Timer when listening
   communeClient?.update(dt, { x: player.x, y: player.y, z: player.z });
 
   if (camState.mode === 'player') {
@@ -3158,7 +3422,6 @@ function animate() {
       sculptedHud?.joyState?.magnitude > 0.05 ? sculptedHud.joyState : touchHud.joyState;
     const isOrbiting = Boolean(sculptedHud?.isOrbitDragging || touchHud.isOrbitDragging);
 
-    // Gentle Tablet Camera Auto-Align when moving via thumbstick without right-side orbit drag
     if (
       activeJoy.magnitude > 0.12 &&
       !isOrbiting &&
@@ -3175,7 +3438,6 @@ function animate() {
       camera,
     });
 
-    // Tick persistent Fire Sword burn DoT floating damage numbers
     const activeEnemies = coopSystem?.enemyManager?.activeEnemies || [];
     for (let i = 0; i < activeEnemies.length; i++) {
       const e = activeEnemies[i];
@@ -3220,16 +3482,18 @@ function animate() {
   const windScale = sky.getWindTimeScale ? sky.getWindTimeScale() : 1.0;
   windElapsed += dt * windScale;
 
+  updateCamera();
   terrainKit.update(
     dt,
     windElapsed,
     sky.activeLightDir,
     sky.state.daylight,
     sky.state.fogColor,
-    sky.state.worldTint
+    sky.state.worldTint,
+    camera,
+    activeProfile
   );
   village.update(dt);
-  updateCamera();
   if (appFlow && appFlow.getStep?.() === FLOW_STEPS.FLOWER_LOBBY) {
     updateFlowerLobbyHeroProjections();
   }
@@ -3245,7 +3509,8 @@ function animate() {
   post.render(dt);
 
   if (sampleDrawsThisFrame) {
-    const sceneDraws = Math.max(1, renderer.info.render.calls - 11);
+    const postDraws = post.bloomPass?.enabled ? 11 : 1;
+    const sceneDraws = Math.max(1, renderer.info.render.calls - postDraws);
     renderer.info.autoReset = true;
     measuredFps = Math.min(144, Math.round(frames / telemetryTimer));
     frames = 0;
@@ -3291,6 +3556,8 @@ window.__WORLD__ = {
   STAGE5_GAMEPLAY_SHOTS,
   openAltarSteleModal,
   closeAltarSteleModal,
+  enterStoneInspection,
+  exitStoneInspection,
   startCommuneHold,
   finishCommuneHold,
   setView,

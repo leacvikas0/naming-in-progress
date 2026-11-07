@@ -15,6 +15,8 @@ import {
   FROST_LANCE_AIM_LENGTH,
   CINDER_FALL_MIN_DISTANCE,
   CINDER_FALL_MAX_DISTANCE,
+  SHATTERLANCE_MIN_DISTANCE,
+  SHATTERLANCE_MAX_DISTANCE,
 } from '../terrain-scalar.js';
 
 export const MASH_TIMESCALE_MIN = 1.0;
@@ -496,6 +498,11 @@ export function createCombatActionAimController({
     spellId = null,
   } = {}) {
     const chosenSpell = spellId || heroes.Mage.selectedSpell || 'frost_lance';
+    // If Hold Attack upgraded a tap swing before its contact frame fired, cancel the tap swing cleanly
+    if (heroes.Mage.activeSwing && !heroes.Mage.activeSwing.contactFired) {
+      heroes.Mage.activeSwing = null;
+      heroes.Mage.bufferedAttack = false;
+    }
     aimState.active = true;
     aimState.spellId = chosenSpell;
     updateSkillAim({
@@ -524,6 +531,7 @@ export function createCombatActionAimController({
     isInitialShow = false,
   } = {}) {
     const chosenSpell = spellId || heroes.Mage.selectedSpell || 'frost_lance';
+    const isShatter = chosenSpell === 'shatterlance';
     const proj = projectAimRayToGround({
       origin,
       yaw,
@@ -531,8 +539,8 @@ export function createCombatActionAimController({
       distance,
       spellId: chosenSpell,
       fixedDistance: chosenSpell === 'frost_lance' ? FROST_LANCE_AIM_LENGTH : null,
-      minDistance: CINDER_FALL_MIN_DISTANCE,
-      maxDistance: CINDER_FALL_MAX_DISTANCE,
+      minDistance: isShatter ? SHATTERLANCE_MIN_DISTANCE : CINDER_FALL_MIN_DISTANCE,
+      maxDistance: isShatter ? SHATTERLANCE_MAX_DISTANCE : CINDER_FALL_MAX_DISTANCE,
       touchTarget,
       rayOrigin,
       rayDir,
@@ -545,6 +553,8 @@ export function createCombatActionAimController({
     if (typeof pitch === 'number') aimState.pitch = pitch;
     aimState.distance = proj.distance;
     aimState.length = proj.length;
+    aimState.minDistance = isShatter ? SHATTERLANCE_MIN_DISTANCE : CINDER_FALL_MIN_DISTANCE;
+    aimState.maxDistance = isShatter ? SHATTERLANCE_MAX_DISTANCE : CINDER_FALL_MAX_DISTANCE;
     aimState.dirX = proj.dirX;
     aimState.dirZ = proj.dirZ;
     aimState.targetPos = { ...proj.targetPos };
@@ -556,9 +566,9 @@ export function createCombatActionAimController({
   }
 
   /**
-   * `Release E` (`skillAimRelease`):
-   * Hides the Spellbook Aim Arrow and casts Mage's selected `E` spell
-   * (`frost_lance` or `cinder_fall`) at `aimState.distance` with an `8.5s` cooldown.
+   * `Release E` or `Release Hold Attack` (`skillAimRelease`):
+   * Hides the Spellbook Aim Arrow and casts Mage's aimed spell
+   * (`shatterlance` at `0.8..18.0m`, `frost_lance` at `14.5m`, or `cinder_fall` at `3.0..16.0m`).
    */
   function releaseSkillAim(overrideParams = null) {
     if (overrideParams && typeof overrideParams === 'object') {
@@ -566,8 +576,9 @@ export function createCombatActionAimController({
     }
     const wasActive = aimState.active;
     aimState.active = false;
+    const chosenSpell = aimState.spellId || heroes.Mage.selectedSpell || 'frost_lance';
     const castPayload = {
-      spellId: aimState.spellId || heroes.Mage.selectedSpell || 'frost_lance',
+      spellId: chosenSpell,
       origin: { ...aimState.origin },
       yaw: aimState.yaw,
       pitch: aimState.pitch,
@@ -577,7 +588,7 @@ export function createCombatActionAimController({
       dirZ: aimState.dirZ,
       direction: { x: aimState.dirX, y: 0, z: aimState.dirZ },
       targetPos: { ...aimState.targetPos },
-      cooldown: MAGE_E_COOLDOWN,
+      cooldown: chosenSpell === 'shatterlance' ? 2.8 : MAGE_E_COOLDOWN,
       wasAiming: wasActive,
     };
     onAimChanged?.({ ...aimState }, 'hide');

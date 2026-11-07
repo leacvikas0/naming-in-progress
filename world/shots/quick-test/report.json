@@ -1,0 +1,139 @@
+{
+  "timestamp": "2026-11-05T15:38:46.775Z",
+  "bakedShadowsPath": "C:\\Users\\silen\\projects\\kilo-3d-kit\\.kilo\\worktrees\\behavior-ui\\world\\assets\\terrain\\baked-shadows-ao.png",
+  "bakedShadowsBytes": 470692,
+  "consoleErrors": [],
+  "pageErrors": [],
+  "failedRequests": [],
+  "plates": {
+    "test04": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\.kilo\\worktrees\\behavior-ui\\world\\shots\\quick-test\\test-04-open-join-solid-cel-tablets.png",
+      "step": "create_join",
+      "tabletBg": "rgb(27, 24, 34)",
+      "tabletBgImage": "none",
+      "tabletRect": {
+        "x": 600,
+        "y": 197.1875,
+        "width": 344,
+        "height": 256,
+        "top": 197.1875,
+        "right": 944,
+        "bottom": 453.1875,
+        "left": 600
+      },
+      "createBtnBg": "rgb(247, 239, 226)",
+      "createBtnColor": "rgb(27, 24, 34)"
+    },
+    "test01": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\.kilo\\worktrees\\behavior-ui\\world\\shots\\quick-test\\test-01-country-road-raytraced-shadows.png",
+      "stats": {
+        "profile": "desktop",
+        "timeOfDay": "day",
+        "todT": 0.34,
+        "fps": 144,
+        "frameMs": 0.41,
+        "draws": 43,
+        "composerDraws": 44,
+        "triangles": 1840103,
+        "bloomStrength": 0.22,
+        "activeHero": "Knight",
+        "partnerHero": "Mage",
+        "playerPos": {
+          "x": -5.2,
+          "y": -0.5,
+          "z": 62.5
+        }
+      },
+      "attackBg": "rgb(27, 24, 34)",
+      "attackBgImage": "none",
+      "attackRect": {
+        "x": 1796,
+        "y": 960,
+        "width": 96,
+        "height": 96,
+        "top": 960,
+        "right": 1892,
+        "bottom": 1056,
+        "left": 1796
+      },
+      "nameBg": "rgb(27, 24, 34)",
+      "vitalityBg": "rgb(27, 24, 34)"
+    },
+    "test02": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\.kilo\\worktrees\\behavior-ui\\world\\shots\\quick-test\\test-02-town-plaza-day-cel-shadows-and-ui.png",
+      "stats": {
+        "profile": "tablet",
+        "timeOfDay": "day",
+        "todT": 0.34,
+        "fps": 144,
+        "frameMs": 0.46,
+        "draws": 41,
+        "composerDraws": 42,
+        "triangles": 1102243,
+        "bloomStrength": 0.22,
+        "activeHero": "Knight",
+        "partnerHero": "Mage",
+        "playerPos": {
+          "x": 0.8,
+          "y": 0,
+          "z": 11.5
+        }
+      },
+      "joyBg": "rgb(27, 24, 34)",
+      "joyBgImage": "none",
+      "sizes": {
+        "attack": [
+          116,
+          116
+        ],
+        "dash": [
+          74,
+          74
+        ],
+        "jump": [
+          74,
+          74
+        ],
+        "slotE": [
+          78,
+          78
+        ],
+        "slotQ": [
+          76,
+          76
+        ],
+        "slotTab": [
+          68,
+          68
+        ],
+        "commune": [
+          76,
+          76
+        ]
+      }
+    },
+    "test03": {
+      "file": "C:\\Users\\silen\\projects\\kilo-3d-kit\\.kilo\\worktrees\\behavior-ui\\world\\shots\\quick-test\\test-03-golden-hour-raytraced-long-shadows.png",
+      "stats": {
+        "profile": "desktop",
+        "timeOfDay": "evening",
+        "todT": 0.76,
+        "fps": 144,
+        "frameMs": 0.34,
+        "draws": 42,
+        "composerDraws": 43,
+        "triangles": 1665677,
+        "bloomStrength": 0.26,
+        "activeHero": "Knight",
+        "partnerHero": "Mage",
+        "playerPos": {
+          "x": 0.8,
+          "y": 0,
+          "z": 11.5
+        }
+      },
+      "envPolarity": "golden",
+      "goldenRingBg": "rgb(33, 22, 36)"
+    }
+  }
+}

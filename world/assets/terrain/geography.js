@@ -589,10 +589,10 @@ export const TREES = [
   { kind: 'oak',      variant: 2, x: 38.5,  z: -33.0, scale: 0.90 },
 
   // Grove 8: Sacred Wisteria Grove around Stone (44, 16) (4 trees)
-  { id: 'wisteria_grove_n', kind: 'wisteria', variant: 0, x: 36.5,  z: 14.8,  scale: 1.26, label: 'Sacred Grove North Wisteria' },
-  { id: 'wisteria_grove_e', kind: 'wisteria', variant: 1, x: 52.4,  z: 17.2,  scale: 1.36, label: 'Sacred Grove East Wisteria' },
-  { id: 'wisteria_grove_s', kind: 'wisteria', variant: 2, x: 42.5,  z: 24.2,  scale: 1.26, label: 'Sacred Grove South Wisteria' },
-  { kind: 'sakura',   variant: 0, x: 34.8,  z: 21.8,  scale: 1.08 },
+  { id: 'wisteria_grove_n', kind: 'wisteria', variant: 0, x: 35.2,  z: 10.5,  scale: 1.26, label: 'Sacred Grove North Wisteria' },
+  { id: 'wisteria_grove_e', kind: 'wisteria', variant: 1, x: 53.5,  z: 16.5,  scale: 1.36, label: 'Sacred Grove East Wisteria' },
+  { id: 'wisteria_grove_s', kind: 'wisteria', variant: 2, x: 41.0,  z: 27.2,  scale: 1.26, label: 'Sacred Grove South Wisteria' },
+  { kind: 'sakura',   variant: 0, x: 33.8,  z: 22.8,  scale: 1.08 },
 
   // Grove 9: South-West Hamlet Approach Woodland Grove (4 trees)
   { kind: 'oak',      variant: 0, x: -26.0, z: 31.0,  scale: 1.24 },
@@ -1105,13 +1105,25 @@ export function sampleWorld(x, z) {
       }
     }
 
-    // 3 Sacred Inscription Stone Plinth Aprons (keep a tight 1.6m stone apron, leaving outer ring for Crimson Roses!)
+    // 3 Sacred Inscription Stone Plinth Aprons (keep Grove Medallion 3.55m dais clear of grass/flowers)
     for (let i = 0; i < INSCRIPTION_STONES.length; i++) {
       const st = INSCRIPTION_STONES[i];
       const dSt = Math.hypot(x - st.x, z - st.z);
-      if (dSt < 1.8) {
+      if (st.id === 'stone_grove') {
+        if (dSt < 3.55) roadFoliageClear = true;
+        if (dSt < 3.65) {
+          cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(3.15, 3.65, dSt));
+        }
+      } else if (dSt < 1.8) {
         cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(1.1, 1.8, dSt));
       }
+    }
+
+    // Secluded Cottage Alley Lovers Wall Courtyard Apron at (-21.6, 20.4)
+    const dLoversWall = Math.hypot(x - (-21.6), z - 20.4);
+    if (dLoversWall < 4.5) {
+      roadFoliageClear = true;
+      cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(3.0, 4.5, dLoversWall));
     }
 
     if (x > -52 && x < 26 && z > -26 && z < 24) {
@@ -1172,12 +1184,14 @@ export function sampleWorld(x, z) {
   else if (z < -68.0 && Math.hypot(x - ZONES.shrine.x, z - ZONES.shrine.z) < ZONES.shrine.platformR + 2.2) foliageMask = 0.0;
   else if (z <= -13.0 && z >= -73.5 && Math.abs(x) <= 4.75) foliageMask = 0.0;
 
-  // Ensure Crimson Rose ring zones (r = 1.8m .. 5.2m) around the Plaza & Grove Sacred Stones allow meadow/rose placement
+  // Ensure Crimson Rose ring zones around the Plaza & Grove Sacred Stones allow meadow/rose placement outside the stone dais
   for (let i = 0; i < INSCRIPTION_STONES.length; i++) {
     const st = INSCRIPTION_STONES[i];
     if (st.id === 'stone_pier') continue;
     const dSt = Math.hypot(x - st.x, z - st.z);
-    if (dSt >= 1.85 && dSt <= 4.8 && dirtWeight < 0.35 && cobbleWeight < 0.35) {
+    const minRoseR = st.id === 'stone_grove' ? 4.45 : 1.85;
+    const maxRoseR = st.id === 'stone_grove' ? 5.75 : 4.8;
+    if (dSt >= minRoseR && dSt <= maxRoseR && dirtWeight < 0.35 && cobbleWeight < 0.35) {
       foliageMask = 1.0;
     }
   }
@@ -1256,6 +1270,7 @@ export function createWorldMaskTexture(size = 512) {
       const inShrineX = inShrineZ && Math.abs(wx) < 17.5;
       const inRoadX = activeSegs.length > 0 && wx > -56.0 && wx < 56.0;
       const inClearX = inClearZ && wx > -26.0 && wx < 28.0;
+      const inGroveDais = wz > 10.0 && wz < 22.0 && wx > 38.0 && wx < 50.0;
 
       if (
         !inPondX &&
@@ -1264,6 +1279,7 @@ export function createWorldMaskTexture(size = 512) {
         !inShrineX &&
         !inRoadX &&
         !inClearX &&
+        !inGroveDais &&
         !(inRingZ && Math.abs(wx) < 14.5)
       ) {
         continue;
@@ -1377,6 +1393,20 @@ export function createWorldMaskTexture(size = 512) {
         if (dShrine < 14.9) {
           cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(14.0, 14.5, dShrine));
         }
+      }
+
+      // Grove Medallion Dais (44, 16) & Secluded Cottage Wall (-21.6, 20.4) foliage exclusion
+      const dGroveDais = Math.hypot(wx - 44.0, wz - 16.0);
+      if (dGroveDais < 4.55) {
+        roadFoliageClear = true;
+        if (dGroveDais < 4.25) {
+          cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(3.75, 4.25, dGroveDais));
+        }
+      }
+      const dCottageWall = Math.hypot(wx - (-21.6), wz - 20.4);
+      if (dCottageWall < 4.5) {
+        roadFoliageClear = true;
+        cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(3.0, 4.5, dCottageWall));
       }
 
       let foliageMask = 1.0;

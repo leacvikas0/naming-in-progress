@@ -22,7 +22,7 @@ const DAMAGE_NUMBERS_CSS = `
     overflow: hidden;
     user-select: none;
     -webkit-user-select: none;
-    font-family: Georgia, "Palatino Linotype", "Book Antiqua", Palatino, serif;
+    font-family: "Playfair Display", "Cormorant Garamond", Georgia, "Palatino Linotype", serif;
   }
 
   .am-dmg-pop {
@@ -32,81 +32,66 @@ const DAMAGE_NUMBERS_CSS = `
     transform: translate3d(-9999px, -9999px, 0) scale(1);
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    font-weight: 800;
+    gap: 5px;
+    font-style: italic;
+    font-weight: 700;
     font-variant-numeric: tabular-nums;
-    letter-spacing: -0.01em;
+    letter-spacing: 0.01em;
     line-height: 1;
     white-space: nowrap;
     will-change: transform, opacity;
   }
 
   .am-dmg-pop.el-physical {
-    font-size: 1.42rem;
-    color: #fffdf8;
+    font-size: 1.85rem;
+    color: #fffdf9;
     text-shadow:
-      0 2px 0 #26131d,
-      -1.5px -1.5px 0 #26131d,
-      1.5px -1.5px 0 #26131d,
-      -1.5px 1.5px 0 #26131d,
-      1.5px 1.5px 0 #26131d,
-      0 6px 14px rgba(24, 10, 18, 0.55);
+      0 2px 4px rgba(24, 14, 18, 0.92),
+      0 0 12px rgba(24, 14, 18, 0.65);
   }
 
   .am-dmg-pop.el-ice {
-    font-size: 1.56rem;
-    color: #a5f3fc;
+    font-size: 2.05rem;
+    color: #f8fafc;
     text-shadow:
-      0 2px 0 #082f49,
-      -1.5px -1.5px 0 #082f49,
-      1.5px -1.5px 0 #082f49,
-      -1.5px 1.5px 0 #082f49,
-      1.5px 1.5px 0 #082f49,
-      0 0 14px rgba(56, 189, 248, 0.72),
-      0 6px 16px rgba(8, 47, 73, 0.62);
+      0 2px 5px rgba(12, 24, 38, 0.92),
+      0 0 14px rgba(125, 211, 252, 0.78),
+      0 6px 18px rgba(8, 47, 73, 0.62);
   }
 
   .am-dmg-pop.el-fire {
-    font-size: 1.58rem;
-    color: #ffedd5;
-    color: #fdba74;
+    font-size: 2.1rem;
+    color: #fde68a;
     text-shadow:
-      0 2px 0 #431407,
-      -1.5px -1.5px 0 #431407,
-      1.5px -1.5px 0 #431407,
-      -1.5px 1.5px 0 #431407,
-      1.5px 1.5px 0 #431407,
-      0 0 14px rgba(249, 115, 22, 0.78),
-      0 6px 16px rgba(67, 20, 7, 0.64);
+      0 2px 5px rgba(54, 16, 8, 0.94),
+      0 0 16px rgba(249, 115, 22, 0.85),
+      0 6px 18px rgba(67, 20, 7, 0.68);
   }
 
   .am-dmg-pop.el-lightning,
   .am-dmg-pop.is-crit {
-    font-size: 1.88rem;
-    color: #fef08a;
+    font-size: 2.65rem;
+    color: #fcd34d;
     text-shadow:
-      0 2.5px 0 #3b0764,
-      -1.5px -1.5px 0 #3b0764,
-      1.5px -1.5px 0 #3b0764,
-      -1.5px 1.5px 0 #3b0764,
-      1.5px 1.5px 0 #3b0764,
-      0 0 18px rgba(232, 121, 249, 0.85),
-      0 8px 20px rgba(46, 16, 101, 0.68);
+      0 2px 6px rgba(42, 18, 8, 0.94),
+      0 0 18px rgba(245, 158, 11, 0.88),
+      0 6px 22px rgba(46, 16, 10, 0.72);
   }
 
   .am-dmg-tag {
-    font-size: 0.72em;
-    font-weight: 700;
+    font-size: 0.68em;
+    font-weight: 600;
     letter-spacing: 0.03em;
     opacity: 0.95;
   }
 
   .am-dmg-crit-star {
-    color: #f472b6;
-    font-size: 0.92em;
+    color: #fde68a;
+    font-style: normal;
+    font-size: 0.76em;
     text-shadow:
-      0 0 10px rgba(244, 114, 182, 0.9),
-      0 1px 0 #3b0764;
+      0 0 12px rgba(251, 191, 36, 0.95),
+      0 1px 3px rgba(42, 18, 8, 0.9);
   }
 `;
 

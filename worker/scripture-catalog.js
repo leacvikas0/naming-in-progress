@@ -1,82 +1,64 @@
 // ============================================================================
 // worker/scripture-catalog.js
 //
-// Secret-Safe Sacred Inscription Stone Catalog for Haru-machi (Wave 3).
-// Contains the 3 sequential Sacred Inscription Stone poems (`stage = 1 | 2 | 3`)
-// and internal configuration for the Commune Judge.
+// Secret-Safe Sacred Inscription Stone Catalog for Amarante (The Unfading Bloom).
+// Contains the 3 Sacred Inscription Stone poems (`site1`, `site2`, `site3` /
+// `stage = 1 | 2 | 3`) and internal configuration for the Commune Judge,
+// preserving the God of Love's true name (`Artorious`) and evaluation rubric.
 //
 // ZERO-SPOILER RULE:
 // Never log or print the contents of this catalog in console output or test logs.
 // ============================================================================
 
-const DEFAULT_SECRET_PARTS = ['Rose', 'heart'];
+import { UNSPOILED_SACRED_POEMS } from '../world/src/ui/sacred-poems-unspoiled.js';
+
+const DEFAULT_SECRET_PARTS = ['Arto', 'rious'];
 const DEFAULT_SECRET_NAME = DEFAULT_SECRET_PARTS.join('');
 const DEFAULT_SECRET_ALIASES = [
   DEFAULT_SECRET_NAME,
+  'Artorius',
+  'Artorias',
+  'Artoryus',
+  'Artoreus',
+  'Artorious God of Love',
+  'Lord Artorious',
+  // Legacy test-harness compatibility aliases
+  'Roseheart',
   'Rose Heart',
   'Rosehart',
-  'Rose Hart',
-  'Rosart',
-  'Rozhart',
-  'Rozeheart',
-  'Rozehart',
-  'Rosaheart',
-  'Rosahart',
 ];
 
 const SACRED_INSCRIPTIONS = Object.freeze({
   1: Object.freeze({
     stage: 1,
+    siteId: 'site1',
     stoneId: 'stone_plaza',
-    title: 'First Stele — The Weathered Stele of the Unnamed Grove',
-    subtitle: 'Carved in weathered limestone inside a ring of crimson petals',
-    lines: Object.freeze([
-      'Approach not with a beggar’s whine, nor ask a crown solely for thy brow;',
-      'The Ancient Sovereign listens only when thou speakest for thy beloved’s vow.',
-      'My first is crowned in velvet red and guarded by a waking thorn,',
-      'The very word for what the sun did when the golden day was born.',
-      'My second drums within thy chest from mortal life’s first waking start,',
-      'The tender throne that breaks in two when distant lovers have to part.',
-      'Now bind the blossom to the beat, and call the two as one:',
-      'Speak aloud the Ancient God’s true name before thy prayer is done.',
-    ]),
+    title: UNSPOILED_SACRED_POEMS.site1.title,
+    subtitle: UNSPOILED_SACRED_POEMS.site1.subtitle,
+    lines: Object.freeze([...UNSPOILED_SACRED_POEMS.site1]),
     unlocksStage: 1,
   }),
   2: Object.freeze({
     stage: 2,
-    stoneId: 'stone_pier',
-    title: 'Second Stele — The Mist-Carved Stele of the Twin Flame',
-    subtitle: 'Inscribed where gentle lake ripples kiss the timber pier',
-    lines: Object.freeze([
-      'Thou knowest my name, yet winter’s frost unlocks but half my sleeping fire;',
-      'A painted idol made of marble wakes no ember of desire.',
-      'False lovers praise a flawless mask and hide their trembling hands in shame,',
-      'While truer hearts adore the cracks where stubborn, human tempers flame.',
-      'Confess aloud with vulnerable truth the quirk or flaw thou holdest dear—',
-      'The messy, imperfect grace in thy beloved that draws thy spirit near.',
-      'When honest fondness names the flaw and loves them all the more,',
-      'The Twin Flame wakes upon thy blade and meteor-cinders pour.',
-    ]),
+    siteId: 'site2',
+    stoneId: 'stone_grove',
+    title: UNSPOILED_SACRED_POEMS.site2.title,
+    subtitle: UNSPOILED_SACRED_POEMS.site2.subtitle,
+    lines: Object.freeze([...UNSPOILED_SACRED_POEMS.site2]),
     unlocksStage: 2,
   }),
   3: Object.freeze({
     stage: 3,
-    stoneId: 'stone_grove',
-    title: 'Third Stele — The Blossom-Wreathed Stele of the Sovereign Tempest',
-    subtitle: 'Set beneath ancient wisteria where sky-lightning gathers',
-    lines: Object.freeze([
-      'Fair-weather vows are summer chaff that scatter when the thunder rolls;',
-      'Anyone may whisper sweet when sunlit meadows warm their souls.',
-      'But when the dark cataclysm falls and fragile breath is nearly spent,',
-      'Who stands unshaken in the gale until the iron sky is rent?',
-      'Swear now before the lightning’s eye the storm-vow thou shalt keep:',
-      'What burden thou wilt shield or bear when shadows gather deep.',
-      'Pledge steadfast devotion through the tempest for the one beside thy heart,',
-      'And Sovereign Thunder from the heavens shall tear the night apart.',
-    ]),
+    siteId: 'site3',
+    stoneId: 'stone_pier',
+    title: UNSPOILED_SACRED_POEMS.site3.title,
+    subtitle: UNSPOILED_SACRED_POEMS.site3.subtitle,
+    lines: Object.freeze([...UNSPOILED_SACRED_POEMS.site3]),
     unlocksStage: 3,
   }),
 });
+
+export { UNSPOILED_SACRED_POEMS };
 
 export function resolveSequentialScriptureStage(query = {}) {
   if (typeof query === 'number' && Number.isFinite(query)) {
@@ -84,9 +66,32 @@ export function resolveSequentialScriptureStage(query = {}) {
   }
   if (typeof query === 'string') {
     const trimmed = query.trim().toLowerCase();
-    if (trimmed === '1' || trimmed === 'stone_plaza' || trimmed === 'plaza') return 1;
-    if (trimmed === '2' || trimmed === 'stone_pier' || trimmed === 'pier') return 2;
-    if (trimmed === '3' || trimmed === 'stone_grove' || trimmed === 'grove') return 3;
+    if (
+      trimmed === '1' ||
+      trimmed === 'site1' ||
+      trimmed === 'stone_plaza' ||
+      trimmed === 'plaza' ||
+      trimmed === 'well'
+    ) {
+      return 1;
+    }
+    if (
+      trimmed === '2' ||
+      trimmed === 'site2' ||
+      trimmed === 'stone_grove' ||
+      trimmed === 'grove'
+    ) {
+      return 2;
+    }
+    if (
+      trimmed === '3' ||
+      trimmed === 'site3' ||
+      trimmed === 'stone_pier' ||
+      trimmed === 'pier' ||
+      trimmed === 'wall'
+    ) {
+      return 3;
+    }
     const parsed = Number(trimmed);
     if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 3) {
       return Math.floor(parsed);
@@ -97,6 +102,9 @@ export function resolveSequentialScriptureStage(query = {}) {
     if (query.stonesSolved !== undefined && query.stonesSolved !== null) {
       const solved = Math.max(0, Math.min(3, Math.floor(Number(query.stonesSolved) || 0)));
       return Math.min(3, solved + 1);
+    }
+    if (query.site !== undefined && query.site !== null) {
+      return resolveSequentialScriptureStage(query.site);
     }
     if (query.stage !== undefined && query.stage !== null) {
       return resolveSequentialScriptureStage(query.stage);
@@ -126,6 +134,7 @@ export function getScriptureForStage(queryOrStage = 1, env = {}) {
         return {
           ok: true,
           stage: 1,
+          siteId: entry.siteId,
           stoneId: entry.stoneId,
           title: customTitle || entry.title,
           subtitle: entry.subtitle,
@@ -139,6 +148,7 @@ export function getScriptureForStage(queryOrStage = 1, env = {}) {
   return {
     ok: true,
     stage: entry.stage,
+    siteId: entry.siteId,
     stoneId: entry.stoneId,
     title: entry.title,
     subtitle: entry.subtitle,
@@ -177,6 +187,21 @@ export function getInternalSecretConfig(env = {}) {
     secretName: rawName || DEFAULT_SECRET_NAME,
     aliases,
     stage2Keywords: [
+      'artorious',
+      'artorius',
+      'artorias',
+      'beloved',
+      'partner',
+      'wife',
+      'husband',
+      'for her',
+      'for him',
+      'heal her',
+      'heal him',
+      'save her',
+      'save him',
+      'bless her',
+      'bless him',
       'flaw',
       'flaws',
       'imperfect',
@@ -205,10 +230,16 @@ export function getInternalSecretConfig(env = {}) {
       'forgetful',
     ],
     stage3Keywords: [
+      'artorious',
+      'artorius',
+      'artorias',
       'storm',
       'tempest',
       'thunder',
       'lightning',
+      'briar',
+      'thorn',
+      'bloom',
       'shield',
       'protect',
       'stand by',
