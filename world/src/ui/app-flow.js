@@ -337,14 +337,17 @@ const APP_FLOW_CSS = `
   }
 
   /* 36px -> 1px Pixel-to-Clear Mosaic Canvas Overlay (Zero Blur) */
+  /* Blurred + Bayer Ordered-Dither Materialization Veil */
   #af-pixel-veil {
     position: fixed;
     inset: 0;
     z-index: 0;
     pointer-events: none;
     background: transparent;
+    backdrop-filter: blur(var(--af-blur-px, 12px));
+    -webkit-backdrop-filter: blur(var(--af-blur-px, 12px));
     opacity: 1;
-    transition: opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition: opacity 420ms cubic-bezier(0.22, 1, 0.36, 1), backdrop-filter 420ms ease;
   }
 
   #af-pixel-veil-canvas {
@@ -357,6 +360,8 @@ const APP_FLOW_CSS = `
 
   #af-pixel-veil.is-resolved {
     opacity: 0;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -442,7 +447,7 @@ const APP_FLOW_CSS = `
     .af-copy-btn:hover,
     .af-name-submit-btn:hover {
       border-color: var(--af-accent);
-      background-color: #322c24;
+      background-color: #f9dc8f;
     }
   }
 
@@ -456,13 +461,13 @@ const APP_FLOW_CSS = `
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Screen 1: Title Screen (FLOW_STEPS.TITLE)                               */
+  /* Screen 1: Unified Landing + Dither Reveal + Morphing Play Button        */
   /* ----------------------------------------------------------------------- */
   .af-scene-title {
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    padding-top: min(9vh, 76px);
+    padding-top: min(12vh, 96px);
   }
 
   .af-title-stack {
@@ -483,10 +488,10 @@ const APP_FLOW_CSS = `
 
   .af-main-title {
     font-family: var(--af-font-sans);
-    font-size: clamp(3.8rem, 7.2vw, 5.6rem);
+    font-size: clamp(4.1rem, 7.8vw, 6.1rem);
     font-weight: 800;
-    line-height: 0.98;
-    letter-spacing: -0.03em;
+    line-height: 0.96;
+    letter-spacing: -0.035em;
     color: var(--af-sky-ink);
     text-shadow: var(--af-sky-shadow);
     margin: 0;
@@ -494,62 +499,144 @@ const APP_FLOW_CSS = `
   }
 
   .af-title-swash-svg {
-    width: clamp(240px, 28vw, 320px);
-    height: 36px;
+    width: clamp(220px, 26vw, 300px);
+    height: 32px;
     color: var(--af-sky-ink);
     filter: drop-shadow(0 2px 6px rgba(15, 23, 42, 0.25));
-    margin-top: -2px;
-    margin-bottom: 4px;
+    margin-top: 0;
+    margin-bottom: 6px;
   }
 
   .af-subtitle {
     font-family: var(--af-font-sans);
-    font-size: clamp(1.05rem, 1.5vw, 1.25rem);
-    font-weight: 600;
-    line-height: 1.3;
-    letter-spacing: 0.02em;
-    color: var(--af-sky-ink);
-    text-shadow: var(--af-sky-shadow);
-    margin: 0 0 12px 0;
-  }
-
-  .af-credits-block {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    color: var(--af-ink);
-    font-family: var(--af-font-sans);
-    font-size: 0.88rem;
+    font-size: clamp(1.08rem, 1.6vw, 1.32rem);
     font-weight: 600;
     line-height: 1.35;
-    padding: 6px 16px;
-    background: rgba(252, 249, 242, 0.88);
-    border: 1px solid var(--af-border);
-    border-radius: 999px;
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
-    margin-bottom: 22px;
+    letter-spacing: 0.015em;
+    color: var(--af-sky-ink);
+    text-shadow: var(--af-sky-shadow);
+    margin: 0 0 28px 0;
   }
 
-  .af-credit-dot {
-    opacity: 0.65;
-    color: var(--af-accent);
-  }
-
+  /* Morphing Capsule: Starts as Preparation Pill, Transforms into "Enter the Valley" */
   .af-enter-btn {
-    min-width: 240px;
-    min-height: 54px;
-    padding: 12px 32px;
+    position: relative;
+    overflow: hidden;
+    min-width: 316px;
+    min-height: 56px;
+    padding: 12px 30px;
     background: var(--af-surface);
     border: 1.5px solid var(--af-border-strong);
     color: var(--af-ink);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 12px;
+    font-size: 1.08rem;
+    font-weight: 700;
+    transition:
+      min-width 420ms cubic-bezier(0.22, 1, 0.36, 1),
+      background-color 360ms ease,
+      border-color 360ms ease,
+      transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 360ms ease;
+  }
+
+  .af-enter-btn.is-loading {
+    pointer-events: none;
+    cursor: default;
+    min-width: 332px;
+    background: rgba(252, 249, 242, 0.94);
+  }
+
+  .af-enter-btn.is-ready {
+    pointer-events: auto;
+    cursor: pointer;
+    min-width: 256px;
+    background: var(--af-cta-bg);
+    border-color: var(--af-cta-border);
+    color: var(--af-cta-ink);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.65),
+      0 10px 28px rgba(24, 20, 14, 0.22);
+  }
+
+  @media (hover: hover) {
+    .af-enter-btn.is-ready:not(:disabled):hover {
+      background-color: #f9dc8f;
+      border-color: #b47d1c;
+    }
+  }
+
+  .af-morph-progress-fill {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 4px;
+    width: 0%;
+    background: linear-gradient(90deg, #f59e0b 0%, #f6d076 100%);
+    transition: width 220ms ease-out, height 380ms cubic-bezier(0.22, 1, 0.36, 1), opacity 320ms ease;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .af-enter-btn.is-ready .af-morph-progress-fill {
+    width: 100% !important;
+    height: 100%;
+    opacity: 0;
+  }
+
+  .af-morph-loading-layer,
+  .af-morph-ready-layer {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: opacity 280ms ease, transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .af-morph-loading-layer {
+    font-size: 0.94rem;
+    font-weight: 600;
+    color: var(--af-ink-muted);
+    white-space: nowrap;
+  }
+
+  .af-enter-btn.is-ready .af-morph-loading-layer {
+    position: absolute;
+    opacity: 0;
+    transform: translateY(-14px) scale(0.95);
+    pointer-events: none;
+  }
+
+  .af-morph-ready-layer {
+    opacity: 0;
+    transform: translateY(14px) scale(0.95);
+    pointer-events: none;
     font-size: 1.12rem;
     font-weight: 700;
+    color: var(--af-cta-ink);
+  }
+
+  .af-enter-btn.is-ready .af-morph-ready-layer {
+    position: relative;
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+  }
+
+  @keyframes afSpinSpark {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .af-prep-spark-svg {
+    width: 16px;
+    height: 16px;
+    color: var(--af-accent);
+    animation: afSpinSpark 3.6s linear infinite;
+    flex-shrink: 0;
   }
 
   .af-btn-sprig-svg {
@@ -1237,6 +1324,10 @@ export function createAppFlow({
     legacyLobby.classList.remove('visible');
     legacyLobby.style.display = 'none';
   }
+  const bootSplash = document.getElementById('haru-boot-splash');
+  if (bootSplash) {
+    bootSplash.remove();
+  }
 
   const urlParams =
     typeof window !== 'undefined'
@@ -1284,24 +1375,33 @@ export function createAppFlow({
       <canvas id="af-pixel-veil-canvas"></canvas>
     </div>
 
-    <!-- 1. TITLE SCENE (FLOW_STEPS.TITLE) -->
+    <!-- 1. UNIFIED LANDING + DITHER REVEAL + MORPHING PLAY SCREEN (FLOW_STEPS.TITLE) -->
     <section class="af-scene af-scene-title" data-flow-scene="title" aria-label="Title Screen">
       <div class="af-title-stack">
         ${SVG_OPEN_AIR_DIVIDER}
         <h1 class="af-main-title">Amarante</h1>
         ${SVG_AMARANTE_SWASH_FLOURISH}
-        <p class="af-subtitle">The Unfading Bloom</p>
-        <div class="af-credits-block">
-          <span>Developed by Argon &amp; Sol</span>
-          <span class="af-credit-dot" aria-hidden="true">·</span>
-          <span>Directed by Vikas</span>
-          <span class="af-credit-dot" aria-hidden="true">·</span>
-          <span>For Ishika</span>
-        </div>
-        <button type="button" class="af-hairline-pill-btn af-enter-btn" id="app-flow-enter-btn" data-flow-action="enter">
-          ${SVG_BOTANICAL_SPRIG_LEFT}
-          <span>Enter Valley</span>
-          ${SVG_BOTANICAL_SPRIG_RIGHT}
+        <p class="af-subtitle">The Unfading Bloom · A Valley for Two</p>
+
+        <button
+          type="button"
+          class="af-hairline-pill-btn af-enter-btn is-loading"
+          id="app-flow-enter-btn"
+          data-flow-action="enter"
+          aria-live="polite"
+        >
+          <span class="af-morph-progress-fill" id="app-flow-morph-fill"></span>
+          <span class="af-morph-loading-layer" id="app-flow-morph-loading">
+            <svg class="af-prep-spark-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 2L14.6 9.4L22 12L14.6 14.6L12 22L9.4 14.6L2 12L9.4 9.4L12 2Z" fill="currentColor"/>
+            </svg>
+            <span id="app-flow-prep-label">Shaping sunlit hills &amp; quiet waters…</span>
+          </span>
+          <span class="af-morph-ready-layer" id="app-flow-morph-ready">
+            ${SVG_BOTANICAL_SPRIG_LEFT}
+            <span>Enter the Valley</span>
+            ${SVG_BOTANICAL_SPRIG_RIGHT}
+          </span>
         </button>
       </div>
     </section>
@@ -1491,6 +1591,8 @@ export function createAppFlow({
   const pixelVeil = root.querySelector('#af-pixel-veil');
   const pixelCanvas = root.querySelector('#af-pixel-veil-canvas');
   const enterBtn = root.querySelector('#app-flow-enter-btn');
+  const morphFillEl = root.querySelector('#app-flow-morph-fill');
+  const prepLabelEl = root.querySelector('#app-flow-prep-label');
   const loadingFill = root.querySelector('#app-flow-loading-fill');
   const activePhraseEl = root.querySelector('#app-flow-active-phrase');
   const createBtn = root.querySelector('#app-flow-create-btn');
@@ -1522,6 +1624,21 @@ export function createAppFlow({
   let copyTimer = null;
   let mosaicRafId = null;
 
+  const PREP_STAGES = [
+    { threshold: 0.0, text: 'Shaping sunlit hills & quiet waters…' },
+    { threshold: 0.28, text: 'Sowing wildflowers across the southern meadow…' },
+    { threshold: 0.58, text: 'Raising timber eaves & wisteria boughs…' },
+    { threshold: 0.84, text: 'Attuning rime & sunfire resonance…' },
+  ];
+
+  // Bayer 4x4 ordered-dither matrix (normalized 0..15)
+  const BAYER_4X4 = [
+    0, 8, 2, 10,
+    12, 4, 14, 6,
+    3, 11, 1, 9,
+    15, 7, 13, 5,
+  ];
+
   function stopMosaicLoop() {
     if (mosaicRafId !== null && typeof cancelAnimationFrame === 'function') {
       cancelAnimationFrame(mosaicRafId);
@@ -1532,10 +1649,18 @@ export function createAppFlow({
   function resolvePixelVeil() {
     stopMosaicLoop();
     pixelVeil?.classList.add('is-resolved');
+    pixelVeil?.style.setProperty('--af-blur-px', '0px');
+    if (enterBtn) {
+      enterBtn.classList.remove('is-loading');
+      enterBtn.classList.add('is-ready');
+    }
+    if (morphFillEl) {
+      morphFillEl.style.width = '100%';
+    }
   }
 
   /**
-   * Real 36px -> 1px Pixel-to-Clear Mosaic Canvas over 2.2s (Zero CSS blur).
+   * Blurred + Bayer 4x4 Ordered-Dither Materialization & Morphing Preparation-to-Play Capsule.
    */
   function triggerPixelVeilMaterialization(immediate = false) {
     if (!pixelVeil) return;
@@ -1545,37 +1670,59 @@ export function createAppFlow({
       typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
 
-    if (
-      immediate ||
-      reduceMotion ||
-      (typeof navigator !== 'undefined' && navigator.webdriver)
-    ) {
-      pixelVeil.classList.add('is-resolved');
+    if (immediate || reduceMotion) {
+      resolvePixelVeil();
       return;
     }
 
     pixelVeil.classList.remove('is-resolved');
+    pixelVeil.style.setProperty('--af-blur-px', '14px');
+    if (enterBtn) {
+      enterBtn.classList.add('is-loading');
+      enterBtn.classList.remove('is-ready');
+    }
+    if (morphFillEl) {
+      morphFillEl.style.width = '4%';
+    }
+
     const worldCanvas = document.getElementById('world-canvas');
     const ctx = pixelCanvas?.getContext?.('2d');
     if (!worldCanvas || !ctx) {
-      setTimeout(() => pixelVeil.classList.add('is-resolved'), 150);
+      setTimeout(() => resolvePixelVeil(), 300);
       return;
     }
 
     const startTime =
       typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const durationMs = 2200;
+    const durationMs = 2400;
 
     const stepMosaic = (now) => {
       const t = Math.min(1, Math.max(0, (now - startTime) / durationMs));
-      // cubic-bezier(0.22, 1, 0.36, 1) approximation: 1 - (1 - t)^3
       const eased = 1 - Math.pow(1 - t, 3);
-      const blockSize = Math.max(1, Math.round(36 - 35 * eased));
 
+      // Update morphing preparation capsule progress & stage text
+      if (morphFillEl) {
+        morphFillEl.style.width = `${Math.round(t * 100)}%`;
+      }
+      if (prepLabelEl) {
+        let activeStageText = PREP_STAGES[0].text;
+        for (const st of PREP_STAGES) {
+          if (t >= st.threshold) activeStageText = st.text;
+        }
+        if (prepLabelEl.textContent !== activeStageText) {
+          prepLabelEl.textContent = activeStageText;
+        }
+      }
+
+      // Progressive blur decay (14px -> 0px) + Bayer ordered-dither grid dissolve
+      const blurPx = Math.max(0, (1 - eased) * 14);
+      pixelVeil.style.setProperty('--af-blur-px', `${blurPx.toFixed(1)}px`);
+
+      const blockSize = Math.max(2, Math.round(28 - 26 * eased));
       const vw = Math.max(1, window.innerWidth || 1280);
       const vh = Math.max(1, window.innerHeight || 720);
-      const lowW = Math.max(16, Math.floor(vw / blockSize));
-      const lowH = Math.max(9, Math.floor(vh / blockSize));
+      const lowW = Math.max(24, Math.floor(vw / blockSize));
+      const lowH = Math.max(14, Math.floor(vh / blockSize));
 
       if (pixelCanvas.width !== lowW || pixelCanvas.height !== lowH) {
         pixelCanvas.width = lowW;
@@ -1584,15 +1731,28 @@ export function createAppFlow({
       ctx.imageSmoothingEnabled = false;
       try {
         ctx.drawImage(worldCanvas, 0, 0, lowW, lowH);
+        // Carve ordered Bayer 4x4 dither cells out of the veil so the crisp 3D world grows into view
+        const ditherThreshold = eased * 16;
+        for (let by = 0; by < 4; by++) {
+          for (let bx = 0; bx < 4; bx++) {
+            if (BAYER_4X4[by * 4 + bx] < ditherThreshold) {
+              for (let y = by; y < lowH; y += 4) {
+                for (let x = bx; x < lowW; x += 4) {
+                  ctx.clearRect(x, y, 1, 1);
+                }
+              }
+            }
+          }
+        }
       } catch {
         // Fallback if WebGL buffer is not yet populated
       }
 
-      if (t < 1 && blockSize > 1) {
+      if (t < 1) {
         mosaicRafId = requestAnimationFrame(stepMosaic);
       } else {
         mosaicRafId = null;
-        pixelVeil.classList.add('is-resolved');
+        resolvePixelVeil();
       }
     };
 

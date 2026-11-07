@@ -139,22 +139,22 @@ const SVG_FIRE_SUNFIRE_GLYPH = `
 </svg>
 `;
 
-/* Clean Left-Side [Tab] Element Switch Pill Content (Ice <-> Fire) */
+/* Clean Left-Side [Tab] Element Switch: Icons first, then horizontal text ahead ONLY when switching */
 const SVG_TAB_SWAP_GLYPH = `
 <span class="sh-tab-switch-inner">
-  <span class="sh-tab-opt sh-tab-opt-ice" data-el-opt="ice">
-    <svg viewBox="0 0 20 20" width="15" height="15" fill="none" aria-hidden="true">
-      <path d="M10 2V18M3.1 6L16.9 14M3.1 14L16.9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-    </svg>
-    <span>Ice</span>
+  <span class="sh-tab-icons-pair">
+    <span class="sh-tab-opt sh-tab-opt-ice" data-el-opt="ice" aria-hidden="true">
+      <svg viewBox="0 0 20 20" width="16" height="16" fill="none">
+        <path d="M10 2V18M3.1 6L16.9 14M3.1 14L16.9 6" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span class="sh-tab-opt sh-tab-opt-fire" data-el-opt="fire" aria-hidden="true">
+      <svg viewBox="0 0 20 20" width="16" height="16" fill="none">
+        <path d="M10 2.2C13.6 6.2 15.6 9.6 14.6 13.8C13.8 16.5 12 18 10 18C8 18 6.2 16.5 5.4 13.8C4.4 9.6 6.4 6.2 10 2.2Z" fill="currentColor"/>
+      </svg>
+    </span>
   </span>
-  <span class="sh-tab-sep" aria-hidden="true">⇄</span>
-  <span class="sh-tab-opt sh-tab-opt-fire" data-el-opt="fire">
-    <svg viewBox="0 0 20 20" width="15" height="15" fill="none" aria-hidden="true">
-      <path d="M10 2.5C13.5 6.5 15.5 9.8 14.5 13.8C13.7 16.5 11.9 18 10 18C8.1 18 6.3 16.5 5.5 13.8C4.5 9.8 6.5 6.5 10 2.5Z" fill="currentColor"/>
-    </svg>
-    <span>Fire</span>
-  </span>
+  <span class="sh-tab-active-text" id="sh-tab-active-text">Ice</span>
 </span>
 `;
 
@@ -576,7 +576,7 @@ const SCULPTED_HUD_CSS = `
     display: inline-flex;
   }
 
-  /* LEFT-SIDE [Tab] ELEMENT SWITCH (~30% down from top-left, per Genshin screenshot 1) */
+  /* LEFT-SIDE [Tab] ELEMENT SWITCH (~30% down from top-left): Icons first, text ahead ONLY when switching */
   #sculpted-slot-tab,
   #sculpted-hud-root.profile-tablet #sculpted-slot-tab,
   #sculpted-hud-root.profile-desktop #sculpted-slot-tab {
@@ -587,46 +587,76 @@ const SCULPTED_HUD_CSS = `
     bottom: auto;
     width: auto;
     height: 38px;
-    padding: 4px 12px;
+    padding: 4px 8px;
     border-radius: 999px;
     background: rgba(34, 38, 46, 0.34);
     border: 1.5px solid rgba(255, 255, 255, 0.78);
     box-shadow: 0 4px 12px rgba(15, 23, 42, 0.22);
-    gap: 8px;
+    gap: 6px;
   }
 
   .sh-tab-switch-inner {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 0;
     font-family: var(--hud-font-sans);
-    font-size: 0.84rem;
+    font-size: 0.86rem;
     font-weight: 700;
-    color: rgba(255, 255, 255, 0.72);
+    color: #ffffff;
+  }
+
+  .sh-tab-icons-pair {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
   }
 
   .sh-tab-opt {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 3px 8px;
-    border-radius: 999px;
-    transition: background-color 140ms ease, color 140ms ease;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    color: rgba(255, 255, 255, 0.52);
+    transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
   }
 
   #sculpted-slot-tab[data-element="ice"] .sh-tab-opt-ice {
-    background: rgba(56, 189, 248, 0.45);
+    background: rgba(56, 189, 248, 0.55);
     color: #ffffff;
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.45);
   }
 
   #sculpted-slot-tab[data-element="fire"] .sh-tab-opt-fire {
-    background: rgba(251, 146, 60, 0.52);
+    background: rgba(251, 146, 60, 0.62);
     color: #ffffff;
+    box-shadow: 0 0 8px rgba(251, 146, 60, 0.45);
   }
 
-  .sh-tab-sep {
-    opacity: 0.7;
-    font-size: 0.8rem;
+  /* Horizontal text ahead of icons — hidden at rest, expands out when switching */
+  .sh-tab-active-text {
+    display: inline-block;
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    margin-left: 0;
+    padding-right: 0;
+    color: #ffffff;
+    text-shadow: 0 1px 3px rgba(15, 23, 42, 0.72);
+    transition:
+      max-width 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 180ms ease,
+      margin-left 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      padding-right 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  #sculpted-slot-tab.is-switching .sh-tab-active-text {
+    max-width: 64px;
+    opacity: 1;
+    margin-left: 8px;
+    padding-right: 4px;
   }
 
   #sculpted-slot-tab .sh-keycap-badge {
@@ -1526,6 +1556,10 @@ export function createSculptedHud({
     if (slotTab) {
       slotTab.classList.toggle('is-unlocked', bothElementsUnlocked);
       slotTab.dataset.element = state.activeElement;
+      const tabActiveTextEl = slotTab.querySelector('#sh-tab-active-text');
+      if (tabActiveTextEl) {
+        tabActiveTextEl.textContent = state.activeElement === 'fire' ? 'Fire' : 'Ice';
+      }
     }
 
     if (slotQ) {
@@ -2001,6 +2035,18 @@ export function createSculptedHud({
     slotE.addEventListener('pointercancel', cancelSlotEAim);
   }
 
+  let tabSwitchRevealTimer = null;
+
+  function flashTabSwitchText() {
+    if (!slotTab) return;
+    slotTab.classList.add('is-switching');
+    if (tabSwitchRevealTimer) clearTimeout(tabSwitchRevealTimer);
+    tabSwitchRevealTimer = setTimeout(() => {
+      slotTab?.classList.remove('is-switching');
+      tabSwitchRevealTimer = null;
+    }, 1500);
+  }
+
   // [Tab] Element Toggle Ring (visible only when BOTH Ice & Fire are solved)
   if (slotTab) {
     slotTab.addEventListener('click', (e) => {
@@ -2011,6 +2057,7 @@ export function createSculptedHud({
       state.activeElement = state.activeElement === 'ice' ? 'fire' : 'ice';
       state.tabSwitchHintDismissed = true;
       renderProgressionAndSlots();
+      flashTabSwitchText();
       if (typeof onToggleElement === 'function') {
         onToggleElement(state.activeElement);
       }
@@ -2182,14 +2229,18 @@ export function createSculptedHud({
 
   function setElement(element) {
     if (element === 'ice' || element === 'fire') {
+      const changed = element !== state.activeElement;
       if (
         ((state.iceUnlocked && state.fireUnlocked) || state.unlockedStage >= 2) &&
-        element !== state.activeElement
+        changed
       ) {
         state.tabSwitchHintDismissed = true;
       }
       state.activeElement = element;
       renderProgressionAndSlots();
+      if (changed) {
+        flashTabSwitchText();
+      }
     }
   }
 

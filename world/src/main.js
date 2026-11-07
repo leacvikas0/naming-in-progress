@@ -686,13 +686,17 @@ function updateCoopPill(roomState) {
     });
   }
   if (sculptedHud && roomState.progression) {
+    const effStage =
+      devStageOverride !== null
+        ? devStageOverride
+        : Number(roomState.progression.unlockedStage || 0);
     sculptedHud.setProgressionState({
-      communeDiscovered: Boolean(roomState.progression.communeDiscovered),
-      iceUnlocked: Boolean(roomState.progression.iceUnlocked),
-      fireUnlocked: Boolean(roomState.progression.fireUnlocked),
-      ultimateUnlocked: Boolean(roomState.progression.ultimateUnlocked),
-      unlockedStage: Number(roomState.progression.unlockedStage || 0),
-      stonesSolved: Number(roomState.progression.stonesSolved || 0),
+      communeDiscovered: Boolean(roomState.progression.communeDiscovered || effStage >= 1),
+      iceUnlocked: Boolean(roomState.progression.iceUnlocked || effStage >= 1),
+      fireUnlocked: Boolean(roomState.progression.fireUnlocked || effStage >= 2),
+      ultimateUnlocked: Boolean(roomState.progression.ultimateUnlocked || effStage >= 3),
+      unlockedStage: effStage,
+      stonesSolved: Math.max(Number(roomState.progression.stonesSolved || 0), effStage),
       activeElement: roomState.progression.activeElement,
     });
   }
@@ -706,6 +710,7 @@ function playDivineVerdictVoice(judgment) {
 let sculptedHud = null;
 let appFlow = null;
 let communeClient = null;
+let devStageOverride = null;
 
 // Declare camState & camera vectors BEFORE createSculptedHud / createAppFlow
 // so applyOpeningFlowCameraAndPoses() never hits a TDZ ReferenceError on boot!
@@ -1720,6 +1725,7 @@ sculptedHud = createSculptedHud({
   },
   onDevUnlockNextStage: (nextStage) => {
     // DEV_SOLO_TEST_REMOVE_FOR_PROD: Sync room progression state with Dev Stage button
+    devStageOverride = nextStage;
     const updated = coopSystem.coopClient.progression.setUnlocks({
       communeDiscovered: nextStage >= 1,
       iceUnlocked: nextStage >= 1,
@@ -2870,6 +2876,23 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
+  if (e.key === 'F4') {
+    // DEV_SOLO_TEST_REMOVE_FOR_PROD: Cycle unlocked stage 0 -> 1 -> 2 -> 3 -> 0
+    e.preventDefault();
+    const curProg = coopSystem.coopClient.getProgressionState();
+    const curStage = devStageOverride !== null ? devStageOverride : (curProg?.unlockedStage || 0);
+    const nextStage = (curStage + 1) % 4;
+    devStageOverride = nextStage;
+    const updated = coopSystem.coopClient.progression.setUnlocks({
+      communeDiscovered: nextStage >= 1,
+      iceUnlocked: nextStage >= 1,
+      fireUnlocked: nextStage >= 2,
+      ultimateUnlocked: nextStage >= 3,
+    });
+    sculptedHud?.setProgressionState(updated);
+    return;
+  }
+
   if (stoneGazeState.inspectActive) {
     const kExit = e.key.toLowerCase();
     if (
@@ -2895,21 +2918,6 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (isUiOverlayBlockingInput()) {
-    return;
-  }
-
-  if (e.key === 'F4') {
-    // DEV_SOLO_TEST_REMOVE_FOR_PROD: Cycle unlocked stage 0 -> 1 -> 2 -> 3 -> 0
-    e.preventDefault();
-    const curProg = coopSystem.coopClient.getProgressionState();
-    const nextStage = ((curProg?.unlockedStage || 0) + 1) % 4;
-    const updated = coopSystem.coopClient.progression.setUnlocks({
-      communeDiscovered: nextStage >= 1,
-      iceUnlocked: nextStage >= 1,
-      fireUnlocked: nextStage >= 2,
-      ultimateUnlocked: nextStage >= 3,
-    });
-    sculptedHud?.setProgressionState(updated);
     return;
   }
 
