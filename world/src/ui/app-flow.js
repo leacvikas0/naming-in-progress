@@ -337,17 +337,17 @@ const APP_FLOW_CSS = `
   }
 
   /* 36px -> 1px Pixel-to-Clear Mosaic Canvas Overlay (Zero Blur) */
-  /* Blurred + Bayer Ordered-Dither Materialization Veil */
+  /* Blurred + Bayer Ordered-Dither Puzzled Materialization Veil */
   #af-pixel-veil {
     position: fixed;
     inset: 0;
     z-index: 0;
     pointer-events: none;
     background: transparent;
-    backdrop-filter: blur(var(--af-blur-px, 12px));
-    -webkit-backdrop-filter: blur(var(--af-blur-px, 12px));
+    backdrop-filter: blur(var(--af-blur-px, 42px)) saturate(1.25);
+    -webkit-backdrop-filter: blur(var(--af-blur-px, 42px)) saturate(1.25);
     opacity: 1;
-    transition: opacity 420ms cubic-bezier(0.22, 1, 0.36, 1), backdrop-filter 420ms ease;
+    transition: opacity 380ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   #af-pixel-veil-canvas {
@@ -1643,6 +1643,11 @@ export function createAppFlow({
     15, 7, 13, 5,
   ];
 
+  function tileHash(x, y) {
+    const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+    return n - Math.floor(n);
+  }
+
   function stopMosaicLoop() {
     if (mosaicRafId !== null && typeof cancelAnimationFrame === 'function') {
       cancelAnimationFrame(mosaicRafId);
@@ -1655,16 +1660,150 @@ export function createAppFlow({
     pixelVeil?.classList.add('is-resolved');
     pixelVeil?.style.setProperty('--af-blur-px', '0px');
     if (enterBtn) {
+      enterBtn.disabled = false;
       enterBtn.classList.remove('is-loading');
       enterBtn.classList.add('is-ready');
-    }
-    if (morphFillEl) {
-      morphFillEl.style.width = '100%';
     }
   }
 
   /**
-   * Blurred + Bayer 4x4 Ordered-Dither Materialization & Morphing Preparation-to-Play Capsule.
+   * Renders the puzzled pixel-dither + strong atmospheric blur state at progress `t` in [0..1].
+   */
+  function renderDitherVeilAtProgress(rawT) {
+    if (!pixelVeil || !pixelCanvas) return;
+    const t = Math.min(1, Math.max(0, Number(rawT) || 0));
+
+    if (t >= 0.999) {
+      resolvePixelVeil();
+      return;
+    }
+
+    pixelVeil.classList.remove('is-resolved');
+    if (enterBtn) {
+      enterBtn.disabled = false;
+      enterBtn.classList.add('is-loading');
+      enterBtn.classList.remove('is-ready');
+    }
+
+    if (prepLabelEl) {
+      let activeStageText = PREP_STAGES[0].text;
+      for (const st of PREP_STAGES) {
+        if (t >= st.threshold) activeStageText = st.text;
+      }
+      if (prepLabelEl.textContent !== activeStageText) {
+        prepLabelEl.textContent = activeStageText;
+      }
+    }
+
+    // Strong 46px blur early on so the literal road/houses are completely obscured in unlocked windows,
+    // decaying smoothly to 0px as the puzzle dither tiles finish unlocking.
+    const blurPx = Math.max(0, Math.pow(1 - t, 1.05) * 46);
+    pixelVeil.style.setProperty('--af-blur-px', `${blurPx.toFixed(1)}px`);
+
+    const ctx = pixelCanvas.getContext?.('2d');
+    if (!ctx) return;
+
+    // Puzzled pixel-dither tile scale (24px -> 16px -> 12px)
+    const blockSize = t < 0.42 ? 24 : t < 0.78 ? 16 : 12;
+    const vw = Math.max(1, window.innerWidth || 1440);
+    const vh = Math.max(1, window.innerHeight || 900);
+    const lowW = Math.max(32, Math.floor(vw / blockSize));
+    const lowH = Math.max(20, Math.floor(vh / blockSize));
+
+    if (pixelCanvas.width !== lowW || pixelCanvas.height !== lowH) {
+      pixelCanvas.width = lowW;
+      pixelCanvas.height = lowH;
+    }
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, lowW, lowH);
+
+    // Linear-to-smooth progress across [0..1] so t=0.22 has ~82% locked puzzle tiles
+    // and t=0.58 has ~46% locked puzzle tiles in interlocking Bayer clusters.
+    const progress = Math.pow(t, 1.12);
+
+    for (let y = 0; y < lowH; y++) {
+      const ny = y / Math.max(1, lowH - 1);
+      for (let x = 0; x < lowW; x++) {
+        const nx = x / Math.max(1, lowW - 1);
+        const bayerVal = BAYER_4X4[(y & 3) * 4 + (x & 3)] / 15.0;
+        const puzzleCluster = tileHash(Math.floor(x / 2), Math.floor(y / 2));
+        const fineNoise = tileHash(x, y);
+        const centerDist = Math.min(1, Math.hypot(nx - 0.5, ny - 0.46) * 1.35);
+
+        // Full-range [0.06 .. 0.96] puzzle-dither unlock threshold:
+        // Interlocking 2x2 puzzle clusters + Bayer 4x4 ordered dither + subtle center-out wave
+        const unlockThreshold =
+          0.06 +
+          0.90 * (puzzleCluster * 0.48 + bayerVal * 0.38 + centerDist * 0.14);
+
+        if (progress >= unlockThreshold) {
+          // Unlocked puzzle window — reveals the strongly blurred & sharpening 3D valley beneath
+          ctx.clearRect(x, y, 1, 1);
+        } else {
+          // Locked puzzle-dither tile: rich atmospheric cobalt/cerulean sky, cloud ivory,
+          // misty horizon & sunlit meadow palette with puzzled spatial offset
+          const jx = (puzzleCluster - 0.5) * 0.24 + (fineNoise - 0.5) * 0.12;
+          const jy = (puzzleCluster - 0.5) * 0.26;
+          const sy = Math.min(1, Math.max(0, ny + jy));
+          const isDitherAlt = ((x + y) & 1) === 0;
+          const isPuzzleEdge = (x & 1) === 0 || (y & 1) === 0;
+
+          let r, g, b;
+          if (sy < 0.48) {
+            // Deep atmospheric cerulean & cobalt sky puzzle blocks + crisp cloud dither clusters
+            const skyU = sy / 0.48;
+            const isCloudTile = puzzleCluster > 0.70 && sy > 0.16;
+            if (isCloudTile) {
+              r = isDitherAlt ? 236 : 206;
+              g = isDitherAlt ? 246 : 226;
+              b = isDitherAlt ? 255 : 248;
+            } else {
+              r = Math.round(28 + skyU * 76 + jx * 32 + (isDitherAlt ? 14 : -12));
+              g = Math.round(104 + skyU * 92 + jx * 28 + (isDitherAlt ? 16 : -12));
+              b = Math.round(208 + skyU * 42 + (isDitherAlt ? 12 : -10));
+            }
+          } else if (sy < 0.63) {
+            // Distant cobalt-mist mountain & valley horizon puzzle band
+            const mistU = (sy - 0.48) / 0.15;
+            r = Math.round(96 + mistU * 42 + jx * 30 + (isDitherAlt ? 16 : -14));
+            g = Math.round(162 + mistU * 34 + jx * 26 + (isDitherAlt ? 16 : -14));
+            b = Math.round(204 - mistU * 52 + (isDitherAlt ? 14 : -12));
+          } else {
+            // Sunlit meadow, wildflower & golden path puzzle blocks
+            const meadU = (sy - 0.63) / 0.37;
+            const isGoldTile = Math.abs(nx - 0.48 + jx * 0.45) < 0.12 && puzzleCluster > 0.36;
+            const isBlossomTile = fineNoise > 0.84;
+            if (isBlossomTile) {
+              r = isDitherAlt ? 234 : 188;
+              g = isDitherAlt ? 112 : 138;
+              b = isDitherAlt ? 166 : 232;
+            } else if (isGoldTile) {
+              r = Math.round(208 + jx * 28 + (isDitherAlt ? 16 : -14));
+              g = Math.round(168 + jx * 22 + (isDitherAlt ? 14 : -12));
+              b = Math.round(86 + (isDitherAlt ? 10 : -8));
+            } else {
+              r = Math.round(72 + meadU * 32 + jx * 32 + (isDitherAlt ? 16 : -14));
+              g = Math.round(162 + meadU * 28 + jx * 28 + (isDitherAlt ? 18 : -14));
+              b = Math.round(82 + (1 - meadU) * 38 + (isDitherAlt ? 12 : -10));
+            }
+          }
+
+          if (isPuzzleEdge) {
+            r = Math.max(0, Math.min(255, r - 8));
+            g = Math.max(0, Math.min(255, g - 6));
+            b = Math.max(0, Math.min(255, b + 6));
+          }
+
+          const alpha = Math.min(0.96, Math.max(0.76, (1 - progress * 0.22) * 0.95));
+          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`;
+          ctx.fillRect(x, y, 1, 1);
+        }
+      }
+    }
+  }
+
+  /**
+   * Blurred + Puzzled Bayer 4x4 Ordered-Dither Materialization & Morphing Preparation-to-Play Capsule.
    */
   function triggerPixelVeilMaterialization(immediate = false) {
     if (!pixelVeil) return;
@@ -1680,21 +1819,12 @@ export function createAppFlow({
     }
 
     pixelVeil.classList.remove('is-resolved');
-    pixelVeil.style.setProperty('--af-blur-px', '14px');
     if (enterBtn) {
       enterBtn.classList.add('is-loading');
       enterBtn.classList.remove('is-ready');
     }
-    if (morphFillEl) {
-      morphFillEl.style.width = '4%';
-    }
 
-    const worldCanvas = document.getElementById('world-canvas');
-    const ctx = pixelCanvas?.getContext?.('2d');
-    if (!worldCanvas || !ctx) {
-      setTimeout(() => resolvePixelVeil(), 300);
-      return;
-    }
+    renderDitherVeilAtProgress(0.05);
 
     const startTime =
       typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -1702,55 +1832,7 @@ export function createAppFlow({
 
     const stepMosaic = (now) => {
       const t = Math.min(1, Math.max(0, (now - startTime) / durationMs));
-      const eased = 1 - Math.pow(1 - t, 3);
-
-      // Update morphing preparation capsule progress & stage text
-      if (morphFillEl) {
-        morphFillEl.style.width = `${Math.round(t * 100)}%`;
-      }
-      if (prepLabelEl) {
-        let activeStageText = PREP_STAGES[0].text;
-        for (const st of PREP_STAGES) {
-          if (t >= st.threshold) activeStageText = st.text;
-        }
-        if (prepLabelEl.textContent !== activeStageText) {
-          prepLabelEl.textContent = activeStageText;
-        }
-      }
-
-      // Progressive blur decay (14px -> 0px) + Bayer ordered-dither grid dissolve
-      const blurPx = Math.max(0, (1 - eased) * 14);
-      pixelVeil.style.setProperty('--af-blur-px', `${blurPx.toFixed(1)}px`);
-
-      const blockSize = Math.max(2, Math.round(28 - 26 * eased));
-      const vw = Math.max(1, window.innerWidth || 1280);
-      const vh = Math.max(1, window.innerHeight || 720);
-      const lowW = Math.max(24, Math.floor(vw / blockSize));
-      const lowH = Math.max(14, Math.floor(vh / blockSize));
-
-      if (pixelCanvas.width !== lowW || pixelCanvas.height !== lowH) {
-        pixelCanvas.width = lowW;
-        pixelCanvas.height = lowH;
-      }
-      ctx.imageSmoothingEnabled = false;
-      try {
-        ctx.drawImage(worldCanvas, 0, 0, lowW, lowH);
-        // Carve ordered Bayer 4x4 dither cells out of the veil so the crisp 3D world grows into view
-        const ditherThreshold = eased * 16;
-        for (let by = 0; by < 4; by++) {
-          for (let bx = 0; bx < 4; bx++) {
-            if (BAYER_4X4[by * 4 + bx] < ditherThreshold) {
-              for (let y = by; y < lowH; y += 4) {
-                for (let x = bx; x < lowW; x += 4) {
-                  ctx.clearRect(x, y, 1, 1);
-                }
-              }
-            }
-          }
-        }
-      } catch {
-        // Fallback if WebGL buffer is not yet populated
-      }
+      renderDitherVeilAtProgress(t);
 
       if (t < 1) {
         mosaicRafId = requestAnimationFrame(stepMosaic);
@@ -2308,7 +2390,7 @@ export function createAppFlow({
     setStep(FLOW_STEPS.TITLE);
   }
 
-  return {
+  const api = {
     root,
     FLOW_STEPS,
     getStep: () => state.step,
@@ -2319,6 +2401,8 @@ export function createAppFlow({
     claimCharacter,
     setHeroScreenPositions,
     resolvePixelVeil,
+    renderDitherVeilAtProgress,
+    stopMosaicLoop,
     setErrorMessage,
     markWorldReady,
     skipToGame,
@@ -2331,4 +2415,10 @@ export function createAppFlow({
       root.remove();
     },
   };
+
+  if (typeof window !== 'undefined') {
+    window.__APP_FLOW__ = api;
+  }
+
+  return api;
 }
