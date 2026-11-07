@@ -889,6 +889,113 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
       wellGroup.position.set(0 - st.x, 0 - sy, 0 - st.z);
       holder.add(wellGroup);
       mountTargets.push(wellGroup);
+
+      // Luminous Ghibli Wellspring Water surface inside the well cylinder (`y = 0.38m`, `r = 0.88m`)
+      const wellWaterGeo = new THREE.CircleGeometry(0.88, 48);
+      wellWaterGeo.rotateX(-Math.PI * 0.5);
+      const wellWaterMat = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 1.25 },
+          uSunDir: {
+            value: sky?.activeLightDir
+              ? sky.activeLightDir.clone()
+              : new THREE.Vector3(-0.38, 0.80, 0.46).normalize(),
+          },
+          uDaylight: { value: sky?.state?.daylight ?? 1.0 },
+          uLightTint: {
+            value: sky?.state?.worldTint
+              ? sky.state.worldTint.clone()
+              : new THREE.Color(1, 1, 1),
+          },
+          uFogColor: {
+            value: sky?.state?.fogColor
+              ? sky.state.fogColor.clone()
+              : new THREE.Color(0xd8eef5),
+          },
+        },
+        vertexShader: /* glsl */ `
+          varying vec2 vWellUv;
+          varying vec3 vWorldPos;
+          void main() {
+            vWellUv = position.xz;
+            vec4 wp = modelMatrix * vec4(position, 1.0);
+            vWorldPos = wp.xyz;
+            gl_Position = projectionMatrix * viewMatrix * wp;
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          uniform float uTime;
+          uniform vec3 uSunDir;
+          uniform float uDaylight;
+          uniform vec3 uLightTint;
+          varying vec2 vWellUv;
+          varying vec3 vWorldPos;
+
+          float hash21(vec2 p) {
+            p = fract(p * vec2(234.34, 435.345));
+            p += dot(p, p + 34.23);
+            return fract(p.x * p.y);
+          }
+
+          float noise2(vec2 p) {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(
+              mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
+              mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x),
+              f.y
+            );
+          }
+
+          void main() {
+            float r = length(vWellUv);
+            float n1 = noise2(vWellUv * 4.8 + vec2(uTime * 0.18, -uTime * 0.14));
+            float n2 = noise2(vWellUv * 9.5 - vec2(uTime * 0.22, uTime * 0.19));
+            float nCombine = n1 * 0.6 + n2 * 0.4;
+
+            // Deep emerald-cerulean center -> luminous aqua-teal mid -> shallow stone rim
+            vec3 deepCol = vec3(0.07, 0.30, 0.38);
+            vec3 midCol = vec3(0.14, 0.48, 0.56);
+            vec3 shallowCol = vec3(0.26, 0.64, 0.68);
+            vec3 col = mix(deepCol, midCol, smoothstep(0.05, 0.58, r + (n1 - 0.5) * 0.12));
+            col = mix(col, shallowCol, smoothstep(0.52, 0.78, r));
+
+            // Concentric spring ripples & caustic network
+            float rippleWave = sin(r * 26.0 - uTime * 1.8 + nCombine * 4.2);
+            float rippleRing = smoothstep(0.62, 0.92, rippleWave) * (1.0 - smoothstep(0.72, 0.85, r));
+            float caustic = smoothstep(0.64, 0.86, nCombine) * (1.0 - smoothstep(0.74, 0.86, r));
+            col += vec3(0.24, 0.42, 0.44) * (rippleRing * 0.42 + caustic * 0.38);
+
+            // Soft sky/sunlight specular shimmer on the water surface
+            float spec = smoothstep(0.72, 0.94, noise2(vWellUv * 6.2 + vec2(0.4, -0.6) + uTime * 0.12));
+            col += vec3(0.35, 0.46, 0.48) * spec * 0.35;
+
+            // Crisp foam meniscus ring & dark wet-brick shadow around the masonry wall
+            float foamLine = smoothstep(0.75, 0.79, r) * (1.0 - smoothstep(0.79, 0.82, r));
+            col = mix(col, vec3(0.72, 0.88, 0.90), foamLine * 0.55);
+            float wallShadow = smoothstep(0.76, 0.86, r);
+            col *= 1.0 - wallShadow * 0.48;
+
+            // Time-of-Day atmosphere sync (Day / Sunset / Starlit Night)
+            float dayLuma = dot(uLightTint, vec3(0.3333));
+            float isNight = 1.0 - smoothstep(0.35, 0.65, dayLuma);
+            float isEvening = smoothstep(0.08, 0.22, uLightTint.r - uLightTint.b) * (1.0 - isNight);
+            col = mix(col, col * vec3(1.10, 0.76, 0.62), isEvening * 0.55);
+            col = mix(col, col * vec3(0.38, 0.50, 0.82), isNight * 0.58);
+            col *= uLightTint;
+
+            gl_FragColor = vec4(col, 1.0);
+            #include <tonemapping_fragment>
+            #include <colorspace_fragment>
+          }
+        `,
+      });
+      monumentShaderMats.push(wellWaterMat);
+      const wellWaterMesh = new THREE.Mesh(wellWaterGeo, wellWaterMat);
+      wellWaterMesh.name = 'Site1_WellSpringWater';
+      wellWaterMesh.position.set(0, 0.38, 0);
+      wellGroup.add(wellWaterMesh);
     } else if (st.id === 'stone_grove') {
       // Site 2: Mounted atop the Whispering Grove Sanctuary Dais (44, sy, 16)
       const groveGroup = new THREE.Group();
@@ -2506,6 +2613,13 @@ function updateMeadowFocus(simTime) {
     );
   }
   meadow.update(simTime, _meadowFocus, camera);
+  if (typeof monumentShaderMats !== 'undefined' && Array.isArray(monumentShaderMats)) {
+    for (const mat of monumentShaderMats) {
+      if (mat?.uniforms?.uTime) {
+        mat.uniforms.uTime.value = simTime;
+      }
+    }
+  }
 }
 
 function updateCamera() {
