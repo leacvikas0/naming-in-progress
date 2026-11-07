@@ -924,25 +924,33 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
           : 'site3-wall-exposed.glb'
     }`;
 
+    const siteIdValue =
+      st.id === 'stone_plaza' ? 1.0 : st.id === 'stone_grove' ? 2.0 : 3.0;
+
     const createGhibliMonumentShaderMaterial = (_srcMat, hasColorAttr) => {
       return new THREE.ShaderMaterial({
         uniforms: {
           uHasVertexColor: { value: hasColorAttr ? 1.0 : 0.0 },
+          uSiteId: { value: siteIdValue },
         },
         vertexShader: /* glsl */ `
           ${hasColorAttr ? 'attribute vec4 color;' : ''}
+          varying vec3 vLocalPos;
           varying vec3 vWorldPos;
           varying vec3 vWorldNormal;
           varying vec3 vColor;
           void main() {
+            vLocalPos = position.xyz;
             vec4 wp = modelMatrix * vec4(position, 1.0);
             vWorldPos = wp.xyz;
             vWorldNormal = normalize(mat3(modelMatrix) * normal);
-            vColor = ${hasColorAttr ? 'color.rgb' : 'vec3(0.45, 0.36, 0.26)'};
+            vColor = ${hasColorAttr ? 'color.rgb' : 'vec3(0.68, 0.59, 0.45)'};
             gl_Position = projectionMatrix * viewMatrix * wp;
           }
         `,
         fragmentShader: /* glsl */ `
+          uniform float uSiteId;
+          varying vec3 vLocalPos;
           varying vec3 vWorldPos;
           varying vec3 vWorldNormal;
           varying vec3 vColor;
@@ -980,33 +988,113 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
             vec3 sunDir = normalize(vec3(-0.38, 0.80, 0.46));
             float ndl = dot(n, sunDir);
 
-            // Detect neutral stone vs botanicals/poem from vColor saturation & luminance
-            float lum = dot(vColor, vec3(0.299, 0.587, 0.114));
-            float maxC = max(vColor.r, max(vColor.g, vColor.b));
-            float minC = min(vColor.r, min(vColor.g, vColor.b));
-            float sat = (maxC - minC) / max(0.001, maxC);
+            float lum = dot(vColor, vec3(0.2126, 0.7152, 0.0722));
+            bool isPoemDark = (lum < 0.105 && vColor.r >= vColor.g);
+            bool isPoemLip = (lum > 0.86);
+            bool isCrimsonRose = (vColor.r > vColor.g * 2.05 && vColor.r > 0.06);
+            bool isBotanicalGreen = (vColor.g > vColor.r * 1.04 && vColor.g > vColor.b * 1.30);
 
             vec3 col = vColor;
 
-            // If low-saturation mid-tone stone, add subtle screen-space facet edge definition & fine grain
-            if (sat < 0.48 && lum > 0.08 && lum < 0.78) {
-              float fine = noise3(vWorldPos * 19.0);
-              float mottle = noise3(vWorldPos * 3.2);
-              float dNorm = clamp(length(fwidth(geoN)) * 1.65, 0.0, 1.0);
-              float sunFactor = 0.86 + 0.24 * clamp(ndl * 0.5 + 0.5, 0.0, 1.0);
-              col *= sunFactor * (0.94 + mottle * 0.08 + (fine - 0.5) * 0.05);
-              // Crisp chiseled facet edge highlight on upward edges, warm shadow on downward edges
-              vec3 edgeHi = min(vec3(0.95, 0.88, 0.72), col * 1.38);
-              vec3 edgeLo = col * 0.62;
-              col = mix(col, edgeHi, dNorm * smoothstep(0.0, 0.65, geoN.y) * 0.42);
-              col = mix(col, edgeLo, dNorm * smoothstep(0.1, -0.55, geoN.y) * 0.38);
-            } else if (sat >= 0.48) {
-              // Botanicals (roses, serrated leaves, moss): directional cel-rim & petal depth
-              float sunBoost = 0.82 + 0.32 * smoothstep(-0.25, 0.55, ndl);
+            if (isPoemDark || isPoemLip) {
+              // Keep 3-layer V-chiseled Garamond poem razor-sharp and unmottled
+              gl_FragColor = vec4(col, 1.0);
+            } else if (isCrimsonRose) {
+              // Velvet crimson rose petals & buds: directional sun wrap + subtle petal rim glow
+              float sunBoost = 0.88 + 0.24 * smoothstep(-0.25, 0.60, ndl);
               col *= sunBoost;
-            }
+              gl_FragColor = vec4(col, 1.0);
+            } else if (isBotanicalGreen) {
+              // Serrated ivy leaves & vertex-tagged moss: organic tuft micro-relief & sunlit chartreuse tips
+              float mTuft = noise3(vLocalPos * 14.0 + vec3(3.1, 7.4, 2.6));
+              float mFine = noise3(vLocalPos * 34.0);
+              float sunBoost = 0.86 + 0.26 * smoothstep(-0.20, 0.62, ndl);
+              col *= sunBoost * (0.92 + mTuft * 0.12 + (mFine - 0.5) * 0.08);
+              vec3 mossChartreuse = vec3(0.32, 0.58, 0.11);
+              col = mix(col, mossChartreuse, smoothstep(0.58, 0.88, mTuft * 0.6 + max(0.0, n.y) * 0.4) * 0.26);
+              gl_FragColor = vec4(col, 1.0);
+            } else {
+              // Warm sunlit Ghibli limestone & sandstone reading tablets (zero muddy blotches!)
+              float fine = noise3(vLocalPos * 28.0);
+              float dNorm = clamp(length(fwidth(geoN)) * 1.45, 0.0, 1.0);
+              float sunFactor = 0.94 + 0.12 * clamp(ndl * 0.5 + 0.5, 0.0, 1.0);
+              col *= sunFactor * (0.985 + (fine - 0.5) * 0.03);
 
-            gl_FragColor = vec4(col, 1.0);
+              // Jagged hairline geological stone fractures (multi-octave high-frequency warp, attenuated in poem center)
+              vec3 jWarp =
+                vec3(
+                  noise3(vLocalPos * 5.2 + vec3(1.1, 4.3, 7.7)),
+                  noise3(vLocalPos * 5.2 + vec3(8.5, 2.1, 3.4)),
+                  noise3(vLocalPos * 5.2 + vec3(4.7, 9.2, 1.8))
+                ) * 0.16 +
+                vec3(
+                  noise3(vLocalPos * 17.5 + vec3(3.2, 7.1, 2.9)),
+                  noise3(vLocalPos * 17.5 + vec3(6.4, 1.8, 5.3)),
+                  noise3(vLocalPos * 17.5 + vec3(9.1, 3.7, 4.2))
+                ) * 0.065 +
+                vec3(noise3(vLocalPos * 42.0) - 0.5) * 0.025;
+
+              float cSheet1 = abs(noise3(vLocalPos * 2.4 + jWarp) - 0.50);
+              float cSheet2 = abs(noise3(vLocalPos * 4.6 - jWarp * 1.3 + vec3(5.2, 1.7, 8.4)) - 0.50);
+              float crackGate = smoothstep(0.54, 0.72, noise3(vLocalPos * 2.1 + vec3(2.9, 6.1, 4.4)));
+              float crack1 = (1.0 - smoothstep(0.0015, 0.0065, cSheet1)) * crackGate;
+              float crack2 = (1.0 - smoothstep(0.0018, 0.0070, cSheet2)) * crackGate * 0.55;
+              float crackMask = clamp(crack1 + crack2, 0.0, 1.0);
+              col = mix(col, col * vec3(0.76, 0.72, 0.67), crackMask * 0.45);
+
+              // Crisp chiseled facet edge highlight on upward edges, warm limestone shade on downward edges
+              vec3 edgeHi = min(vec3(0.97, 0.92, 0.80), col * 1.24);
+              vec3 edgeLo = col * 0.78;
+              col = mix(col, edgeHi, dNorm * smoothstep(0.0, 0.65, geoN.y) * 0.40);
+              col = mix(col, edgeLo, dNorm * (1.0 - smoothstep(-0.55, 0.10, geoN.y)) * 0.32);
+
+              // Strictly isolated procedural per-pixel shader moss (Site 3 top brow ONLY, Site 2 mortar crevices ONLY, Site 1 ZERO)
+              float mBroad = noise3(vLocalPos * 3.4 + vec3(2.3, 6.1, 4.8));
+              float mDetail = noise3(vLocalPos * 11.5 + vec3(7.4, 1.9, 5.2));
+              float mMicro = noise3(vLocalPos * 29.0 + vec3(1.7, 8.3, 3.6));
+              float mField = mBroad * 0.52 + mDetail * 0.33 + mMicro * 0.15;
+
+              float procMoss = 0.0;
+              if (abs(uSiteId - 3.0) < 0.2) {
+                // Site 3 top brow moss mask (strictly on protruding rock blocks vLocalPos.z > 0.198, never on tablet!)
+                float s3Shoulder = max(
+                  smoothstep(0.75, 1.30, abs(vLocalPos.x)),
+                  (1.0 - smoothstep(0.06, 0.34, abs(vLocalPos.x + 0.48))) * 0.88
+                );
+                float browY = 2.28 - max(0.0, abs(vLocalPos.x) - 1.15) * 0.36;
+                procMoss =
+                  smoothstep(browY - 0.10, browY + 0.12, vLocalPos.y) *
+                  smoothstep(-0.18, 0.42, geoN.y) *
+                  smoothstep(0.196, 0.214, vLocalPos.z) *
+                  s3Shoulder;
+              } else if (abs(uSiteId - 2.0) < 0.2) {
+                // Site 2 patchy crevice & lower flagstone edge moss mask
+                float rHoriz = length(vLocalPos.xz);
+                float inRing = smoothstep(1.31, 1.37, rHoriz) * (1.0 - smoothstep(3.25, 3.65, rHoriz));
+                float inMortarDepth = 1.0 - smoothstep(0.506, 0.522, vLocalPos.y);
+                float onBevel = (1.0 - smoothstep(0.514, 0.532, vLocalPos.y)) * (1.0 - smoothstep(0.76, 0.92, geoN.y));
+                procMoss = inRing * max(inMortarDepth, onBevel * 0.82);
+              }
+
+              bool isSite2 = (abs(uSiteId - 2.0) < 0.2);
+              float mossCut = isSite2 ? 0.72 : 0.42;
+              float rawMoss = isSite2
+                ? (mField * 0.84 + procMoss * 0.34)
+                : (mField * 0.62 + procMoss * 0.68);
+              float mossAlpha = smoothstep(mossCut, mossCut + 0.08, rawMoss) * step(0.05, procMoss);
+              if (mossAlpha > 0.01) {
+                vec3 cMossRim  = vec3(0.032, 0.095, 0.016);
+                vec3 cMossMid  = vec3(0.105, 0.265, 0.045);
+                vec3 cMossTip  = vec3(0.255, 0.495, 0.088);
+                float innerTuft = smoothstep(mossCut + 0.05, mossCut + 0.20, rawMoss);
+                vec3 mossTone = mix(cMossRim, cMossMid, innerTuft);
+                float sunCrown = smoothstep(0.46, 0.82, mDetail * 0.55 + mMicro * 0.25 + max(0.0, ndl) * 0.35) * innerTuft;
+                mossTone = mix(mossTone, cMossTip, sunCrown * 0.88);
+                col = mix(col, mossTone, mossAlpha * 0.95);
+              }
+
+              gl_FragColor = vec4(col, 1.0);
+            }
             #include <tonemapping_fragment>
             #include <colorspace_fragment>
           }
