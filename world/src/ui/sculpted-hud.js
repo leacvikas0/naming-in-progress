@@ -2405,7 +2405,15 @@ export function createSculptedHud({
       setPlayerNames(names);
     }
     if (activeElement === 'ice' || activeElement === 'fire') {
+      const changed = activeElement !== state.activeElement;
       state.activeElement = activeElement;
+      if (
+        changed &&
+        ((state.iceUnlocked && state.fireUnlocked) || state.unlockedStage >= 2)
+      ) {
+        state.tabSwitchHintDismissed = true;
+        flashTabSwitchText();
+      }
     }
     if (activeSwordBuffElement !== undefined) {
       state.activeSwordBuffElement = activeSwordBuffElement;

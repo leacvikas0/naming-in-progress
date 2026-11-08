@@ -729,9 +729,25 @@ export async function createEnemyManager({
         (enemy.damageThreat[attackerRole] || 0) + result.damageDealt * 0.8;
       if (attackerRole === 'Knight' && enemy.targetHeroId === 'Mage') {
         enemy.tauntHitTimer = 5.0;
+        enemy.damageThreat.Mage = (enemy.damageThreat.Mage || 0) * 0.2;
+        if (enemy.killStreakTimers) enemy.killStreakTimers.Mage = 0;
+        globalThreatState.killStreakTimers.Mage = 0;
+        enemy.targetHeroId = 'Knight';
+        enemy.huntingMage = false;
       }
       if (source === 'intercept') {
         enemy.interceptTauntTimer = 6.0;
+        enemy.tauntHitTimer = Math.max(enemy.tauntHitTimer || 0, 5.0);
+        enemy.damageThreat.Mage = (enemy.damageThreat.Mage || 0) * 0.1;
+        if (enemy.killStreakTimers) enemy.killStreakTimers.Mage = 0;
+        globalThreatState.killStreakTimers.Mage = 0;
+        enemy.targetHeroId = 'Knight';
+        enemy.huntingMage = false;
+        if (enemy.aiState === 'windup') {
+          enemy.aiState = 'orbit';
+          enemy.windupTimer = 0;
+          enemy.telegraphProgress = 0;
+        }
       }
     }
 
@@ -1059,7 +1075,7 @@ export async function createEnemyManager({
         if (e.slowTimer > 0) {
           e.slowTimer = Math.max(0, e.slowTimer - dt);
         }
-        e.char.mixer.timeScale = 0.15;
+        e.char.mixer.timeScale = Math.min(0.15, iceTimeMult);
       } else if (e.hitstopTimer > 0) {
         e.hitstopTimer = Math.max(0, e.hitstopTimer - dt);
         if (e.hitstopTimer <= 0) {

@@ -1325,6 +1325,7 @@ export class ArtoriousVfxSystem {
 
   startChannel(origin, partnerPos = null, options = null) {
     this._setPositions(origin, partnerPos, null, options);
+    this.communeMode = options?.communeMode || 'divine_miracle';
     this.mode = 'channel';
     this.suspense = false;
     this.isLooping = true;
@@ -1414,7 +1415,7 @@ export class ArtoriousVfxSystem {
     this.isLooping = false;
     this.active = true;
     this.age = 0;
-    this.totalDuration = this.config.blessingTotalDuration;
+    this.totalDuration = 1.65;
     this.group.visible = true;
     this.seek(0.02);
     return this;
@@ -1763,11 +1764,16 @@ export class ArtoriousVfxSystem {
         const c = this.config;
         if (this.mode === 'smite') {
           this.totalDuration = c.smiteTotalDuration;
-        } else if (this.mode === 'heal' || this.mode === 'blessing' || this.mode === 'miracle') {
+        } else if (this.mode === 'heal') {
+          this.totalDuration = 1.65;
+        } else if (this.mode === 'blessing' || this.mode === 'miracle') {
           this.totalDuration = c.blessingTotalDuration;
         } else {
           this.totalDuration = 9999.0;
         }
+      }
+      if (options.communeMode) {
+        this.communeMode = options.communeMode;
       }
       if (options.suspense !== undefined) {
         this.suspense = Boolean(options.suspense);
@@ -1810,7 +1816,7 @@ export class ArtoriousVfxSystem {
     const windRate =
       this.mode === 'smite' || this.mode === 'rose_gommage'
         ? 0.0
-        : this.mode === 'channel'
+        : this.mode === 'channel' && this.communeMode !== 'normal'
           ? 0.35
           : 1.0;
     this.sharedUniforms.uTime.value = timeSeconds * Math.max(0.05, windRate);
@@ -1819,6 +1825,8 @@ export class ArtoriousVfxSystem {
       this._evaluateChannel(timeSeconds);
     } else if (this.mode === 'smite' || this.mode === 'rose_gommage') {
       this._evaluateSmite(timeSeconds);
+    } else if (this.mode === 'heal') {
+      this._evaluateFieldHeal(timeSeconds);
     } else {
       this._evaluateBlessingFourBeat(timeSeconds);
     }
@@ -1828,8 +1836,9 @@ export class ArtoriousVfxSystem {
 
   /**
    * PHASE 1 (`channel` — Frame 37):
-   * - 36 Witcher 3 brown-root & briar net modules creep slowly along the cobblestones around the lovers' boots.
-   * - 32 world-space crimson rose petals + 8 camera-foreground soft-focus crimson petals (`total = 40`) drifting at `0.35x`.
+   * - Mode B (`communeMode !== 'normal'`): 36 Witcher 3 brown-root & briar net modules creep slowly
+   *   along the cobblestones around the lovers' boots + 32 world-space crimson rose petals + 8 foreground lens petals.
+   * - Mode A (`communeMode === 'normal'`): Gentle rose petals swirl around speaker's feet (`0` briar roots, `0` lens petals).
    */
   _evaluateChannel(t) {
     const ox = this.origin.x;
@@ -1850,6 +1859,38 @@ export class ArtoriousVfxSystem {
 
     // DC 1: Keep 0 ribbon rings so no artificial red wire rings obscure the characters
     this.skyRibbonsMesh.count = 0;
+
+    if (this.communeMode === 'normal') {
+      // Mode A Normal Field Prayer: 0 briar dome roots, gentle swirling petals around feet
+      this.monolithsMesh.count = 0;
+      this.monolithsMesh.instanceMatrix.needsUpdate = true;
+
+      let dSlot = 0;
+      for (let i = 0; i < 24; i++) {
+        const rec = this.debrisRecords[i];
+        const swirlAng = rec.ang + t * (1.25 + (i % 3) * 0.22);
+        const rad = 0.75 + (i % 6) * 0.32;
+        const localH = (rec.heightOffset * 0.35 + t * 0.85) % 1.85;
+        const dx = cx + Math.cos(swirlAng) * rad;
+        const dz = cz + Math.sin(swirlAng) * rad;
+        const dy = this.getGroundHeight(dx, dz) + 0.14 + localH;
+
+        _dummy.position.set(dx, dy, dz);
+        _euler.set(t * rec.spinX * 0.45, swirlAng + t * rec.spinY * 0.45, t * rec.spinZ * 0.45);
+        _dummy.quaternion.setFromEuler(_euler);
+        const sc = rec.size * 1.02;
+        _dummy.scale.set(sc * 1.15, sc * 1.10, sc * 0.90);
+        _dummy.updateMatrix();
+        this.prismsAndDebrisMesh.setMatrixAt(dSlot, _dummy.matrix);
+        this.debrisMetaAttr.setXYZW(dSlot, rec.seed, 1.0, 0.0, 2.0);
+        dSlot++;
+      }
+      this.prismsAndDebrisMesh.count = dSlot;
+      this.prismsAndDebrisMesh.instanceMatrix.needsUpdate = true;
+      this.debrisMetaAttr.needsUpdate = true;
+      this.groundSigilMesh.count = 0;
+      return;
+    }
 
     // DC 2: 36 Briar Net roots coiling low along the cobblestones around the lovers' boots (`0.12 -> 0.22`)
     const growthProgress = 0.12 + 0.10 * (1.0 - Math.exp(-t * 0.50));
@@ -1884,6 +1925,61 @@ export class ArtoriousVfxSystem {
 
     // DC 4: 0 ground sigils during Prayer channel
     this.groundSigilMesh.count = 0;
+  }
+
+  /**
+   * MODE A IN-PLACE FIELD HEAL (`heal` — `totalDuration = 1.65s`):
+   * - Swirls 36 rising rose petals around both partners in place with `0s` cutscene lock,
+   *   `0` briar roots, and `0` underground plunge!
+   */
+  _evaluateFieldHeal(t) {
+    const ox = this.origin.x;
+    const oz = this.origin.z;
+    const px = this.hasPartner ? this.partnerPos.x : ox;
+    const pz = this.hasPartner ? this.partnerPos.z : oz;
+    const cx = this.hasPartner ? (ox + px) * 0.5 : ox;
+    const cz = this.hasPartner ? (oz + pz) * 0.5 : oz;
+
+    this._originLevY = 0.0;
+    this._partnerLevY = 0.0;
+    this._undergroundHidden = false;
+    this._characterDissolveProgress = 0.0;
+    this._cameraLookOffset.set(0, 0, 0);
+    this._hitstopScale = 1.0;
+    this._shakeOffset.set(0, 0, 0);
+
+    this.skyRibbonsMesh.count = 0;
+    this.monolithsMesh.count = 0;
+    this.groundSigilMesh.count = 0;
+
+    const u = clamp(t / Math.max(0.2, this.totalDuration), 0.0, 1.0);
+    let dSlot = 0;
+    for (let i = 0; i < 36; i++) {
+      const rec = this.debrisRecords[i];
+      const dissolveProgress = smoothstep(0.55, 0.98, u + rec.dissolveStagger * 0.4);
+      if (dissolveProgress >= 0.995) continue;
+
+      const anchorX = i % 2 === 0 ? ox : px;
+      const anchorZ = i % 2 === 0 ? oz : pz;
+      const swirlAng = rec.ang + t * 2.4;
+      const rad = 0.45 + (i % 6) * 0.22 + u * 0.55;
+      const dx = (this.hasPartner ? anchorX : cx) + Math.cos(swirlAng) * rad;
+      const dz = (this.hasPartner ? anchorZ : cz) + Math.sin(swirlAng) * rad;
+      const dy = this.getGroundHeight(dx, dz) + 0.18 + u * 2.1 + (i % 5) * 0.24;
+
+      _dummy.position.set(dx, dy, dz);
+      _euler.set(t * rec.spinX * 0.65, swirlAng, t * rec.spinZ * 0.65);
+      _dummy.quaternion.setFromEuler(_euler);
+      const sc = rec.size * 1.08;
+      _dummy.scale.set(sc * 1.18, sc * 1.12, sc * 0.92);
+      _dummy.updateMatrix();
+      this.prismsAndDebrisMesh.setMatrixAt(dSlot, _dummy.matrix);
+      this.debrisMetaAttr.setXYZW(dSlot, rec.seed, 1.0, dissolveProgress, 2.0);
+      dSlot++;
+    }
+    this.prismsAndDebrisMesh.count = dSlot;
+    this.prismsAndDebrisMesh.instanceMatrix.needsUpdate = true;
+    this.debrisMetaAttr.needsUpdate = true;
   }
 
   /**

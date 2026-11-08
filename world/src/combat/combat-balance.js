@@ -812,7 +812,11 @@ export const SAFE_HAVEN_WAYPOINTS = Object.freeze([
   }),
 ]);
 
-export function selectNearestSafeHavenWaypoint(x = 0, z = 18.5) {
+export function selectNearestSafeHavenWaypoint(xOrPos = 0, zArg = 18.5) {
+  const x =
+    xOrPos && typeof xOrPos === 'object' ? Number(xOrPos.x ?? 0) : Number(xOrPos || 0);
+  const z =
+    xOrPos && typeof xOrPos === 'object' ? Number(xOrPos.z ?? 18.5) : Number(zArg ?? 18.5);
   let best = SAFE_HAVEN_WAYPOINTS[0];
   let bestDist = Infinity;
   for (let i = 0; i < SAFE_HAVEN_WAYPOINTS.length; i++) {
@@ -1139,10 +1143,18 @@ export function selectEnemyTargetByThreat(enemy, heroes = {}, threatState = {}) 
   );
   const mageHunterMult = isFlankerOrRanged ? 1.25 : 1.0;
 
+  const knightActivelyTaunting = Boolean(
+    enemy?.tauntHitTimer > 0 ||
+      enemy?.interceptTauntTimer > 0 ||
+      threatState?.knightHitEnemyTargetingMage ||
+      threatState?.knightIntercepted
+  );
+
   const knightKillStreakThreat = knightKillTimer > 0 ? 55.0 : 0.0;
-  const mageKillStreakThreat =
-    (mageKillTimer > 0 ? 55.0 * mageHunterMult : 0.0) +
-    (enemy?.preferredTarget === 'Mage' ? 60.0 : 0.0);
+  const mageKillStreakThreat = knightActivelyTaunting
+    ? 0.0
+    : (mageKillTimer > 0 ? 55.0 * mageHunterMult : 0.0) +
+      (enemy?.preferredTarget === 'Mage' ? 60.0 : 0.0);
 
   // TauntBonus(Knight):
   // - Hitting an enemy targeting Mage: +65

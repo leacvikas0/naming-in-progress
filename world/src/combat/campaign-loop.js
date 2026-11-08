@@ -2058,15 +2058,8 @@ export function createCampaignLoop({
     );
 
     const kPos = heroStates?.Knight || { x: 0, y: 0, z: 0, yaw: 0 };
-    const dirX = Math.sin(kPos.yaw || 0);
-    const dirZ = Math.cos(kPos.yaw || 0);
 
     if (vfxKit) {
-      vfxKit.stormLance?.cast?.(
-        { x: kPos.x, y: walkableHeightAt(kPos.x, kPos.z), z: kPos.z },
-        { x: dirX, y: 0, z: dirZ },
-        { range: 8.5 }
-      );
       vfxKit.swordVfx?.triggerSwing?.('charged', kPos, kPos.yaw || 0, styleId);
     }
     combatSfx?.playCouplesUltimate?.();
@@ -2141,13 +2134,19 @@ export function createCampaignLoop({
     const strikePos = { x: strikeX, y: strikeY, z: strikeZ };
 
     if (vfxKit?.cinderFall?.cast) {
+      const dirAng = (meteorIndex % 2 === 0 ? 0.35 : -0.35);
+      const dirX = Math.sin(dirAng);
+      const dirZ = Math.cos(dirAng);
       vfxKit.cinderFall.cast(
-        { x: strikeX - 1.2, y: strikeY, z: strikeZ - 1.2 },
-        { x: 0.707, y: 0, z: 0.707 },
+        { x: strikeX - dirX * 4.2, y: strikeY, z: strikeZ - dirZ * 4.2 },
+        { x: dirX, y: 0, z: dirZ },
         {
-          range: 3.5,
-          distance: 3.5,
+          fromSky: true,
+          skyHeight: 13.5,
+          range: 4.2,
+          distance: 4.2,
           targetPos: strikePos,
+          seed: 1.0 + meteorIndex * 0.73,
         }
       );
     } else if (vfxKit?.stormLance?.cast && meteorIndex === 0) {
@@ -2178,8 +2177,8 @@ export function createCampaignLoop({
         source: 'storm_cataclysm',
         baseDmg: meteorDmg,
         applyMark: 'solar',
-        detonatesMark: true,
-        empoweredBreathing: true,
+        detonatesMark: false,
+        empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
         partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
         attackerPos: magePos || strikePos,
       },
@@ -2460,6 +2459,21 @@ export function createCampaignLoop({
     apex_finale: 8,
   };
 
+  function getStrongholdWaves(sh) {
+    if (!sh) return [];
+    if (Array.isArray(sh.waves) && sh.waves.length > 0) return sh.waves;
+    if (Array.isArray(sh.spawns) && sh.spawns.length > 0) {
+      return [
+        {
+          id: `${sh.id || 'stronghold'}_wave1`,
+          label: sh.bannerSubtitle || sh.name || 'Guardian Forces Awaken!',
+          spawns: sh.spawns,
+        },
+      ];
+    }
+    return [];
+  }
+
   function checkStrongholdTriggers(leaderPos) {
     if (!leaderPos || !enemyManager) return null;
     const triggeredNow = [];
@@ -2468,14 +2482,15 @@ export function createCampaignLoop({
       if ((strongholdClearedMask & bit) !== 0) continue;
       if (activeStrongholdIds.has(key)) continue;
       const sh = STONE_STRONGHOLDS[key];
-      if (!sh || !sh.waves || sh.waves.length === 0) continue;
+      const shWaves = getStrongholdWaves(sh);
+      if (!sh || shWaves.length === 0) continue;
       const d = Math.hypot(leaderPos.x - sh.center.x, leaderPos.z - sh.center.z);
       if (d <= (sh.triggerRadius || 26.0)) {
         activeStrongholdIds.add(key);
         strongholdWaveIndex[key] = 0;
         enemyManager.setCurrentActId?.(key);
-        enemyManager.spawnWave?.(sh.waves[0], key);
-        emitBanner(sh.name.toUpperCase(), sh.waves[0].label || 'Guardian Forces Awaken!', 'wave');
+        enemyManager.spawnWave?.(shWaves[0], key);
+        emitBanner(sh.name.toUpperCase(), shWaves[0].label || 'Guardian Forces Awaken!', 'wave');
         triggeredNow.push(key);
       }
     }
@@ -2485,21 +2500,34 @@ export function createCampaignLoop({
   function triggerSurvivalWave(leaderPos) {
     if (!leaderPos || !enemyManager) return null;
     const mask = getStonesSolvedMask();
-    const solvedCount = (mask & 1 ? 1 : 0) + (mask & 2 ? 1 : 0) + (mask & 4 ? 1 : 0);
-    const poolKey =
-      solvedCount >= 3 || getUnlockedStage() >= 3
-        ? 'stage3'
-        : solvedCount === 2
-          ? 'stage2'
-          : 'stage0_1';
-    const pool = SURVIVAL_WAVE_POOLS[poolKey] || SURVIVAL_WAVE_POOLS.stage0_1 || [];
-    if (pool.length === 0) return null;
+    const solvedCount = clamp(
+      (mask & 1 ? 1 : 0) + (mask & 2 ? 1 : 0) + (mask & 4 ? 1 : 0),
+      0,
+      3
+    );
+    const stageIdx = Math.max(solvedCount, clamp(getUnlockedStage(), 0, 3));
+    const poolDef =
+      SURVIVAL_WAVE_POOLS[stageIdx] ||
+      SURVIVAL_WAVE_POOLS[0] ||
+      SURVIVAL_WAVE_POOLS.stage0_1;
+    if (!poolDef) return null;
 
-    const comp = pool[survivalWaveSeed % pool.length];
+    let archetypes = [];
+    if (Array.isArray(poolDef.pool) && poolDef.pool.length > 0) {
+      const count = poolDef.minCount || 4;
+      for (let i = 0; i < count; i++) {
+        archetypes.push(poolDef.pool[(survivalWaveSeed + i) % poolDef.pool.length]);
+      }
+    } else if (Array.isArray(poolDef) && poolDef.length > 0) {
+      const comp = poolDef[survivalWaveSeed % poolDef.length];
+      archetypes = comp?.archetypes || [];
+    }
+    if (archetypes.length === 0) return null;
+
     survivalWaveSeed += 1;
     survivalWaveTimer = 42.0 + (survivalWaveSeed % 3) * 4.5; // 42..51s
 
-    const spawns = (comp.archetypes || []).map((archetype, idx, arr) => {
+    const spawns = archetypes.map((archetype, idx, arr) => {
       const angle = (idx / Math.max(1, arr.length)) * Math.PI * 2 + survivalWaveSeed * 0.85;
       const dist = 19.0 + (idx % 3) * 2.5;
       const sx = clamp(leaderPos.x + Math.cos(angle) * dist, -108, 108);
@@ -2512,8 +2540,8 @@ export function createCampaignLoop({
     });
 
     const waveDef = {
-      id: `${comp.id || 'survival'}_${survivalWaveSeed}`,
-      label: comp.label || 'Valley Hunting Pack',
+      id: `survival_${stageIdx}_${survivalWaveSeed}`,
+      label: `Stage ${stageIdx} Valley Hunting Pack`,
       spawns,
     };
     enemyManager.spawnWave?.(waveDef, currentActId);
@@ -2521,7 +2549,10 @@ export function createCampaignLoop({
     return waveDef;
   }
 
-  function update(dt, { heroStates, soloWingmanActive = true, camera = null } = {}) {
+  function update(
+    dt,
+    { heroStates, activeHeroId = 'Knight', soloWingmanActive = true, camera = null } = {}
+  ) {
     elapsed += dt;
     hudDirtyTimer += dt;
 
@@ -3035,12 +3066,13 @@ export function createCampaignLoop({
         ) {
           for (const shKey of [...activeStrongholdIds]) {
             const sh = STONE_STRONGHOLDS[shKey];
+            const shWaves = getStrongholdWaves(sh);
             const nextW = (strongholdWaveIndex[shKey] ?? 0) + 1;
-            if (sh && sh.waves && nextW < sh.waves.length) {
+            if (sh && shWaves.length > 0 && nextW < shWaves.length) {
               strongholdWaveIndex[shKey] = nextW;
               enemyManager.setCurrentActId?.(shKey);
-              enemyManager.spawnWave?.(sh.waves[nextW], shKey);
-              emitBanner(sh.name.toUpperCase(), sh.waves[nextW].label, 'wave');
+              enemyManager.spawnWave?.(shWaves[nextW], shKey);
+              emitBanner(sh.name.toUpperCase(), shWaves[nextW].label, 'wave');
             } else {
               activeStrongholdIds.delete(shKey);
               strongholdWaveIndex[shKey] = -1;
@@ -3104,60 +3136,96 @@ export function createCampaignLoop({
       }
     }
 
-    // 4. Smart Solo Wingman AI (plays full native clips from startTime: 0)
+    // 4. Role-Symmetric Smart Solo Wingman AI (NEVER hijacks the human player's active hero!)
     if (
       soloWingmanActive &&
       enemyManager &&
       enemyManager.activeEnemies.length > 0 &&
-      mage &&
-      !combatHeroes.Mage.downed &&
-      !(combatHeroes.Mage.stormCataclysmCastTimer > 0) &&
       !isControlLocked()
     ) {
-      wingmanCastTimer -= dt;
-      wingmanBoltTimer -= dt;
-
-      if (wingmanCastTimer <= 0 && combatHeroes.Knight.breathingStyle === 'none') {
-        wingmanCastTimer = 9.0;
-        wingmanBoltTimer = 1.15;
-        const nextSpellId =
-          WINGMAN_SPELL_ROTATION[wingmanSpellIdx % WINGMAN_SPELL_ROTATION.length];
-        wingmanSpellIdx++;
-        combatHeroes.Mage.spellCooldowns[nextSpellId] = 0;
-        const target = enemyManager.activeEnemies[0];
-        if (target) {
-          const yaw = Math.atan2(target.x - mage.x, target.z - mage.z);
-          mage.yaw = yaw;
-          mage.actionState = 'cast_spell';
-          mage.actionTimer = 0.62;
-          mage.char?.play?.('cast_spell', {
-            loop: false,
-            fade: 0.08,
-            startTime: 0,
-            timeScale: 1.0,
-            force: true,
-          });
-          castSpell(nextSpellId, mage, yaw, knight);
+      if (activeHeroId === 'Mage') {
+        // Human is playing Mage -> AI Wingman is Knight!
+        if (knight && !combatHeroes.Knight.downed && !knight.actionState) {
+          wingmanBoltTimer -= dt;
+          if (wingmanBoltTimer <= 0) {
+            const target = enemyManager.activeEnemies.find(
+              (e) =>
+                e &&
+                !e.dead &&
+                e.active &&
+                Math.hypot(e.x - knight.x, e.z - knight.z) <= 4.4
+            );
+            if (target) {
+              wingmanBoltTimer = 1.05;
+              const sIdx = wingmanBoltIdx % 3;
+              wingmanBoltIdx++;
+              const swingClip = sIdx === 0 ? 'combo1' : sIdx === 1 ? 'combo2' : 'combo3';
+              knight.yaw = Math.atan2(target.x - knight.x, target.z - knight.z);
+              knight.actionState = swingClip;
+              knight.actionTimer = 0.52;
+              knight.char?.play?.(swingClip, {
+                loop: false,
+                fade: 0.07,
+                startTime: 0,
+                timeScale: 1.0,
+                force: true,
+              });
+              performKnightSwing(swingClip, knight, knight.yaw, mage);
+            }
+          }
         }
-      } else if (wingmanBoltTimer <= 0) {
-        wingmanBoltTimer = 1.12;
-        const bIdx = wingmanBoltIdx % 3;
-        wingmanBoltIdx++;
-        const boltClip =
-          bIdx === 0 ? 'mage_attack1' : bIdx === 1 ? 'mage_attack2' : 'mage_attack3';
-        const boltDuration = bIdx === 2 ? 0.56 : 0.5;
+      } else if (
+        mage &&
+        !combatHeroes.Mage.downed &&
+        !(combatHeroes.Mage.stormCataclysmCastTimer > 0) &&
+        !mage.actionState
+      ) {
+        // Human is playing Knight -> AI Wingman is Mage!
+        wingmanCastTimer -= dt;
+        wingmanBoltTimer -= dt;
 
-        const boltRes = performMageBoltAttack(bIdx, mage, knight);
-        if (boltRes) {
-          mage.actionState = boltClip;
-          mage.actionTimer = boltDuration;
-          mage.char?.play?.(boltClip, {
-            loop: false,
-            fade: 0.07,
-            startTime: 0,
-            timeScale: 1.0,
-            force: true,
-          });
+        if (wingmanCastTimer <= 0 && combatHeroes.Knight.breathingStyle === 'none') {
+          wingmanCastTimer = 9.0;
+          wingmanBoltTimer = 1.15;
+          const nextSpellId =
+            WINGMAN_SPELL_ROTATION[wingmanSpellIdx % WINGMAN_SPELL_ROTATION.length];
+          wingmanSpellIdx++;
+          combatHeroes.Mage.spellCooldowns[nextSpellId] = 0;
+          const target = enemyManager.activeEnemies[0];
+          if (target) {
+            const yaw = Math.atan2(target.x - mage.x, target.z - mage.z);
+            mage.yaw = yaw;
+            mage.actionState = 'cast_spell';
+            mage.actionTimer = 0.62;
+            mage.char?.play?.('cast_spell', {
+              loop: false,
+              fade: 0.08,
+              startTime: 0,
+              timeScale: 1.0,
+              force: true,
+            });
+            castSpell(nextSpellId, mage, yaw, knight);
+          }
+        } else if (wingmanBoltTimer <= 0) {
+          wingmanBoltTimer = 1.12;
+          const bIdx = wingmanBoltIdx % 3;
+          wingmanBoltIdx++;
+          const boltClip =
+            bIdx === 0 ? 'mage_attack1' : bIdx === 1 ? 'mage_attack2' : 'mage_attack3';
+          const boltDuration = bIdx === 2 ? 0.56 : 0.5;
+
+          const boltRes = performMageBoltAttack(bIdx, mage, knight);
+          if (boltRes) {
+            mage.actionState = boltClip;
+            mage.actionTimer = boltDuration;
+            mage.char?.play?.(boltClip, {
+              loop: false,
+              fade: 0.07,
+              startTime: 0,
+              timeScale: 1.0,
+              force: true,
+            });
+          }
         }
       }
     }

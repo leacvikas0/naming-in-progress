@@ -691,6 +691,8 @@ export class CinderFallSystem {
     this.direction = new THREE.Vector3(1, 0, 0);
     this.side = new THREE.Vector3(0, 0, 1);
     this.castLength = this.config.range;
+    this.fromSky = false;
+    this.skyStartHeight = 13.5;
     this.active = false;
     this.age = 0;
 
@@ -788,9 +790,15 @@ export class CinderFallSystem {
       c.minDistance ?? 3.0,
       c.maxDistance ?? 16.0
     );
-    const dist = lerp(c.handForward, targetDist, t);
+    const dist = lerp(this.fromSky ? 0.0 : c.handForward, targetDist, t);
     const x = this.origin.x + this.direction.x * dist;
     const z = this.origin.z + this.direction.z * dist;
+    if (this.fromSky) {
+      const endGroundY = this.getGroundHeight(x, z) + c.endHeight;
+      const skyY = endGroundY + (this.skyStartHeight || 13.5) * (1.0 - t);
+      out.set(x, skyY, z);
+      return out;
+    }
     const baseH = lerp(
       this.origin.y + c.handHeight,
       this.getGroundHeight(x, z) + c.endHeight,
@@ -803,7 +811,9 @@ export class CinderFallSystem {
 
   _seedRecords(seed = 1.0) {
     const c = this.config;
-    this.impactTime = this.castLength / Math.max(1.0, c.speed); // ~0.622s for 14m at 22.5 m/s
+    this.impactTime = this.fromSky
+      ? 0.24
+      : this.castLength / Math.max(1.0, c.speed); // ~0.622s for 14m at 22.5 m/s
     this.totalDuration = this.impactTime + c.lifetime + c.fadeTime;
 
     // 4 Jagged Shattered Boulder Fragments (`asteroidMesh` slots 0..3, scale `0.48..0.64m`)
@@ -886,6 +896,9 @@ export class CinderFallSystem {
   }
 
   cast(origin, direction, options = {}) {
+    this.fromSky = Boolean(options.fromSky || options.skyFall);
+    this.skyStartHeight = Number(options.skyHeight) > 0 ? Number(options.skyHeight) : 13.5;
+
     if (origin) {
       this.origin.set(origin.x ?? origin[0] ?? 0, origin.y ?? origin[1] ?? 0, origin.z ?? origin[2] ?? 0);
     }
@@ -905,6 +918,15 @@ export class CinderFallSystem {
       c.length ??
       c.range;
     this.castLength = clamp(rawDist, c.minDistance ?? 3.0, c.maxDistance ?? 16.0);
+    if (
+      this.fromSky &&
+      options.targetPos &&
+      Number.isFinite(options.targetPos.x) &&
+      Number.isFinite(options.targetPos.z)
+    ) {
+      this.origin.x = options.targetPos.x - this.direction.x * this.castLength;
+      this.origin.z = options.targetPos.z - this.direction.z * this.castLength;
+    }
     this.origin.y = this.getGroundHeight(this.origin.x, this.origin.z);
 
     this._seedRecords(options.seed ?? 1.0);

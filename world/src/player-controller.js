@@ -1478,7 +1478,9 @@ export async function createCoopPlayerSystem({
       };
       if (phase === 'hide') {
         aimArrow?.hide?.();
-        vfxKit?.shatterlance?.cancelCharge?.();
+        if (!aim.isReleasingCast || aim.spellId !== 'shatterlance') {
+          vfxKit?.shatterlance?.cancelCharge?.();
+        }
         if (heroStates.Mage.actionState === 'cast_hold') {
           heroStates.Mage.actionState = null;
           heroStates.Mage.actionTimer = 0;
@@ -1524,7 +1526,9 @@ export async function createCoopPlayerSystem({
     },
     onAimCast: (castPayload) => {
       const mageState = heroStates.Mage;
-      vfxKit?.shatterlance?.cancelCharge?.();
+      if (castPayload.spellId !== 'shatterlance') {
+        vfxKit?.shatterlance?.cancelCharge?.();
+      }
       mageState.yaw = castPayload.yaw;
       applyTransform(mageState);
       startOneShotAction(mageState, 'cast_spell', 0.62, {
@@ -1688,18 +1692,11 @@ export async function createCoopPlayerSystem({
       partnerState.char.play('pray_channel', { loop: true, fade: 0.14, force: true });
     }
 
-    vfxKit.artoriousVfx?.startChannel?.(speakerState, partnerState, { camera });
     const chRes = campaignLoop.setCommuneChannelActive(true, heroStates);
-
-    if (chRes?.communeMode === 'divine_miracle') {
-      const cx = (speakerState.x + partnerState.x) * 0.5;
-      const cz = (speakerState.z + partnerState.z) * 0.5;
-      if (typeof enemyManager.applyPrayerAirborneThrow === 'function') {
-        enemyManager.applyPrayerAirborneThrow({ x: cx, z: cz }, 6.5);
-      } else {
-        enemyManager.applySacredWardPushback?.({ x: cx, z: cz }, 6.5);
-      }
-    }
+    vfxKit.artoriousVfx?.startChannel?.(speakerState, partnerState, {
+      camera,
+      communeMode: chRes?.communeMode || 'normal',
+    });
 
     applyTransform(speakerState);
     applyTransform(partnerState);
@@ -2856,6 +2853,7 @@ export async function createCoopPlayerSystem({
     // 4. Update 3-Act Campaign Loop & Pooled Enemy AI, then Hero Skeletons, then Stage 4 Opaque VFX Kit
     campaignLoop.update(dt, {
       heroStates,
+      activeHeroId,
       soloWingmanActive: !isPeerLinked,
       camera,
     });

@@ -1229,26 +1229,87 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
 
     const attachScene = (gltf) => {
       if (!gltf?.scene) return;
+      gltf.scene.updateMatrixWorld(true);
+      const rootInv = new THREE.Matrix4().copy(gltf.scene.matrixWorld).invert();
+      const relMat = new THREE.Matrix4();
+      const normMat = new THREE.Matrix3();
+      const tmpV = new THREE.Vector3();
+      const tmpN = new THREE.Vector3();
+
+      const mergedPos = [];
+      const mergedNorm = [];
+      const mergedCol = [];
+      const mergedIndices = [];
+      let vertOffset = 0;
+
       gltf.scene.traverse((child) => {
-        if (child.isMesh && child.material) {
-          const geom = child.geometry;
-          if (geom && !geom.attributes.color) {
-            const altAttr =
-              geom.attributes._col_baked ||
-              geom.attributes.col_baked ||
-              geom.attributes._col_curvature ||
-              geom.attributes.col_curvature;
-            if (altAttr) {
-              geom.setAttribute('color', altAttr);
-            }
+        if (!child.isMesh || !child.geometry) return;
+        const geom = child.geometry;
+        const posAttr = geom.attributes.position;
+        if (!posAttr) return;
+        const normAttr = geom.attributes.normal;
+        const colAttr =
+          geom.attributes.color ||
+          geom.attributes._col_baked ||
+          geom.attributes.col_baked ||
+          geom.attributes._col_curvature ||
+          geom.attributes.col_curvature ||
+          null;
+
+        relMat.multiplyMatrices(rootInv, child.matrixWorld);
+        normMat.getNormalMatrix(relMat);
+
+        const vCount = posAttr.count;
+        for (let i = 0; i < vCount; i++) {
+          tmpV.fromBufferAttribute(posAttr, i).applyMatrix4(relMat);
+          mergedPos.push(tmpV.x, tmpV.y, tmpV.z);
+
+          if (normAttr) {
+            tmpN.fromBufferAttribute(normAttr, i).applyMatrix3(normMat).normalize();
+            mergedNorm.push(tmpN.x, tmpN.y, tmpN.z);
+          } else {
+            mergedNorm.push(0, 1, 0);
           }
-          const hasColor = Boolean(geom?.attributes?.color);
-          child.material = createGhibliMonumentShaderMaterial(child.material, hasColor);
+
+          if (colAttr) {
+            const r = colAttr.getX(i);
+            const g = colAttr.getY(i);
+            const b = colAttr.getZ(i);
+            const a = colAttr.itemSize >= 4 ? colAttr.getW(i) : 1.0;
+            mergedCol.push(r, g, b, a);
+          } else {
+            mergedCol.push(0.68, 0.59, 0.45, 1.0);
+          }
         }
+
+        if (geom.index) {
+          const idxArr = geom.index.array;
+          for (let i = 0; i < idxArr.length; i++) {
+            mergedIndices.push(vertOffset + idxArr[i]);
+          }
+        } else {
+          for (let i = 0; i < vCount; i++) {
+            mergedIndices.push(vertOffset + i);
+          }
+        }
+        vertOffset += vCount;
       });
+
+      if (vertOffset === 0) return;
+
+      const unifiedGeo = new THREE.BufferGeometry();
+      unifiedGeo.setAttribute('position', new THREE.Float32BufferAttribute(mergedPos, 3));
+      unifiedGeo.setAttribute('normal', new THREE.Float32BufferAttribute(mergedNorm, 3));
+      unifiedGeo.setAttribute('color', new THREE.Float32BufferAttribute(mergedCol, 4));
+      unifiedGeo.setIndex(mergedIndices);
+      unifiedGeo.computeBoundingSphere();
+
+      const unifiedMat = createGhibliMonumentShaderMaterial(null, true);
       for (const target of mountTargets) {
-        const clone = gltf.scene.clone(true);
-        target.add(clone);
+        const mesh = new THREE.Mesh(unifiedGeo, unifiedMat);
+        mesh.name = `UnifiedMonument_${st.id}`;
+        mesh.frustumCulled = true;
+        target.add(mesh);
       }
     };
 
@@ -1318,9 +1379,11 @@ const damageNumbers = createDamageNumbers({
 });
 
 function resolveHitDamageElement(hitSpec = {}, result = {}) {
-  if (hitSpec.knightUltActive) return 'lightning';
   const inf = String(hitSpec.infusion || hitSpec.applyMark || '').toLowerCase();
   const src = String(hitSpec.source || result.source || '').toLowerCase();
+  if (hitSpec.knightUltActive || inf === 'eclipse') {
+    return src === 'combo2' || src === 'combo4' ? 'ice' : 'fire';
+  }
   if (inf === 'solar' || src.includes('cinder') || src.includes('fire') || src.includes('burn')) {
     return 'fire';
   }
@@ -1336,7 +1399,6 @@ function resolveHitDamageElement(hitSpec = {}, result = {}) {
   }
   if (
     inf === 'tempest' ||
-    inf === 'eclipse' ||
     src.includes('storm') ||
     src.includes('lightning') ||
     src.includes('cataclysm')
@@ -2640,13 +2702,17 @@ function syncCharacterGroundShadows() {
     setSlot(1, 9999.0, 9999.0, 0.74, 0.0);
   }
 
-  const pool = coopSystem?.enemyManager?.poolSlots || coopSystem?.enemyManager?.pool || [];
+  const pool =
+    coopSystem?.enemyManager?.allPoolSlots ||
+    coopSystem?.enemyManager?.poolSlots ||
+    coopSystem?.enemyManager?.pool ||
+    [];
   let filled = 0;
   for (let i = 0; i < pool.length && filled < 6; i++) {
     const slot = pool[i];
     const eGrp = slot?.char?.group;
     if (eGrp && eGrp.visible && slot.busy !== false) {
-      const r = slot.isBoss ? 1.12 : 0.70;
+      const r = slot.isBoss || slot.isBossSlot ? 1.12 : 0.70;
       setSlot(2 + filled, eGrp.position.x, eGrp.position.z, r, 1.0);
       filled++;
     }
@@ -2943,6 +3009,20 @@ export function setProfile(profileName) {
   post.setQuality?.({ aaSamples: cfg.aaSamples });
   post.setSize(window.innerWidth, window.innerHeight);
   buildMeadowForProfile(activeProfile);
+  const pool = coopSystem?.enemyManager?.allPoolSlots || [];
+  const showMobOutlines = activeProfile !== 'tablet';
+  for (let i = 0; i < pool.length; i++) {
+    const slot = pool[i];
+    if (!slot || slot.isBossSlot) continue;
+    slot.char?.modelRoot?.traverse?.((obj) => {
+      if (
+        obj.isSkinnedMesh &&
+        (obj.name?.includes('Outline') || obj.material?.side === THREE.BackSide)
+      ) {
+        obj.visible = showMobOutlines;
+      }
+    });
+  }
   touchHud.setProfileMode(activeProfile);
   sculptedHud?.setProfileMode(activeProfile);
   applyTimeOfDay(currentTodT);

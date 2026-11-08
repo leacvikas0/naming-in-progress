@@ -632,7 +632,7 @@ export function createCombatActionAimController({
       cooldown: chosenSpell === 'shatterlance' ? 2.8 : MAGE_E_COOLDOWN,
       wasAiming: wasActive,
     };
-    onAimChanged?.({ ...aimState }, 'hide');
+    onAimChanged?.({ ...aimState, isReleasingCast: true }, 'hide');
     const castResult = onAimCast ? onAimCast(castPayload) : null;
     return { ...castPayload, castResult };
   }
