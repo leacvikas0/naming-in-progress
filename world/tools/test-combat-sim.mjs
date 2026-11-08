@@ -125,30 +125,30 @@ await check('1. terrain-scalar.js exports pure scalar helpers, slope normal, sho
 /* 2. Balance Constants & Geography Coordinate Verification                  */
 /* ------------------------------------------------------------------------- */
 
-await check('2. HERO_STATS (incl. fragile 90 HP Mage), SPELLS & DETONATIONS match exact Wave 2B spec', () => {
+await check('2. HERO_STATS (incl. 120 HP Mage & 12s Knight Q), SPELLS & DETONATIONS match exact spec', () => {
   assert.equal(HERO_STATS.Knight.maxHp, 220);
   assert.deepEqual(HERO_STATS.Knight.comboDmg, [22, 26, 38]);
   assert.equal(HERO_STATS.Knight.combo4Dmg, 46);
   assert.equal(HERO_STATS.Knight.shieldBlockDr, 0.8);
   assert.equal(HERO_STATS.Knight.powerSwordDuration, 13.0);
   assert.equal(HERO_STATS.Knight.powerSwordCd, 18.0);
-  assert.equal(HERO_STATS.Knight.ultDuration, 10.0);
+  assert.equal(HERO_STATS.Knight.ultDuration, 12.0);
   assert.equal(HERO_STATS.Knight.ultDmgMult, 2.0);
 
-  // Fragile Glass Cannon Mage (~3 unprotected hits downs her)
-  assert.equal(HERO_STATS.Mage.maxHp, 90);
+  // 120 HP Mage with continuous Hold-LMB Shatterlance
+  assert.equal(HERO_STATS.Mage.maxHp, 120);
   assert.deepEqual(HERO_STATS.Mage.boltDmg, [18, 22, 30]);
   assert.equal(HERO_STATS.Mage.skillCd, 8.5);
   assert.equal(HERO_STATS.Mage.stormCataclysmDuration, 6.0);
-  assert.equal(HERO_STATS.Mage.maxConsecutiveCharged, 3);
+  assert.equal(HERO_STATS.Mage.maxConsecutiveCharged, 999);
 
-  assert.equal(SPELLS.frost_lance.dmg, 42);
+  assert.equal(SPELLS.frost_lance.dmg, 48);
   assert.equal(SPELLS.frost_lance.cd, 8.5);
   assert.equal(SPELLS.frost_lance.range, 14.5);
   assert.equal(SPELLS.frost_lance.mark, 'rime');
   assert.equal(SPELLS.shatterlance.dmg, 58);
   assert.equal(SPELLS.shatterlance.detonatesMark, true);
-  assert.equal(SPELLS.cinder_fall.dmg, 54);
+  assert.equal(SPELLS.cinder_fall.dmg, 56);
   assert.equal(SPELLS.cinder_fall.cd, 8.5);
   assert.equal(SPELLS.cinder_fall.mark, 'solar');
   assert.equal(SPELLS.storm_lance.dmg, 46);
@@ -353,14 +353,14 @@ await check('6. Knight Kit: Tab toggles ice/fire, Hold Shield Block (80% DR), E 
   assert.equal(kDmgRes.hpLost, 10, 'Shield Block must reduce 50 incoming damage by 80% to 10');
   sim.knightHoldShieldBlock(false);
 
-  // 6E. Knight Q (Sky-Lightning Awakening): 10.0s of 2.0x double damage
+  // 6E. Knight Q (Twin-Element Awakening): 12.0s of 2.0x double damage
   const target3 = sim.activeEnemies.find((e) => !e.dead);
   target3.hp = 500;
   target3.maxHp = 500;
   const baseSwing = sim.knightAttack('combo1', target3);
   const qRes = sim.knightCastSkyLightningUlt(target3);
   assert.equal(qRes.activated, true);
-  assert.equal(qRes.duration, 10.0);
+  assert.equal(qRes.duration, 12.0);
   assert.equal(qRes.dmgMult, 2.0);
   const ultSwing = sim.knightAttack('combo1', target3);
   assert.equal(ultSwing.damageDealt, baseSwing.damageDealt * 2, 'Knight Q must grant 2.0x double sword damage');
@@ -382,37 +382,32 @@ await check('6. Knight Kit: Tab toggles ice/fire, Hold Shield Block (80% DR), E 
 /* 5. Mage Kit: Fragile 90 HP, 3-Charged Shatterlance, E Aim & 6s Q Storm    */
 /* ------------------------------------------------------------------------- */
 
-await check('7. Mage Kit: Fragile ~3-hit HP, 3-consecutive-charged Shatterlance fallback, Tab toggle, Hold/Release E aim (14.5m vs 3..16m, 8.5s cd), and 6.0s vulnerable Storm Cataclysm + Knight Shield protection', () => {
+await check('7. Mage Kit: 120 HP durability, infinite Hold-LMB Shatterlance, Tab toggle, Hold/Release E aim (14.5m vs 3..16m, 8.5s cd), and 6.0s mobile Sky Meteor Shower + Knight Shield protection', () => {
   const sim = createHeadlessCampaignSim();
   sim.moveHeroesTo(ACT_DEFINITIONS.act1_arena.center.x, ACT_DEFINITIONS.act1_arena.center.z);
 
-  // 7A. Fragile 90 HP Mage dies in 3 unprotected hits of 30 dmg
-  assert.equal(sim.heroes.Mage.maxHp, 90);
+  // 7A. 120 HP Mage survives 3 hits of 30 dmg and goes down on the 4th unprotected hit of 30 dmg
+  assert.equal(sim.heroes.Mage.maxHp, 120);
+  sim.applyDamageToHero('Mage', 30);
   sim.applyDamageToHero('Mage', 30);
   sim.applyDamageToHero('Mage', 30);
   assert.equal(sim.heroes.Mage.downed, false);
   sim.applyDamageToHero('Mage', 30);
-  assert.equal(sim.heroes.Mage.downed, true, 'Mage must go down in 3 unprotected hits');
+  assert.equal(sim.heroes.Mage.downed, true, 'Mage must go down in 4 unprotected hits of 30 dmg');
   // Restore Mage HP for remaining checks
   sim.heroes.Mage.downed = false;
-  sim.heroes.Mage.hp = 90;
+  sim.heroes.Mage.hp = 120;
 
-  // 7B. Hold Attack (Shatterlance): after 3 consecutive charged attacks, 4th automatically falls back to normal bolt attack!
+  // 7B. Hold Attack (Shatterlance): supports continuous Hold-LMB Shatterlance without forced 3-cast fallback
   const ch1 = sim.mageHoldChargedAttack();
   const ch2 = sim.mageHoldChargedAttack();
   const ch3 = sim.mageHoldChargedAttack();
+  const ch4 = sim.mageHoldChargedAttack();
   assert.equal(ch1.fallbackToNormal, false);
   assert.equal(ch2.fallbackToNormal, false);
   assert.equal(ch3.fallbackToNormal, false);
-  assert.equal(sim.heroes.Mage.consecutiveChargedCount, MAGE_MAX_CONSECUTIVE_CHARGED);
-
-  const ch4 = sim.mageHoldChargedAttack();
-  assert.equal(
-    ch4.fallbackToNormal,
-    true,
-    '4th consecutive Hold Attack must automatically fall back to a normal bolt attack'
-  );
-  assert.equal(sim.heroes.Mage.consecutiveChargedCount, 0, 'Fallback normal attack resets consecutiveChargedCount to 0');
+  assert.equal(ch4.fallbackToNormal, false);
+  assert.equal(sim.heroes.Mage.consecutiveChargedCount, 4);
 
   // 7C. Tab toggles Mage E spell between frost_lance and cinder_fall; Hold E / Release E aims & casts with 8.5s cooldown
   assert.equal(sim.heroes.Mage.selectedSpell, 'frost_lance');
@@ -440,34 +435,37 @@ await check('7. Mage Kit: Fragile ~3-hit HP, 3-consecutive-charged Shatterlance 
   assert.equal(castCinder.distance, 11.2);
   assert.equal(sim.heroes.Mage.skillCd, 8.5);
 
-  // 7D. Mage Q (6.0s Stationary Vulnerable Storm Cataclysm):
-  // - While channeling, if Knight holds Shield Block, Knight intercepts the enemy hit and saves the Mage!
-  // - If Knight is NOT shielding, 1 unprotected hit immediately downs her!
+  // 7D. Mage Q (6.0s Mobile Sky Meteor Shower after 0.8s cast pose):
+  // - While active, if Knight holds Shield Block, Knight intercepts the enemy hit and saves the Mage!
+  // - If Knight is NOT shielding, taking a hit deals normal HP damage without instant-downing Mage or cancelling Sky Meteor Shower!
   const qStorm = sim.mageCastStormCataclysm();
   assert.equal(qStorm.activated, true);
+  assert.equal(qStorm.stationary, false);
+  assert.equal(qStorm.vulnerableOneHitDown, false);
   assert.equal(qStorm.duration, MAGE_STORM_CATACLYSM_DURATION);
   assert.equal(sim.heroes.Mage.stormCataclysmActive, true);
 
   sim.knightHoldShieldBlock(true);
   const protectedHit = sim.applyDamageToHero('Mage', 32);
-  assert.equal(protectedHit.interceptedByKnight, true, 'Shielding Knight must intercept attack aimed at channeling Mage');
+  assert.equal(protectedHit.interceptedByKnight, true, 'Shielding Knight must intercept attack aimed at Mage');
   assert.equal(sim.heroes.Mage.downed, false);
   assert.equal(sim.heroes.Mage.stormCataclysmActive, true);
 
-  // Now drop Knight's shield -> 1 unprotected hit immediately downs Mage!
+  // Drop Knight's shield -> 1 unprotected hit of 12 dmg reduces Mage HP to 108 without instant-downing her!
   sim.knightHoldShieldBlock(false);
   const unprotectedHit = sim.applyDamageToHero('Mage', 12);
-  assert.equal(unprotectedHit.downed, true, '1 unprotected hit during 6s Storm Cataclysm must immediately down Mage');
-  assert.equal(sim.heroes.Mage.stormCataclysmActive, false);
+  assert.equal(unprotectedHit.downed, false, 'Mage Q no longer instant-downs on 1 unprotected hit');
+  assert.equal(sim.heroes.Mage.hp, 108);
+  assert.equal(sim.heroes.Mage.stormCataclysmActive, true);
 });
 
 /* ------------------------------------------------------------------------- */
 /* 6. Removal of Partner Distance Restrictions & Indicator Clutter           */
 /* ------------------------------------------------------------------------- */
 
-await check('8. Partner Commune (<= 4.0m) & Blessing Tether (<= 5.0m) distances and hidden indicator clutter work deterministically', () => {
-  assert.equal(COMMUNE_MAX_DISTANCE, 4.0);
-  assert.equal(POWERUP_TETHER_DISTANCE, 5.0);
+await check('8. Partner Commune (<= 6.0m) & Blessing Tether (<= 6.0m) distances and hidden indicator clutter work deterministically', () => {
+  assert.equal(COMMUNE_MAX_DISTANCE, 6.0);
+  assert.equal(POWERUP_TETHER_DISTANCE, 6.0);
 
   const scene = new THREE.Scene();
   const sfx = createCombatSfx();
@@ -620,12 +618,13 @@ await check('10. Full 3-Act Valley Expedition & Pooled Enemy Manager (incl. tele
   assert.equal(mSkill.cooldown, 8.5);
   assert.equal(mSkill.distance, 9.5);
 
-  // Mage Q 6s Storm Cataclysm + Knight Shield Block interception in liveLoop
+  // Mage Q 6s Sky Meteor Shower + Knight Shield Block interception in liveLoop
   const mUlt = liveLoop.performMageStormCataclysm({
     Mage: { x: 72, y: 0.6, z: -6, yaw: 0 },
   });
   assert.equal(mUlt.ultimate, 'storm_cataclysm');
   assert.equal(mUlt.duration, 6.0);
+  assert.equal(mUlt.stationary, false);
 
   liveLoop.setKnightShieldBlocking(true);
   const intercepted = liveLoop.handlePlayerHit({ id: 'Mage' }, em.activeEnemies[0], 30);
@@ -633,9 +632,10 @@ await check('10. Full 3-Act Valley Expedition & Pooled Enemy Manager (incl. tele
   assert.equal(liveLoop.combatHeroes.Mage.downed, false);
 
   liveLoop.setKnightShieldBlocking(false);
-  const downedByOneHit = liveLoop.handlePlayerHit({ id: 'Mage' }, em.activeEnemies[0], 15);
-  assert.equal(downedByOneHit.downed, true);
-  assert.equal(liveLoop.combatHeroes.Mage.downed, true);
+  const hitDuringCataclysm = liveLoop.handlePlayerHit({ id: 'Mage' }, em.activeEnemies[0], 15);
+  assert.equal(hitDuringCataclysm.downed, false);
+  assert.equal(liveLoop.combatHeroes.Mage.hp, 105);
+  assert.equal(liveLoop.combatHeroes.Mage.stormCataclysmActive, true);
 });
 
 await check('11. Phase 1 Combat Upgrades: Shatterlance (0.8..18.0m single-hit deduplication), 3D Skeleton_Mage dodgeable bolts, and 2.5s Proximity Revive', async () => {
@@ -741,7 +741,7 @@ await check('11. Phase 1 Combat Upgrades: Shatterlance (0.8..18.0m single-hit de
   assert.equal(playerHits[0].heroId, 'Knight');
   assert.equal(playerHits[0].opts?.interceptedByKnight, true);
 
-  // 11D. 2.5s interruptible co-op proximity revive (<= 2.4m restores 35% Max HP)
+  // 11D. 2.5s interruptible co-op proximity revive (<= 2.8m restores 45% Max HP + 2.0s i-frames)
   loop.combatHeroes.Mage.downed = true;
   loop.combatHeroes.Mage.hp = 0;
   const nearHeroes = {
@@ -752,16 +752,17 @@ await check('11. Phase 1 Combat Upgrades: Shatterlance (0.8..18.0m single-hit de
   assert.equal(loop.combatHeroes.Mage.downed, true);
   assert.ok(loop.combatHeroes.Mage.reviveProgress > 0.4);
 
-  // Taking damage interrupts reviveTimer back to 0!
+  // Taking unblocked damage (> 5) interrupts reviveTimer back to 0!
   loop.handlePlayerHit(nearHeroes.Knight, closeEnemy, 15);
   assert.equal(loop.combatHeroes.Mage.reviveTimer, 0);
 
-  // Now hold within 2.4m for 2.55s uninterrupted -> Mage revives at 35% Max HP (32 HP)!
+  // Now hold within 2.8m for 2.55s uninterrupted -> Mage revives at 45% Max HP (54 HP) with 2.0s i-frames!
   for (let s = 0; s < 26; s++) {
     loop.update(0.1, { heroStates: nearHeroes, soloWingmanActive: false });
   }
   assert.equal(loop.combatHeroes.Mage.downed, false);
-  assert.equal(loop.combatHeroes.Mage.hp, Math.round(HERO_STATS.Mage.maxHp * 0.35));
+  assert.equal(loop.combatHeroes.Mage.hp, Math.round(HERO_STATS.Mage.maxHp * 0.45));
+  assert.ok(loop.combatHeroes.Mage.iframeTimer >= 1.9);
 });
 
 await check('12. Phase 2 Proportional Divine Prayer & Phase 4 Night Demon Tree + Summoned Bats (10.0s summon timer, max 2 bats, 1.2m swoop)', async () => {
@@ -890,6 +891,205 @@ await check('12. Phase 2 Proportional Divine Prayer & Phase 4 Night Demon Tree +
   assert.equal(em.groveTreeVanquished, false);
   em.applyHitToEnemy(tree, { dmg: 999, source: 'couples_ultimate' });
   assert.equal(em.groveTreeVanquished, true);
+});
+
+await check('13. Final Playable Master Plan: Knight E Summon Lock on Tab, Shared Q Kill-Energy + Detonation + Boss Phase Fill (Knight 100 / Mage 160), Two-Tier Commune (Mode A vs Mode B + 2.5s Tether Grace), and 1->3->2 Out-of-Order Stone Bitmask', async () => {
+  const { createEnemyManager } = await import('../src/combat/enemy-manager.js');
+  const { createRoomProgressionState } = await import('../src/net/room-progression.js');
+  const mockKit = {
+    async loadAnimationPacks() {},
+    async createCharacter(charId) {
+      const group = new THREE.Group();
+      const modelRoot = new THREE.Group();
+      group.add(modelRoot);
+      let currentKey = 'idle';
+      return {
+        id: charId,
+        group,
+        modelRoot,
+        mixer: { timeScale: 1.0 },
+        anim: {
+          get currentKey() {
+            return currentKey;
+          },
+        },
+        play(key) {
+          currentKey = key;
+        },
+        poseAt(key) {
+          currentKey = key;
+        },
+        update() {},
+      };
+    },
+  };
+
+  let loop = null;
+  const em = await createEnemyManager({
+    scene: new THREE.Scene(),
+    kit: mockKit,
+    walkableHeightAt: () => 0.0,
+    resolveCollisions: (x, z) => ({ x, z, wrapped: false }),
+    onEnemyKilled: (enemy, res) => loop?.awardKnightKillXp?.(enemy, res),
+    onBossPhaseThreshold: (payload) => loop?.handleBossPhaseThreshold?.(payload),
+  });
+
+  loop = createCampaignLoop({
+    scene: new THREE.Scene(),
+    walkableHeightAt: () => 0.0,
+    enemyManager: em,
+    combatSfx: createCombatSfx(),
+  });
+
+  const hStates = {
+    Knight: { id: 'Knight', x: 0, y: 0, z: 10.0, yaw: 0 },
+    Mage: { id: 'Mage', x: 0.4, y: 0, z: 10.0, yaw: 0 },
+  };
+
+  // 13A. Knight E Summon Lock on Tab: pressing Tab while Ice Sword is active queues 'fire' without changing the active Ice Sword!
+  assert.equal(loop.combatHeroes.Knight.selectedElement, 'ice');
+  const sumIce = loop.performPartnerSkill('Knight', hStates);
+  assert.equal(sumIce.summonedElement, 'ice');
+  assert.equal(loop.combatHeroes.Knight.summonedElement, 'ice');
+  assert.equal(loop.combatHeroes.Knight.breathingStyle, 'rime');
+
+  const tabWhileActive = loop.toggleHeroElement('Knight');
+  assert.equal(tabWhileActive.element, 'fire', 'Tab must queue fire as selectedElement');
+  assert.equal(loop.combatHeroes.Knight.summonedElement, 'ice', 'Active summoned sword element must remain locked to ice');
+  assert.equal(loop.combatHeroes.Knight.breathingStyle, 'rime', 'Active sword breathingStyle must remain rime until E expires');
+
+  // Mage casting cinder_fall while Knight's E sword is active must NOT overwrite Knight's summoned Ice Sword!
+  loop.castSpell('cinder_fall', hStates.Mage, 0, hStates.Knight, { ignoreCooldown: true });
+  assert.equal(loop.combatHeroes.Knight.breathingStyle, 'rime');
+
+  // 13B. Shared Q Kill-Energy + Cross-Element Detonation (+20 both) + Boss Phase Thresholds (+35 both at 70% & 35% HP)
+  assert.equal(loop.combatHeroes.Knight.qEnergyMax, 100);
+  assert.equal(loop.combatHeroes.Mage.qEnergyMax, 160);
+  loop.combatHeroes.Knight.qEnergy = 0;
+  loop.combatHeroes.Mage.qEnergy = 0;
+
+  // Require energy check blocks Q when gauge < max
+  const blockedK = loop.performKnightUltimate(hStates, { requireEnergy: true });
+  assert.equal(blockedK.notEnoughEnergy, true);
+
+  // Kill a fodder minion (qEnergyReward = 18) with Knight -> +18 to Knight (100%), +11 to Mage (60%)
+  const fodder = em.spawnImmediateFromSpec({ archetype: 'skeleton_minion', x: 0, z: 12.0 });
+  loop.performKnightSwing('combo4', hStates.Knight, 0, hStates.Mage);
+  loop.performKnightSwing('combo4', hStates.Knight, 0, hStates.Mage);
+  assert.equal(fodder.dead, true);
+  assert.equal(loop.combatHeroes.Knight.qEnergy, 18);
+  assert.equal(loop.combatHeroes.Mage.qEnergy, 11);
+
+  // Spawn a Boss and cross 70% & 35% HP thresholds + trigger a Cross-Element Detonation
+  em.clearAllEnemies();
+  const boss = em.spawnImmediateFromSpec({ archetype: 'boss_sovereign', x: 0.2, z: 12.2 });
+  boss.maxHp = 200;
+  boss.hp = 142;
+  // Mage marks boss with frost_lance (+8 Mage, +5 Knight for hitting Boss, plus crosses 70% threshold -> +35 both!)
+  loop.castSpell('frost_lance', hStates.Mage, 0, hStates.Knight, { ignoreCooldown: true });
+  assert.equal(boss.phase70Triggered, true);
+  assert.ok(loop.combatHeroes.Knight.qEnergy >= 58);
+  assert.ok(loop.combatHeroes.Mage.qEnergy >= 54);
+
+  // Top up Knight to 100 and cast Knight Q (12.0s Twin-Element Eclipse Blade, 2.0x damage, applies BOTH burn + slow)
+  loop.addHeroQEnergy('Knight', 100);
+  assert.equal(loop.combatHeroes.Knight.qEnergy, 100);
+  const kUlt = loop.performKnightUltimate(hStates, { requireEnergy: true });
+  assert.equal(kUlt.ultimate, 'knight_sky_lightning');
+  assert.equal(kUlt.duration, 12.0);
+  assert.equal(kUlt.breathingStyle, 'eclipse');
+  assert.equal(loop.combatHeroes.Knight.qEnergy, 0, 'Casting Knight Q consumes 100 Q Energy');
+  assert.ok(boss.burnTimer > 0 && boss.iceSlowTimer > 0, 'Twin-Element Blade must apply BOTH Fire Burn and Ice Slow');
+
+  // Top up Mage to 160 and cast Mage Q (6.0s Sky Meteor Shower, capped at 3 meteor hits per single boss)
+  em.clearAllEnemies();
+  const soloBoss = em.spawnImmediateFromSpec({ archetype: 'boss_sovereign', x: 0.4, z: 14.5 });
+  soloBoss.maxHp = 2000;
+  soloBoss.hp = 2000;
+  loop.addHeroQEnergy('Mage', 160);
+  assert.equal(loop.combatHeroes.Mage.qEnergy, 160);
+  const mUlt = loop.performMageStormCataclysm(hStates, { requireEnergy: true });
+  assert.equal(mUlt.ultimate, 'storm_cataclysm');
+  assert.equal(loop.combatHeroes.Mage.qEnergy, 0, 'Casting Mage Q consumes 160 Q Energy');
+  for (let i = 0; i < 62; i++) {
+    loop.update(0.1, { heroStates: hStates, soloWingmanActive: false });
+  }
+  assert.equal(
+    loop.combatHeroes.Mage.stormCataclysmHitCounts.get(soloBoss),
+    3,
+    'Single boss must take at most 3 meteor hits from a 10-meteor Sky Meteor Shower'
+  );
+
+  // 13C. Two-Tier Commune: Mode A In-Place Heal (+30% Max HP, 25s CD, zero Eclipse) vs Mode B Emergency Divine Miracle (90s CD, 25s Blessing, 2.5s Tether Grace)
+  loop.combatHeroes.Knight.hp = 100;
+  loop.combatHeroes.Mage.hp = 60;
+  const modeARes = loop.applyCommuneVerdict(
+    { verdict: 'heal', prayerMode: 'field_heal', hpDeltaPct: 0.30 },
+    'Knight',
+    hStates
+  );
+  assert.equal(modeARes.prayerMode, 'field_heal');
+  assert.equal(modeARes.sequenceActive, false, 'Mode A must heal in place without 4.8s underground sequence');
+  assert.equal(loop.combatHeroes.Knight.hp, 166, 'Knight +30% of 220 Max HP = +66 HP');
+  assert.equal(loop.combatHeroes.Mage.hp, 96, 'Mage +30% of 120 Max HP = +36 HP');
+  assert.equal(loop.modeAHealCd, 25.0);
+  assert.equal(loop.isDivineBlessingActive(), false);
+
+  // Stage 1 Altar Awakening triggers 3.5s Eclipse; Stone 2 Riddle does NOT trigger Eclipse
+  const stg1Awaken = loop.applyCommuneVerdict(
+    { verdict: 'awakening', prayerMode: 'awakening', unlocksStage: true, stageUnlocked: 1 },
+    'Knight',
+    hStates
+  );
+  assert.equal(stg1Awaken.awakeningEclipseActive, true);
+  assert.equal(loop.awakeningEclipseTimer, 3.5);
+  loop.update(3.6, { heroStates: hStates, soloWingmanActive: false });
+  assert.equal(loop.awakeningEclipseTimer, 0);
+
+  const stone2Awaken = loop.applyCommuneVerdict(
+    { verdict: 'awakening', prayerMode: 'awakening', unlocksStage: true, stageUnlocked: 2, stoneSolvedId: 'stone_grove' },
+    'Knight',
+    hStates
+  );
+  assert.equal(stone2Awaken.awakeningEclipseActive, false);
+
+  // Mode B Emergency Divine Miracle activates 4.8s sequence -> 25s Blessing with 2.5s Tether Grace
+  loop.combatHeroes.Mage.hp = 20;
+  const modeBRes = loop.applyCommuneVerdict(
+    { verdict: 'miracle', prayerMode: 'divine_miracle', hpDeltaPct: 1.0 },
+    'Knight',
+    hStates
+  );
+  assert.equal(modeBRes.prayerMode, 'divine_miracle');
+  assert.equal(modeBRes.sequenceActive, true);
+  assert.equal(loop.modeBMiracleCd, 90.0);
+  loop.update(4.85, { heroStates: hStates, soloWingmanActive: false });
+  assert.equal(loop.isDivineBlessingActive(), true);
+  assert.equal(loop.getDivineBlessingRemaining(), 25.0);
+
+  // Move > 6.0m apart for 1.5s (< 2.5s grace) -> Blessing stays active; move > 6.0m for another 1.1s (>= 2.5s) -> Blessing snaps!
+  hStates.Knight.x = 0;
+  hStates.Mage.x = 7.5;
+  loop.update(1.5, { heroStates: hStates, soloWingmanActive: false });
+  assert.equal(loop.isDivineBlessingActive(), true, '2.5s tether grace timer must protect against brief separation');
+  loop.update(1.1, { heroStates: hStates, soloWingmanActive: false });
+  assert.equal(loop.isDivineBlessingActive(), false, 'Blessing snaps after 2.5s outside 6.0m tether');
+
+  // 13D. Connected 1 -> 3 -> 2 Out-of-Order Stone Bitmask Progression
+  const prog = createRoomProgressionState();
+  prog.applyVerdictProgression({ unlocksStage: true, stageUnlocked: 1, stoneSolvedId: 'stone_well' });
+  assert.equal(prog.getState().stonesSolvedMask, 0b001);
+  assert.equal(prog.getState().unlockedStage, 1);
+
+  prog.applyVerdictProgression({ unlocksStage: true, stoneSolvedId: 'stone_cottage_wall' });
+  assert.equal(prog.getState().stonesSolvedMask, 0b101);
+  assert.equal(prog.getState().unlockedStage, 2);
+  assert.equal(prog.getState().fireUnlocked, true);
+
+  prog.applyVerdictProgression({ unlocksStage: true, stoneSolvedId: 'stone_grove' });
+  assert.equal(prog.getState().stonesSolvedMask, 0b111);
+  assert.equal(prog.getState().unlockedStage, 3);
+  assert.equal(prog.getState().ultimateUnlocked, true);
 });
 
 console.log(`\nALL ${passed} WAVE 2B COMBAT & CAMPAIGN TESTS PASSED!\n`);

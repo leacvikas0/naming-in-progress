@@ -27,7 +27,7 @@ export const MASH_TIMESCALE_DECAY_PER_SEC = 0.45;
 export const KNIGHT_SHIELD_BLOCK_DR = 0.8; // 80% incoming damage reduction
 export const KNIGHT_POWER_SWORD_DURATION = 13.0; // 13s active duration
 export const KNIGHT_POWER_SWORD_COOLDOWN = 18.0; // 18s total cooldown from activation (5s downtime)
-export const KNIGHT_ULT_DURATION = 10.0; // 10s of 2x double damage
+export const KNIGHT_ULT_DURATION = 12.0; // 12s of 2x double damage (Twin-Element Blade)
 export const KNIGHT_ULT_DMG_MULT = 2.0;
 export const KNIGHT_ULT_COOLDOWN = 24.0;
 

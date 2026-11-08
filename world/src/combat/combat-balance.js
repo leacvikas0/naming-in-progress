@@ -1390,7 +1390,7 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
   const effectiveInfusion = infusion;
   const infusedMult =
     isSwordHit && effectiveInfusion && effectiveInfusion !== 'none'
-      ? effectiveInfusion === 'eclipse'
+      ? effectiveInfusion === 'eclipse' && !hitSpec.knightUltActive
         ? BREATHING_STYLES.eclipse.dmgMult
         : HERO_STATS.Knight.infusedMult
       : 1.0;
@@ -1458,6 +1458,7 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
   let detonationSpec = null;
   const isEclipseDetonation =
     canDetonate &&
+    !hitSpec.knightUltActive &&
     (activeMark === 'eclipse' ||
       (effectiveInfusion === 'eclipse' &&
         (activeMark === 'rime' || activeMark === 'solar' || isSwordHit)));
@@ -2072,7 +2073,9 @@ export function createHeadlessCampaignSim() {
       ) ||
       activeEnemies[0];
 
-    igniteKnightBreathing(spell.infusion, HERO_STATS.Knight.powerSwordDuration);
+    if (!heroes.Knight.powerSwordActive && !heroes.Knight.ultActive) {
+      igniteKnightBreathing(spell.infusion, HERO_STATS.Knight.powerSwordDuration);
+    }
     heroes.Mage.spellCooldowns[spell.id] = spell.cd;
     if (spell.id === 'frost_lance' || spell.id === 'cinder_fall') {
       heroes.Mage.skillCd = MAGE_E_COOLDOWN;
@@ -2218,6 +2221,7 @@ export function createHeadlessCampaignSim() {
     }
     const elem = heroes.Knight.selectedElement || 'ice';
     const styleId = elem === 'fire' ? 'solar' : 'rime';
+    heroes.Knight.summonedElement = elem;
     heroes.Knight.powerSwordActive = true;
     heroes.Knight.powerSwordTimer = KNIGHT_POWER_SWORD_DURATION;
     heroes.Knight.powerSwordCd = KNIGHT_POWER_SWORD_COOLDOWN;
@@ -2225,6 +2229,7 @@ export function createHeadlessCampaignSim() {
     return {
       activated: true,
       element: elem,
+      summonedElement: elem,
       breathingStyle: styleId,
       activeDuration: KNIGHT_POWER_SWORD_DURATION,
       totalCooldown: KNIGHT_POWER_SWORD_COOLDOWN,
@@ -2241,7 +2246,7 @@ export function createHeadlessCampaignSim() {
     heroes.Knight.ultTimer = KNIGHT_ULT_DURATION;
     heroes.Knight.ultDmgMult = KNIGHT_ULT_DMG_MULT;
     heroes.Knight.ultCd = KNIGHT_ULT_COOLDOWN;
-    const styleId = heroes.Knight.selectedElement === 'fire' ? 'solar' : 'rime';
+    const styleId = 'eclipse';
     igniteKnightBreathing(styleId, Math.max(heroes.Knight.breathingTimer, KNIGHT_ULT_DURATION));
 
     const target = targetEnemy || activeEnemies[0];
@@ -2266,7 +2271,7 @@ export function createHeadlessCampaignSim() {
     return {
       activated: true,
       poseClip: 'pray_channel',
-      element: heroes.Knight.selectedElement,
+      element: 'eclipse',
       duration: KNIGHT_ULT_DURATION,
       dmgMult: KNIGHT_ULT_DMG_MULT,
       cooldown: KNIGHT_ULT_COOLDOWN,
@@ -2396,6 +2401,7 @@ export function createHeadlessCampaignSim() {
     }
     heroes.Mage.stormCataclysmActive = true;
     heroes.Mage.stormCataclysmTimer = MAGE_STORM_CATACLYSM_DURATION;
+    heroes.Mage.stormCataclysmCastTimer = HERO_STATS.Mage.stormCataclysmCastDuration || 0.8;
     heroes.Mage.stormCataclysmWaveTimer = 0;
     heroes.Mage.ultCd = MAGE_STORM_CATACLYSM_COOLDOWN;
 
@@ -2407,8 +2413,8 @@ export function createHeadlessCampaignSim() {
           e,
           {
             source: 'storm_cataclysm',
-            baseDmg: HERO_STATS.Mage.stormCataclysmWaveDmg,
-            applyMark: 'tempest',
+            baseDmg: HERO_STATS.Mage.stormCataclysmMeteorDmg || HERO_STATS.Mage.stormCataclysmWaveDmg,
+            applyMark: 'solar',
             detonatesMark: true,
             empoweredBreathing: true,
             attackerPos: heroes.Mage,
@@ -2420,8 +2426,9 @@ export function createHeadlessCampaignSim() {
     checkWaveAndActCompletion();
     return {
       activated: true,
-      stationary: true,
-      vulnerableOneHitDown: true,
+      stationary: false,
+      vulnerableOneHitDown: false,
+      castPoseDuration: HERO_STATS.Mage.stormCataclysmCastDuration || 0.8,
       duration: MAGE_STORM_CATACLYSM_DURATION,
       cooldown: MAGE_STORM_CATACLYSM_COOLDOWN,
       waveHits,
@@ -2536,21 +2543,6 @@ export function createHeadlessCampaignSim() {
       absorbed = Math.min(h.shield, rem);
       h.shield -= absorbed;
       rem -= absorbed;
-    }
-
-    if (heroId === 'Mage' && heroes.Mage.stormCataclysmActive && rem > 0) {
-      h.hp = 0;
-      h.downed = true;
-      h.reviveProgress = 0;
-      heroes.Mage.stormCataclysmActive = false;
-      heroes.Mage.stormCataclysmTimer = 0;
-      return {
-        absorbed,
-        hpLost: effectiveAmount - absorbed,
-        downed: true,
-        cataclysmInterrupted: true,
-        interceptedByKnight: false,
-      };
     }
 
     h.hp = Math.max(0, h.hp - rem);

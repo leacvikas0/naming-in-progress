@@ -20,6 +20,7 @@ import {
   clamp,
   shortestAngleDiff,
   HERO_STATS,
+  Q_ENERGY_CONFIG,
   BREATHING_STYLES,
   SPELLS,
   SPELL_BY_SLOT,
@@ -28,12 +29,17 @@ import {
   COUPLES_ULTIMATE,
   ACT_DEFINITIONS,
   ACT_SEQUENCE,
+  STONE_STRONGHOLDS,
+  SURVIVAL_WAVE_POOLS,
+  SAFE_HAVEN_WAYPOINTS,
+  selectNearestSafeHavenWaypoint,
   COMMUNE_MAX_DISTANCE,
   COMMUNE_RESURRECT_DISTANCE,
   COMMUNE_COMBAT_HP_THRESHOLD,
   POWERUP_TETHER_DISTANCE,
   DIVINE_BLESSING_DURATION,
   DIVINE_BLESSING_TETHER_DISTANCE,
+  DIVINE_BLESSING_TETHER_GRACE_SECONDS,
   DIVINE_BLESSING_DMG_MULT,
   DIVINE_BLESSING_Q_CD_MULT,
   DIVINE_BLESSING_E_CD_MULT,
@@ -183,6 +189,8 @@ export function createCampaignLoop({
   enemyManager = null,
   vfxKit = null,
   combatSfx = null,
+  getProgressionState = null,
+  openValleyMode: initialOpenValleyMode = undefined,
   onActChanged = null,
   onWaveChanged = null,
   onSkyTodChanged = null,
@@ -215,7 +223,11 @@ export function createCampaignLoop({
       level: 1,
       xp: 0,
       kills: 0,
-      selectedElement: 'ice', // 'ice' | 'fire'
+      selectedElement: 'ice', // 'ice' | 'fire' (queued next element on Tab)
+      summonedElement: null, // 'ice' | 'fire' | null (active sword element locked on E press)
+      qEnergy: 0,
+      qEnergyMax: Q_ENERGY_CONFIG.knightCost, // 100
+      qEnergyPct: 0,
       shieldBlocking: false,
       powerSwordActive: false,
       powerSwordTimer: 0,
@@ -245,11 +257,18 @@ export function createCampaignLoop({
       reviveProgress: 0,
       selectedElement: 'ice',
       selectedSpell: 'frost_lance', // 'frost_lance' | 'cinder_fall'
+      qEnergy: 0,
+      qEnergyMax: Q_ENERGY_CONFIG.mageCost, // 160
+      qEnergyPct: 0,
       consecutiveChargedCount: 0,
       skillCd: 0,
       stormCataclysmActive: false,
       stormCataclysmTimer: 0,
+      stormCataclysmCastTimer: 0,
       stormCataclysmWaveTimer: 0,
+      stormCataclysmMeteorsFired: 0,
+      stormCataclysmCenter: { x: 0, y: 0, z: 0 },
+      stormCataclysmHitCounts: new Map(),
       ultCd: 0,
       empoweredBreathing: false,
       ascendedMagicFlow: false,
@@ -288,9 +307,97 @@ export function createCampaignLoop({
   let wingmanBoltIdx = 0;
   let bothDownedTimer = 0;
   let communeChannelActive = false;
+  let communeMode = 'normal'; // 'normal' | 'divine_miracle'
+  let modeAHealCd = 0;
+  let modeBMiracleCd = 0;
+  let stoneGuessCd = 0;
+  let awakeningEclipseTimer = 0;
+  let tetherOutTimer = 0;
   let indicatorsHiddenForShot = false;
   let divineBlessingActive = false;
   let divineBlessingTimer = 0;
+
+  // Open-Valley Strongholds & Randomized Survival Waves state
+  let openValleyMode =
+    initialOpenValleyMode !== undefined
+      ? Boolean(initialOpenValleyMode)
+      : Boolean(getProgressionState);
+  let strongholdClearedMask = 0;
+  const activeStrongholdIds = new Set();
+  const strongholdWaveIndex = {
+    site1_well: -1,
+    site2_platform: -1,
+    site3_wall: -1,
+    apex_finale: -1,
+  };
+  let survivalWaveTimer = 44.0;
+  let survivalWaveSeed = 0;
+  let manualUnlockedStage = null;
+  let manualStonesSolvedMask = null;
+
+  function getUnlockedStage() {
+    if (manualUnlockedStage !== null) return manualUnlockedStage;
+    const prog = getProgressionState?.();
+    if (prog && typeof prog.unlockedStage === 'number') return prog.unlockedStage;
+    return 0;
+  }
+
+  function getStonesSolvedMask() {
+    if (manualStonesSolvedMask !== null) return manualStonesSolvedMask;
+    const prog = getProgressionState?.();
+    if (prog && typeof prog.stonesSolvedMask === 'number') return prog.stonesSolvedMask;
+    if (prog) {
+      return (
+        (prog.stone1Solved ? 1 : 0) |
+        (prog.stone2Solved ? 2 : 0) |
+        (prog.stone3Solved ? 4 : 0)
+      );
+    }
+    return manualUnlockedStage !== null && manualUnlockedStage >= 3 ? 0b111 : 0;
+  }
+
+  function isStage3Unlocked() {
+    if (manualUnlockedStage !== null) {
+      return manualUnlockedStage >= 3 || getStonesSolvedMask() === 0b111;
+    }
+    if (getProgressionState) {
+      return getUnlockedStage() >= 3 || getStonesSolvedMask() === 0b111;
+    }
+    return true;
+  }
+
+  function addHeroQEnergy(heroId, amount) {
+    if (!Number.isFinite(amount) || amount <= 0) return 0;
+    if (!isStage3Unlocked()) return 0;
+    const key = String(heroId || 'Knight').toLowerCase() === 'mage' ? 'Mage' : 'Knight';
+    if (key === 'Mage' && combatHeroes.Mage.stormCataclysmActive) return combatHeroes.Mage.qEnergy;
+    const h = combatHeroes[key];
+    h.qEnergy = clamp(Number((h.qEnergy + amount).toFixed(2)), 0, h.qEnergyMax);
+    h.qEnergyPct = clamp(h.qEnergy / Math.max(1, h.qEnergyMax), 0, 1);
+    return h.qEnergy;
+  }
+
+  function setUnlockedStage(stageNum, stonesMask = undefined) {
+    if (stageNum === null || stageNum === undefined) {
+      manualUnlockedStage = null;
+    } else {
+      manualUnlockedStage = clamp(Number(stageNum) || 0, 0, 3);
+      if (manualUnlockedStage >= 3) {
+        addHeroQEnergy('Knight', combatHeroes.Knight.qEnergyMax);
+        addHeroQEnergy('Mage', combatHeroes.Mage.qEnergyMax);
+      }
+    }
+    if (stonesMask !== undefined) {
+      manualStonesSolvedMask =
+        stonesMask === null ? null : Number(stonesMask) & 0b111;
+    }
+    return manualUnlockedStage;
+  }
+
+  function setOpenValleyMode(enabled) {
+    openValleyMode = Boolean(enabled);
+    return openValleyMode;
+  }
 
   const verdictSequence = {
     active: false,
@@ -328,6 +435,7 @@ export function createCampaignLoop({
   function activateDivineBlessing() {
     divineBlessingActive = true;
     divineBlessingTimer = DIVINE_BLESSING_DURATION;
+    tetherOutTimer = 0;
     combatHeroes.Knight.partnerSwordMult = DIVINE_BLESSING_DMG_MULT;
     combatHeroes.Knight.partnerBuffTimer = DIVINE_BLESSING_DURATION;
     combatHeroes.Knight.sunSwornBreathing = true;
@@ -339,6 +447,11 @@ export function createCampaignLoop({
     combatHeroes.Mage.ascendedMagicFlow = true;
     combatHeroes.Mage.ascendedMagicTimer = DIVINE_BLESSING_DURATION;
     combatHeroes.Mage.empoweredBreathing = true;
+
+    combatHeroes.Knight.qEnergy = combatHeroes.Knight.qEnergyMax;
+    combatHeroes.Knight.qEnergyPct = 1.0;
+    combatHeroes.Mage.qEnergy = combatHeroes.Mage.qEnergyMax;
+    combatHeroes.Mage.qEnergyPct = 1.0;
 
     const blessedQCd = Number((KNIGHT_ULT_COOLDOWN * DIVINE_BLESSING_Q_CD_MULT).toFixed(2));
     if (combatHeroes.Knight.ultCd > blessedQCd) {
@@ -362,6 +475,7 @@ export function createCampaignLoop({
     if (!divineBlessingActive && divineBlessingTimer === 0) return;
     divineBlessingActive = false;
     divineBlessingTimer = 0;
+    tetherOutTimer = 0;
     combatHeroes.Knight.partnerSwordMult = 1.0;
     combatHeroes.Knight.partnerBuffTimer = 0;
     combatHeroes.Knight.sunSwornBreathing = false;
@@ -378,7 +492,14 @@ export function createCampaignLoop({
     }
   }
 
-  function awardKnightKillXp(enemy) {
+  function awardKnightKillXp(enemy, hitResult = null) {
+    if (enemy && enemy._campaignXpAwarded) {
+      return combatHeroes.Knight.level;
+    }
+    if (enemy) {
+      enemy._campaignXpAwarded = true;
+    }
+
     const xpGain = enemy?.isBoss
       ? HERO_STATS.Knight.xpPerKill * 4
       : enemy?.isElite
@@ -400,7 +521,63 @@ export function createCampaignLoop({
         'blessing'
       );
     }
+
+    // Shared Co-Op Kill-Energy (100% to killer, 60% to partner; zero flying 3D orbs!)
+    const src = String(hitResult?.source || '');
+    const isMageKill = Boolean(
+      hitResult?.killerRole === 'Mage' ||
+        hitResult?.isMagicKill ||
+        src === 'frost_lance' ||
+        src === 'cinder_fall' ||
+        src === 'shatterlance' ||
+        src === 'storm_lance' ||
+        src === 'storm_cataclysm' ||
+        src.startsWith('mage_')
+    );
+    const killerRole = isMageKill ? 'Mage' : 'Knight';
+    const partnerRole = killerRole === 'Knight' ? 'Mage' : 'Knight';
+    const baseKillEnergy =
+      typeof enemy?.qEnergyReward === 'number'
+        ? enemy.qEnergyReward
+        : enemy?.isBoss
+          ? 70
+          : enemy?.isElite
+            ? 45
+            : 18;
+    const sharedRatio = Q_ENERGY_CONFIG.sharedKillRatio ?? 0.6;
+    addHeroQEnergy(killerRole, Math.round(baseKillEnergy));
+    addHeroQEnergy(partnerRole, Math.round(baseKillEnergy * sharedRatio));
+
     return combatHeroes.Knight.level;
+  }
+
+  function handleBossPhaseThreshold({ enemy, phasePct } = {}) {
+    if (!enemy) return null;
+    if (!enemy._campaignPhaseAwarded) {
+      enemy._campaignPhaseAwarded = new Set();
+    }
+    if (enemy._campaignPhaseAwarded.has(phasePct)) {
+      return null;
+    }
+    enemy._campaignPhaseAwarded.add(phasePct);
+
+    const bonus = Q_ENERGY_CONFIG.bossPhaseBonusBoth || 35;
+    addHeroQEnergy('Knight', bonus);
+    addHeroQEnergy('Mage', bonus);
+    const pctLabel = Math.round((Number(phasePct) || 0.7) * 100);
+    emitBanner(
+      `BOSS PHASE THRESHOLD (${pctLabel}% HP) · +${bonus} Q ENERGY`,
+      'Shared Awakening Surge Fills Both Lovers’ Ultimate Gauges!',
+      'ultimate'
+    );
+    return { phasePct, bonus, knightQEnergy: combatHeroes.Knight.qEnergy, mageQEnergy: combatHeroes.Mage.qEnergy };
+  }
+
+  function awardPerfectDodgeEnergy(heroId = 'Knight') {
+    const key = String(heroId || 'Knight').toLowerCase() === 'mage' ? 'Mage' : 'Knight';
+    combatHeroes[key].perfectDodgeBuff = true;
+    addHeroQEnergy(key, Q_ENERGY_CONFIG.perfectDodgeBonus || 12);
+    return combatHeroes[key].qEnergy;
   }
 
   function getPartnerDistance(posA, posB) {
@@ -413,6 +590,28 @@ export function createCampaignLoop({
       return getPartnerDistance(heroStates.Knight, heroStates.Mage) <= DIVINE_BLESSING_TETHER_DISTANCE;
     }
     return true;
+  }
+
+  function isMiracleReady(heroStates = null) {
+    if (!isStage3Unlocked()) return false;
+    if (modeBMiracleCd > 0.05) return false;
+    const k = heroStates?.Knight || heroStates?.knight;
+    const m = heroStates?.Mage || heroStates?.mage;
+    const dist = k && m ? getPartnerDistance(k, m) : 0;
+    if (dist > COMMUNE_MAX_DISTANCE) return false;
+
+    const kDowned = Boolean(combatHeroes.Knight.downed || k?.downed);
+    const mDowned = Boolean(combatHeroes.Mage.downed || m?.downed);
+    if (kDowned && mDowned) return false;
+
+    const kHpRatio = combatHeroes.Knight.hp / Math.max(1, combatHeroes.Knight.maxHp);
+    const mHpRatio = combatHeroes.Mage.hp / Math.max(1, combatHeroes.Mage.maxHp);
+    const critical =
+      kDowned ||
+      mDowned ||
+      kHpRatio <= COMMUNE_COMBAT_HP_THRESHOLD ||
+      mHpRatio <= COMMUNE_COMBAT_HP_THRESHOLD;
+    return critical;
   }
 
   function canCommuneTogether(heroStates) {
@@ -585,15 +784,16 @@ export function createCampaignLoop({
     if (norm === 'Knight') {
       combatHeroes.Knight.selectedElement =
         combatHeroes.Knight.selectedElement === 'ice' ? 'fire' : 'ice';
-      const nextStyle = combatHeroes.Knight.selectedElement === 'fire' ? 'solar' : 'rime';
-      if (combatHeroes.Knight.powerSwordActive && combatHeroes.Knight.powerSwordTimer > 0) {
-        setKnightBreathing(nextStyle, combatHeroes.Knight.powerSwordTimer);
-      }
+      const queuedStyle = combatHeroes.Knight.selectedElement === 'fire' ? 'solar' : 'rime';
+      // Summon Lock Rule: Tab ONLY queues the next element (`selectedElement`) for the next E press!
+      // It NEVER mutates an already-summoned active sword (`summonedElement` / `breathingStyle`).
       onHudStateChanged?.(getStateSnapshot());
       return {
         heroId: 'Knight',
         element: combatHeroes.Knight.selectedElement,
-        breathingStyle: nextStyle,
+        summonedElement: combatHeroes.Knight.summonedElement,
+        queuedBreathingStyle: queuedStyle,
+        breathingStyle: combatHeroes.Knight.breathingStyle,
       };
     }
 
@@ -656,9 +856,7 @@ export function createCampaignLoop({
       enemyManager.clearAllEnemies();
     }
 
-    if (onSkyTodChanged && act.tod) {
-      onSkyTodChanged(act.tod);
-    }
+    // Do NOT force-switch sky time-of-day on combat act transitions; natural 15-min cycle & Manual Override govern ToD.
     if (onActChanged) {
       onActChanged(act, actIndex);
     }
@@ -714,7 +912,7 @@ export function createCampaignLoop({
     const h = combatHeroes[heroId] || combatHeroes.Knight;
     if (
       divineBlessingActive ||
-      communeChannelActive ||
+      (communeChannelActive && communeMode === 'divine_miracle') ||
       (verdictSequence.active && verdictSequence.kind === 'blessing')
     ) {
       return {
@@ -819,38 +1017,12 @@ export function createCampaignLoop({
       rem -= absorbed;
     }
 
-    // Interrupt any active co-op proximity revive if the reviving hero takes HP damage!
-    if (rem > 0) {
+    // Interrupt any active co-op proximity revive if the reviving hero takes unblocked HP damage (> 5 chip damage)!
+    const isBlockedKnightChip =
+      heroId === 'Knight' && combatHeroes.Knight.shieldBlocking && rem <= 5;
+    if (rem > 0 && !isBlockedKnightChip) {
       combatHeroes.Knight.reviveTimer = 0;
       combatHeroes.Mage.reviveTimer = 0;
-    }
-
-    // Mage Q 6.0s Storm Cataclysm vulnerability: 1 unprotected hit immediately downs her!
-    if (heroId === 'Mage' && combatHeroes.Mage.stormCataclysmActive && rem > 0) {
-      h.hp = 0;
-      h.downed = true;
-      h.reviveProgress = 0;
-      h.reviveTimer = 0;
-      combatHeroes.Mage.stormCataclysmActive = false;
-      combatHeroes.Mage.stormCataclysmTimer = 0;
-      if (targetHeroState?.char?.play) {
-        targetHeroState.char.play('death', { loop: false, fade: 0.1, force: true });
-      }
-      if (combatSfx?.playPlayerHit) {
-        combatSfx.playPlayerHit();
-      }
-      emitBanner(
-        'STORM CATACLYSM SHATTERED · MAGE DOWNED!',
-        'Unprotected during Storm Cataclysm! Use Commune or Proximity Revive!',
-        'warning'
-      );
-      return {
-        absorbed,
-        hpLost: effectiveDmg - absorbed,
-        downed: true,
-        cataclysmInterrupted: true,
-        interceptedByKnight: false,
-      };
     }
 
     h.hp = Math.max(0, h.hp - rem);
@@ -867,7 +1039,7 @@ export function createCampaignLoop({
       }
       emitBanner(
         `${heroId.toUpperCase()} HAS FALLEN!`,
-        'Stand Within 2.4m for 2.5s or Channel Commune to Resurrect Your Beloved!',
+        'Stand Within 2.8m for 2.5s or Channel Commune to Resurrect Your Beloved!',
         'warning'
       );
     }
@@ -900,10 +1072,61 @@ export function createCampaignLoop({
     };
 
     communeChannelActive = false;
+    communeMode = 'normal';
+    enemyManager?.setGlobalEnemyTimeScale?.(1.0);
 
+    const rawHpDelta =
+      typeof judgment?.hpDelta === 'number' && Number.isFinite(judgment.hpDelta)
+        ? judgment.hpDelta
+        : null;
+    const rawHpDeltaPct =
+      typeof judgment?.hpDeltaPct === 'number' && Number.isFinite(judgment.hpDeltaPct)
+        ? judgment.hpDeltaPct
+        : null;
+    const anyDownedNow = Boolean(combatHeroes.Knight.downed || combatHeroes.Mage.downed);
+
+    const explicitPrayerMode = judgment?.prayerMode
+      ? String(judgment.prayerMode).toLowerCase()
+      : null;
     const isSmiteVerdict =
-      verdict === 'smite' || verdict === 'rude_smite' || verdict === 'rose_gommage';
-    if (isSmiteVerdict) {
+      explicitPrayerMode === 'smite' ||
+      verdict === 'smite' ||
+      verdict === 'rude_smite' ||
+      verdict === 'rose_gommage';
+
+    let resolvedPrayerMode = explicitPrayerMode;
+    if (!resolvedPrayerMode) {
+      if (isSmiteVerdict) {
+        resolvedPrayerMode = 'smite';
+      } else if (
+        verdict === 'selfish_penalty' ||
+        (rawHpDelta !== null && rawHpDelta < 0) ||
+        (rawHpDeltaPct !== null && rawHpDeltaPct < 0)
+      ) {
+        resolvedPrayerMode = 'penalty';
+      } else if (
+        verdict === 'awakening' ||
+        Boolean(judgment?.unlocksStage) ||
+        Boolean(judgment?.stoneSolvedId)
+      ) {
+        resolvedPrayerMode = 'awakening';
+      } else if (verdict === 'sarcastic_pat') {
+        resolvedPrayerMode = 'pat';
+      } else if (
+        !anyDownedNow &&
+        (verdict === 'grace' ||
+          (verdict === 'heal' &&
+            ((rawHpDelta !== null && rawHpDelta > 0 && rawHpDelta <= 35) ||
+              (rawHpDeltaPct !== null && rawHpDeltaPct > 0 && rawHpDeltaPct <= 0.35))))
+      ) {
+        resolvedPrayerMode = 'field_heal';
+      } else {
+        resolvedPrayerMode = 'divine_miracle';
+      }
+    }
+
+    // 1. SMITE (`smite`, `rude_smite`, `rose_gommage`)
+    if (resolvedPrayerMode === 'smite' || isSmiteVerdict) {
       clearDivineBlessing();
       const killBoth = Boolean(
         verdict === 'rose_gommage' ||
@@ -996,6 +1219,7 @@ export function createCampaignLoop({
       onHudStateChanged?.(getStateSnapshot(heroStates));
       return {
         verdict,
+        prayerMode: 'smite',
         speakerRole: speakerKey,
         dissolveRole,
         speakerHp: speakerHero.hp,
@@ -1004,15 +1228,14 @@ export function createCampaignLoop({
       };
     }
 
-    // Proportional Minor / Penalty Verdicts (`selfish_penalty`, `sarcastic_pat`, `grace` with small hpDelta)
-    const rawHpDelta =
-      typeof judgment?.hpDelta === 'number' && Number.isFinite(judgment.hpDelta)
-        ? judgment.hpDelta
-        : null;
-    const anyDownedNow = Boolean(combatHeroes.Knight.downed || combatHeroes.Mage.downed);
-
-    if (verdict === 'selfish_penalty' || (rawHpDelta !== null && rawHpDelta < 0)) {
-      const loss = Math.abs(rawHpDelta ?? 20);
+    // 2. PENALTY (`selfish_penalty`, negative `hpDeltaPct` / `hpDelta`)
+    if (resolvedPrayerMode === 'penalty') {
+      const loss =
+        rawHpDeltaPct !== null
+          ? Math.max(1, Math.round(speakerHero.maxHp * Math.abs(rawHpDeltaPct)))
+          : rawHpDelta !== null
+            ? Math.max(1, Math.round(Math.abs(rawHpDelta)))
+            : Math.max(1, Math.round(speakerHero.maxHp * 0.1));
       speakerHero.hp = Math.max(1, speakerHero.hp - loss);
       if (speakerEntity) {
         speakerEntity.praying = false;
@@ -1032,6 +1255,7 @@ export function createCampaignLoop({
       onHudStateChanged?.(getStateSnapshot(heroStates));
       return {
         verdict: 'selfish_penalty',
+        prayerMode: 'penalty',
         sequenceActive: false,
         hpDelta: -loss,
         speakerRole: speakerKey,
@@ -1041,38 +1265,116 @@ export function createCampaignLoop({
       };
     }
 
-    if (
-      !anyDownedNow &&
-      (verdict === 'sarcastic_pat' ||
-        verdict === 'grace' ||
-        (verdict === 'heal' && rawHpDelta !== null && rawHpDelta > 0 && rawHpDelta <= 35))
-    ) {
-      const gain = Math.max(1, Math.round(rawHpDelta ?? (verdict === 'sarcastic_pat' ? 1 : 24)));
-      combatHeroes.Knight.hp = clamp(
-        combatHeroes.Knight.hp + gain,
-        1,
-        combatHeroes.Knight.maxHp
+    // 3. AWAKENING (Stone Riddle Solved / Stage Unlocked)
+    if (resolvedPrayerMode === 'awakening') {
+      stoneGuessCd = 3.0;
+      combatHeroes.Knight.downed = false;
+      combatHeroes.Knight.reviveProgress = 0;
+      combatHeroes.Knight.hp = combatHeroes.Knight.maxHp;
+      combatHeroes.Mage.downed = false;
+      combatHeroes.Mage.reviveProgress = 0;
+      combatHeroes.Mage.hp = combatHeroes.Mage.maxHp;
+      if (speakerEntity) speakerEntity.praying = false;
+      if (partnerEntity) partnerEntity.praying = false;
+
+      // Only Stage 0 -> 1 Altar Stele awakening triggers the 3.5s Blood-Moon Eclipse reveal!
+      if (Number(judgment?.stageUnlocked) === 1 && !judgment?.stoneSolvedId) {
+        awakeningEclipseTimer = 3.5;
+      }
+
+      if (Number(judgment?.stageUnlocked) >= 3) {
+        addHeroQEnergy('Knight', combatHeroes.Knight.qEnergyMax);
+        addHeroQEnergy('Mage', combatHeroes.Mage.qEnergyMax);
+      }
+
+      vfxKit?.artoriousVfx?.triggerBlessing?.(speakerPos, partnerPos);
+      combatSfx?.playShieldChime?.();
+      addResonance(35);
+      emitBanner(
+        judgment?.stoneSolvedId
+          ? 'SACRED STONE SANCTIFIED · RIDDLE ANSWERED'
+          : 'DIVINE AWAKENING · COVENANT UNSEALED',
+        judgment?.divine_quote ||
+          judgment?.subtitle ||
+          'The ancient inscription answers your voice — new elemental power awakens!',
+        'blessing'
       );
-      combatHeroes.Mage.hp = clamp(combatHeroes.Mage.hp + gain, 1, combatHeroes.Mage.maxHp);
+      onHudStateChanged?.(getStateSnapshot(heroStates));
+      return {
+        verdict: 'awakening',
+        prayerMode: 'awakening',
+        sequenceActive: false,
+        awakeningEclipseActive: awakeningEclipseTimer > 0,
+        speakerRole: speakerKey,
+        partnerRole: partnerKey,
+        knightHp: combatHeroes.Knight.hp,
+        mageHp: combatHeroes.Mage.hp,
+      };
+    }
+
+    // 4. MODE A: IN-PLACE FIELD PRAYER (`pat` +1% Max HP, `field_heal` `grace` +15% / `heal` +30% Max HP)
+    // Never triggers red Eclipse sky, never slows enemies, never revives downed partner, never activates 25s invincibility!
+    if (resolvedPrayerMode === 'pat' || resolvedPrayerMode === 'field_heal') {
+      modeAHealCd = 25.0;
+      const isPat = resolvedPrayerMode === 'pat' || verdict === 'sarcastic_pat';
+      const defaultPct = isPat ? 0.01 : verdict === 'heal' ? 0.3 : 0.15;
+
+      const kGain =
+        rawHpDeltaPct !== null
+          ? Math.max(1, Math.round(combatHeroes.Knight.maxHp * Math.abs(rawHpDeltaPct)))
+          : rawHpDelta !== null
+            ? Math.max(1, Math.round(rawHpDelta))
+            : isPat
+              ? Math.max(1, Math.round(combatHeroes.Knight.maxHp * 0.01))
+              : Math.max(1, Math.round(combatHeroes.Knight.maxHp * defaultPct));
+      const mGain =
+        rawHpDeltaPct !== null
+          ? Math.max(1, Math.round(combatHeroes.Mage.maxHp * Math.abs(rawHpDeltaPct)))
+          : rawHpDelta !== null
+            ? Math.max(1, Math.round(rawHpDelta))
+            : isPat
+              ? Math.max(1, Math.round(combatHeroes.Mage.maxHp * 0.01))
+              : Math.max(1, Math.round(combatHeroes.Mage.maxHp * defaultPct));
+
+      if (!combatHeroes.Knight.downed) {
+        combatHeroes.Knight.hp = clamp(
+          combatHeroes.Knight.hp + kGain,
+          1,
+          combatHeroes.Knight.maxHp
+        );
+      }
+      if (!combatHeroes.Mage.downed) {
+        combatHeroes.Mage.hp = clamp(
+          combatHeroes.Mage.hp + mGain,
+          1,
+          combatHeroes.Mage.maxHp
+        );
+      }
       if (speakerEntity) speakerEntity.praying = false;
       if (partnerEntity) partnerEntity.praying = false;
       vfxKit?.artoriousVfx?.triggerHeal?.(speakerPos, partnerPos);
       combatSfx?.playShieldChime?.();
-      addResonance(verdict === 'sarcastic_pat' ? 2 : 12);
+      addResonance(isPat ? 2 : 12);
+      const speakerGain = speakerKey === 'Knight' ? kGain : mGain;
       emitBanner(
-        verdict === 'sarcastic_pat'
-          ? 'AMUSED PAT ON THE HEAD · +1 HP'
-          : `GENTLE GRACE · +${gain} HP`,
+        isPat
+          ? `AMUSED PAT ON THE HEAD · +${speakerGain} HP`
+          : verdict === 'heal'
+            ? `WARM FIELD HEAL · +${kGain} / +${mGain} HP`
+            : `GENTLE GRACE · +${kGain} / +${mGain} HP`,
         judgment?.divine_quote ||
           judgment?.subtitle ||
-          `A modest token of warmth (+${gain} HP).`,
+          `A warm golden breeze mends your wounds in place (+${kGain} Knight / +${mGain} Mage HP).`,
         'blessing'
       );
       onHudStateChanged?.(getStateSnapshot(heroStates));
       return {
         verdict,
+        prayerMode: isPat ? 'pat' : 'field_heal',
         sequenceActive: false,
-        hpDelta: gain,
+        hpDelta: speakerGain,
+        knightGain: kGain,
+        mageGain: mGain,
         speakerRole: speakerKey,
         partnerRole: partnerKey,
         speakerHp: speakerHero.hp,
@@ -1082,7 +1384,8 @@ export function createCampaignLoop({
       };
     }
 
-    // Unified 4.80s 4-Beat Blessing / Heal / Miracle Sequence (ZERO direct enemy damage!)
+    // 5. MODE B: EMERGENCY DIVINE MIRACLE (`divine_miracle` — 4.80s 4-Beat Resurrection & 25s Court of Dark Flowers)
+    modeBMiracleCd = 90.0;
     const kx = heroStates?.Knight?.x ?? speakerPos.x ?? 0;
     const kz = heroStates?.Knight?.z ?? speakerPos.z ?? 0;
     const mx = heroStates?.Mage?.x ?? partnerPos.x ?? kx + 1.5;
@@ -1133,12 +1436,13 @@ export function createCampaignLoop({
         : 'DIVINE BLESSING · COURT OF DARK FLOWERS',
       judgment?.divine_quote ||
         judgment?.subtitle ||
-        'Briar Sanctuary Encloses You Both · 30s Proximity Blessing (<= 5.0m Tether: Invincible, 2x DMG, Fast CD)',
+        'Briar Sanctuary Encloses You Both · 25s Proximity Blessing (<= 6.0m Tether: Invincible, 2x DMG, Fast CD)',
       'blessing'
     );
     onHudStateChanged?.(getStateSnapshot(heroStates));
     return {
       verdict,
+      prayerMode: 'divine_miracle',
       sequenceActive: true,
       duration: 4.8,
       speakerRole: speakerKey,
@@ -1177,10 +1481,12 @@ export function createCampaignLoop({
     }
 
     addResonance(spell.resonanceGain);
-    setKnightBreathing(
-      combatHeroes.Knight.sunSwornBreathing ? 'eclipse' : spell.infusion,
-      Math.max(KNIGHT_POWER_SWORD_DURATION, combatHeroes.Knight.sunSwornTimer)
-    );
+    if (!combatHeroes.Knight.powerSwordActive && !combatHeroes.Knight.ultActive) {
+      setKnightBreathing(
+        combatHeroes.Knight.sunSwornBreathing ? 'eclipse' : spell.infusion,
+        Math.max(KNIGHT_POWER_SWORD_DURATION, combatHeroes.Knight.sunSwornTimer)
+      );
+    }
 
     if (combatSfx?.playSpellCast) {
       combatSfx.playSpellCast(spell.id);
@@ -1312,12 +1618,24 @@ export function createCampaignLoop({
         });
       }
 
+      if (hits.some((h) => h.enemy && (h.enemy.isBoss || h.enemy.isElite))) {
+        addHeroQEnergy('Mage', Q_ENERGY_CONFIG.heavyHitBossAttacker);
+        addHeroQEnergy('Knight', Q_ENERGY_CONFIG.heavyHitBossPartner);
+      }
+
       for (const h of hits) {
+        if (Array.isArray(h.result?.bossPhasesCrossed)) {
+          for (const phasePct of h.result.bossPhasesCrossed) {
+            handleBossPhaseThreshold({ enemy: h.enemy, phasePct });
+          }
+        }
         if (h.result?.killed) {
-          awardKnightKillXp(h.enemy);
+          awardKnightKillXp(h.enemy, h.result);
         }
         if (h.result?.detonation) {
           addResonance(DETONATIONS[h.result.detonation.id]?.resonanceGain || 18);
+          addHeroQEnergy('Knight', Q_ENERGY_CONFIG.detonationBonusBoth);
+          addHeroQEnergy('Mage', Q_ENERGY_CONFIG.detonationBonusBoth);
           if (vfxKit?.swordVfx?.triggerDetonation) {
             vfxKit.swordVfx.triggerDetonation(h.result.detonation.id, {
               x: h.result.detonation.x,
@@ -1431,12 +1749,27 @@ export function createCampaignLoop({
       });
       combatHeroes.Knight.perfectDodgeBuff = false;
 
+      if (
+        (swingType === 'charged' || swingType === 'heavy' || swingType === 'combo4') &&
+        hits.some((h) => h.enemy && (h.enemy.isBoss || h.enemy.isElite))
+      ) {
+        addHeroQEnergy('Knight', Q_ENERGY_CONFIG.heavyHitBossAttacker);
+        addHeroQEnergy('Mage', Q_ENERGY_CONFIG.heavyHitBossPartner);
+      }
+
       for (const h of hits) {
         addResonance(h.result?.resonanceGain || 4);
+        if (Array.isArray(h.result?.bossPhasesCrossed)) {
+          for (const phasePct of h.result.bossPhasesCrossed) {
+            handleBossPhaseThreshold({ enemy: h.enemy, phasePct });
+          }
+        }
         if (h.result?.killed) {
-          awardKnightKillXp(h.enemy);
+          awardKnightKillXp(h.enemy, h.result);
         }
         if (h.result?.detonation) {
+          addHeroQEnergy('Knight', Q_ENERGY_CONFIG.detonationBonusBoth);
+          addHeroQEnergy('Mage', Q_ENERGY_CONFIG.detonationBonusBoth);
           if (vfxKit?.swordVfx?.triggerDetonation) {
             vfxKit.swordVfx.triggerDetonation(h.result.detonation.id, {
               x: h.result.detonation.x,
@@ -1558,12 +1891,27 @@ export function createCampaignLoop({
         addResonance(5);
       }
 
+      if (
+        (comboIndex === 3 || ascendedActive) &&
+        hits.some((h) => h.enemy && (h.enemy.isBoss || h.enemy.isElite))
+      ) {
+        addHeroQEnergy('Mage', Q_ENERGY_CONFIG.heavyHitBossAttacker);
+        addHeroQEnergy('Knight', Q_ENERGY_CONFIG.heavyHitBossPartner);
+      }
+
       for (const h of hits) {
+        if (Array.isArray(h.result?.bossPhasesCrossed)) {
+          for (const phasePct of h.result.bossPhasesCrossed) {
+            handleBossPhaseThreshold({ enemy: h.enemy, phasePct });
+          }
+        }
         if (h.result?.killed) {
-          awardKnightKillXp(h.enemy);
+          awardKnightKillXp(h.enemy, h.result);
         }
         if (h.result?.detonation) {
           addResonance(DETONATIONS[h.result.detonation.id]?.resonanceGain || 18);
+          addHeroQEnergy('Knight', Q_ENERGY_CONFIG.detonationBonusBoth);
+          addHeroQEnergy('Mage', Q_ENERGY_CONFIG.detonationBonusBoth);
           vfxKit?.swordVfx?.triggerDetonation?.(h.result.detonation.id, h.result.detonation);
           combatSfx?.playDetonation?.(h.result.detonation.id);
           onDetonation?.(h.result.detonation, h.enemy);
@@ -1578,6 +1926,7 @@ export function createCampaignLoop({
    * `E` Skill:
    * - Knight: **Power Sword** — ignites sword with selected element (`ice` or `fire`)
    *   for `13.0s` active duration on an `18.0s` total cooldown (`5.0s` downtime).
+   *   Locks `summonedElement` for the full `13.0s` active duration (`Tab` only queues next element).
    * - Mage: Casts selected `E` spell (`frost_lance` or `cinder_fall`) at aimed distance
    *   with an `8.5s` cooldown (or `shatterlance` on its `2.8s` cooldown when aimed via Hold Attack).
    */
@@ -1598,6 +1947,7 @@ export function createCampaignLoop({
         : baseDowntime;
       const effectiveTotalCd = KNIGHT_POWER_SWORD_DURATION + effectiveDowntime; // 15.5s when blessed, 18.0s normal
 
+      combatHeroes.Knight.summonedElement = elem;
       combatHeroes.Knight.powerSwordActive = true;
       combatHeroes.Knight.powerSwordTimer = KNIGHT_POWER_SWORD_DURATION; // 13.0s
       combatHeroes.Knight.powerSwordCd = effectiveTotalCd;
@@ -1608,6 +1958,7 @@ export function createCampaignLoop({
       return {
         skill: 'power_sword',
         element: elem,
+        summonedElement: elem,
         breathingStyle: styleId,
         activeDuration: KNIGHT_POWER_SWORD_DURATION,
         totalCooldown: effectiveTotalCd,
@@ -1671,27 +2022,36 @@ export function createCampaignLoop({
   }
 
   /**
-   * Knight `Q` (`ultimate` — Sky-Lightning Awakening):
-   * Plays native sword-raise pose (`pray_channel` / `burst_aoe`), calls down
-   * fiery/water sky-lightning onto his blade, and grants `10.0s` of `2.0x` double damage (`24s` cd, `8.0s` during Blessing).
+   * Knight `Q` (`ultimate` — Tanjiro Twin-Element Fire+Ice Blade, Cost 100 Q Energy, 12.0s, 2.0x Dmg):
+   * Plays native sword-raise pose (`pray_channel` / `burst_aoe`), ignites his blade with
+   * Twin-Element Hinokami + Glacial Tide (`'eclipse'`) for `12.0s`, dealing `2.0x` double damage
+   * and applying BOTH Fire Burn (`10 DPS` for `3.0s`) and Ice Slow (`40%` for `3.5s`) on every slash.
    */
-  function performKnightUltimate(heroStates) {
+  function performKnightUltimate(heroStates, options = {}) {
     if (combatHeroes.Knight.downed) return null;
     if (combatHeroes.Knight.ultCd > 0.05) {
       return { onCooldown: true, cooldownRemaining: combatHeroes.Knight.ultCd };
+    }
+    if (options.requireEnergy && combatHeroes.Knight.qEnergy < combatHeroes.Knight.qEnergyMax) {
+      return {
+        notEnoughEnergy: true,
+        qEnergy: combatHeroes.Knight.qEnergy,
+        qEnergyMax: combatHeroes.Knight.qEnergyMax,
+      };
     }
 
     const effectiveUltCd = divineBlessingActive
       ? Number((KNIGHT_ULT_COOLDOWN * DIVINE_BLESSING_Q_CD_MULT).toFixed(2))
       : KNIGHT_ULT_COOLDOWN;
 
+    combatHeroes.Knight.qEnergy = 0;
+    combatHeroes.Knight.qEnergyPct = 0;
     combatHeroes.Knight.ultActive = true;
-    combatHeroes.Knight.ultTimer = KNIGHT_ULT_DURATION; // 10.0s
+    combatHeroes.Knight.ultTimer = KNIGHT_ULT_DURATION; // 12.0s
     combatHeroes.Knight.ultDmgMult = KNIGHT_ULT_DMG_MULT; // 2.0x
     combatHeroes.Knight.ultCd = effectiveUltCd; // 24.0s (8.0s during Blessing)
 
-    const elem = combatHeroes.Knight.selectedElement || 'ice';
-    const styleId = elem === 'fire' ? 'solar' : 'rime';
+    const styleId = 'eclipse';
     setKnightBreathing(
       styleId,
       Math.max(combatHeroes.Knight.breathingTimer, KNIGHT_ULT_DURATION)
@@ -1729,21 +2089,35 @@ export function createCampaignLoop({
         },
       });
       for (const h of hits) {
+        if (Array.isArray(h.result?.bossPhasesCrossed)) {
+          for (const phasePct of h.result.bossPhasesCrossed) {
+            handleBossPhaseThreshold({ enemy: h.enemy, phasePct });
+          }
+        }
         if (h.result?.killed) {
-          awardKnightKillXp(h.enemy);
+          awardKnightKillXp(h.enemy, h.result);
+        }
+        if (h.result?.detonation) {
+          addHeroQEnergy('Knight', Q_ENERGY_CONFIG.detonationBonusBoth);
+          addHeroQEnergy('Mage', Q_ENERGY_CONFIG.detonationBonusBoth);
         }
       }
     }
 
+    // Consume Knight's Q Energy cleanly (activation burst does not self-refund Knight's own Q gauge)
+    combatHeroes.Knight.qEnergy = 0;
+    combatHeroes.Knight.qEnergyPct = 0;
+
     emitBanner(
-      'SKY-LIGHTNING AWAKENING · 2.0× BLADE',
-      `10.0s Double Sword Damage (${elem === 'fire' ? 'Hinokami Sunfire' : 'Glacial Tide'})`,
+      'TWIN-ELEMENT AWAKENING · 2.0× ECLIPSE BLADE',
+      '12.0s Hinokami Sunfire + Glacial Tide Twin-Element Blade (2.0× DMG · Burn + Slow)',
       'ultimate'
     );
 
     return {
       ultimate: 'knight_sky_lightning',
       poseClip: 'pray_channel',
+      breathingStyle: styleId,
       duration: KNIGHT_ULT_DURATION,
       dmgMult: KNIGHT_ULT_DMG_MULT,
       cooldown: effectiveUltCd,
@@ -1751,71 +2125,155 @@ export function createCampaignLoop({
     };
   }
 
+  function fireSkyMeteorStrike(magePos, meteorIndex = 0) {
+    const center = combatHeroes.Mage.stormCataclysmCenter || magePos || { x: 0, y: 0, z: 0 };
+    const zoneRadius = HERO_STATS.Mage.stormCataclysmRadius || 8.5;
+    const meteorDmg = HERO_STATS.Mage.meteorDmg || 38;
+    const maxHitsPerTarget = HERO_STATS.Mage.maxMeteorHitsPerTarget || 3;
+    const hitCounts = combatHeroes.Mage.stormCataclysmHitCounts;
+
+    // Distribute 10 meteors across the 8.5m zone (first meteor strikes center/nearest enemy)
+    const angle = meteorIndex * 2.39996; // Golden angle spiral
+    const radialFrac = meteorIndex === 0 ? 0 : Math.min(0.85, Math.sqrt(meteorIndex / 10) * 0.78);
+    const strikeX = center.x + Math.cos(angle) * zoneRadius * radialFrac;
+    const strikeZ = center.z + Math.sin(angle) * zoneRadius * radialFrac;
+    const strikeY = walkableHeightAt(strikeX, strikeZ);
+    const strikePos = { x: strikeX, y: strikeY, z: strikeZ };
+
+    if (vfxKit?.cinderFall?.cast) {
+      vfxKit.cinderFall.cast(
+        { x: strikeX - 1.2, y: strikeY, z: strikeZ - 1.2 },
+        { x: 0.707, y: 0, z: 0.707 },
+        {
+          range: 3.5,
+          distance: 3.5,
+          targetPos: strikePos,
+        }
+      );
+    } else if (vfxKit?.stormLance?.cast && meteorIndex === 0) {
+      vfxKit.stormLance.cast(
+        { x: strikeX, y: strikeY, z: strikeZ },
+        { x: 0, y: 0, z: 1 },
+        { range: zoneRadius }
+      );
+    }
+
+    if (!enemyManager) return [];
+
+    // Exclude enemies that have already taken maxMeteorHitsPerTarget (3) hits during this cast
+    const excludeSet = new Set();
+    if (hitCounts instanceof Map) {
+      for (const [enemyRef, count] of hitCounts.entries()) {
+        if (count >= maxHitsPerTarget) {
+          excludeSet.add(enemyRef);
+        }
+      }
+    }
+
+    const hits = enemyManager.applyAreaOrLineHit({
+      origin: center,
+      radius: zoneRadius,
+      excludeEnemies: excludeSet,
+      hitSpec: {
+        source: 'storm_cataclysm',
+        baseDmg: meteorDmg,
+        applyMark: 'solar',
+        detonatesMark: true,
+        empoweredBreathing: true,
+        partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
+        attackerPos: magePos || strikePos,
+      },
+    });
+
+    for (const h of hits) {
+      if (h.enemy) {
+        h.enemy.stunTimer = Math.max(h.enemy.stunTimer || 0, 1.0);
+        if (hitCounts instanceof Map) {
+          hitCounts.set(h.enemy, (hitCounts.get(h.enemy) || 0) + 1);
+        }
+      }
+      if (Array.isArray(h.result?.bossPhasesCrossed)) {
+        for (const phasePct of h.result.bossPhasesCrossed) {
+          handleBossPhaseThreshold({ enemy: h.enemy, phasePct });
+        }
+      }
+      if (h.result?.killed) {
+        awardKnightKillXp(h.enemy, h.result);
+      }
+      if (h.result?.detonation) {
+        addHeroQEnergy('Knight', Q_ENERGY_CONFIG.detonationBonusBoth);
+        addHeroQEnergy('Mage', Q_ENERGY_CONFIG.detonationBonusBoth);
+      }
+    }
+
+    return hits;
+  }
+
   /**
-   * Mage `Q` (`ultimate` — 6.0s Vulnerable Storm Cataclysm):
-   * Freezes the Mage in place for `6.0s` channeling a massive multi-wave Storm
-   * Cataclysm across enemies, during which 1 unprotected hit immediately downs her!
+   * Mage `Q` (`ultimate` — 6.0s Sky Meteor Shower, Cost 160 Q Energy, Mobile After 0.8s Cast):
+   * Plays a `0.8s` staff-raise cast pose (`burst_aoe`), after which Mage moves and dodges
+   * freely while `10` fiery sky meteors rain down over `6.0s` (`1` every `0.60s`) across an
+   * `8.5m` zone ahead of her (`38 Dmg` + `1.0s` stagger + `Solar` burn per meteor, capped at `3` hits per single boss/enemy).
    */
-  function performMageStormCataclysm(heroStates) {
+  function performMageStormCataclysm(heroStates, options = {}) {
     if (combatHeroes.Mage.downed) return null;
     if (combatHeroes.Mage.ultCd > 0.05) {
       return { onCooldown: true, cooldownRemaining: combatHeroes.Mage.ultCd };
+    }
+    if (options.requireEnergy && combatHeroes.Mage.qEnergy < combatHeroes.Mage.qEnergyMax) {
+      return {
+        notEnoughEnergy: true,
+        qEnergy: combatHeroes.Mage.qEnergy,
+        qEnergyMax: combatHeroes.Mage.qEnergyMax,
+      };
     }
 
     const effectiveCataclysmCd = divineBlessingActive
       ? Number((MAGE_STORM_CATACLYSM_COOLDOWN * DIVINE_BLESSING_Q_CD_MULT).toFixed(2))
       : MAGE_STORM_CATACLYSM_COOLDOWN;
 
-    combatHeroes.Mage.stormCataclysmActive = true;
-    combatHeroes.Mage.stormCataclysmTimer = MAGE_STORM_CATACLYSM_DURATION; // 6.0s
-    combatHeroes.Mage.stormCataclysmWaveTimer = 0;
-    combatHeroes.Mage.ultCd = effectiveCataclysmCd; // 24.0s (8.0s during Blessing)
-
     const mPos = heroStates?.Mage || { x: 0, y: 0, z: 0, yaw: 0 };
+    const kPos = heroStates?.Knight || null;
     const dirX = Math.sin(mPos.yaw || 0);
     const dirZ = Math.cos(mPos.yaw || 0);
 
-    if (vfxKit?.stormLance?.cast) {
-      vfxKit.stormLance.cast(
-        { x: mPos.x, y: walkableHeightAt(mPos.x, mPos.z), z: mPos.z },
-        { x: dirX, y: 0, z: dirZ },
-        { range: 14.5 }
-      );
-    }
-    combatSfx?.playCouplesUltimate?.();
+    const enemies = enemyManager ? enemyManager.activeEnemies : [];
+    const softTarget = selectSoftLockTarget(mPos, mPos.yaw || 0, enemies, {
+      maxRange: 14.0,
+      partnerPos: kPos,
+    });
+    const centerX = softTarget ? softTarget.x : mPos.x + dirX * 4.5;
+    const centerZ = softTarget ? softTarget.z : mPos.z + dirZ * 4.5;
 
-    let hits = [];
-    if (enemyManager) {
-      hits = enemyManager.applyAreaOrLineHit({
-        origin: mPos,
-        radius: HERO_STATS.Mage.stormCataclysmRadius,
-        hitSpec: {
-          source: 'storm_cataclysm',
-          baseDmg: HERO_STATS.Mage.stormCataclysmWaveDmg,
-          applyMark: 'tempest',
-          detonatesMark: true,
-          empoweredBreathing: true,
-          partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
-          attackerPos: mPos,
-        },
-      });
-      for (const h of hits) {
-        if (h.result?.killed) {
-          awardKnightKillXp(h.enemy);
-        }
-      }
-    }
+    combatHeroes.Mage.qEnergy = 0;
+    combatHeroes.Mage.qEnergyPct = 0;
+    combatHeroes.Mage.stormCataclysmActive = true;
+    combatHeroes.Mage.stormCataclysmTimer = MAGE_STORM_CATACLYSM_DURATION; // 6.0s
+    combatHeroes.Mage.stormCataclysmCastTimer = 0.8; // 0.8s cast pose, then freely mobile!
+    combatHeroes.Mage.stormCataclysmWaveTimer = 0;
+    combatHeroes.Mage.stormCataclysmMeteorsFired = 1;
+    combatHeroes.Mage.stormCataclysmCenter = {
+      x: centerX,
+      y: walkableHeightAt(centerX, centerZ),
+      z: centerZ,
+    };
+    combatHeroes.Mage.stormCataclysmHitCounts = new Map();
+    combatHeroes.Mage.ultCd = effectiveCataclysmCd; // 24.0s (8.0s during Blessing)
+
+    combatSfx?.playCouplesUltimate?.();
+    const hits = fireSkyMeteorStrike(mPos, 0);
 
     emitBanner(
-      'STORM CATACLYSM · 6.0s CHANNEL!',
-      'Knight Must Shield Her — 1 Unprotected Hit Downs the Mage!',
+      'SKY METEOR SHOWER · 10 CELESTIAL METEORS!',
+      '6.0s Autonomous Starfall Across 8.5m Zone (38 DMG · Solar Burn · 1.0s Stagger)',
       'ultimate'
     );
 
     return {
       ultimate: 'storm_cataclysm',
-      stationary: true,
-      vulnerableOneHitDown: true,
+      stationary: false,
+      vulnerableOneHitDown: false,
+      castPoseDuration: 0.8,
       duration: MAGE_STORM_CATACLYSM_DURATION,
       cooldown: effectiveCataclysmCd,
       hits,
@@ -1995,14 +2453,89 @@ export function createCampaignLoop({
     crestInd.mesh.visible = false;
   }
 
+  const STRONGHOLD_BITS = {
+    site1_well: 1,
+    site2_platform: 2,
+    site3_wall: 4,
+    apex_finale: 8,
+  };
+
+  function checkStrongholdTriggers(leaderPos) {
+    if (!leaderPos || !enemyManager) return null;
+    const triggeredNow = [];
+    for (const [key, bit] of Object.entries(STRONGHOLD_BITS)) {
+      if (key === 'apex_finale' && !isStage3Unlocked()) continue;
+      if ((strongholdClearedMask & bit) !== 0) continue;
+      if (activeStrongholdIds.has(key)) continue;
+      const sh = STONE_STRONGHOLDS[key];
+      if (!sh || !sh.waves || sh.waves.length === 0) continue;
+      const d = Math.hypot(leaderPos.x - sh.center.x, leaderPos.z - sh.center.z);
+      if (d <= (sh.triggerRadius || 26.0)) {
+        activeStrongholdIds.add(key);
+        strongholdWaveIndex[key] = 0;
+        enemyManager.setCurrentActId?.(key);
+        enemyManager.spawnWave?.(sh.waves[0], key);
+        emitBanner(sh.name.toUpperCase(), sh.waves[0].label || 'Guardian Forces Awaken!', 'wave');
+        triggeredNow.push(key);
+      }
+    }
+    return triggeredNow;
+  }
+
+  function triggerSurvivalWave(leaderPos) {
+    if (!leaderPos || !enemyManager) return null;
+    const mask = getStonesSolvedMask();
+    const solvedCount = (mask & 1 ? 1 : 0) + (mask & 2 ? 1 : 0) + (mask & 4 ? 1 : 0);
+    const poolKey =
+      solvedCount >= 3 || getUnlockedStage() >= 3
+        ? 'stage3'
+        : solvedCount === 2
+          ? 'stage2'
+          : 'stage0_1';
+    const pool = SURVIVAL_WAVE_POOLS[poolKey] || SURVIVAL_WAVE_POOLS.stage0_1 || [];
+    if (pool.length === 0) return null;
+
+    const comp = pool[survivalWaveSeed % pool.length];
+    survivalWaveSeed += 1;
+    survivalWaveTimer = 42.0 + (survivalWaveSeed % 3) * 4.5; // 42..51s
+
+    const spawns = (comp.archetypes || []).map((archetype, idx, arr) => {
+      const angle = (idx / Math.max(1, arr.length)) * Math.PI * 2 + survivalWaveSeed * 0.85;
+      const dist = 19.0 + (idx % 3) * 2.5;
+      const sx = clamp(leaderPos.x + Math.cos(angle) * dist, -108, 108);
+      const sz = clamp(leaderPos.z + Math.sin(angle) * dist, -108, 108);
+      return {
+        archetype,
+        x: Number(sx.toFixed(2)),
+        z: Number(sz.toFixed(2)),
+      };
+    });
+
+    const waveDef = {
+      id: `${comp.id || 'survival'}_${survivalWaveSeed}`,
+      label: comp.label || 'Valley Hunting Pack',
+      spawns,
+    };
+    enemyManager.spawnWave?.(waveDef, currentActId);
+    emitBanner('VALLEY HUNTING PACK', waveDef.label, 'wave');
+    return waveDef;
+  }
+
   function update(dt, { heroStates, soloWingmanActive = true, camera = null } = {}) {
     elapsed += dt;
     hudDirtyTimer += dt;
 
+    if (modeAHealCd > 0) modeAHealCd = Math.max(0, modeAHealCd - dt);
+    if (modeBMiracleCd > 0) modeBMiracleCd = Math.max(0, modeBMiracleCd - dt);
+    if (stoneGuessCd > 0) stoneGuessCd = Math.max(0, stoneGuessCd - dt);
+    if (awakeningEclipseTimer > 0) {
+      awakeningEclipseTimer = Math.max(0, awakeningEclipseTimer - dt);
+    }
+
     const knight = heroStates?.Knight;
     const mage = heroStates?.Mage;
 
-    // 0. Advance Divine Verdict Sequence (2.50s 4-Beat Blessing/Resurrection OR 2.80s Smite)
+    // 0. Advance Divine Verdict Sequence (4.80s 4-Beat Blessing/Resurrection OR 2.80s Smite)
     let blessingActivatedThisFrame = false;
     let smiteWipeCompletedThisFrame = false;
     if (verdictSequence.active) {
@@ -2095,7 +2628,7 @@ export function createCampaignLoop({
             mage.y = walkableHeightAt(mage.x, mage.z);
           }
         } else {
-          // 4.80s complete: unlock controls, finalize 100% Max HP & side-by-side pop-up, start 30s Blessing
+          // 4.80s complete: unlock controls, finalize 100% Max HP & side-by-side pop-up, start 25s Blessing
           combatHeroes.Knight.downed = false;
           combatHeroes.Mage.downed = false;
           combatHeroes.Knight.hp = combatHeroes.Knight.maxHp;
@@ -2122,30 +2655,37 @@ export function createCampaignLoop({
           verdictSequence.beat = 0;
           if (combatHeroes.Knight.downed && combatHeroes.Mage.downed) {
             smiteWipeCompletedThisFrame = true;
+            bothDownedTimer = 2.5;
           }
         }
       }
     }
 
-    // 0B. 30-Second Proximity Blessing Tether (<= 5.0m Rule)
+    // 0B. 25-Second Proximity Blessing Tether (<= 6.0m Rule with 2.5s Grace Timer)
     if (divineBlessingActive) {
       const dist = knight && mage ? getPartnerDistance(knight, mage) : 0;
       if (dist > DIVINE_BLESSING_TETHER_DISTANCE) {
-        clearDivineBlessing();
-        emitBanner(
-          'DIVINE BLESSING BROKEN · TETHER SNAPPED',
-          'Moved further than 5.0m apart — Invincibility & Double Damage ended!',
-          'warning'
-        );
-      } else if (!blessingActivatedThisFrame) {
-        divineBlessingTimer = Math.max(0, divineBlessingTimer - dt);
-        if (divineBlessingTimer <= 0) {
+        tetherOutTimer += dt;
+        if (tetherOutTimer >= DIVINE_BLESSING_TETHER_GRACE_SECONDS) {
           clearDivineBlessing();
-        } else {
-          combatHeroes.Knight.partnerSwordMult = DIVINE_BLESSING_DMG_MULT;
-          combatHeroes.Mage.partnerMagicMult = DIVINE_BLESSING_DMG_MULT;
-          combatHeroes.Knight.partnerBuffTimer = divineBlessingTimer;
-          combatHeroes.Mage.partnerBuffTimer = divineBlessingTimer;
+          emitBanner(
+            'DIVINE BLESSING BROKEN · TETHER SNAPPED',
+            'Moved further than 6.0m apart for 2.5s — Invincibility & Double Damage ended!',
+            'warning'
+          );
+        }
+      } else {
+        tetherOutTimer = 0;
+        if (!blessingActivatedThisFrame) {
+          divineBlessingTimer = Math.max(0, divineBlessingTimer - dt);
+          if (divineBlessingTimer <= 0) {
+            clearDivineBlessing();
+          } else {
+            combatHeroes.Knight.partnerSwordMult = DIVINE_BLESSING_DMG_MULT;
+            combatHeroes.Mage.partnerMagicMult = DIVINE_BLESSING_DMG_MULT;
+            combatHeroes.Knight.partnerBuffTimer = divineBlessingTimer;
+            combatHeroes.Mage.partnerBuffTimer = divineBlessingTimer;
+          }
         }
       }
     }
@@ -2175,6 +2715,7 @@ export function createCampaignLoop({
       );
       if (combatHeroes.Knight.powerSwordTimer <= 0) {
         combatHeroes.Knight.powerSwordActive = false;
+        combatHeroes.Knight.summonedElement = null;
       }
     }
     if (combatHeroes.Knight.powerSwordCd > 0) {
@@ -2237,46 +2778,33 @@ export function createCampaignLoop({
       }
     }
 
-    // Mage 6.0s Vulnerable Stationary Storm Cataclysm pulses
+    // Mage 6.0s Sky Meteor Shower (10 meteors total, 1 every 0.60s; Mage mobile after 0.8s cast pose)
+    if (combatHeroes.Mage.stormCataclysmCastTimer > 0) {
+      combatHeroes.Mage.stormCataclysmCastTimer = Math.max(
+        0,
+        combatHeroes.Mage.stormCataclysmCastTimer - dt
+      );
+    }
     if (combatHeroes.Mage.stormCataclysmActive && combatHeroes.Mage.stormCataclysmTimer > 0) {
       combatHeroes.Mage.stormCataclysmTimer = Math.max(
         0,
         combatHeroes.Mage.stormCataclysmTimer - dt
       );
       combatHeroes.Mage.stormCataclysmWaveTimer += dt;
-      if (combatHeroes.Mage.stormCataclysmWaveTimer >= 1.0) {
-        combatHeroes.Mage.stormCataclysmWaveTimer -= 1.0;
+      const meteorInterval = 0.6;
+      const maxMeteors = HERO_STATS.Mage.meteorCount || 10;
+      while (
+        combatHeroes.Mage.stormCataclysmWaveTimer >= meteorInterval &&
+        combatHeroes.Mage.stormCataclysmMeteorsFired < maxMeteors
+      ) {
+        combatHeroes.Mage.stormCataclysmWaveTimer -= meteorInterval;
         const mPos = mage || { x: 0, y: 0, z: 0, yaw: 0 };
-        if (vfxKit?.stormLance?.cast) {
-          vfxKit.stormLance.cast(
-            { x: mPos.x, y: walkableHeightAt(mPos.x, mPos.z), z: mPos.z },
-            { x: Math.sin(mPos.yaw || 0), y: 0, z: Math.cos(mPos.yaw || 0) },
-            { range: 14.5 }
-          );
-        }
-        if (enemyManager) {
-          const hits = enemyManager.applyAreaOrLineHit({
-            origin: mPos,
-            radius: HERO_STATS.Mage.stormCataclysmRadius,
-            hitSpec: {
-              source: 'storm_cataclysm',
-              baseDmg: HERO_STATS.Mage.stormCataclysmWaveDmg,
-              applyMark: 'tempest',
-              detonatesMark: true,
-              empoweredBreathing: true,
-              partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
-              attackerPos: mPos,
-            },
-          });
-          for (const h of hits) {
-            if (h.result?.killed) {
-              awardKnightKillXp(h.enemy);
-            }
-          }
-        }
+        fireSkyMeteorStrike(mPos, combatHeroes.Mage.stormCataclysmMeteorsFired);
+        combatHeroes.Mage.stormCataclysmMeteorsFired += 1;
       }
       if (combatHeroes.Mage.stormCataclysmTimer <= 0) {
         combatHeroes.Mage.stormCataclysmActive = false;
+        combatHeroes.Mage.stormCataclysmCastTimer = 0;
       }
     }
 
@@ -2287,10 +2815,10 @@ export function createCampaignLoop({
       }
     }
 
-    // 1A. Sacred 6m Commune Ward Pushback while channeling or in suspense
+    // 1A. Sacred 6m Commune Ward Pushback only during Mode B Divine Miracle channel or Blessing sequence
     if (
-      (communeChannelActive ||
-        (vfxKit?.artoriousVfx?.active && vfxKit.artoriousVfx.mode === 'channel')) &&
+      ((communeChannelActive && communeMode === 'divine_miracle') ||
+        (verdictSequence.active && verdictSequence.kind === 'blessing')) &&
       enemyManager?.applySacredWardPushback
     ) {
       const cx = knight && mage ? (knight.x + mage.x) * 0.5 : (knight?.x ?? mage?.x ?? 0);
@@ -2368,28 +2896,17 @@ export function createCampaignLoop({
       }
     }
 
-    // 2. Downed State & Resurrection Rules (wait until Smite/Blessing cinematic finishes)
-    if (knight && mage && !verdictSequence.active && !smiteWipeCompletedThisFrame) {
+    // 2. Downed State, Proximity Revive (<= 2.8m for 2.5s -> 45% Max HP + 2.0s i-frames) & Safe Haven Rebirth (2.5s)
+    if (knight && mage && !verdictSequence.active) {
       if (combatHeroes.Knight.downed && combatHeroes.Mage.downed) {
-        bothDownedTimer += dt;
-        combatHeroes.Knight.reviveProgress = clamp(bothDownedTimer / 3.5, 0, 1);
-        combatHeroes.Mage.reviveProgress = clamp(bothDownedTimer / 3.5, 0, 1);
-        if (bothDownedTimer >= 3.5) {
+        if (!smiteWipeCompletedThisFrame) {
+          bothDownedTimer += dt;
+        }
+        combatHeroes.Knight.reviveProgress = clamp(bothDownedTimer / 2.5, 0, 1);
+        combatHeroes.Mage.reviveProgress = clamp(bothDownedTimer / 2.5, 0, 1);
+        if (bothDownedTimer >= 2.5) {
           bothDownedTimer = 0;
-          const sanctuaries = [
-            { x: ALTAR_STELE_POS.x, z: ALTAR_STELE_POS.z + 2.2 },
-            { x: -37.2, z: 8.5 },
-            { x: -0.9, z: -76.5 },
-          ];
-          let nearest = sanctuaries[0];
-          let bestDist = Infinity;
-          for (const s of sanctuaries) {
-            const d = Math.hypot(knight.x - s.x, knight.z - s.z);
-            if (d < bestDist) {
-              bestDist = d;
-              nearest = s;
-            }
-          }
+          const nearest = selectNearestSafeHavenWaypoint(knight || mage);
           knight.x = nearest.x;
           knight.z = nearest.z;
           knight.y = walkableHeightAt(knight.x, knight.z);
@@ -2399,19 +2916,30 @@ export function createCampaignLoop({
 
           for (const [id, ch] of Object.entries(combatHeroes)) {
             ch.downed = false;
+            ch.reviveTimer = 0;
             ch.reviveProgress = 0;
-            ch.hp = Math.round(ch.maxHp * 0.6);
-            ch.shield = 30;
-            ch.shieldTimer = 5.0;
+            ch.hp = ch.maxHp; // 100% Max HP restored on Safe Haven Rebirth
+            ch.shield = 35;
+            ch.shieldTimer = 6.0;
+            ch.iframeTimer = 2.5;
             const st = id === 'Knight' ? knight : mage;
             st.actionState = null;
             st.actionTimer = 0;
             st.char?.play?.('revive', { loop: false, fade: 0.1, force: true });
           }
+
+          if (activeStrongholdIds.size > 0) {
+            enemyManager?.clearAllEnemies?.();
+            for (const shKey of activeStrongholdIds) {
+              strongholdWaveIndex[shKey] = -1;
+            }
+            activeStrongholdIds.clear();
+          }
+
           combatSfx?.playShieldChime?.();
           emitBanner(
-            'SANCTUARY REBIRTH',
-            'Both Lovers Restored to 60% HP at the Nearest Sanctuary Stone',
+            'SAFE HAVEN REBIRTH · FULL VITALITY RESTORED',
+            `Reborn at ${nearest.name || 'Sanctuary Waypoint'} (100% HP · +35 Ward Shield · All Progress Preserved)`,
             'blessing'
           );
         }
@@ -2421,14 +2949,15 @@ export function createCampaignLoop({
         const downedCh = combatHeroes[downedId];
         const downedSt = downedId === 'Knight' ? knight : mage;
         const dPartner = getPartnerDistance(knight, mage);
-        if (dPartner <= 2.4 && !communeChannelActive) {
+        if (dPartner <= COMMUNE_RESURRECT_DISTANCE && !communeChannelActive) {
           downedCh.reviveTimer = (downedCh.reviveTimer || 0) + dt;
           downedCh.reviveProgress = clamp(downedCh.reviveTimer / 2.5, 0, 1);
           if (downedCh.reviveTimer >= 2.5) {
             downedCh.downed = false;
             downedCh.reviveTimer = 0;
             downedCh.reviveProgress = 0;
-            downedCh.hp = Math.max(1, Math.round(downedCh.maxHp * 0.35));
+            downedCh.hp = Math.max(1, Math.round(downedCh.maxHp * 0.45));
+            downedCh.iframeTimer = Math.max(downedCh.iframeTimer || 0, 2.0);
             if (downedSt) {
               downedSt.actionState = null;
               downedSt.actionTimer = 0;
@@ -2436,8 +2965,8 @@ export function createCampaignLoop({
             }
             combatSfx?.playShieldChime?.();
             emitBanner(
-              `${downedId.toUpperCase()} REVIVED · 35% VITALITY`,
-              'Your Beloved Pulled You Back From the Brink!',
+              `${downedId.toUpperCase()} REVIVED · 45% VITALITY`,
+              'Your Beloved Pulled You Back From the Brink (+2.0s Sacred I-Frames)!',
               'blessing'
             );
           }
@@ -2454,10 +2983,13 @@ export function createCampaignLoop({
       }
     }
 
-    // 3. Check Act Trigger Proximity & Wave Clear Progression
+    // 3. Open-Valley Strongholds, Survival Waves & Legacy Act Trigger Progression
     const act = ACT_DEFINITIONS[currentActId];
     const leaderPos = knight || mage;
-    if (act && leaderPos && !actTriggered && currentActId !== 'victory_dawn') {
+
+    if (openValleyMode && !indicatorsHiddenForShot && leaderPos) {
+      checkStrongholdTriggers(leaderPos);
+    } else if (act && leaderPos && !actTriggered && currentActId !== 'victory_dawn') {
       const dCenter = Math.hypot(
         leaderPos.x - act.center.x,
         leaderPos.z - act.center.z
@@ -2494,6 +3026,64 @@ export function createCampaignLoop({
         camera
       );
 
+      // Advance or complete Open-Valley Strongholds & Survival Waves
+      if (openValleyMode && !indicatorsHiddenForShot) {
+        if (
+          activeStrongholdIds.size > 0 &&
+          enemyManager.activeEnemies.length === 0 &&
+          enemyManager.spawnQueue.length === 0
+        ) {
+          for (const shKey of [...activeStrongholdIds]) {
+            const sh = STONE_STRONGHOLDS[shKey];
+            const nextW = (strongholdWaveIndex[shKey] ?? 0) + 1;
+            if (sh && sh.waves && nextW < sh.waves.length) {
+              strongholdWaveIndex[shKey] = nextW;
+              enemyManager.setCurrentActId?.(shKey);
+              enemyManager.spawnWave?.(sh.waves[nextW], shKey);
+              emitBanner(sh.name.toUpperCase(), sh.waves[nextW].label, 'wave');
+            } else {
+              activeStrongholdIds.delete(shKey);
+              strongholdWaveIndex[shKey] = -1;
+              strongholdClearedMask |= STRONGHOLD_BITS[shKey] || 0;
+              reviveAllInstant();
+              if (shKey === 'apex_finale') {
+                transitionToAct('victory_dawn');
+                emitBanner(
+                  'DAWN OVER AMARANTE · EXPEDITION COMPLETE',
+                  'The Hollow Sovereign & Ashen Court Are Vanquished — Love Prevails Across the Valley!',
+                  'blessing'
+                );
+              } else if (sh) {
+                emitBanner(
+                  `${sh.name.toUpperCase()} SANCTIFIED`,
+                  'Guardian Forces Vanquished — Inspect the Sacred Stone [G] and Speak [R]',
+                  'blessing'
+                );
+              }
+            }
+          }
+        } else if (
+          activeStrongholdIds.size === 0 &&
+          !isControlLocked() &&
+          currentActId !== 'victory_dawn' &&
+          leaderPos &&
+          enemyManager.activeEnemies.length < 2 &&
+          enemyManager.spawnQueue.length === 0
+        ) {
+          const nearestHaven = selectNearestSafeHavenWaypoint(leaderPos);
+          const distHaven = Math.hypot(
+            leaderPos.x - nearestHaven.x,
+            leaderPos.z - nearestHaven.z
+          );
+          if (distHaven > 16.0) {
+            survivalWaveTimer -= dt;
+            if (survivalWaveTimer <= 0) {
+              triggerSurvivalWave(leaderPos);
+            }
+          }
+        }
+      }
+
       if (
         act &&
         actTriggered &&
@@ -2521,7 +3111,7 @@ export function createCampaignLoop({
       enemyManager.activeEnemies.length > 0 &&
       mage &&
       !combatHeroes.Mage.downed &&
-      !combatHeroes.Mage.stormCataclysmActive &&
+      !(combatHeroes.Mage.stormCataclysmCastTimer > 0) &&
       !isControlLocked()
     ) {
       wingmanCastTimer -= dt;
@@ -2588,6 +3178,19 @@ export function createCampaignLoop({
     const dist = heroStates
       ? getPartnerDistance(heroStates.Knight, heroStates.Mage)
       : 0;
+    const kEnergyPct = clamp(
+      combatHeroes.Knight.qEnergy / Math.max(1, combatHeroes.Knight.qEnergyMax),
+      0,
+      1
+    );
+    const mEnergyPct = clamp(
+      combatHeroes.Mage.qEnergy / Math.max(1, combatHeroes.Mage.qEnergyMax),
+      0,
+      1
+    );
+    combatHeroes.Knight.qEnergyPct = kEnergyPct;
+    combatHeroes.Mage.qEnergyPct = mEnergyPct;
+
     return {
       actId: currentActId,
       actName: act?.name || '',
@@ -2604,11 +3207,27 @@ export function createCampaignLoop({
       withinTetherRange: dist <= DIVINE_BLESSING_TETHER_DISTANCE,
       divineBlessingActive,
       divineBlessingTimer: Number(divineBlessingTimer.toFixed(2)),
+      tetherOutTimer: Number(tetherOutTimer.toFixed(2)),
+      communeChannelActive,
+      communeMode,
+      miracleReady: isMiracleReady(heroStates),
+      modeAHealCd: Number(modeAHealCd.toFixed(2)),
+      modeBMiracleCd: Number(modeBMiracleCd.toFixed(2)),
+      stoneGuessCd: Number(stoneGuessCd.toFixed(2)),
+      awakeningEclipseActive: awakeningEclipseTimer > 0,
+      awakeningEclipseTimer: Number(awakeningEclipseTimer.toFixed(2)),
+      stonesSolvedMask: getStonesSolvedMask(),
+      unlockedStage: getUnlockedStage(),
+      strongholdClearedMask,
       controlLocked: isControlLocked(),
       verdictSequence: { ...verdictSequence },
-      knight: { ...combatHeroes.Knight },
+      knight: {
+        ...combatHeroes.Knight,
+        qEnergyPct: kEnergyPct,
+      },
       mage: {
         ...combatHeroes.Mage,
+        qEnergyPct: mEnergyPct,
         spellCooldowns: { ...combatHeroes.Mage.spellCooldowns },
       },
       boss: boss
@@ -2649,6 +3268,9 @@ export function createCampaignLoop({
     combatHeroes.Knight.shield = 0;
     combatHeroes.Knight.downed = false;
     combatHeroes.Knight.reviveProgress = 0;
+    combatHeroes.Knight.summonedElement = null;
+    combatHeroes.Knight.qEnergy = 0;
+    combatHeroes.Knight.qEnergyPct = 0;
     combatHeroes.Knight.shieldBlocking = false;
     combatHeroes.Knight.powerSwordActive = false;
     combatHeroes.Knight.powerSwordTimer = 0;
@@ -2668,11 +3290,16 @@ export function createCampaignLoop({
     combatHeroes.Mage.shield = 0;
     combatHeroes.Mage.downed = false;
     combatHeroes.Mage.reviveProgress = 0;
+    combatHeroes.Mage.qEnergy = 0;
+    combatHeroes.Mage.qEnergyPct = 0;
     combatHeroes.Mage.consecutiveChargedCount = 0;
     combatHeroes.Mage.skillCd = 0;
     combatHeroes.Mage.stormCataclysmActive = false;
     combatHeroes.Mage.stormCataclysmTimer = 0;
+    combatHeroes.Mage.stormCataclysmCastTimer = 0;
     combatHeroes.Mage.stormCataclysmWaveTimer = 0;
+    combatHeroes.Mage.stormCataclysmMeteorsFired = 0;
+    combatHeroes.Mage.stormCataclysmHitCounts = new Map();
     combatHeroes.Mage.ultCd = 0;
     combatHeroes.Mage.empoweredBreathing = false;
     combatHeroes.Mage.ascendedMagicFlow = false;
@@ -2685,6 +3312,19 @@ export function createCampaignLoop({
 
     bothDownedTimer = 0;
     communeChannelActive = false;
+    communeMode = 'normal';
+    modeAHealCd = 0;
+    modeBMiracleCd = 0;
+    stoneGuessCd = 0;
+    awakeningEclipseTimer = 0;
+    tetherOutTimer = 0;
+    strongholdClearedMask = 0;
+    activeStrongholdIds.clear();
+    for (const k of Object.keys(strongholdWaveIndex)) {
+      strongholdWaveIndex[k] = -1;
+    }
+    survivalWaveTimer = 44.0;
+    enemyManager?.setGlobalEnemyTimeScale?.(1.0);
     heartResonance = 25;
     transitionToAct('act1_arena');
   }
@@ -2694,8 +3334,31 @@ export function createCampaignLoop({
     updateIndicatorsInstancedMeshes(heroStates);
   }
 
-  function setCommuneChannelActive(active) {
-    communeChannelActive = Boolean(active);
+  function setCommuneChannelActive(active, heroStates = null, options = {}) {
+    const nextActive = Boolean(active);
+    communeChannelActive = nextActive;
+    if (nextActive) {
+      const modeB = Boolean(
+        !options.nearStoneId && (options.forceMiracle || isMiracleReady(heroStates))
+      );
+      communeMode = modeB ? 'divine_miracle' : 'normal';
+      if (modeB) {
+        const kx = heroStates?.Knight?.x ?? 0;
+        const kz = heroStates?.Knight?.z ?? 0;
+        const mx = heroStates?.Mage?.x ?? kx;
+        const mz = heroStates?.Mage?.z ?? kz;
+        const midX = (kx + mx) * 0.5;
+        const midZ = (kz + mz) * 0.5;
+        enemyManager?.blastEnemiesFromPoint?.(midX, midZ, 12.0, 12.0);
+        enemyManager?.setGlobalEnemyTimeScale?.(0.10);
+      } else {
+        enemyManager?.setGlobalEnemyTimeScale?.(1.0);
+      }
+    } else {
+      communeMode = 'normal';
+      enemyManager?.setGlobalEnemyTimeScale?.(1.0);
+    }
+    return { communeChannelActive, communeMode };
   }
 
   return {
@@ -2721,21 +3384,47 @@ export function createCampaignLoop({
     get communeChannelActive() {
       return communeChannelActive;
     },
+    get communeMode() {
+      return communeMode;
+    },
+    get modeAHealCd() {
+      return modeAHealCd;
+    },
+    get modeBMiracleCd() {
+      return modeBMiracleCd;
+    },
+    get stoneGuessCd() {
+      return stoneGuessCd;
+    },
+    get awakeningEclipseTimer() {
+      return awakeningEclipseTimer;
+    },
+    get strongholdClearedMask() {
+      return strongholdClearedMask;
+    },
     isControlLocked,
     isDivineBlessingActive,
     getDivineBlessingRemaining,
     activateDivineBlessing,
     clearDivineBlessing,
     addResonance,
+    addHeroQEnergy,
+    setUnlockedStage,
+    setOpenValleyMode,
     awardKnightKillXp,
+    handleBossPhaseThreshold,
+    awardPerfectDodgeEnergy,
     setKnightBreathing,
     toggleHeroElement,
     setKnightShieldBlocking,
     startWave,
     transitionToAct,
     activatePierSanctuary,
+    checkStrongholdTriggers,
+    triggerSurvivalWave,
     handlePlayerHit,
     applyCommuneVerdict,
+    isMiracleReady,
     canCommuneTogether,
     canStartDivinePrayer,
     getPartnerDistance,

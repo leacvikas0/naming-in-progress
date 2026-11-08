@@ -973,6 +973,7 @@ export function createRoomProgressionState(initial = {}) {
     }
 
     const explicitStone =
+      verdictObj.stoneSolvedId ||
       verdictObj.solvedStoneId ||
       verdictObj.solvedStoneNumber ||
       verdictObj.stoneId ||

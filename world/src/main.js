@@ -619,29 +619,52 @@ function updateCombatHud(snapshot) {
   if (sculptedHud) {
     const activeRole = coopSystem?.player?.activeHeroId || 'Knight';
     const activeHeroState = coopSystem?.heroStates?.[activeRole];
-    const activeEl = activeHeroState?.selectedElement || 'ice';
+    const activeEl =
+      (activeRole === 'Knight' ? k?.selectedElement : m?.selectedElement) ||
+      activeHeroState?.selectedElement ||
+      'ice';
     const eCd =
       activeRole === 'Knight'
-        ? Math.max(0, k?.powerSwordCooldown || 0)
+        ? Math.max(0, k?.powerSwordCd ?? k?.powerSwordCooldown ?? 0)
         : Math.max(
             0,
-            m?.spellCooldowns?.[activeEl === 'fire' ? 'cinder_fall' : 'frost_lance'] || 0
+            m?.skillCd ??
+              m?.spellCooldowns?.[activeEl === 'fire' ? 'cinder_fall' : 'frost_lance'] ??
+              0
           );
     const qCd =
       activeRole === 'Knight'
-        ? Math.max(0, k?.ultimateCooldown || 0)
-        : Math.max(0, m?.stormCataclysmCooldown || 0);
-    const eBuffRem = activeRole === 'Knight' ? Math.max(0, k?.breathingTimer || 0) : 0;
+        ? Math.max(0, k?.ultCd ?? k?.ultimateCooldown ?? 0)
+        : Math.max(0, m?.ultCd ?? m?.stormCataclysmCooldown ?? 0);
+    const eBuffRem =
+      activeRole === 'Knight'
+        ? Math.max(0, k?.powerSwordTimer || k?.breathingTimer || 0)
+        : 0;
+    const activeSwordBuffElement = k?.ultActive
+      ? 'eclipse'
+      : k?.powerSwordActive
+        ? k?.summonedElement || (k?.breathingStyle === 'solar' ? 'fire' : 'ice')
+        : null;
+    const activeQEnergyPct =
+      activeRole === 'Knight' ? (k?.qEnergyPct ?? 0) : (m?.qEnergyPct ?? 0);
+    const rCd = snapshot.miracleReady ? 0 : Math.max(0, snapshot.modeAHealCd || 0);
 
     sculptedHud.updatePartyStatus({
       activeRole,
       activeElement: activeEl,
+      activeSwordBuffElement,
+      qEnergyPct: activeQEnergyPct,
+      miracleReady: Boolean(snapshot.miracleReady),
       knight: k
         ? {
             level: k.level || 1,
             hp: k.hp,
             maxHp: k.maxHp,
             shield: k.shield || 0,
+            qEnergy: k.qEnergy || 0,
+            qEnergyMax: k.qEnergyMax || 100,
+            qEnergyPct: k.qEnergyPct || 0,
+            summonedElement: k.summonedElement || null,
           }
         : undefined,
       mage: m
@@ -650,12 +673,17 @@ function updateCombatHud(snapshot) {
             hp: m.hp,
             maxHp: m.maxHp,
             shield: m.shield || 0,
+            qEnergy: m.qEnergy || 0,
+            qEnergyMax: m.qEnergyMax || 160,
+            qEnergyPct: m.qEnergyPct || 0,
           }
         : undefined,
       cooldowns: {
         E: eCd,
         Q: qCd,
+        R: rCd,
         eBuffRemaining: eBuffRem,
+        activeSwordBuffElement,
       },
     });
   }
@@ -697,6 +725,10 @@ function updateCoopPill(roomState) {
       ultimateUnlocked: Boolean(roomState.progression.ultimateUnlocked || effStage >= 3),
       unlockedStage: effStage,
       stonesSolved: Math.max(Number(roomState.progression.stonesSolved || 0), effStage),
+      stonesSolvedMask: roomState.progression.stonesSolvedMask,
+      stone1Solved: roomState.progression.stone1Solved,
+      stone2Solved: roomState.progression.stone2Solved,
+      stone3Solved: roomState.progression.stone3Solved,
       activeElement: roomState.progression.activeElement,
     });
   }
@@ -1413,10 +1445,20 @@ communeClient = createCommuneClient({
     const snap = coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates);
     const speakerHero = speakerRole === 'Knight' ? snap.knight : snap.mage;
     const partnerHero = partnerRole === 'Knight' ? snap.knight : snap.mage;
+    const nearStone = coopSystem.getNearestInscriptionStone?.(6.2) || null;
+    const progState = coopSystem.coopClient.getProgressionState();
+    const resolvedCommuneMode =
+      snap.communeMode === 'divine_miracle' || (snap.miracleReady && !nearStone)
+        ? 'divine_miracle'
+        : 'normal';
     return {
       room: coopSystem.coopClient.getRoomCode(),
       speakerRole,
       partnerRole,
+      nearStoneId: nearStone?.id || null,
+      communeMode: resolvedCommuneMode,
+      miracleReady: Boolean(snap.miracleReady),
+      stonesSolvedMask: snap.stonesSolvedMask ?? progState?.stonesSolvedMask ?? 0,
       gameState: {
         actId: snap.actId,
         distance: coopSystem.getHeroDistance(),
@@ -1427,8 +1469,15 @@ communeClient = createCommuneClient({
         partnerDowned: Boolean(partnerHero?.downed),
         inCombat: (coopSystem.enemyManager?.activeEnemies?.length || 0) > 0,
         nearbyEnemies: coopSystem.enemyManager?.activeEnemies?.length || 0,
+        nearStoneId: nearStone?.id || null,
+        communeMode: resolvedCommuneMode,
+        miracleReady: Boolean(snap.miracleReady),
+        modeAHealCd: snap.modeAHealCd || 0,
+        modeBMiracleCd: snap.modeBMiracleCd || 0,
+        stoneGuessCd: snap.stoneGuessCd || 0,
+        stonesSolvedMask: snap.stonesSolvedMask ?? progState?.stonesSolvedMask ?? 0,
       },
-      progressionState: coopSystem.coopClient.getProgressionState(),
+      progressionState: progState,
     };
   },
   onStateChange: (communeSnapshot) => {
@@ -1814,13 +1863,20 @@ sculptedHud = createSculptedHud({
   onDevUnlockNextStage: (nextStage) => {
     // DEV_SOLO_TEST_REMOVE_FOR_PROD: Sync room progression state with Dev Stage button
     devStageOverride = nextStage;
+    const mask = nextStage >= 3 ? 0b111 : nextStage === 2 ? 0b011 : nextStage === 1 ? 0b001 : 0;
     const updated = coopSystem.coopClient.progression.setUnlocks({
       communeDiscovered: nextStage >= 1,
       iceUnlocked: nextStage >= 1,
       fireUnlocked: nextStage >= 2,
       ultimateUnlocked: nextStage >= 3,
+      stone1Solved: nextStage >= 1,
+      stone2Solved: nextStage >= 2,
+      stone3Solved: nextStage >= 3,
+      stonesSolvedMask: mask,
     });
+    coopSystem.campaignLoop?.setUnlockedStage?.(nextStage, mask);
     sculptedHud?.setProgressionState(updated);
+    updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
   },
   onSelectTimeOfDay: (todChoice) => {
     if (todChoice === 'auto') {
@@ -2489,6 +2545,10 @@ function syncPrayerEclipseAndMonochrome() {
       hudCommune?.listening ||
       hudCommune?.partnerListening
   );
+  const isModeBMiracleChannel = Boolean(
+    inPrayerChannel && cLoop?.communeMode === 'divine_miracle'
+  );
+  const isAwakeningEclipse = Boolean((cLoop?.awakeningEclipseTimer || 0) > 0);
 
   if (vSeq?.active && vSeq.kind === 'smite') {
     sky.setEclipseState?.({
@@ -2516,7 +2576,7 @@ function syncPrayerEclipseAndMonochrome() {
       });
     }
     post.setSmiteMonochrome?.(0.0);
-  } else if (inPrayerChannel) {
+  } else if (isModeBMiracleChannel || isAwakeningEclipse) {
     sky.setEclipseState?.({
       weight: 1.0,
       compression: 1.0,
@@ -2580,16 +2640,20 @@ function syncCharacterGroundShadows() {
     setSlot(1, 9999.0, 9999.0, 0.74, 0.0);
   }
 
-  const pool = coopSystem?.enemyManager?.pool || [];
-  for (let i = 0; i < 6; i++) {
+  const pool = coopSystem?.enemyManager?.poolSlots || coopSystem?.enemyManager?.pool || [];
+  let filled = 0;
+  for (let i = 0; i < pool.length && filled < 6; i++) {
     const slot = pool[i];
     const eGrp = slot?.char?.group;
-    if (eGrp && eGrp.visible) {
+    if (eGrp && eGrp.visible && slot.busy !== false) {
       const r = slot.isBoss ? 1.12 : 0.70;
-      setSlot(2 + i, eGrp.position.x, eGrp.position.z, r, 1.0);
-    } else {
-      setSlot(2 + i, 9999.0, 9999.0, 0.70, 0.0);
+      setSlot(2 + filled, eGrp.position.x, eGrp.position.z, r, 1.0);
+      filled++;
     }
+  }
+  while (filled < 6) {
+    setSlot(2 + filled, 9999.0, 9999.0, 0.70, 0.0);
+    filled++;
   }
 }
 
@@ -2977,13 +3041,20 @@ window.addEventListener('keydown', (e) => {
     const curStage = devStageOverride !== null ? devStageOverride : (curProg?.unlockedStage || 0);
     const nextStage = (curStage + 1) % 4;
     devStageOverride = nextStage;
+    const mask = nextStage >= 3 ? 0b111 : nextStage === 2 ? 0b011 : nextStage === 1 ? 0b001 : 0;
     const updated = coopSystem.coopClient.progression.setUnlocks({
       communeDiscovered: nextStage >= 1,
       iceUnlocked: nextStage >= 1,
       fireUnlocked: nextStage >= 2,
       ultimateUnlocked: nextStage >= 3,
+      stone1Solved: nextStage >= 1,
+      stone2Solved: nextStage >= 2,
+      stone3Solved: nextStage >= 3,
+      stonesSolvedMask: mask,
     });
+    coopSystem.campaignLoop?.setUnlockedStage?.(nextStage, mask);
     sculptedHud?.setProgressionState(updated);
+    updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
     return;
   }
 

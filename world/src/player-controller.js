@@ -1164,8 +1164,11 @@ export async function createCoopPlayerSystem({
     kit,
     walkableHeightAt,
     resolveCollisions,
-    onEnemyKilled: (enemy) => {
-      campaignLoop?.awardKnightKillXp?.(enemy);
+    onEnemyKilled: (enemy, result) => {
+      campaignLoop?.awardKnightKillXp?.(enemy, result);
+    },
+    onBossPhaseThreshold: (payload) => {
+      campaignLoop?.handleBossPhaseThreshold?.(payload);
     },
     onDetonation: (det) => {
       localHitstopTimer = 0.07;
@@ -1173,7 +1176,7 @@ export async function createCoopPlayerSystem({
       if (onBanner && det) {
         onBanner({
           title: `${det.label} · +${det.bonusDmg} AoE BURST`,
-          subtitle: 'Elemental Mark Consumed · +18% Heart Resonance',
+          subtitle: 'Elemental Mark Consumed · +20 Q Energy to Both Lovers',
           kind: 'detonation',
         });
       }
@@ -1279,6 +1282,7 @@ export async function createCoopPlayerSystem({
     enemyManager,
     vfxKit,
     combatSfx,
+    getProgressionState: () => coopClient?.getProgressionState?.(),
     onSkyTodChanged,
     onBanner,
     onHudStateChanged,
@@ -1288,7 +1292,7 @@ export async function createCoopPlayerSystem({
       if (onBanner && det) {
         onBanner({
           title: `${det.label} · +${det.bonusDmg} AoE BURST`,
-          subtitle: 'Elemental Mark Detonated · +18% Heart Resonance',
+          subtitle: 'Elemental Mark Detonated · +20 Q Energy to Both Lovers',
           kind: 'detonation',
         });
       }
@@ -1685,14 +1689,16 @@ export async function createCoopPlayerSystem({
     }
 
     vfxKit.artoriousVfx?.startChannel?.(speakerState, partnerState, { camera });
-    campaignLoop.setCommuneChannelActive(true);
+    const chRes = campaignLoop.setCommuneChannelActive(true, heroStates);
 
-    const cx = (speakerState.x + partnerState.x) * 0.5;
-    const cz = (speakerState.z + partnerState.z) * 0.5;
-    if (typeof enemyManager.applyPrayerAirborneThrow === 'function') {
-      enemyManager.applyPrayerAirborneThrow({ x: cx, z: cz }, 6.5);
-    } else {
-      enemyManager.applySacredWardPushback?.({ x: cx, z: cz }, 6.5);
+    if (chRes?.communeMode === 'divine_miracle') {
+      const cx = (speakerState.x + partnerState.x) * 0.5;
+      const cz = (speakerState.z + partnerState.z) * 0.5;
+      if (typeof enemyManager.applyPrayerAirborneThrow === 'function') {
+        enemyManager.applyPrayerAirborneThrow({ x: cx, z: cz }, 6.5);
+      } else {
+        enemyManager.applySacredWardPushback?.({ x: cx, z: cz }, 6.5);
+      }
     }
 
     applyTransform(speakerState);
@@ -2126,10 +2132,10 @@ export async function createCoopPlayerSystem({
       return { blockedByControlLock: true };
     }
 
-    // Disallow actions while Mage is frozen in her 6.0s vulnerable Storm Cataclysm channel
+    // Disallow actions only during Mage's 0.8s Sky Meteor Shower cast pose (she is freely mobile after 0.8s!)
     if (
       leader.id === 'Mage' &&
-      campaignLoop.combatHeroes.Mage.stormCataclysmActive &&
+      campaignLoop.combatHeroes.Mage.stormCataclysmCastTimer > 0 &&
       actionType !== 'toggleElement'
     ) {
       return { blockedByStormCataclysm: true };
@@ -2234,12 +2240,12 @@ export async function createCoopPlayerSystem({
 
       const dodgeRes = enemyManager.checkPerfectDodge(leader);
       if (dodgeRes.triggered) {
-        campaignLoop.combatHeroes[activeHeroId].perfectDodgeBuff = true;
+        campaignLoop.awardPerfectDodgeEnergy?.(activeHeroId);
         campaignLoop.addResonance(dodgeRes.resonanceGain || 20);
         combatSfx.playPerfectDodge();
         onBanner?.({
           title: 'PERFECT DODGE · TIME DILATION',
-          subtitle: 'Attacker Slowed to 0.30× · Next Strike Empowered (+35% DMG)',
+          subtitle: 'Attacker Slowed to 0.30× · +12 Q Energy · Next Strike Empowered (+35% DMG)',
           kind: 'blessing',
         });
       }
@@ -2341,8 +2347,8 @@ export async function createCoopPlayerSystem({
         }
         actionAim.cancelSwing('Knight');
         vfxKit.swordVfx?.endSwing?.();
-        const res = campaignLoop.performKnightUltimate(heroStates);
-        if (res && !res.onCooldown) {
+        const res = campaignLoop.performKnightUltimate(heroStates, { requireEnergy: true });
+        if (res && !res.onCooldown && !res.notEnoughEnergy) {
           startOneShotAction(heroStates.Knight, 'pray_channel', 0.68, {
             startTime: 0,
             timeScale: 1.05,
@@ -2367,13 +2373,13 @@ export async function createCoopPlayerSystem({
         return res;
       }
 
-      // Mage Q: 6.0s Stationary Vulnerable Storm Cataclysm
-      const res = campaignLoop.performMageStormCataclysm(heroStates);
-      if (res && !res.onCooldown) {
+      // Mage Q: 6.0s Sky Meteor Shower (0.8s cast pose, then freely mobile!)
+      const res = campaignLoop.performMageStormCataclysm(heroStates, { requireEnergy: true });
+      if (res && !res.onCooldown && !res.notEnoughEnergy) {
         heroStates.Mage.actionState = 'burst_aoe';
-        heroStates.Mage.actionTimer = 6.0;
+        heroStates.Mage.actionTimer = 0.8;
         heroStates.Mage.char.play('burst_aoe', {
-          loop: true,
+          loop: false,
           fade: 0.08,
           startTime: 0,
           timeScale: 1.0,
@@ -2623,7 +2629,7 @@ export async function createCoopPlayerSystem({
     // 2. Update Active Hero (Leader)
     const isMageStationaryCast =
       leader.id === 'Mage' &&
-      (campaignLoop.combatHeroes.Mage.stormCataclysmActive ||
+      (campaignLoop.combatHeroes.Mage.stormCataclysmCastTimer > 0 ||
         actionAim.heroes.Mage.activeSwing?.stationary ||
         (actionAim.aimState.active && actionAim.aimState.spellId === 'shatterlance'));
 
