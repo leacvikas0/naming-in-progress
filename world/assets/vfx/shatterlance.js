@@ -792,21 +792,23 @@ export class ShatterlanceSystem {
 
   _renderStaffVortexFrame(t, prog) {
     const c = this.config;
-    const staffForward = 0.65;
-    const staffHeight = 1.25;
-    const centerX = this.origin.x + this.direction.x * staffForward;
-    const centerZ = this.origin.z + this.direction.z * staffForward;
+    const staffForward = 0.52;
+    const staffRight = 0.52;
+    const staffHeight = 1.18;
+    const centerX = this.origin.x + this.direction.x * staffForward + this.side.x * staffRight;
+    const centerZ = this.origin.z + this.direction.z * staffForward + this.side.z * staffRight;
     const centerY = this.getGroundHeight(centerX, centerZ) + staffHeight;
 
-    // 1. DC 1: 32 Orbiting 3D Crystalline Frost Shards swirling continuously around staff tip
+    // 1. DC 1: 24 Compact Orbiting 3D Crystalline Frost Shards swirling around right-hand staff crystal
     let intakeSlot = 0;
-    const vortexScale = 0.65 + 0.35 * prog;
-    for (let i = 0; i < MAX_INTAKE_SHARDS; i++) {
+    const vortexScale = 0.36 + 0.18 * prog;
+    const shardCount = Math.min(24, MAX_INTAKE_SHARDS);
+    for (let i = 0; i < shardCount; i++) {
       const rec = this.intakeRecords[i];
-      const orbitSpeed = 6.2 + (i % 5) * 1.15;
+      const orbitSpeed = 6.8 + (i % 5) * 1.25;
       const swirlAng = rec.ringAng + t * orbitSpeed * (i % 2 === 0 ? 1 : -1);
-      const orbitRad = (0.34 + 0.48 * ((i % 7) / 6)) * vortexScale * (0.88 + 0.14 * Math.sin(t * 5.0 + i));
-      const axialOff = ((i / MAX_INTAKE_SHARDS) - 0.5) * 1.15 * vortexScale + Math.cos(t * 4.2 + i) * 0.12;
+      const orbitRad = (0.22 + 0.32 * ((i % 7) / 6)) * vortexScale * (0.88 + 0.14 * Math.sin(t * 5.0 + i));
+      const axialOff = ((i / shardCount) - 0.5) * 0.55 * vortexScale + Math.cos(t * 4.2 + i) * 0.06;
 
       const rx = Math.cos(swirlAng) * orbitRad;
       const ry = Math.sin(swirlAng) * orbitRad;
@@ -816,10 +818,9 @@ export class ShatterlanceSystem {
       const wy = Math.max(this.getGroundHeight(wx, wz) + 0.35, centerY + ry);
 
       _dummy.position.set(wx, wy, wz);
-      // Orient each crystal shard tangentially along the spinning vortex + tilted toward aim axis
-      const targetX = centerX + this.direction.x * 0.95 - this.side.x * ry * 0.65;
-      const targetY = centerY + rx * 0.65;
-      const targetZ = centerZ + this.direction.z * 0.95 - this.side.z * ry * 0.65;
+      const targetX = centerX + this.direction.x * 0.65 - this.side.x * ry * 0.55;
+      const targetY = centerY + rx * 0.55;
+      const targetZ = centerZ + this.direction.z * 0.65 - this.side.z * ry * 0.55;
       _pos.set(targetX - wx, targetY - wy, targetZ - wz);
       if (_pos.lengthSq() > 1e-4) {
         _pos.normalize();
@@ -830,8 +831,8 @@ export class ShatterlanceSystem {
       _rotQuat.setFromAxisAngle(UP, t * rec.spin * 1.6);
       _dummy.quaternion.copy(_quat).multiply(_rotQuat);
 
-      const sc = rec.size * (0.78 + 0.34 * prog);
-      _dummy.scale.set(sc * 0.62, sc * 1.55, sc * 0.62);
+      const sc = rec.size * (0.42 + 0.18 * prog);
+      _dummy.scale.set(sc * 0.55, sc * 1.25, sc * 0.55);
       _dummy.updateMatrix();
       this.intakeShardsMesh.setMatrixAt(intakeSlot, _dummy.matrix);
 
@@ -846,39 +847,39 @@ export class ShatterlanceSystem {
     this.intakeShardsMesh.instanceMatrix.needsUpdate = true;
     this.intakeMetaAttr.needsUpdate = true;
 
-    // 2. DC 2: Rapidly Spinning 7-Fluted Crystalline Lance Core + Counter-Rotating Vortex Collars at Staff Tip
+    // 2. DC 2: Compact Rapidly Spinning Crystalline Core + Vortex Collar at Right-Hand Staff Tip
     let lanceSlot = 0;
-    const bob = Math.sin(t * 8.5) * 0.035;
+    const bob = Math.sin(t * 8.5) * 0.025;
     _quat.setFromUnitVectors(_forwardZ, this.direction);
-    _rotQuat.setFromAxisAngle(_forwardZ, t * 11.5);
+    _rotQuat.setFromAxisAngle(_forwardZ, t * 12.5);
     _quat.multiply(_rotQuat);
 
     _dummy.position.set(centerX, centerY + bob, centerZ);
     _dummy.quaternion.copy(_quat);
     _dummy.scale.set(
-      c.lanceRadius * (0.68 + 0.34 * prog),
-      c.lanceRadius * (0.68 + 0.34 * prog),
-      c.lanceLength * (0.42 + 0.28 * prog)
+      c.lanceRadius * (0.38 + 0.16 * prog),
+      c.lanceRadius * (0.38 + 0.16 * prog),
+      c.lanceLength * (0.18 + 0.10 * prog)
     );
     _dummy.updateMatrix();
     this.greatLanceMesh.setMatrixAt(lanceSlot, _dummy.matrix);
     this.lanceMetaAttr.setXYZW(lanceSlot, 1.1, 1.15, 0.0, 0.0);
     lanceSlot++;
 
-    // Slot 1: Counter-spinning wide crystalline vortex ring collar at staff tip
+    // Slot 1: Counter-spinning compact crystalline vortex ring collar at staff tip
     _quat.setFromUnitVectors(_forwardZ, this.direction);
-    _rotQuat.setFromAxisAngle(_forwardZ, -t * 14.0);
+    _rotQuat.setFromAxisAngle(_forwardZ, -t * 15.0);
     _quat.multiply(_rotQuat);
     _dummy.position.set(
-      centerX + this.direction.x * 0.18,
+      centerX + this.direction.x * 0.12,
       centerY + bob,
-      centerZ + this.direction.z * 0.18
+      centerZ + this.direction.z * 0.12
     );
     _dummy.quaternion.copy(_quat);
     _dummy.scale.set(
-      c.lanceRadius * (1.28 + 0.35 * prog),
-      c.lanceRadius * (1.28 + 0.35 * prog),
-      0.55
+      c.lanceRadius * (0.68 + 0.22 * prog),
+      c.lanceRadius * (0.68 + 0.22 * prog),
+      0.28
     );
     _dummy.updateMatrix();
     this.greatLanceMesh.setMatrixAt(lanceSlot, _dummy.matrix);
@@ -889,23 +890,11 @@ export class ShatterlanceSystem {
     this.greatLanceMesh.instanceMatrix.needsUpdate = true;
     this.lanceMetaAttr.needsUpdate = true;
 
-    // 3. DC 3: Zero impact wedges while holding charge
+    // 3. DC 3 & DC 4: Keep ground uncluttered while aiming so the trajectory reticle is 100% clean
     this.shatterWedgesMesh.count = 0;
     this.shatterWedgesMesh.instanceMatrix.needsUpdate = true;
-
-    // 4. DC 4: Spinning 8-Pointed Crystalline Star-Rime Glyph beneath Mage's feet while charging
-    const castYaw = Math.atan2(this.direction.x, this.direction.z);
-    const groundY = this.getGroundHeight(this.origin.x, this.origin.z) + 0.042;
-    _dummy.position.set(this.origin.x, groundY, this.origin.z);
-    _dummy.quaternion.setFromAxisAngle(UP, castYaw + t * 1.25);
-    const glyphRad = 1.65 * (0.75 + 0.25 * prog);
-    _dummy.scale.set(glyphRad, 1.0, glyphRad);
-    _dummy.updateMatrix();
-    this.groundDecalMesh.setMatrixAt(0, _dummy.matrix);
-    this.decalMetaAttr.setXYZW(0, 0.15, 1.0, 0.19, 1.0);
-    this.groundDecalMesh.count = 1;
+    this.groundDecalMesh.count = 0;
     this.groundDecalMesh.instanceMatrix.needsUpdate = true;
-    this.decalMetaAttr.needsUpdate = true;
   }
 
   cancelCharge() {

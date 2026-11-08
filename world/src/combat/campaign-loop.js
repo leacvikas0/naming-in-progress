@@ -3289,9 +3289,16 @@ export function createCampaignLoop({
           wingmanBoltTimer = 1.05;
           let nextSpellId;
           const kStyle = combatHeroes.Knight.breathingStyle;
-          if (stage2Unlocked && kStyle === 'rime') {
+          const kSummoned = combatHeroes.Knight.summonedElement;
+          if (
+            stage2Unlocked &&
+            (kStyle === 'rime' || (kStyle === 'eclipse' && kSummoned === 'ice'))
+          ) {
             nextSpellId = 'cinder_fall';
-          } else if (stage2Unlocked && kStyle === 'solar') {
+          } else if (
+            stage2Unlocked &&
+            (kStyle === 'solar' || (kStyle === 'eclipse' && kSummoned === 'fire'))
+          ) {
             nextSpellId = 'frost_lance';
           } else if (!stage2Unlocked) {
             nextSpellId = wingmanSpellIdx % 2 === 0 ? 'frost_lance' : 'shatterlance';
@@ -3301,8 +3308,16 @@ export function createCampaignLoop({
           }
           wingmanSpellIdx++;
           combatHeroes.Mage.spellCooldowns[nextSpellId] = 0;
-          const target = enemyManager.activeEnemies[0];
+          const livingEnemies = enemyManager.activeEnemies
+            .filter((e) => e && !e.dead && e.active)
+            .sort(
+              (a, b) =>
+                Math.hypot(a.x - mage.x, a.z - mage.z) -
+                Math.hypot(b.x - mage.x, b.z - mage.z)
+            );
+          const target = livingEnemies[0] || null;
           if (target) {
+            const distToTarget = Math.hypot(target.x - mage.x, target.z - mage.z);
             const yaw = Math.atan2(target.x - mage.x, target.z - mage.z);
             mage.yaw = yaw;
             mage.actionState = 'cast_spell';
@@ -3317,6 +3332,8 @@ export function createCampaignLoop({
             castSpell(nextSpellId, mage, yaw, knight, {
               fromWingmanAi: true,
               ignoreCooldown: true,
+              distance: clamp(distToTarget, 3.0, 16.0),
+              targetPos: { x: target.x, y: target.y ?? 0, z: target.z },
             });
           }
         } else if (wingmanBoltTimer <= 0) {

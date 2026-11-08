@@ -54,26 +54,24 @@ export const AIM_ARROW_DEFAULTS = Object.freeze({
   colorFireInk: '#9a3412',
 });
 
-// Sleek 7-point 3D cross-section for the Parabolic Trajectory Arc (Part 0) & Pointer Tip (Part 1)
-// latFrac in [-1, 1], heightM in meters (0.10m vertical thickness), normal (nx, ny)
+// // Sleek 7-point 3D cross-section for the Parabolic Trajectory Arc (Part 0) & Pointer Tip (Part 1)
 const SHAFT_PROFILE = [
-  { lat: -1.00, h: 0.000, nx: -0.92, ny: 0.39, ridge: 0.00 }, // 0: left lower edge
-  { lat: -0.78, h: 0.072, nx: -0.34, ny: 0.94, ridge: 0.55 }, // 1: left beveled top shoulder
-  { lat: -0.32, h: 0.088, nx: -0.10, ny: 0.99, ridge: 0.82 }, // 2: left inner crown flat
-  { lat:  0.00, h: 0.100, nx:  0.00, ny: 1.00, ridge: 1.00 }, // 3: sleek central trajectory spine (+0.10m)
-  { lat:  0.32, h: 0.088, nx:  0.10, ny: 0.99, ridge: 0.82 }, // 4: right inner crown flat
-  { lat:  0.78, h: 0.072, nx:  0.34, ny: 0.94, ridge: 0.55 }, // 5: right beveled top shoulder
-  { lat:  1.00, h: 0.000, nx:  0.92, ny: 0.39, ridge: 0.00 }, // 6: right lower edge
+  { lat: -1.00, h: 0.000, nx: -0.92, ny: 0.39, ridge: 0.00 },
+  { lat: -0.78, h: 0.028, nx: -0.34, ny: 0.94, ridge: 0.55 },
+  { lat: -0.32, h: 0.036, nx: -0.10, ny: 0.99, ridge: 0.82 },
+  { lat:  0.00, h: 0.042, nx:  0.00, ny: 1.00, ridge: 1.00 },
+  { lat:  0.32, h: 0.036, nx:  0.10, ny: 0.99, ridge: 0.82 },
+  { lat:  0.78, h: 0.028, nx:  0.34, ny: 0.94, ridge: 0.55 },
+  { lat:  1.00, h: 0.000, nx:  0.92, ny: 0.39, ridge: 0.00 },
 ];
 
-// Elevated 5-point 3D cross-section for Target Impact Ring (Part 2) & Center Bullseye Beacon (Part 3)
-// Vertical cylinder wall from +0.05m up to +0.55m so it sits cleanly above 40cm-70cm meadow grass!
+// Flat, razor-sharp 5-point geometric reticle cross-section for Target Impact Ring (Part 2) & Center Bullseye (Part 3)
 const RING_PROFILE = [
-  { rOff: -1.00, h: 0.050, nr: -0.95, ny: 0.31, ridge: 0.08 }, // 0: inner cylinder base skirt (+0.05m)
-  { rOff: -0.72, h: 0.495, nr: -0.28, ny: 0.96, ridge: 0.78 }, // 1: inner elevated rim shoulder (+0.495m)
-  { rOff:  0.00, h: 0.550, nr:  0.00, ny: 1.00, ridge: 1.00 }, // 2: flat-top precision reticle crown (+0.55m)
-  { rOff:  0.72, h: 0.495, nr:  0.28, ny: 0.96, ridge: 0.78 }, // 3: outer elevated rim shoulder (+0.495m)
-  { rOff:  1.00, h: 0.050, nr:  0.95, ny: 0.31, ridge: 0.08 }, // 4: outer cylinder base skirt (+0.05m)
+  { rOff: -1.00, h: 0.010, nr: -0.95, ny: 0.31, ridge: 0.08 },
+  { rOff: -0.72, h: 0.038, nr: -0.28, ny: 0.96, ridge: 0.82 },
+  { rOff:  0.00, h: 0.045, nr:  0.00, ny: 1.00, ridge: 1.00 },
+  { rOff:  0.72, h: 0.038, nr:  0.28, ny: 0.96, ridge: 0.82 },
+  { rOff:  1.00, h: 0.010, nr:  0.95, ny: 0.31, ridge: 0.08 },
 ];
 
 const SHAFT_ROWS = 32;
@@ -82,7 +80,7 @@ const OUTER_RING_SEGS = 48;
 const INNER_RING_SEGS = 32;
 
 /**
- * Builds the 4-part 3D geometry for the Parabolic Trajectory Arc and Elevated
+ * Builds the 4-part 3D geometry for the Parabolic Trajectory Arc and
  * Ground Reticle (1 single indexed BufferGeometry, 1 draw call active, 0 hidden).
  */
 export function createAimArrowGeometry() {
@@ -158,7 +156,7 @@ export function createAimArrowGeometry() {
   }
 
   // ---------------------------------------------------------------------------
-  // PART 2: Elevated Precision Outer Target Ring (48 segs x 5 cols)
+  // PART 2: Precision Outer Target Ring (48 segs x 5 cols)
   // ---------------------------------------------------------------------------
   const ringCols = RING_PROFILE.length; // 5
   const outerRingStartV = positions.length / 3;
@@ -184,7 +182,7 @@ export function createAimArrowGeometry() {
   }
 
   // ---------------------------------------------------------------------------
-  // PART 3: Elevated Center Bullseye Beacon Ring (32 segs x 5 cols)
+  // PART 3: Center Bullseye Reticle Ring (32 segs x 5 cols)
   // ---------------------------------------------------------------------------
   const innerRingStartV = positions.length / 3;
   for (let s = 0; s <= INNER_RING_SEGS; s++) {
@@ -192,7 +190,7 @@ export function createAimArrowGeometry() {
     for (let c = 0; c < ringCols; c++) {
       const p = RING_PROFILE[c];
       const v01 = c / (ringCols - 1);
-      pushVert(u, v01, 3, c, p.rOff, p.h * 1.04, p.nr, p.ny, 0.0, p.ridge);
+      pushVert(u, v01, 3, c, p.rOff, p.h * 1.05, p.nr, p.ny, 0.0, p.ridge);
     }
   }
   for (let s = 0; s < INNER_RING_SEGS; s++) {
@@ -231,7 +229,7 @@ function createAimArrowMaterial(noiseAtlas, config) {
     transparent: false,
     depthWrite: true,
     depthTest: true,
-    side: THREE.FrontSide,
+    side: THREE.DoubleSide,
     uniforms: {
       uNoiseAtlas: { value: noiseAtlas },
       uTime: { value: 0.0 },
@@ -289,42 +287,39 @@ function createAimArrowMaterial(noiseAtlas, config) {
       varying vec3 vWorldNormal;
 
       void main() {
-        float hM = vCoord.z;
         float ridgeMetric = clamp(vCoord.w, 0.0, 1.0);
         float partId = vBlueprint.x;
         float uParam = vBlueprint.y;
         float profileEdge = abs(vBlueprint.w);
         float isFire = step(0.5, uMode);
 
-        vec3 N = normalize(vWorldNormal);
-        float topFacing = clamp(abs(N.y), 0.0, 1.0);
+        // Clean spaced ballistic dashes along the trajectory arc (Part 0),
+        // keeping the terminal pointer tip (Part 1) and target reticle rings (Parts 2 & 3) crisp & continuous!
+        float isShaft = step(partId, 0.5);
+        float dashPhase = fract(uParam * 11.0 - uTime * 2.2);
+        if (isShaft > 0.5 && dashPhase > 0.58) {
+          discard;
+        }
 
-        // Clean forward-flowing chevron segments along the trajectory arc
-        // and crisp 4-cardinal precision tick accents on the target ring
-        float isArcOrHead = step(partId, 1.5);
-        float chevronPhase = fract(uParam * 8.0 - profileEdge * 0.35 - uTime * 1.85);
-        float chevronBand = smoothstep(0.18, 0.28, chevronPhase) * (1.0 - smoothstep(0.68, 0.78, chevronPhase));
-        float cardinalTicks = (1.0 - isArcOrHead) * smoothstep(0.72, 0.92, abs(cos(uParam * 12.56637)));
+        // Subtle segmented notches on the outer target ring (Part 2) for a modern tactical reticle feel
+        float isOuterRing = step(1.5, partId) * step(partId, 2.5);
+        float ringNotch = abs(sin(uParam * 25.13274)); // 8 clean symmetry segments
+        if (isOuterRing > 0.5 && ringNotch < 0.14) {
+          discard;
+        }
 
-        float crownMask = smoothstep(0.45, 0.82, ridgeMetric);
-        float sideTrim = smoothstep(0.76, 0.96, profileEdge) * (1.0 - topFacing * 0.5);
-        float lowerSkirt = (1.0 - isArcOrHead) * (1.0 - smoothstep(0.18, 0.44, hM));
+        float crownMask = smoothstep(0.35, 0.85, ridgeMetric);
+        float borderTrim = smoothstep(0.72, 0.95, profileEdge);
 
         vec3 col;
         if (isFire < 0.5) {
-          // Clean Luminous Warm Ivory-Champagne (#fffaf0) + Subtle Frost-Silver Edge (#e2e8f0 / #cbd5e1)
-          vec3 edgeCol = mix(uIceWall, uIceMid, crownMask);
-          vec3 brightCore = uIceCore * 1.12;
-          float coreBlend = clamp(crownMask * 0.76 + chevronBand * isArcOrHead * 0.38 + cardinalTicks * 0.35, 0.0, 1.0);
-          col = mix(edgeCol, brightCore, coreBlend);
-          col = mix(col, uIceInk, max(sideTrim * 0.45, lowerSkirt * 0.55));
+          // Functional, simple, elegant Warm Ivory (#fffaf0) + Subtle Cool Silver Rim (#94a3b8)
+          vec3 coreCol = mix(uIceMid, uIceCore * 1.08, crownMask);
+          col = mix(coreCol, uIceInk, borderTrim * 0.65);
         } else {
-          // Clean Luminous Warm Ivory (#fff7ed) + Subtle Solar Amber Edge (#fdba74 / #f97316)
-          vec3 edgeCol = mix(uFireCrimson, uFireAmber, crownMask);
-          vec3 brightCore = uFireCore * 1.14;
-          float coreBlend = clamp(crownMask * 0.74 + chevronBand * isArcOrHead * 0.40 + cardinalTicks * 0.35, 0.0, 1.0);
-          col = mix(edgeCol, brightCore, coreBlend);
-          col = mix(col, uFireInk, max(sideTrim * 0.45, lowerSkirt * 0.55));
+          // Functional, simple, elegant Warm Ivory (#fff7ed) + Subtle Solar Amber Rim (#f97316)
+          vec3 coreCol = mix(uFireAmber, uFireCore * 1.08, crownMask);
+          col = mix(coreCol, uFireInk, borderTrim * 0.65);
         }
 
         gl_FragColor = vec4(col, 1.0);
@@ -369,7 +364,7 @@ export class AimArrowSystem {
     this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.mesh.name = 'AimArrow_DC1_TerrainRibbon';
     this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = 6;
+    this.mesh.renderOrder = 920;
     this.group.add(this.mesh);
   }
 
@@ -497,7 +492,7 @@ export class AimArrowSystem {
     const isFire = this.mode === 'cinder_fall';
     const isShatter = this.mode === 'shatterlance';
     const L = clamp(this.length, c.minDistance, c.maxDistance);
-    const yBaseOffset = c.groundOffset ?? 0.02;
+    const yBaseOffset = c.groundOffset ?? 0.04;
 
     const posArr = this.geometry.attributes.position.array;
     const normArr = this.geometry.attributes.normal.array;
@@ -513,23 +508,30 @@ export class AimArrowSystem {
     const sx = this.side.x;
     const sz = this.side.z;
 
-    // Clean 3D Parabolic Trajectory from raised staff crystal (+1.45m) to elevated bullseye (+0.42m)
-    const startY = originGroundY + (c.staffHeightOffset ?? 1.45);
+    // Sleek 3D Ballistic Trajectory from Mage's right-hand staff crystal (+1.22m height, +0.52m right offset)
+    // curving smoothly down to the thin precision reticle hovering at endGroundY + 0.46m
+    const startY = originGroundY + 1.22;
     const endGroundX = ox + dx * L;
     const endGroundZ = oz + dz * L;
     const endGroundY = this.getGroundHeight(endGroundX, endGroundZ);
-    const endY = endGroundY + (c.endHeightOffset ?? 0.42);
-    const arcPeak = clamp(1.15 + L * 0.18, 1.35, 3.85);
+    const endY = endGroundY + 0.46;
+    const arcPeak = clamp(0.38 + L * 0.06, 0.42, 1.25);
+    const startRightLatOffset = 0.52;
 
-    const shaftStart = Math.min(0.42, L * 0.22);
-    const headLen = Math.min(0.72, Math.max(0.22, L * 0.18));
+    const shaftStart = Math.min(0.45, L * 0.22);
+    const headLen = Math.min(0.45, Math.max(0.18, L * 0.14));
     const headApex = L;
-    const headBase = Math.max(shaftStart + 0.10, headApex - headLen);
+    const headBase = Math.max(shaftStart + 0.08, headApex - headLen);
 
     const evalParabolaY = (alongDist) => {
       const t = clamp((alongDist - shaftStart) / Math.max(0.15, L - shaftStart), 0.0, 1.0);
       const linY = startY + (endY - startY) * t;
       return linY + 4.0 * arcPeak * t * (1.0 - t);
+    };
+
+    const evalLateralOffset = (alongDist) => {
+      const t = clamp((alongDist - shaftStart) / Math.max(0.15, L - shaftStart), 0.0, 1.0);
+      return startRightLatOffset * Math.pow(1.0 - t, 1.25);
     };
 
     const evalParabolaSlope = (alongDist) => {
@@ -538,22 +540,22 @@ export class AimArrowSystem {
       return ((endY - startY) + 4.0 * arcPeak * (1.0 - 2.0 * t)) / span;
     };
 
-    // Sleek 0.18m-0.24m full ribbon width (half-width 0.09m-0.12m)
+    // Slim 0.08m-0.095m full trajectory dash width (half-width 0.040m-0.048m)
     const baseRibbonHalfW = this.customWidth
-      ? clamp(this.customWidth * 0.08, 0.08, 0.14)
+      ? clamp(this.customWidth * 0.04, 0.035, 0.055)
       : isFire
-        ? 0.115
+        ? 0.046
         : isShatter
-          ? 0.095
-          : 0.105;
+          ? 0.040
+          : 0.042;
 
     const outerRingRadius = this.customRadius
-      ? clamp(this.customRadius, 0.55, 3.2)
+      ? clamp(this.customRadius, 0.65, 2.8)
       : isFire
         ? 1.55
         : isShatter
           ? 1.25
-          : 1.05;
+          : 1.15;
 
     for (let i = 0; i < vertCount; i++) {
       const bOff = i * 4;
@@ -572,19 +574,19 @@ export class AimArrowSystem {
       let wnz = 0.0;
 
       if (partId < 0.5) {
-        // PART 0: Sleek 3D Parabolic Trajectory Arc Ribbon (from staff crystal to headBase)
+        // PART 0: Slim Dashed 3D Parabolic Trajectory Arc
         const prof = SHAFT_PROFILE[colIdx] || SHAFT_PROFILE[3];
         const rIdx = Math.round(u * SHAFT_ROWS);
         const endCapScale = rIdx === 0 ? 0.0 : rIdx === 1 ? 0.78 : 1.0;
-        const shaftHalfW = baseRibbonHalfW * (0.82 + 0.22 * Math.sin(u * Math.PI));
+        const shaftHalfW = baseRibbonHalfW * (0.85 + 0.15 * Math.sin(u * Math.PI));
 
         alongM = shaftStart + u * (headBase - shaftStart);
-        latM = latOrR * shaftHalfW;
+        latM = evalLateralOffset(alongM) + latOrR * shaftHalfW;
         localH = prof.h * endCapScale;
 
         const wx = ox + dx * alongM + sx * latM;
         const wz = oz + dz * alongM + sz * latM;
-        const groundY = this.getGroundHeight(wx, wz) + yBaseOffset;
+        const groundY = this.getGroundHeight(wx, wz) + 0.44;
         const arcY = evalParabolaY(alongM);
         wy = Math.max(groundY + localH, arcY + localH);
 
@@ -597,21 +599,21 @@ export class AimArrowSystem {
         posArr[pOff + 1] = wy;
         posArr[pOff + 2] = wz;
       } else if (partId < 1.5) {
-        // PART 1: Clean Tapered Terminal Pointer into Center Bullseye (no cartoon surfboard barbs!)
+        // PART 1: Clean Tapered Terminal Pointer into Center Bullseye
         const prof = SHAFT_PROFILE[colIdx] || SHAFT_PROFILE[3];
         const rIdx = Math.round(u * HEAD_ROWS);
-        const taper = 1.0 - Math.pow(u, 1.35) * 0.78;
-        const halfW = Math.max(0.02, baseRibbonHalfW * 1.04 * taper);
+        const taper = 1.0 - Math.pow(u, 1.35) * 0.82;
+        const halfW = Math.max(0.015, baseRibbonHalfW * 1.15 * taper);
 
         alongM = headBase + u * (headApex - headBase);
-        latM = latOrR * halfW;
+        latM = evalLateralOffset(alongM) + latOrR * halfW;
 
         const endCapScale = rIdx === HEAD_ROWS ? 0.0 : 1.0 - Math.pow(u, 1.8) * 0.35;
         localH = prof.h * endCapScale;
 
         const wx = ox + dx * alongM + sx * latM;
         const wz = oz + dz * alongM + sz * latM;
-        const groundY = this.getGroundHeight(wx, wz) + yBaseOffset;
+        const groundY = this.getGroundHeight(wx, wz) + 0.44;
         const arcY = evalParabolaY(alongM);
         wy = Math.max(groundY + localH, arcY + localH);
 
@@ -624,14 +626,14 @@ export class AimArrowSystem {
         posArr[pOff + 1] = wy;
         posArr[pOff + 2] = wz;
       } else if (partId < 2.5) {
-        // PART 2: Elevated Precision Outer Target Ring (+0.55m top crown above 70cm meadow grass)
+        // PART 2: Thin, Razor-Sharp Segmented Outer Target Ring Skimming Above Grass (+0.46m)
         const prof = RING_PROFILE[colIdx] || RING_PROFILE[2];
         const ang = u * TAU;
         const cosA = Math.cos(ang);
         const sinA = Math.sin(ang);
 
         const baseRingR = outerRingRadius;
-        const ringHalfThick = isFire ? 0.105 : 0.095;
+        const ringHalfThick = isFire ? 0.068 : 0.058;
         const centerAlong = L;
 
         const rActual = baseRingR + latOrR * ringHalfThick;
@@ -642,7 +644,7 @@ export class AimArrowSystem {
         const wx = ox + dx * alongM + sx * latM;
         const wz = oz + dz * alongM + sz * latM;
         const sampleGroundY = Math.max(endGroundY, this.getGroundHeight(wx, wz));
-        wy = sampleGroundY + localH;
+        wy = sampleGroundY + 0.46 + localH;
 
         const radDirX = dx * cosA + sx * sinA;
         const radDirZ = dz * cosA + sz * sinA;
@@ -654,25 +656,25 @@ export class AimArrowSystem {
         posArr[pOff + 1] = wy;
         posArr[pOff + 2] = wz;
       } else {
-        // PART 3: Elevated Center Bullseye Beacon Ring (+0.57m top crown at Landing Center L)
+        // PART 3: Compact Center Bullseye Ring
         const prof = RING_PROFILE[colIdx] || RING_PROFILE[2];
         const ang = u * TAU;
         const cosA = Math.cos(ang);
         const sinA = Math.sin(ang);
 
-        const baseRingR = outerRingRadius * 0.32;
-        const ringHalfThick = 0.075;
+        const baseRingR = outerRingRadius * 0.22;
+        const ringHalfThick = 0.045;
         const centerAlong = L;
 
         const rActual = baseRingR + latOrR * ringHalfThick;
         alongM = centerAlong + cosA * rActual;
         latM = sinA * rActual;
-        localH = prof.h * 1.04;
+        localH = prof.h * 1.05;
 
         const wx = ox + dx * alongM + sx * latM;
         const wz = oz + dz * alongM + sz * latM;
         const sampleGroundY = Math.max(endGroundY, this.getGroundHeight(wx, wz));
-        wy = sampleGroundY + localH;
+        wy = sampleGroundY + 0.465 + localH;
 
         const radDirX = dx * cosA + sx * sinA;
         const radDirZ = dz * cosA + sz * sinA;

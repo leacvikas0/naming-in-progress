@@ -2779,15 +2779,31 @@ function updateCamera() {
   }
 
   if (camState.mode === 'player') {
-    const h = 1.55 + Math.sin(camState.pitch) * camState.dist;
-    const flat = Math.cos(camState.pitch) * camState.dist;
-    const basePosX = player.x - Math.sin(camState.yaw) * flat + _camShake.x + _camImpactPos.x;
-    const basePosY = player.y + h + _camShake.y + _camImpactPos.y;
-    const basePosZ = player.z - Math.cos(camState.yaw) * flat + _camShake.z + _camImpactPos.z;
+    const isMageAim = Boolean(
+      coopSystem?.player?.activeHeroId === 'Mage' &&
+        coopSystem?.actionAim?.aimState?.active
+    );
+    const targetShoulder = isMageAim ? 1.0 : 0.0;
+    camState.aimShoulderBlend =
+      (camState.aimShoulderBlend || 0) +
+      (targetShoulder - (camState.aimShoulderBlend || 0)) * 0.22;
+    const sb = camState.aimShoulderBlend;
+    const sideX = -Math.cos(camState.yaw);
+    const sideZ = Math.sin(camState.yaw);
 
-    const baseLookX = player.x + Math.sin(camState.yaw) * 6.0 + _camShake.x * 0.6 + _camImpactLook.x;
-    const baseLookY = player.y + 1.85 + lookDipY + _camShake.y * 0.6 + _camImpactLook.y;
-    const baseLookZ = player.z + Math.cos(camState.yaw) * 6.0 + _camShake.z * 0.6 + _camImpactLook.z;
+    const h = 1.55 + sb * 0.68 + Math.sin(camState.pitch) * camState.dist;
+    const flat = Math.cos(camState.pitch) * (camState.dist - sb * 0.65);
+    const basePosX =
+      player.x - Math.sin(camState.yaw) * flat + sideX * 0.72 * sb + _camShake.x + _camImpactPos.x;
+    const basePosY = player.y + h + _camShake.y + _camImpactPos.y;
+    const basePosZ =
+      player.z - Math.cos(camState.yaw) * flat + sideZ * 0.72 * sb + _camShake.z + _camImpactPos.z;
+
+    const baseLookX =
+      player.x + Math.sin(camState.yaw) * 6.0 + sideX * 0.48 * sb + _camShake.x * 0.6 + _camImpactLook.x;
+    const baseLookY = player.y + 1.85 - sb * 0.38 + lookDipY + _camShake.y * 0.6 + _camImpactLook.y;
+    const baseLookZ =
+      player.z + Math.cos(camState.yaw) * 6.0 + sideZ * 0.48 * sb + _camShake.z * 0.6 + _camImpactLook.z;
     const baseFov = (camState.baseFov || 50) + (_camImpactFov.value || 0);
 
     const b = smoothstep(0.0, 1.0, stoneGazeState.inspectBlend || 0);
@@ -3090,9 +3106,41 @@ function toggleHud(visible) {
 
 const keys = new Set();
 let pointerDragging = false;
-let lastMouseX = 0;
-let lastMouseY = 0;
+let lastMouseX = null;
+let lastMouseY = null;
 let lmbHoldTimer = null;
+let lmbHoldPending = false;
+let lmbHoldSimElapsed = 0;
+
+function firePendingLmbHoldUpgrade() {
+  if (!lmbHoldPending) return;
+  lmbHoldPending = false;
+  if (lmbHoldTimer) {
+    clearTimeout(lmbHoldTimer);
+    lmbHoldTimer = null;
+  }
+  if (pointerDragging && !coopSystem?.campaignLoop?.isControlLocked?.()) {
+    if (coopSystem.player.activeHeroId === 'Mage') {
+      eAimDragDistance = 7.5;
+      coopSystem.triggerAction('shatterlance_aim_start', {
+        yaw: camState.yaw,
+        pitch: camState.pitch,
+        distance: eAimDragDistance,
+      });
+    } else {
+      const isMovingOrDashing =
+        keys.has('shift') ||
+        keys.has('w') ||
+        keys.has('a') ||
+        keys.has('s') ||
+        keys.has('d') ||
+        keys.has(' ');
+      if (!isMovingOrDashing) {
+        coopSystem.triggerAction('heavy');
+      }
+    }
+  }
+}
 
 function applyCameraOrbitDelta(dx, dy) {
   if (camState.mode === 'player') {
@@ -3278,6 +3326,7 @@ window.addEventListener('keydown', (e) => {
   } else if (!wasPressed && k === 'shift') {
     activeGameplayShotSpec = null;
     if (camState.mode === 'vista') camState.mode = 'player';
+    lmbHoldPending = false;
     if (lmbHoldTimer) {
       clearTimeout(lmbHoldTimer);
       lmbHoldTimer = null;
@@ -3294,9 +3343,12 @@ window.addEventListener('keydown', (e) => {
   } else if (!wasPressed && k === 'h') {
     toggleHud(hudEl && hudEl.style.display === 'none');
   } else if (['w', 'a', 's', 'd', ' '].includes(k)) {
-    if (coopSystem.player.activeHeroId !== 'Mage' && lmbHoldTimer) {
-      clearTimeout(lmbHoldTimer);
-      lmbHoldTimer = null;
+    if (coopSystem.player.activeHeroId !== 'Mage') {
+      lmbHoldPending = false;
+      if (lmbHoldTimer) {
+        clearTimeout(lmbHoldTimer);
+        lmbHoldTimer = null;
+      }
     }
     if (camState.mode === 'vista') {
       activeGameplayShotSpec = null;
@@ -3346,6 +3398,7 @@ canvas.addEventListener('mousedown', (e) => {
       camState.mode = 'player';
       updateViewButtons();
     }
+    lmbHoldPending = false;
     if (lmbHoldTimer) {
       clearTimeout(lmbHoldTimer);
       lmbHoldTimer = null;
@@ -3378,29 +3431,13 @@ canvas.addEventListener('mousedown', (e) => {
   // Zero-lag 0ms LMB attack + Hold (140ms Mage Shatterlance Aim / 280ms Knight Shield Block)
   coopSystem.triggerAction('attack');
   if (lmbHoldTimer) clearTimeout(lmbHoldTimer);
+  lmbHoldPending = true;
+  lmbHoldSimElapsed = 0;
   const holdDelay = coopSystem.player.activeHeroId === 'Mage' ? 140 : 280;
   lmbHoldTimer = setTimeout(() => {
     lmbHoldTimer = null;
-    if (pointerDragging && !coopSystem?.campaignLoop?.isControlLocked?.()) {
-      if (coopSystem.player.activeHeroId === 'Mage') {
-        eAimDragDistance = 7.5;
-        coopSystem.triggerAction('shatterlance_aim_start', {
-          yaw: camState.yaw,
-          pitch: camState.pitch,
-          distance: eAimDragDistance,
-        });
-      } else {
-        const isMovingOrDashing =
-          keys.has('shift') ||
-          keys.has('w') ||
-          keys.has('a') ||
-          keys.has('s') ||
-          keys.has('d') ||
-          keys.has(' ');
-        if (!isMovingOrDashing) {
-          coopSystem.triggerAction('heavy');
-        }
-      }
+    if (!(typeof window.__FIXED_DT__ === 'number' && window.__FIXED_DT__ > 0)) {
+      firePendingLmbHoldUpgrade();
     }
   }, holdDelay);
 });
@@ -3409,6 +3446,7 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 window.addEventListener('mouseup', () => {
   pointerDragging = false;
+  lmbHoldPending = false;
   if (lmbHoldTimer) {
     clearTimeout(lmbHoldTimer);
     lmbHoldTimer = null;
@@ -3435,6 +3473,7 @@ window.addEventListener('mouseup', () => {
 window.addEventListener('blur', () => {
   keys.clear();
   pointerDragging = false;
+  lmbHoldPending = false;
   if (lmbHoldTimer) {
     clearTimeout(lmbHoldTimer);
     lmbHoldTimer = null;
@@ -3448,9 +3487,15 @@ window.addEventListener('mousemove', (e) => {
   const isMageAiming =
     coopSystem?.player?.activeHeroId === 'Mage' &&
     Boolean(coopSystem.actionAim?.aimState?.active);
+  const hasPrevMouse = lastMouseX !== null && lastMouseY !== null;
+  const rawDx = hasPrevMouse ? e.clientX - lastMouseX : 0;
+  const rawDy = hasPrevMouse ? e.clientY - lastMouseY : 0;
+  lastMouseX = e.clientX;
+  lastMouseY = e.clientY;
+
   if (document.pointerLockElement === canvas) {
-    const mx = e.movementX || 0;
-    const my = e.movementY || 0;
+    const mx = e.movementX || rawDx || 0;
+    const my = e.movementY || rawDy || 0;
     applyCameraOrbitDelta(mx, my);
     if (isMageAiming) {
       eAimDragDistance = clamp(eAimDragDistance - my * 0.085, 0.8, 18.0);
@@ -3462,14 +3507,10 @@ window.addEventListener('mousemove', (e) => {
     }
     return;
   }
-  const dx = e.clientX - lastMouseX;
-  const dy = e.clientY - lastMouseY;
-  lastMouseX = e.clientX;
-  lastMouseY = e.clientY;
   if (!pointerDragging && !isMageAiming) return;
-  applyCameraOrbitDelta(dx, dy);
+  applyCameraOrbitDelta(rawDx, rawDy);
   if (isMageAiming) {
-    eAimDragDistance = clamp(eAimDragDistance - dy * 0.085, 0.8, 18.0);
+    eAimDragDistance = clamp(eAimDragDistance - rawDy * 0.085, 0.8, 18.0);
     coopSystem.updateSkillAim({
       distance: eAimDragDistance,
       yaw: camState.yaw,
@@ -3849,6 +3890,14 @@ function animate() {
   elapsed += dt;
   frames++;
   telemetryTimer += dt;
+
+  if (lmbHoldPending && pointerDragging) {
+    lmbHoldSimElapsed += dt;
+    const holdThresholdSec = coopSystem?.player?.activeHeroId === 'Mage' ? 0.14 : 0.28;
+    if (lmbHoldSimElapsed >= holdThresholdSec) {
+      firePendingLmbHoldUpgrade();
+    }
+  }
 
   if (autoCycleTod) {
     applyTimeOfDay((currentTodT + dt * 0.025) % 1.0);

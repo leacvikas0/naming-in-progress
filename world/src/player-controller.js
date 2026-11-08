@@ -2597,8 +2597,7 @@ export async function createCoopPlayerSystem({
     const isMageStationaryCast =
       leader.id === 'Mage' &&
       (campaignLoop.combatHeroes.Mage.stormCataclysmCastTimer > 0 ||
-        actionAim.heroes.Mage.activeSwing?.stationary ||
-        (actionAim.aimState.active && actionAim.aimState.spellId === 'shatterlance'));
+        actionAim.heroes.Mage.activeSwing?.stationary);
 
     // Smooth per-frame lunge velocity during active melee swings (zero frame-0 snap!)
     if (!controlLocked && leader.lungeRemaining > 1e-4) {
@@ -2660,7 +2659,8 @@ export async function createCoopPlayerSystem({
       // Damp WASD movement to 0.18x during active melee attacks so feet stay planted and never skate!
       const isMageAimingNow = Boolean(leader.id === 'Mage' && actionAim.aimState.active);
       const blockMult = leader.shieldBlocking ? 0.35 : isMageAimingNow ? 0.55 : 1.0;
-      const actionMult = leader.actionState && !leader.shieldBlocking ? 0.18 : 1.0;
+      const actionMult =
+        leader.actionState && !leader.shieldBlocking && !isMageAimingNow ? 0.18 : 1.0;
       const spd =
         player.speed *
         (isSprinting && !isMageAimingNow ? player.sprintMult : moveMag < 0.55 ? 0.56 : 1.0) *
