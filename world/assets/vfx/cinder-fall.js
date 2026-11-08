@@ -644,10 +644,10 @@ function createCraterDecalMaterial(noiseAtlas, sharedUniforms, config) {
 /* 3. Pooled, Deterministic CinderFallSystem (<= 4 Draw Calls)               */
 /* ------------------------------------------------------------------------- */
 
-const MAX_ASTEROID_CORES = 4; // 1 hurtling asteroid in flight -> shatters into 4 jagged broken boulder fragments on impact!
-const MAX_FIRE_TONGUES = 34; // wake plumes (in-flight) + roaring crater eruption fire tongues (post-impact)
-const MAX_CRATER_ROCKS = 40; // 16 crater rim basalt monoliths + 24 ballistic cinder chunks
-const MAX_CRATER_DECALS = 2;
+const MAX_ASTEROID_CORES = 20; // Supports up to 5 overlapping sky-barrage meteors + 4 shattered boulder fragments each!
+const MAX_FIRE_TONGUES = 140; // Wake plumes (in-flight) + roaring crater eruption fire tongues across overlapping meteors
+const MAX_CRATER_ROCKS = 140; // Crater rim basalt monoliths + ballistic cinder chunks across overlapping meteors
+const MAX_CRATER_DECALS = 6;
 
 const BALLISTIC_GRAVITY = -22.0;
 const BALLISTIC_RESTITUTION = 0.32;
@@ -692,7 +692,8 @@ export class CinderFallSystem {
     this.side = new THREE.Vector3(0, 0, 1);
     this.castLength = this.config.range;
     this.fromSky = false;
-    this.skyStartHeight = 13.5;
+    this.skyStartHeight = 15.0;
+    this.skyBarrageList = [];
     this.active = false;
     this.age = 0;
 
@@ -897,7 +898,7 @@ export class CinderFallSystem {
 
   cast(origin, direction, options = {}) {
     this.fromSky = Boolean(options.fromSky || options.skyFall);
-    this.skyStartHeight = Number(options.skyHeight) > 0 ? Number(options.skyHeight) : 13.5;
+    this.skyStartHeight = Number(options.skyHeight) > 0 ? Number(options.skyHeight) : 15.0;
 
     if (origin) {
       this.origin.set(origin.x ?? origin[0] ?? 0, origin.y ?? origin[1] ?? 0, origin.z ?? origin[2] ?? 0);
@@ -929,11 +930,300 @@ export class CinderFallSystem {
     }
     this.origin.y = this.getGroundHeight(this.origin.x, this.origin.z);
 
+    if (this.fromSky) {
+      const seedVal = options.seed ?? 1.0 + this.skyBarrageList.length * 0.73;
+      const impactTime = 0.28;
+      const postDuration = 0.88;
+      if (this.skyBarrageList.length >= 6) {
+        this.skyBarrageList.shift();
+      }
+      this.skyBarrageList.push({
+        originX: this.origin.x,
+        originY: this.origin.y,
+        originZ: this.origin.z,
+        dirX: this.direction.x,
+        dirZ: this.direction.z,
+        sideX: this.side.x,
+        sideZ: this.side.z,
+        castLength: this.castLength,
+        skyStartHeight: this.skyStartHeight,
+        age: Number(options.initialAge) || 0.0,
+        impactTime,
+        postDuration,
+        totalDuration: impactTime + postDuration,
+        seed: seedVal,
+      });
+      this.active = true;
+      this.age = 0;
+      this.group.visible = true;
+      this._renderSkyBarrage();
+      return this;
+    }
+
+    this.skyBarrageList.length = 0;
     this._seedRecords(options.seed ?? 1.0);
     this.active = true;
     this.age = 0;
     this.group.visible = true;
     this.seek(0.01);
+    return this;
+  }
+
+  _renderSkyBarrage() {
+    const c = this.config;
+    let astSlot = 0;
+    let wakeSlot = 0;
+    let rockSlot = 0;
+    let decalSlot = 0;
+    let maxShakeEnv = 0;
+    let maxShakeAge = 0;
+
+    for (let mIdx = 0; mIdx < this.skyBarrageList.length; mIdx++) {
+      const m = this.skyBarrageList[mIdx];
+      const timeSeconds = m.age;
+      const flightU = saturate(timeSeconds / Math.max(0.05, m.impactTime));
+      const impactElapsed = timeSeconds - m.impactTime;
+      const postImpactU = saturate(impactElapsed / Math.max(0.1, m.postDuration));
+
+      const impX = m.originX + m.dirX * m.castLength;
+      const impZ = m.originZ + m.dirZ * m.castLength;
+      const impY = this.getGroundHeight(impX, impZ);
+
+      const evalBarragePos = (u, out) => {
+        const t = clamp(u, 0.0, 1.0);
+        const dist = m.castLength * t;
+        const x = m.originX + m.dirX * dist;
+        const z = m.originZ + m.dirZ * dist;
+        const endGroundY = this.getGroundHeight(x, z) + c.endHeight;
+        const skyY = endGroundY + m.skyStartHeight * (1.0 - t);
+        out.set(x, skyY, z);
+        return out;
+      };
+
+      // 1. Asteroid Core in flight OR 3 shattered boulders on impact
+      if (impactElapsed < 0) {
+        if (astSlot < MAX_ASTEROID_CORES) {
+          evalBarragePos(flightU, _pos);
+          _dummy.position.copy(_pos);
+          _euler.set(timeSeconds * c.spin, timeSeconds * c.spin * 0.78, timeSeconds * c.spin * 0.52);
+          _dummy.quaternion.setFromEuler(_euler);
+          const popIn = smoothstep(0.0, 0.08, flightU);
+          _dummy.scale.setScalar(c.radius * 0.92 * popIn);
+          _dummy.updateMatrix();
+          this.asteroidMesh.setMatrixAt(astSlot, _dummy.matrix);
+          this.asteroidMetaAttr.setXYZW(astSlot, m.seed, 1.05 + 0.35 * flightU, 0.0, 0.0);
+          astSlot++;
+        }
+      } else {
+        for (let b = 0; b < 3 && astSlot < MAX_ASTEROID_CORES; b++) {
+          const bRec = this.shatteredBoulderRecords[b];
+          const dissolveProgress = smoothstep(0.38, 0.96, postImpactU + bRec.stagger);
+          if (dissolveProgress >= 0.995) continue;
+          const rockHeat = 1.22 * (1.0 - smoothstep(0.08, 0.45, postImpactU + bRec.stagger));
+          const approxX = impX + bRec.startOffsetX + bRec.vx * 0.42;
+          const approxZ = impZ + bRec.startOffsetZ + bRec.vz * 0.42;
+          const floorY = this.getGroundHeight(approxX, approxZ) + bRec.scale * 0.44;
+          evalOneBounceBallistic(
+            impactElapsed,
+            impY + 0.58,
+            bRec.vy,
+            BALLISTIC_GRAVITY,
+            BALLISTIC_RESTITUTION,
+            floorY,
+            _bounceState
+          );
+          _dummy.position.set(
+            impX + bRec.startOffsetX + bRec.vx * _bounceState.horizT,
+            _bounceState.y,
+            impZ + bRec.startOffsetZ + bRec.vz * _bounceState.horizT
+          );
+          _euler.set(
+            0.4 + bRec.spinX * _bounceState.spinT,
+            bRec.ang + m.seed + bRec.spinY * _bounceState.spinT,
+            0.25 + bRec.spinZ * _bounceState.spinT
+          );
+          _dummy.quaternion.setFromEuler(_euler);
+          _dummy.scale.set(bRec.scale * 0.95, bRec.scale * 0.85, bRec.scale * 0.95);
+          _dummy.updateMatrix();
+          this.asteroidMesh.setMatrixAt(astSlot, _dummy.matrix);
+          this.asteroidMetaAttr.setXYZW(astSlot, bRec.seed + m.seed, rockHeat, dissolveProgress, 0.0);
+          astSlot++;
+        }
+      }
+
+      // 2. Fire-Tongue Wake (in flight) & Crater Eruption Plumes (post-impact)
+      const wakeBurnU = impactElapsed > 0 ? saturate(impactElapsed / 0.22) : 0.0;
+      for (let i = 0; i < 22 && wakeSlot < MAX_FIRE_TONGUES; i++) {
+        const rec = this.fireTongueRecords[i];
+        if (rec.isWake && wakeBurnU < 0.98) {
+          const headU = impactElapsed < 0 ? flightU : 0.96;
+          const tailU = lerp(Math.max(0.0, headU - 0.52), headU, wakeBurnU);
+          const sampleU = lerp(tailU, headU, rec.uOffset);
+          if (sampleU <= 0.01) continue;
+          evalBarragePos(sampleU, _pos);
+          evalBarragePos(Math.max(0.0, sampleU - 0.05), _nextPos);
+          _tangent.subVectors(_nextPos, _pos);
+          if (_tangent.lengthSq() < 1e-5) _tangent.set(-m.dirX, 0.65, -m.dirZ);
+          _tangent.normalize();
+          const swirlR = (1.0 - rec.uOffset) * 0.30;
+          _pos.x += m.sideX * Math.cos(rec.ang + timeSeconds * 6.0) * swirlR;
+          _pos.y += Math.sin(rec.ang + timeSeconds * 6.0) * swirlR * 0.5;
+          _pos.z += m.sideZ * Math.cos(rec.ang + timeSeconds * 6.0) * swirlR;
+          _dummy.position.copy(_pos);
+          _quat.setFromUnitVectors(UP, _tangent);
+          _dummy.quaternion.copy(_quat);
+          const wScale = rec.scale * (0.52 + 0.62 * rec.uOffset) * (1.0 - wakeBurnU);
+          _dummy.scale.set(wScale * 0.68, wScale * 1.75, wScale * 0.68);
+          _dummy.updateMatrix();
+          this.fireWakeMesh.setMatrixAt(wakeSlot, _dummy.matrix);
+          this.wakeMetaAttr.setXYZW(
+            wakeSlot,
+            wakeBurnU * 0.7 + (1.0 - rec.uOffset) * 0.25,
+            0.98,
+            rec.seed + m.seed,
+            1.0 - wakeBurnU
+          );
+          wakeSlot++;
+        } else if (!rec.isWake && impactElapsed >= -0.02 && postImpactU < 0.85) {
+          const tCol = Math.max(0.01, impactElapsed + 0.02);
+          const colFade = 1.0 - smoothstep(0.32, 0.85, postImpactU);
+          const horseshoeAng = rec.ang + m.seed;
+          const rDist = (0.95 + rec.radial * 1.15) * smoothstep(0.0, 0.14, tCol);
+          const fx = impX + Math.cos(horseshoeAng) * rDist;
+          const fz = impZ + Math.sin(horseshoeAng) * rDist;
+          const fy = this.getGroundHeight(fx, fz) + 0.05;
+          _dummy.position.set(fx, fy, fz);
+          _pos.set(Math.cos(horseshoeAng) * 0.32, 1.0, Math.sin(horseshoeAng) * 0.32).normalize();
+          _dummy.quaternion.setFromUnitVectors(UP, _pos);
+          const hScale = rec.scale * (1.45 + 0.85 * (1.0 - rec.radial)) * outQuint(Math.min(1.0, tCol * 5.2)) * colFade;
+          const rScale = rec.scale * 0.75 * colFade;
+          _dummy.scale.set(rScale, hScale, rScale);
+          _dummy.updateMatrix();
+          this.fireWakeMesh.setMatrixAt(wakeSlot, _dummy.matrix);
+          this.wakeMetaAttr.setXYZW(wakeSlot, postImpactU * 0.82, 1.18, rec.seed + m.seed, colFade);
+          wakeSlot++;
+        }
+      }
+
+      // 3. Crater Rim Monoliths & Ballistic Cinders on Impact
+      if (impactElapsed >= -0.01) {
+        const tImp = Math.max(0.0, impactElapsed + 0.01);
+        for (let i = 0; i < 8 && rockSlot < MAX_CRATER_ROCKS; i++) {
+          const slab = this.rimSlabRecords[i * 2];
+          if (!slab) continue;
+          const tSlab = tImp - slab.stagger;
+          if (tSlab < 0) continue;
+          const dissolveProgress = smoothstep(0.38, 0.95, postImpactU + slab.dissolveStagger);
+          if (dissolveProgress >= 0.995) continue;
+          const slabHeat = 1.24 * (1.0 - smoothstep(0.10, 0.48, postImpactU + slab.dissolveStagger));
+          const emerge = outQuint(Math.min(1.0, tSlab / 0.12));
+          const ang = slab.ang + m.seed;
+          const sx = impX + Math.cos(ang) * slab.radial * 0.78;
+          const sz = impZ + Math.sin(ang) * slab.radial * 0.78;
+          const sy = this.getGroundHeight(sx, sz) - 0.14;
+          _dummy.position.set(sx, sy, sz);
+          _pos.set(
+            Math.cos(ang) * Math.sin(slab.lean),
+            Math.cos(slab.lean),
+            Math.sin(ang) * Math.sin(slab.lean)
+          ).normalize();
+          _dummy.quaternion.setFromUnitVectors(UP, _pos);
+          _dummy.scale.set(slab.radius * 0.78 * emerge, slab.height * 0.72 * emerge, slab.radius * 0.78 * emerge);
+          _dummy.updateMatrix();
+          this.craterRocksMesh.setMatrixAt(rockSlot, _dummy.matrix);
+          this.rocksMetaAttr.setXYZW(rockSlot, slab.seed + m.seed, slabHeat, dissolveProgress, 1.0);
+          rockSlot++;
+        }
+
+        for (let i = 0; i < 10 && rockSlot < MAX_CRATER_ROCKS; i++) {
+          const cin = this.cinderRockRecords[i * 2];
+          if (!cin) continue;
+          const dissolveProgress = smoothstep(0.38, 0.95, postImpactU + cin.dissolveStagger);
+          if (dissolveProgress >= 0.995) continue;
+          const cinHeat = 1.15 * (1.0 - smoothstep(0.08, 0.42, postImpactU + cin.dissolveStagger));
+          const approxX = impX + cin.vx * 0.38;
+          const approxZ = impZ + cin.vz * 0.38;
+          const floorY = this.getGroundHeight(approxX, approxZ) + cin.size * 0.40;
+          evalOneBounceBallistic(
+            tImp,
+            impY + 0.44,
+            cin.vy,
+            BALLISTIC_GRAVITY,
+            BALLISTIC_RESTITUTION,
+            floorY,
+            _bounceState
+          );
+          _dummy.position.set(
+            impX + cin.vx * _bounceState.horizT * 0.85,
+            _bounceState.y,
+            impZ + cin.vz * _bounceState.horizT * 0.85
+          );
+          _euler.set(
+            cin.spinX * _bounceState.spinT,
+            cin.ang + m.seed + cin.spinY * _bounceState.spinT,
+            cin.spinZ * _bounceState.spinT
+          );
+          _dummy.quaternion.setFromEuler(_euler);
+          const sc = cin.size * 0.88;
+          _dummy.scale.set(sc * 0.95, sc * 1.35, sc * 0.95);
+          _dummy.updateMatrix();
+          this.craterRocksMesh.setMatrixAt(rockSlot, _dummy.matrix);
+          this.rocksMetaAttr.setXYZW(rockSlot, cin.seed + m.seed, cinHeat, dissolveProgress, 0.4);
+          rockSlot++;
+        }
+      }
+
+      // 4. Crater Lava Decal on Ground
+      if (impactElapsed >= -0.02 && decalSlot < MAX_CRATER_DECALS) {
+        const tCrater = Math.max(0.01, impactElapsed + 0.02);
+        const reach = smoothstep(0.0, 0.14, tCrater);
+        const decalHeat = 1.22 * (1.0 - smoothstep(0.30, 0.85, postImpactU));
+        const castYaw = Math.atan2(m.dirX, m.dirZ) + m.seed * 0.5;
+        _dummy.position.set(impX, impY + 0.042 + decalSlot * 0.003, impZ);
+        _dummy.quaternion.setFromAxisAngle(UP, castYaw);
+        const fRad = c.fissureRadius * 0.72;
+        _dummy.scale.set(fRad, 1.0, fRad);
+        _dummy.updateMatrix();
+        this.craterDecalMesh.setMatrixAt(decalSlot, _dummy.matrix);
+        this.decalMetaAttr.setXYZW(decalSlot, postImpactU, reach, 0.49, decalHeat);
+        decalSlot++;
+      }
+
+      if (impactElapsed >= 0 && impactElapsed <= 0.35) {
+        const env = Math.exp(-impactElapsed * 7.5) * 0.14;
+        if (env > maxShakeEnv) {
+          maxShakeEnv = env;
+          maxShakeAge = impactElapsed;
+        }
+      }
+    }
+
+    this.asteroidMesh.count = astSlot;
+    this.asteroidMesh.instanceMatrix.needsUpdate = true;
+    this.asteroidMetaAttr.needsUpdate = true;
+
+    this.fireWakeMesh.count = wakeSlot;
+    this.fireWakeMesh.instanceMatrix.needsUpdate = true;
+    this.wakeMetaAttr.needsUpdate = true;
+
+    this.craterRocksMesh.count = rockSlot;
+    this.craterRocksMesh.instanceMatrix.needsUpdate = true;
+    this.rocksMetaAttr.needsUpdate = true;
+
+    this.craterDecalMesh.count = decalSlot;
+    this.craterDecalMesh.instanceMatrix.needsUpdate = true;
+    this.decalMetaAttr.needsUpdate = true;
+
+    if (maxShakeEnv > 0) {
+      this._shakeOffset.set(
+        Math.sin(maxShakeAge * 52.0) * maxShakeEnv * 0.7,
+        Math.abs(Math.cos(maxShakeAge * 60.0)) * maxShakeEnv,
+        Math.cos(maxShakeAge * 46.0) * maxShakeEnv * 0.7
+      );
+    } else {
+      this._shakeOffset.set(0, 0, 0);
+    }
+    this._hitstopScale = 1.0;
     return this;
   }
 
@@ -1037,8 +1327,9 @@ export class CinderFallSystem {
     let wakeSlot = 0;
     const wakeBurnU = impactElapsed > 0 ? saturate(impactElapsed / Math.max(0.02, c.trailBurnout)) : 0.0;
 
-    for (let i = 0; i < MAX_FIRE_TONGUES; i++) {
+    for (let i = 0; i < 34; i++) {
       const rec = this.fireTongueRecords[i];
+      if (!rec) continue;
       if (rec.isWake && wakeBurnU < 0.99) {
         const headU = impactElapsed < 0 ? flightU : 0.96;
         const tailU = lerp(Math.max(0.0, headU - 0.48), headU, wakeBurnU);
@@ -1076,7 +1367,7 @@ export class CinderFallSystem {
         const tCol = Math.max(0.01, impactElapsed + 0.02);
         const colFade = 1.0 - smoothstep(0.38, 0.88, postImpactU);
         const kIdx = i - 14;
-        const kSpan = kIdx / Math.max(1, MAX_FIRE_TONGUES - 15);
+        const kSpan = kIdx / Math.max(1, 34 - 15);
         const horseshoeAng = lerp(-2.65, 0.32, kSpan);
         const rDist = (1.45 + rec.radial * 1.35) * smoothstep(0.0, 0.18, tCol);
         const fx = impX + Math.cos(horseshoeAng) * rDist;
@@ -1219,6 +1510,23 @@ export class CinderFallSystem {
 
   update(dt) {
     if (!this.active) return;
+    if (this.skyBarrageList.length > 0) {
+      this.age += dt;
+      this.sharedUniforms.uTime.value = this.age;
+      for (let i = this.skyBarrageList.length - 1; i >= 0; i--) {
+        const m = this.skyBarrageList[i];
+        m.age += dt;
+        if (m.age > m.totalDuration) {
+          this.skyBarrageList.splice(i, 1);
+        }
+      }
+      if (this.skyBarrageList.length === 0) {
+        this.clear();
+        return;
+      }
+      this._renderSkyBarrage();
+      return;
+    }
     const nextAge = this.age + dt;
     if (nextAge > this.totalDuration) {
       this.clear();
@@ -1257,6 +1565,7 @@ export class CinderFallSystem {
   clear() {
     this.active = false;
     this.age = 0;
+    this.skyBarrageList.length = 0;
     this._shakeOffset.set(0, 0, 0);
     this._hitstopScale = 1.0;
     this.group.visible = false;

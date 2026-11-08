@@ -2131,22 +2131,37 @@ export function createCampaignLoop({
   }
 
   function fireSkyMeteorStrike(magePos, meteorIndex = 0) {
-    const center = combatHeroes.Mage.stormCataclysmCenter || magePos || { x: 0, y: 0, z: 0 };
+    // Re-center the bombardment dynamically toward the nearest living enemy if within 15m so moving packs can't walk out of the barrage!
+    const enemies = enemyManager ? enemyManager.activeEnemies : [];
+    const fallbackCenter = combatHeroes.Mage.stormCataclysmCenter || magePos || { x: 0, y: 0, z: 0 };
+    const liveTarget = selectSoftLockTarget(
+      magePos || fallbackCenter,
+      magePos?.yaw || 0,
+      enemies,
+      { maxRange: 15.0 }
+    );
+    if (liveTarget && combatHeroes.Mage.stormCataclysmCenter) {
+      combatHeroes.Mage.stormCataclysmCenter.x += (liveTarget.x - combatHeroes.Mage.stormCataclysmCenter.x) * 0.35;
+      combatHeroes.Mage.stormCataclysmCenter.z += (liveTarget.z - combatHeroes.Mage.stormCataclysmCenter.z) * 0.35;
+    }
+
+    const center = combatHeroes.Mage.stormCataclysmCenter || fallbackCenter;
     const zoneRadius = HERO_STATS.Mage.stormCataclysmRadius || 8.5;
     const meteorDmg = HERO_STATS.Mage.meteorDmg || 38;
     const maxHitsPerTarget = HERO_STATS.Mage.maxMeteorHitsPerTarget || 3;
     const hitCounts = combatHeroes.Mage.stormCataclysmHitCounts;
 
-    // Distribute 10 meteors across the 8.5m zone (first meteor strikes center/nearest enemy)
-    const angle = meteorIndex * 2.39996; // Golden angle spiral
-    const radialFrac = meteorIndex === 0 ? 0 : Math.min(0.85, Math.sqrt(meteorIndex / 10) * 0.78);
+    // Distribute meteors across the 8.5m zone in a tight Golden-Angle spiral
+    const angle = meteorIndex * 2.39996;
+    const radialFrac = meteorIndex === 0 ? 0 : Math.min(0.82, Math.sqrt((meteorIndex % 12) / 12) * 0.76);
     const strikeX = center.x + Math.cos(angle) * zoneRadius * radialFrac;
     const strikeZ = center.z + Math.sin(angle) * zoneRadius * radialFrac;
     const strikeY = walkableHeightAt(strikeX, strikeZ);
     const strikePos = { x: strikeX, y: strikeY, z: strikeZ };
 
     if (vfxKit?.cinderFall?.cast) {
-      const dirAng = (meteorIndex % 2 === 0 ? 0.35 : -0.35);
+      // Primary meteor streaking down from 15.5m sky height
+      const dirAng = (meteorIndex % 2 === 0 ? 0.32 : -0.32) + Math.sin(meteorIndex * 1.7) * 0.18;
       const dirX = Math.sin(dirAng);
       const dirZ = Math.cos(dirAng);
       vfxKit.cinderFall.cast(
@@ -2154,11 +2169,32 @@ export function createCampaignLoop({
         { x: dirX, y: 0, z: dirZ },
         {
           fromSky: true,
-          skyHeight: 13.5,
+          skyHeight: 15.5,
           range: 4.2,
           distance: 4.2,
           targetPos: strikePos,
+          initialAge: 0.0,
           seed: 1.0 + meteorIndex * 0.73,
+        }
+      );
+
+      // Staggered chaser meteor (offset by +2.4rad and -0.09s flight delay) so meteors rain down breathlessly one right after another!
+      const chaserAng = angle + 2.4;
+      const chaserRad = Math.min(0.85, radialFrac * 0.65 + 0.22);
+      const chaserX = center.x + Math.cos(chaserAng) * zoneRadius * chaserRad;
+      const chaserZ = center.z + Math.sin(chaserAng) * zoneRadius * chaserRad;
+      const chaserY = walkableHeightAt(chaserX, chaserZ);
+      vfxKit.cinderFall.cast(
+        { x: chaserX - dirX * 4.0, y: chaserY, z: chaserZ - dirZ * 4.0 },
+        { x: dirX, y: 0, z: dirZ },
+        {
+          fromSky: true,
+          skyHeight: 16.5,
+          range: 4.0,
+          distance: 4.0,
+          targetPos: { x: chaserX, y: chaserY, z: chaserZ },
+          initialAge: -0.09,
+          seed: 2.3 + meteorIndex * 1.19,
         }
       );
     } else if (vfxKit?.stormLance?.cast && meteorIndex === 0) {
@@ -2171,7 +2207,7 @@ export function createCampaignLoop({
 
     if (!enemyManager) return [];
 
-    // Exclude enemies that have already taken maxMeteorHitsPerTarget (3) hits during this cast
+    // Exclude bosses that have already taken maxMeteorHitsPerTarget (3) hits during this cast
     const excludeSet = new Set();
     if (hitCounts instanceof Map) {
       for (const [enemyRef, count] of hitCounts.entries()) {
@@ -2874,7 +2910,7 @@ export function createCampaignLoop({
       }
     }
 
-    // Mage 6.0s Sky Meteor Shower (10 meteors total, 1 every 0.60s; Mage mobile after 0.8s cast pose)
+    // Mage 6.0s Breathless Sky Meteor Barrage (1 strike pair every 0.18s = 34 strike waves / 68 meteors over 6.0s!)
     if (combatHeroes.Mage.stormCataclysmCastTimer > 0) {
       combatHeroes.Mage.stormCataclysmCastTimer = Math.max(
         0,
@@ -2887,8 +2923,8 @@ export function createCampaignLoop({
         combatHeroes.Mage.stormCataclysmTimer - dt
       );
       combatHeroes.Mage.stormCataclysmWaveTimer += dt;
-      const meteorInterval = 0.6;
-      const maxMeteors = HERO_STATS.Mage.meteorCount || 10;
+      const meteorInterval = 0.18;
+      const maxMeteors = 34;
       while (
         combatHeroes.Mage.stormCataclysmWaveTimer >= meteorInterval &&
         combatHeroes.Mage.stormCataclysmMeteorsFired < maxMeteors
