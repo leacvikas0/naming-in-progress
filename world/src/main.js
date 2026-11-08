@@ -1408,52 +1408,98 @@ function resolveHitDamageElement(hitSpec = {}, result = {}) {
   return 'physical';
 }
 
+const PEAK_DAMAGE_SOURCES = new Set([
+  'shatterlance',
+  'frost_lance',
+  'cinder_fall',
+  'storm_lance',
+  'combo4',
+  'heavy',
+  'charged',
+  'intercept',
+  'mage_heavy',
+  'couples_ultimate',
+  'storm_cataclysm',
+]);
+
 function emitFloatingDamageForEnemyHit(enemy, result, hitSpec = {}) {
   if (!damageNumbers || !enemy || !result) return;
   const dmg = Number(result.damageDealt || 0);
-  if (dmg > 0) {
-    const element = resolveHitDamageElement(hitSpec, result);
-    const isCrit = Boolean(
-      hitSpec.knightUltActive ||
-        result.detonation ||
-        element === 'lightning' ||
-        dmg >= 68
-    );
-    damageNumbers.spawnDamageNumber({
-      amount: dmg,
-      element,
-      source: hitSpec.source || '',
-      isCrit,
-      worldPos: {
-        x: enemy.x,
-        y: enemy.y,
-        z: enemy.z,
-        heightOffset: enemy.isBoss ? 2.15 : 1.55,
-      },
-    });
-  }
+  if (dmg <= 0) return;
+
+  const src = String(hitSpec.source || result.source || '').toLowerCase();
+
+  // 1. Cross-Element or Finisher Detonation: ONE consolidated callout per explosion
+  //    (result.damageDealt already includes the detonation bonus damage!)
   if (result.detonation) {
     const det = result.detonation;
     const detEl =
       det.id === 'solar_flare'
         ? 'fire'
-        : det.id === 'shatterblow'
+        : det.id === 'shatterblow' || det.id === 'rime_shatter'
           ? 'ice'
           : 'lightning';
     damageNumbers.spawnDamageNumber({
-      amount: det.bonusDmg || 65,
+      amount: dmg,
       element: detEl,
       source: det.id || 'detonation',
       isCrit: true,
-      label: det.label || '',
+      label: String(det.label || '').replace(/!/g, ''),
+      mergeKey: `detonation_${det.id || 'burst'}`,
+      duration: 1.05,
       worldPos: {
         x: det.x ?? enemy.x,
         y: det.y ?? enemy.y,
         z: det.z ?? enemy.z,
-        heightOffset: (enemy.isBoss ? 2.15 : 1.55) + 0.35,
+        heightOffset: (enemy.isBoss ? 2.25 : 1.75) + 0.2,
       },
     });
+    return;
   }
+
+  // 2. Mage Q Sky Meteor Shower (`storm_cataclysm`): ONE single accumulating total counter
+  //    above the meteor zone instead of per-meteor per-enemy spam!
+  if (src === 'storm_cataclysm') {
+    damageNumbers.spawnDamageNumber({
+      amount: dmg,
+      element: 'fire',
+      source: 'storm_cataclysm',
+      isCrit: true,
+      label: 'STARFALL',
+      mergeKey: 'storm_cataclysm_total',
+      duration: 1.25,
+      worldPos: {
+        x: enemy.x,
+        y: enemy.y,
+        z: enemy.z,
+        heightOffset: 2.15,
+      },
+    });
+    return;
+  }
+
+  // 3. Peak Finishers & Signature Skills (`Shatterlance`, `Combo4`, `Frost Lance`, `Cinder Fall`, `Intercept`):
+  //    Consolidate multi-enemy cleaves into ONE clean number per skill cast; suppress routine tap combos!
+  const isPeakMoment =
+    PEAK_DAMAGE_SOURCES.has(src) ||
+    Boolean(result.killed && (enemy.isBoss || enemy.isElite));
+  if (!isPeakMoment) return;
+
+  const element = resolveHitDamageElement(hitSpec, result);
+  damageNumbers.spawnDamageNumber({
+    amount: dmg,
+    element,
+    source: src,
+    isCrit: false,
+    mergeKey: `peak_${src}`,
+    duration: 0.85,
+    worldPos: {
+      x: enemy.x,
+      y: enemy.y,
+      z: enemy.z,
+      heightOffset: enemy.isBoss ? 2.15 : 1.75,
+    },
+  });
 }
 
 if (coopSystem?.enemyManager) {
@@ -3928,29 +3974,6 @@ function animate() {
       camPitch: camState.pitch,
       camera,
     });
-
-    const activeEnemies = coopSystem?.enemyManager?.activeEnemies || [];
-    for (let i = 0; i < activeEnemies.length; i++) {
-      const e = activeEnemies[i];
-      if (e && !e.dead && e.active && e.burnTimer > 0 && e.burnDps > 0) {
-        e._burnPopAccum = (e._burnPopAccum || 0) + dt;
-        if (e._burnPopAccum >= 0.5) {
-          e._burnPopAccum -= 0.5;
-          damageNumbers?.spawnDamageNumber({
-            amount: Math.max(1, Math.round(e.burnDps * 0.5)),
-            element: 'fire',
-            source: 'fire_burn',
-            isCrit: false,
-            worldPos: {
-              x: e.x,
-              y: e.y,
-              z: e.z,
-              heightOffset: e.isBoss ? 1.95 : 1.4,
-            },
-          });
-        }
-      }
-    }
 
     updateSacredStoneGaze(dt);
   } else {

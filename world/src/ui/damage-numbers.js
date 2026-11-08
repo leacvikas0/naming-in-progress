@@ -22,7 +22,7 @@ const DAMAGE_NUMBERS_CSS = `
     overflow: hidden;
     user-select: none;
     -webkit-user-select: none;
-    font-family: "Playfair Display", "Cormorant Garamond", Georgia, "Palatino Linotype", serif;
+    font-family: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
 
   .am-dmg-pop {
@@ -31,67 +31,62 @@ const DAMAGE_NUMBERS_CSS = `
     top: 0;
     transform: translate3d(-9999px, -9999px, 0) scale(1);
     display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-style: italic;
+    align-items: baseline;
+    gap: 6px;
+    font-style: normal;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    letter-spacing: 0.01em;
+    letter-spacing: -0.01em;
     line-height: 1;
     white-space: nowrap;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(15, 19, 26, 0.36);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     will-change: transform, opacity;
   }
 
   .am-dmg-pop.el-physical {
-    font-size: 1.85rem;
-    color: #fffdf9;
-    text-shadow:
-      0 2px 4px rgba(24, 14, 18, 0.92),
-      0 0 12px rgba(24, 14, 18, 0.65);
+    font-size: 1.05rem;
+    color: #f8fafc;
+    text-shadow: 0 1.5px 3px rgba(10, 12, 18, 0.9);
   }
 
   .am-dmg-pop.el-ice {
-    font-size: 2.05rem;
-    color: #f8fafc;
-    text-shadow:
-      0 2px 5px rgba(12, 24, 38, 0.92),
-      0 0 14px rgba(125, 211, 252, 0.78),
-      0 6px 18px rgba(8, 47, 73, 0.62);
+    font-size: 1.12rem;
+    color: #e0f2fe;
+    border-color: rgba(186, 230, 253, 0.28);
+    text-shadow: 0 1.5px 3px rgba(8, 24, 38, 0.9);
   }
 
   .am-dmg-pop.el-fire {
-    font-size: 2.1rem;
-    color: #fde68a;
-    text-shadow:
-      0 2px 5px rgba(54, 16, 8, 0.94),
-      0 0 16px rgba(249, 115, 22, 0.85),
-      0 6px 18px rgba(67, 20, 7, 0.68);
+    font-size: 1.12rem;
+    color: #fed7aa;
+    border-color: rgba(253, 186, 116, 0.28);
+    text-shadow: 0 1.5px 3px rgba(38, 14, 8, 0.9);
   }
 
   .am-dmg-pop.el-lightning,
   .am-dmg-pop.is-crit {
-    font-size: 2.65rem;
-    color: #fcd34d;
-    text-shadow:
-      0 2px 6px rgba(42, 18, 8, 0.94),
-      0 0 18px rgba(245, 158, 11, 0.88),
-      0 6px 22px rgba(46, 16, 10, 0.72);
+    font-size: 1.28rem;
+    color: #fef3c7;
+    background: rgba(18, 22, 30, 0.52);
+    border-color: rgba(253, 224, 71, 0.34);
+    text-shadow: 0 1.5px 4px rgba(24, 14, 8, 0.92);
   }
 
   .am-dmg-tag {
-    font-size: 0.68em;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    opacity: 0.95;
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(248, 250, 252, 0.82);
   }
 
-  .am-dmg-crit-star {
-    color: #fde68a;
-    font-style: normal;
-    font-size: 0.76em;
-    text-shadow:
-      0 0 12px rgba(251, 191, 36, 0.95),
-      0 1px 3px rgba(42, 18, 8, 0.9);
+  .am-dmg-val {
+    font-weight: 800;
   }
 `;
 
@@ -169,7 +164,7 @@ export function createDamageNumbersOverlay({
     }
     _projVec.set(
       Number(worldPos.x) || 0,
-      (Number(worldPos.y) || 0) + (Number(worldPos.heightOffset) || 1.55),
+      (Number(worldPos.y) || 0) + (Number(worldPos.heightOffset) || 1.75),
       Number(worldPos.z) || 0
     );
     _projVec.project(cam);
@@ -181,6 +176,15 @@ export function createDamageNumbersOverlay({
     return { x: sx, y: sy, visible: true };
   }
 
+  function renderItemContent(el, cleanLabel, numVal) {
+    if (!el) return;
+    if (cleanLabel) {
+      el.innerHTML = `<span class="am-dmg-tag">${cleanLabel}</span><span class="am-dmg-val">${numVal}</span>`;
+    } else {
+      el.innerHTML = `<span class="am-dmg-val">${numVal}</span>`;
+    }
+  }
+
   function spawnDamageNumber({
     amount = 42,
     element = 'physical',
@@ -189,20 +193,44 @@ export function createDamageNumbersOverlay({
     worldPos = null,
     screenPos = null,
     label = '',
-    duration = 0.95,
+    mergeKey = null,
+    duration = 0.90,
   } = {}) {
     const numVal = Math.max(1, Math.round(Number(amount) || 1));
     const normEl = normalizeDamageElement(element || source);
+    const cleanLabel = String(label || '').replace(/[✦!]/g, '').trim();
     const crit =
       typeof isCrit === 'boolean'
         ? isCrit
-        : normEl === 'lightning' || String(label).includes('✦');
+        : Boolean(cleanLabel) || normEl === 'lightning';
+
+    // Option 2 Consolidation: If an active item with the same `mergeKey` exists,
+    // accumulate the damage in-place instead of spawning cluttered duplicate popups!
+    if (mergeKey) {
+      const existing = activeItems.find(
+        (it) => it.mergeKey === mergeKey && it.age < it.duration - 0.08
+      );
+      if (existing) {
+        existing.amount += numVal;
+        if (cleanLabel && !existing.label) {
+          existing.label = cleanLabel;
+        }
+        existing.age = Math.min(existing.age, 0.08);
+        existing.pulseTimer = 0.14;
+        if (worldPos && existing.worldPos) {
+          existing.worldPos.x = existing.worldPos.x * 0.65 + (Number(worldPos.x) || 0) * 0.35;
+          existing.worldPos.y = existing.worldPos.y * 0.65 + (Number(worldPos.y) || 0) * 0.35;
+          existing.worldPos.z = existing.worldPos.z * 0.65 + (Number(worldPos.z) || 0) * 0.35;
+        }
+        renderItemContent(existing.el, existing.label, existing.amount);
+        updateItemDom(existing, camera);
+        return existing;
+      }
+    }
 
     spawnCounter += 1;
-    // Fan out consecutive numbers cleanly
-    const fanSlot = (spawnCounter % 5) - 2;
-    const jitterX = fanSlot * 18 + ((spawnCounter * 17) % 11) - 5;
-    const jitterY = -((spawnCounter % 3) * 10);
+    const jitterX = ((spawnCounter % 3) - 1) * 14;
+    const jitterY = 0;
 
     let el = null;
     if (root && typeof document !== 'undefined') {
@@ -210,31 +238,26 @@ export function createDamageNumbersOverlay({
       el.className = `am-dmg-pop el-${normEl}${crit ? ' is-crit' : ''}`;
       el.dataset.damageElement = normEl;
       el.dataset.damageCrit = crit ? 'true' : 'false';
-
-      const cleanLabel = String(label || '').replace(/✦/g, '').trim();
-      const textVal = cleanLabel ? `${cleanLabel} ${numVal}` : `${numVal}`;
-      if (crit) {
-        el.innerHTML = `<span>${textVal}</span><span class="am-dmg-crit-star">✦</span>`;
-      } else {
-        el.innerHTML = `<span>${textVal}</span>`;
-      }
+      renderItemContent(el, cleanLabel, numVal);
       root.appendChild(el);
     }
 
     const item = {
       id: spawnCounter,
+      mergeKey: mergeKey || null,
       amount: numVal,
       element: normEl,
       isCrit: crit,
-      label,
+      label: cleanLabel,
       age: 0,
-      duration: Math.max(0.35, Number(duration) || 0.95),
+      pulseTimer: 0.14,
+      duration: Math.max(0.45, Number(duration) || 0.90),
       worldPos: worldPos
         ? {
             x: Number(worldPos.x) || 0,
             y: Number(worldPos.y) || 0,
             z: Number(worldPos.z) || 0,
-            heightOffset: Number(worldPos.heightOffset ?? 1.55),
+            heightOffset: Number(worldPos.heightOffset ?? 1.85),
           }
         : null,
       screenPos: screenPos
@@ -246,7 +269,7 @@ export function createDamageNumbersOverlay({
     };
 
     activeItems.push(item);
-    while (activeItems.length > 28) {
+    while (activeItems.length > 6) {
       const oldest = activeItems.shift();
       oldest?.el?.remove?.();
     }
@@ -258,14 +281,10 @@ export function createDamageNumbersOverlay({
   function updateItemDom(item, activeCam) {
     if (!item.el) return;
     const t = Math.min(1, Math.max(0, item.age / item.duration));
-    const liftY = -46 * (1 - Math.pow(1 - t, 2.1));
-    const scale =
-      t < 0.16
-        ? 0.75 + (t / 0.16) * (item.isCrit ? 0.55 : 0.35)
-        : item.isCrit
-          ? 1.30 - ((t - 0.16) / 0.84) * 0.22
-          : 1.10 - ((t - 0.16) / 0.84) * 0.12;
-    const opacity = t < 0.68 ? 1.0 : Math.max(0, 1.0 - (t - 0.68) / 0.32);
+    const liftY = -28 * (1 - Math.pow(1 - t, 2.0));
+    const pulseBoost = item.pulseTimer > 0 ? (item.pulseTimer / 0.14) * 0.12 : 0;
+    const scale = 1.0 + pulseBoost - t * 0.06;
+    const opacity = t < 0.72 ? 1.0 : Math.max(0, 1.0 - (t - 0.72) / 0.28);
 
     let sx = 720;
     let sy = 400;
@@ -282,8 +301,9 @@ export function createDamageNumbersOverlay({
       sy = proj.y;
     }
 
-    const finalX = sx + item.jitterX;
-    const finalY = sy + item.jitterY + liftY;
+    const activeIdx = Math.max(0, activeItems.indexOf(item));
+    const finalX = sx;
+    const finalY = sy + liftY - activeIdx * 32;
     item.el.style.opacity = opacity.toFixed(3);
     item.el.style.transform = `translate3d(${finalX.toFixed(1)}px, ${finalY.toFixed(1)}px, 0px) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
   }
@@ -293,6 +313,9 @@ export function createDamageNumbersOverlay({
     for (let i = activeItems.length - 1; i >= 0; i--) {
       const item = activeItems[i];
       item.age += dt;
+      if (item.pulseTimer > 0) {
+        item.pulseTimer = Math.max(0, item.pulseTimer - dt);
+      }
       if (item.age >= item.duration) {
         item.el?.remove?.();
         activeItems.splice(i, 1);
