@@ -1466,33 +1466,61 @@ export async function createCoopPlayerSystem({
     },
     onAimChanged: (aim, phase) => {
       const aimArrow = vfxKit?.aimArrow;
-      if (!aimArrow) return;
       const arrowPayload = {
         ...aim,
+        direction: { x: aim.dirX, y: 0, z: aim.dirZ },
         mode: aim.spellId,
         style: aim.spellId === 'cinder_fall' ? 'fire' : 'ice',
       };
       if (phase === 'hide') {
-        aimArrow.hide?.();
+        aimArrow?.hide?.();
+        vfxKit?.shatterlance?.cancelCharge?.();
+        if (heroStates.Mage.actionState === 'cast_hold') {
+          heroStates.Mage.actionState = null;
+          heroStates.Mage.actionTimer = 0;
+        }
       } else if (phase === 'show') {
-        if (typeof aimArrow.show === 'function') {
+        if (typeof aimArrow?.show === 'function') {
           aimArrow.show(arrowPayload);
-        } else if (typeof aimArrow.setAim === 'function') {
+        } else if (typeof aimArrow?.setAim === 'function') {
           aimArrow.setAim(arrowPayload);
         }
+        if (aim.spellId === 'shatterlance') {
+          vfxKit?.shatterlance?.updateChargeHold?.({
+            origin: { x: heroStates.Mage.x, y: heroStates.Mage.y, z: heroStates.Mage.z },
+            yaw: aim.yaw ?? heroStates.Mage.yaw,
+            dirX: aim.dirX,
+            dirZ: aim.dirZ,
+            direction: { x: aim.dirX, y: 0, z: aim.dirZ },
+            chargeProgress: 0.25,
+            active: true,
+            dt: 0.016,
+          });
+        }
       } else {
-        if (typeof aimArrow.updateAim === 'function') {
+        if (typeof aimArrow?.updateAim === 'function') {
           aimArrow.updateAim(arrowPayload);
-        } else if (typeof aimArrow.setAim === 'function') {
+        } else if (typeof aimArrow?.setAim === 'function') {
           aimArrow.setAim(arrowPayload);
-        } else if (typeof aimArrow.show === 'function') {
+        } else if (typeof aimArrow?.show === 'function') {
           aimArrow.show(arrowPayload);
+        }
+        if (aim.spellId === 'shatterlance') {
+          vfxKit?.shatterlance?.updateChargeHold?.({
+            origin: { x: heroStates.Mage.x, y: heroStates.Mage.y, z: heroStates.Mage.z },
+            yaw: aim.yaw ?? heroStates.Mage.yaw,
+            dirX: aim.dirX,
+            dirZ: aim.dirZ,
+            direction: { x: aim.dirX, y: 0, z: aim.dirZ },
+            active: true,
+            dt: 0.016,
+          });
         }
       }
     },
     onAimCast: (castPayload) => {
       const mageState = heroStates.Mage;
-      const knightState = heroStates.Knight;
+      vfxKit?.shatterlance?.cancelCharge?.();
       mageState.yaw = castPayload.yaw;
       applyTransform(mageState);
       startOneShotAction(mageState, 'cast_spell', 0.62, {
@@ -1500,6 +1528,10 @@ export async function createCoopPlayerSystem({
         timeScale: 1.0,
         fade: 0.08,
       });
+      if (castPayload.spellId === 'shatterlance') {
+        mageState.consecutiveChargedCount = (mageState.consecutiveChargedCount || 0) + 1;
+        campaignLoop.combatHeroes.Mage.consecutiveChargedCount = mageState.consecutiveChargedCount;
+      }
       const res = campaignLoop.performPartnerSkill('Mage', heroStates, {
         spellId: castPayload.spellId,
         yaw: castPayload.yaw,
@@ -2044,13 +2076,31 @@ export async function createCoopPlayerSystem({
   function startSkillAim(opts = {}) {
     if (isPlayerControlLocked()) return { blockedByControlLock: true };
     const mageState = heroStates.Mage;
+    const chosenSpell = opts.spellId || heroStates.Mage.selectedSpell || 'frost_lance';
+    if (chosenSpell === 'shatterlance') {
+      actionAim.cancelSwing('Mage');
+      if (typeof opts.yaw === 'number') {
+        mageState.yaw = opts.yaw;
+      }
+      mageState.lungeRemaining = 0;
+      mageState.actionState = 'cast_hold';
+      mageState.actionTimer = 999;
+      mageState.char.play('cast_spell', {
+        loop: true,
+        fade: 0.06,
+        startTime: 0,
+        timeScale: 0.85,
+        force: true,
+      });
+      applyTransform(mageState);
+    }
     return actionAim.startSkillAim({
       origin: opts.origin || { x: mageState.x, y: mageState.y, z: mageState.z },
       yaw: opts.yaw ?? mageState.yaw,
       pitch: opts.pitch ?? lastKnownCamPitch,
       distance: opts.distance,
       touchTarget: opts.touchTarget,
-      spellId: opts.spellId || heroStates.Mage.selectedSpell,
+      spellId: chosenSpell,
     });
   }
 
@@ -2108,7 +2158,7 @@ export async function createCoopPlayerSystem({
         return startSkillAim({
           ...actionOptions,
           spellId: 'shatterlance',
-          distance: actionOptions.distance ?? 7.5,
+          distance: actionOptions.distance,
         });
       }
       return null;
@@ -2494,11 +2544,26 @@ export async function createCoopPlayerSystem({
       leader.mashTimeScale = actionAim.heroes[leader.id].mashTimeScale;
 
       if (actionAim.aimState.active && activeHeroId === 'Mage') {
+        const aimYaw = camYaw !== undefined && camYaw !== 0 ? camYaw : actionAim.aimState.yaw ?? heroStates.Mage.yaw;
+        heroStates.Mage.yaw = aimYaw;
         actionAim.updateSkillAim({
           origin: { x: heroStates.Mage.x, y: heroStates.Mage.y, z: heroStates.Mage.z },
-          yaw: camYaw || heroStates.Mage.yaw,
+          yaw: aimYaw,
           pitch: lastKnownCamPitch,
         });
+        if (actionAim.aimState.spellId === 'shatterlance') {
+          heroStates.Mage.actionState = 'cast_hold';
+          heroStates.Mage.actionTimer = 999;
+          vfxKit?.shatterlance?.updateChargeHold?.({
+            origin: { x: heroStates.Mage.x, y: heroStates.Mage.y, z: heroStates.Mage.z },
+            yaw: aimYaw,
+            dirX: actionAim.aimState.dirX,
+            dirZ: actionAim.aimState.dirZ,
+            direction: { x: actionAim.aimState.dirX, y: 0, z: actionAim.aimState.dirZ },
+            active: true,
+            dt,
+          });
+        }
       }
     }
 

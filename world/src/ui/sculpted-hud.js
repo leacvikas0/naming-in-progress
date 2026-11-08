@@ -121,36 +121,58 @@ const SVG_SACRED_LOTUS = `
 </svg>
 `;
 
-/* Flat White Cryo Ice-Lance / Lotus Crystal Silhouette for [E] Ice */
+/* Multi-Layered Cel-Shaded Cryo Ice-Lance / Glacial Star Crest for [E] Ice */
 const SVG_ICE_CRYSTAL_GLYPH = `
 <svg class="sh-skill-glyph-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-  <polygon points="24,7 30,22 24,39 18,22" fill="#ffffff"/>
-  <polygon points="14,15 21,23 16,35 11,24" fill="#ffffff" opacity="0.82"/>
-  <polygon points="34,15 27,23 32,35 37,24" fill="#ffffff" opacity="0.82"/>
-  <circle cx="24" cy="41.5" r="2" fill="#ffffff"/>
+  <!-- Crisp Cel Outline -->
+  <polygon points="24,4 30.5,18.5 44,24 30.5,29.5 24,44 17.5,29.5 4,24 17.5,18.5" fill="#0f172a"/>
+  <!-- Outer Glacial Facets -->
+  <polygon points="24,6.5 29.2,19.2 41.5,24 29.2,28.8 24,41.5 18.8,28.8 6.5,24 18.8,19.2" fill="#0284c7"/>
+  <!-- Diagonal Frost Spines -->
+  <polygon points="11.5,11.5 21.5,19.5 19.5,21.5" fill="#38bdf8"/>
+  <polygon points="36.5,11.5 26.5,19.5 28.5,21.5" fill="#38bdf8"/>
+  <polygon points="11.5,36.5 21.5,28.5 19.5,26.5" fill="#38bdf8"/>
+  <polygon points="36.5,36.5 26.5,28.5 28.5,26.5" fill="#38bdf8"/>
+  <!-- Mid Crystalline Highlight -->
+  <polygon points="24,9.5 27.6,20.4 38.5,24 27.6,27.6 24,38.5 20.4,27.6 9.5,24 20.4,20.4" fill="#38bdf8"/>
+  <!-- Pure White Diamond Core -->
+  <polygon points="24,15 26.4,21.6 33,24 26.4,26.4 24,33 21.6,26.4 15,24 21.6,21.6" fill="#f0f9ff"/>
 </svg>
 `;
 
-/* Flat White Pyro Sunfire Flame Crest for [E] Fire */
+/* Multi-Layered Cel-Shaded Pyro Sunfire Flame Crest for [E] Fire */
 const SVG_FIRE_SUNFIRE_GLYPH = `
 <svg class="sh-skill-glyph-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-  <path d="M24 8 C31 15.5, 36 22, 34 30.5 C32.2 36.8, 28.2 40, 24 40 C19.8 40, 15.8 36.8, 14 30.5 C12 22, 17 15.5, 24 8 Z" fill="#ffffff"/>
-  <path d="M24 19 C27 23, 28.5 26.8, 27.2 31.5 C26.2 34.2, 25.1 35.5, 24 35.5 C22.9 35.5, 21.8 34.2, 20.8 31.5 C19.5 26.8, 21 23, 24 19 Z" fill="rgba(251, 146, 60, 0.85)"/>
+  <!-- Crisp Cel Outline -->
+  <path d="M24 4 C30 11, 39 17.5, 37.5 29.5 C36.2 38.2, 30.5 43, 24 43 C17.5 43, 11.8 38.2, 10.5 29.5 C9 19.5, 15.5 13, 18.5 9.5 C18 14, 20 16.5, 24 4 Z" fill="#1c1210"/>
+  <!-- Outer Blazing Crimson-Orange Tongue -->
+  <path d="M24 6.8 C29.2 13, 36.8 18.8, 35.5 29.2 C34.4 36.6, 29.5 40.8, 24 40.8 C18.5 40.8, 13.6 36.6, 12.5 29.2 C11.3 20.8, 16.5 15.2, 19.2 12 C19.2 15.8, 21.2 17.5, 24 6.8 Z" fill="#ff3b1f"/>
+  <!-- Mid Solar Amber Flame -->
+  <path d="M24.5 14 C28.5 18.8, 32.8 23.2, 31.6 30.8 C30.6 35.8, 27.6 38.8, 24 38.8 C20.4 38.8, 17.2 35.8, 16.4 30.8 C15.6 25.2, 19.2 21, 21.2 18.4 C21.4 21.2, 22.8 22, 24.5 14 Z" fill="#ff9e1b"/>
+  <!-- Incandescent Gold-White Core -->
+  <path d="M24 22.5 C26.6 25.8, 28.4 28.8, 27.5 33.4 C26.8 36.2, 25.5 37.5, 24 37.5 C22.5 37.5, 21.2 36.2, 20.5 33.4 C19.6 28.8, 21.4 25.8, 24 22.5 Z" fill="#fff3b0"/>
 </svg>
 `;
 
-/* Clean Left-Side [Tab] Element Switch: Icons first, then horizontal text ahead ONLY when switching */
+/* Clean Left-Side [Tab] Element Switch: Bespoke Multi-Layered Cel-Shaded Ice & Fire SVGs + Horizontal Text ONLY when switching */
 const SVG_TAB_SWAP_GLYPH = `
 <span class="sh-tab-switch-inner">
   <span class="sh-tab-icons-pair">
     <span class="sh-tab-opt sh-tab-opt-ice" data-el-opt="ice" aria-hidden="true">
-      <svg viewBox="0 0 20 20" width="16" height="16" fill="none">
-        <path d="M10 2V18M3.1 6L16.9 14M3.1 14L16.9 6" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+        <polygon points="12,1.5 15.2,8.8 22.5,12 15.2,15.2 12,22.5 8.8,15.2 1.5,12 8.8,8.8" fill="#0f172a"/>
+        <polygon points="12,3 14.6,9.4 21,12 14.6,14.6 12,21 9.4,14.6 3,12 9.4,9.4" fill="#0284c7"/>
+        <path d="M5.5 5.5L18.5 18.5M18.5 5.5L5.5 18.5" stroke="#38bdf8" stroke-width="1.8" stroke-linecap="round"/>
+        <polygon points="12,5.2 13.8,10.2 18.8,12 13.8,13.8 12,18.8 10.2,13.8 5.2,12 10.2,10.2" fill="#38bdf8"/>
+        <polygon points="12,8.2 13,11 15.8,12 13,13 12,15.8 11,13 8.2,12 11,11" fill="#f0f9ff"/>
       </svg>
     </span>
     <span class="sh-tab-opt sh-tab-opt-fire" data-el-opt="fire" aria-hidden="true">
-      <svg viewBox="0 0 20 20" width="16" height="16" fill="none">
-        <path d="M10 2.2C13.6 6.2 15.6 9.6 14.6 13.8C13.8 16.5 12 18 10 18C8 18 6.2 16.5 5.4 13.8C4.4 9.6 6.4 6.2 10 2.2Z" fill="currentColor"/>
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+        <path d="M12 1.8C15.4 5.6 19.6 9.2 18.8 15.2C18.1 19.6 15.2 22.2 12 22.2C8.8 22.2 5.9 19.6 5.2 15.2C4.5 10.2 7.6 6.8 9.2 4.8C9 7.2 10.1 8.4 12 1.8Z" fill="#1c1210"/>
+        <path d="M12 3.4C14.8 6.8 18.3 9.8 17.6 15C17 18.8 14.6 21 12 21C9.4 21 7 18.8 6.4 15C5.8 10.8 8.3 7.8 9.7 6C9.7 8 10.7 8.9 12 3.4Z" fill="#ff3b1f"/>
+        <path d="M12.2 7.4C14.2 9.8 16.2 12.2 15.6 15.8C15.1 18.3 13.7 19.8 12 19.8C10.3 19.8 8.8 18.3 8.4 15.8C8 13 9.7 10.8 10.7 9.5C10.8 11 11.5 11.4 12.2 7.4Z" fill="#ff9e1b"/>
+        <path d="M12 11.8C13.3 13.5 14.2 15 13.7 17.2C13.4 18.6 12.7 19.3 12 19.3C11.3 19.3 10.6 18.6 10.3 17.2C9.8 15 10.7 13.5 12 11.8Z" fill="#fff3b0"/>
       </svg>
     </span>
   </span>
@@ -854,6 +876,68 @@ const SCULPTED_HUD_CSS = `
       0 4px 16px rgba(250, 204, 21, 0.45);
   }
 
+  /* Blazing Ready Pulse on [Q] when Kill-Energy Gauge reaches 100% */
+  @keyframes shUltReadyPulse {
+    0%, 100% {
+      border-color: #fde047;
+      box-shadow:
+        0 0 0 2px rgba(250, 204, 21, 0.9),
+        0 0 18px rgba(245, 158, 11, 0.72),
+        inset 0 0 12px rgba(254, 240, 138, 0.45);
+      transform: scale(1);
+    }
+    50% {
+      border-color: #ffffff;
+      box-shadow:
+        0 0 0 3px rgba(253, 224, 71, 0.98),
+        0 0 26px rgba(245, 158, 11, 0.92),
+        inset 0 0 16px rgba(254, 240, 138, 0.65);
+      transform: scale(1.04);
+    }
+  }
+
+  #sculpted-slot-q.is-ult-ready {
+    animation: shUltReadyPulse 1.6s ease-in-out infinite;
+  }
+
+  /* Mode B Main Divine Blessing / Resurrection Ready Halo on [R] */
+  @keyframes shMiracleHaloPulse {
+    0%, 100% {
+      border-color: #fde047;
+      box-shadow:
+        0 0 0 2.5px rgba(251, 191, 36, 0.92),
+        0 0 20px rgba(244, 63, 94, 0.75),
+        0 0 34px rgba(251, 191, 36, 0.55);
+    }
+    50% {
+      border-color: #fda4af;
+      box-shadow:
+        0 0 0 4px rgba(244, 63, 94, 0.95),
+        0 0 28px rgba(251, 191, 36, 0.92),
+        0 0 44px rgba(244, 63, 94, 0.72);
+    }
+  }
+
+  #sculpted-commune-btn.commune-miracle-ready {
+    animation: shMiracleHaloPulse 1.5s ease-in-out infinite;
+  }
+
+  /* Hide All Combat Controls & Joystick While Communing ([R] Active) */
+  #sculpted-action-cluster,
+  #sculpted-powers-dock,
+  #sculpted-joystick-zone {
+    transition: opacity 0.22s ease;
+  }
+
+  #sculpted-hud-root.is-communing #sculpted-action-cluster,
+  #sculpted-hud-root.is-communing #sculpted-powers-dock,
+  #sculpted-hud-root.is-communing #sculpted-joystick-zone,
+  #sculpted-hud-root.is-communing #sculpted-action-cluster .sh-open-ring,
+  #sculpted-hud-root.is-communing #sculpted-powers-dock .sh-open-ring {
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+
   /* Inline Crimson Wave Bars + Timer inside Commune [R] when Listening */
   .sh-commune-idle-content {
     display: inline-flex;
@@ -1088,9 +1172,13 @@ export function createSculptedHud({
       elapsedSeconds: 0,
       maxSeconds: 30,
     },
+    communeChannelActive: false,
+    miracleReady: null,
+    partnerDistance: 2.0,
+    qEnergyPct: null,
     stats: {
-      Knight: { level: 1, hp: 220, maxHp: 220, shield: 0 },
-      Mage: { level: 1, hp: 90, maxHp: 90, shield: 0 },
+      Knight: { level: 1, hp: 220, maxHp: 220, shield: 0, downed: false },
+      Mage: { level: 1, hp: 90, maxHp: 90, shield: 0, downed: false },
     },
     cooldowns: {
       E: 0,
@@ -1505,6 +1593,32 @@ export function createSculptedHud({
     );
     const ultUnlocked = Boolean(state.ultimateUnlocked || state.unlockedStage >= 3);
 
+    const isCommuningNow = Boolean(
+      state.communeChannelActive || state.commune.listening || state.commune.partnerListening
+    );
+    root.classList.toggle('is-communing', isCommuningNow);
+    if (isCommuningNow && joyState.active) {
+      resetJoystick();
+    }
+
+    const kStat = state.stats.Knight || { hp: 220, maxHp: 220, downed: false };
+    const mStat = state.stats.Mage || { hp: 90, maxHp: 90, downed: false };
+    const kLowOrDown = Boolean(
+      kStat.downed || kStat.hp <= 0 || kStat.hp / Math.max(1, kStat.maxHp) <= 0.35
+    );
+    const mLowOrDown = Boolean(
+      mStat.downed || mStat.hp <= 0 || mStat.hp / Math.max(1, mStat.maxHp) <= 0.35
+    );
+    const computedMiracleReady =
+      state.miracleReady !== null && state.miracleReady !== undefined
+        ? Boolean(state.miracleReady)
+        : Boolean(
+            ultUnlocked &&
+              (kLowOrDown || mLowOrDown) &&
+              (state.partnerDistance ?? 2.0) <= 6.0 &&
+              !isCommuningNow
+          );
+
     if (communeWrap) {
       communeWrap.classList.toggle(
         'is-unlocked',
@@ -1517,6 +1631,7 @@ export function createSculptedHud({
         'is-partner-communing',
         Boolean(state.commune.partnerListening && !state.commune.listening)
       );
+      communeBtn.classList.toggle('commune-miracle-ready', computedMiracleReady);
     }
     if (communeTimerEl) {
       const rem = Math.max(0, state.commune.maxSeconds - state.commune.elapsedSeconds);
@@ -1566,12 +1681,19 @@ export function createSculptedHud({
       slotQ.classList.toggle('is-unlocked', ultUnlocked);
       const qCd = Number(state.cooldowns.Q) || 0;
       const maxQCd = 24.0;
-      slotQ.classList.toggle('on-cooldown', qCd > 0.08);
+      const hasDirectEnergy = typeof state.qEnergyPct === 'number' && Number.isFinite(state.qEnergyPct);
+      const qFillPct = hasDirectEnergy
+        ? clamp(state.qEnergyPct * 100, 0, 100)
+        : qCd > 0.08
+          ? clamp((1 - qCd / maxQCd) * 100, 8, 95)
+          : 100;
+      const isUltReady = ultUnlocked && qFillPct >= 99.5 && qCd <= 0.08;
+      slotQ.classList.toggle('on-cooldown', !hasDirectEnergy && qCd > 0.08);
+      slotQ.classList.toggle('is-ult-ready', isUltReady);
       if (slotQCd) {
-        slotQCd.textContent = qCd > 0.08 ? `${qCd.toFixed(1)}s` : '';
+        slotQCd.textContent = !hasDirectEnergy && qCd > 0.08 ? `${qCd.toFixed(1)}s` : '';
       }
       if (fillQ) {
-        const qFillPct = qCd > 0.08 ? clamp((1 - qCd / maxQCd) * 100, 8, 95) : 100;
         fillQ.style.height = `${qFillPct.toFixed(1)}%`;
       }
     }
@@ -1646,12 +1768,22 @@ export function createSculptedHud({
   function setCommuneState(patch = {}) {
     if (typeof patch.listening === 'boolean') {
       state.commune.listening = patch.listening;
+      state.communeChannelActive = patch.listening;
       if (patch.listening) {
         state.communeDiscovered = true;
       }
     }
+    if (typeof patch.communeChannelActive === 'boolean') {
+      state.communeChannelActive = patch.communeChannelActive;
+    }
+    if (typeof patch.isCommuning === 'boolean') {
+      state.communeChannelActive = patch.isCommuning;
+    }
     if (typeof patch.partnerListening === 'boolean') {
       state.commune.partnerListening = patch.partnerListening;
+    }
+    if (typeof patch.miracleReady === 'boolean') {
+      state.miracleReady = patch.miracleReady;
     }
     if (typeof patch.elapsedSeconds === 'number') {
       state.commune.elapsedSeconds = clamp(patch.elapsedSeconds, 0, state.commune.maxSeconds);
@@ -1839,7 +1971,7 @@ export function createSculptedHud({
         onAction('attack', { role: state.activeRole });
       }
       if (attackHoldTimer) clearTimeout(attackHoldTimer);
-      const holdMs = state.activeRole === 'Mage' ? 180 : 280;
+      const holdMs = state.activeRole === 'Mage' ? 140 : 280;
       attackHoldTimer = setTimeout(() => {
         attackHoldTimer = null;
         attackHeldTriggered = true;
@@ -2257,6 +2389,14 @@ export function createSculptedHud({
     activeElement,
     activeSwordBuffElement,
     cooldowns,
+    qEnergyPct,
+    qEnergy,
+    qEnergyMax,
+    heartResonance,
+    communeChannelActive,
+    isCommuning,
+    miracleReady,
+    partnerDistance,
   } = {}) {
     if (activeRole === 'Knight' || activeRole === 'Mage') {
       state.activeRole = activeRole;
@@ -2270,6 +2410,28 @@ export function createSculptedHud({
     if (activeSwordBuffElement !== undefined) {
       state.activeSwordBuffElement = activeSwordBuffElement;
     }
+    if (typeof communeChannelActive === 'boolean') {
+      state.communeChannelActive = communeChannelActive;
+    }
+    if (typeof isCommuning === 'boolean') {
+      state.communeChannelActive = isCommuning;
+    }
+    if (typeof miracleReady === 'boolean') {
+      state.miracleReady = miracleReady;
+    }
+    if (typeof partnerDistance === 'number') {
+      state.partnerDistance = partnerDistance;
+    }
+    if (typeof qEnergyPct === 'number' && Number.isFinite(qEnergyPct)) {
+      state.qEnergyPct = clamp(qEnergyPct, 0, 1);
+    } else if (typeof qEnergy === 'number' && Number.isFinite(qEnergy)) {
+      const maxE = typeof qEnergyMax === 'number' && qEnergyMax > 0 ? qEnergyMax : 100;
+      state.qEnergyPct = clamp(qEnergy / maxE, 0, 1);
+    } else if (typeof cooldowns?.qEnergyPct === 'number' && Number.isFinite(cooldowns.qEnergyPct)) {
+      state.qEnergyPct = clamp(cooldowns.qEnergyPct, 0, 1);
+    } else if (typeof heartResonance === 'number' && Number.isFinite(heartResonance)) {
+      state.qEnergyPct = clamp(heartResonance / 100, 0, 1);
+    }
     if (knight) {
       if (typeof knight.name === 'string' && knight.name.trim()) {
         state.playerNames.Knight = knight.name.trim();
@@ -2279,22 +2441,30 @@ export function createSculptedHud({
       } else if (knight.breathingStyle === 'solar') {
         state.activeSwordBuffElement = 'fire';
       }
+      if (typeof knight.qEnergyPct === 'number' && state.activeRole === 'Knight') {
+        state.qEnergyPct = clamp(knight.qEnergyPct, 0, 1);
+      }
       state.stats.Knight = {
         level: knight.level ?? state.stats.Knight.level ?? 1,
         hp: knight.hp ?? state.stats.Knight.hp,
         maxHp: knight.maxHp ?? state.stats.Knight.maxHp,
         shield: knight.shield ?? 0,
+        downed: Boolean(knight.downed || (knight.hp !== undefined && knight.hp <= 0)),
       };
     }
     if (mage) {
       if (typeof mage.name === 'string' && mage.name.trim()) {
         state.playerNames.Mage = mage.name.trim();
       }
+      if (typeof mage.qEnergyPct === 'number' && state.activeRole === 'Mage') {
+        state.qEnergyPct = clamp(mage.qEnergyPct, 0, 1);
+      }
       state.stats.Mage = {
         level: mage.level ?? state.stats.Mage.level ?? 1,
         hp: mage.hp ?? state.stats.Mage.hp,
         maxHp: mage.maxHp ?? state.stats.Mage.maxHp,
         shield: mage.shield ?? 0,
+        downed: Boolean(mage.downed || (mage.hp !== undefined && mage.hp <= 0)),
       };
     }
     if (cooldowns) {
@@ -2306,6 +2476,10 @@ export function createSculptedHud({
     }
     renderRoleAndPartyBars();
     renderProgressionAndSlots();
+  }
+
+  function updateHudState(snapshot = {}) {
+    updatePartyStatus(snapshot);
   }
 
   // Initial render (Starts Bare: Stage 0, communeDiscovered = false)
@@ -2349,6 +2523,7 @@ export function createSculptedHud({
     setElement,
     cancelSlotEAim,
     updatePartyStatus,
+    updateHudState,
     resetJoystick,
     isModalOpen: () => Boolean(pauseModal?.classList.contains('is-open')),
     setVisible(visible = true) {

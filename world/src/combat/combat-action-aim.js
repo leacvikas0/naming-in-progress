@@ -31,7 +31,7 @@ export const KNIGHT_ULT_DURATION = 10.0; // 10s of 2x double damage
 export const KNIGHT_ULT_DMG_MULT = 2.0;
 export const KNIGHT_ULT_COOLDOWN = 24.0;
 
-export const MAGE_MAX_CONSECUTIVE_CHARGED = 3;
+export const MAGE_MAX_CONSECUTIVE_CHARGED = 999;
 export const MAGE_E_COOLDOWN = 8.5; // 8.5s cooldown on Frost Lance / Cinder Fall E skill
 export const MAGE_STORM_CATACLYSM_DURATION = 6.0; // 6.0s vulnerable stationary channel
 export const MAGE_STORM_CATACLYSM_COOLDOWN = 24.0;
@@ -215,7 +215,10 @@ export function createCombatActionAimController({
     maxDistance: CINDER_FALL_MAX_DISTANCE,
     dirX: 0,
     dirZ: 1,
+    direction: { x: 0, y: 0, z: 1 },
     targetPos: { x: 0, y: 0, z: FROST_LANCE_AIM_LENGTH },
+    customDistance: null,
+    lastPitch: null,
   };
 
   function startComboSwingInternal(heroId, isChainedFromBuffer = false) {
@@ -337,8 +340,7 @@ export function createCombatActionAimController({
    * Handles Hold Attack (`heavy` / `charged` / `shield_block`):
    * - Knight: Raises frontal Shield Block (`block` clip, 80% damage reduction,
    *   protects Mage behind him; zero charged sword attack).
-   * - Mage: Stationary `Shatterlance` cast (`startTime: 0`). After 3 consecutive
-   *   charged attacks, automatically falls back to a normal bolt attack!
+   * - Mage: Stationary `Shatterlance` cast (`startTime: 0`, unlimited consecutive casts).
    */
   function pressHeavy(heroId = 'Knight') {
     const normId = heroId === 'Mage' ? 'Mage' : 'Knight';
@@ -356,22 +358,6 @@ export function createCombatActionAimController({
         shieldBlocking: true,
         damageReduction: KNIGHT_SHIELD_BLOCK_DR,
         cameraImpulse: 0,
-      };
-    }
-
-    // Mage Hold Attack: Stationary Shatterlance (max 3 consecutive before normal fallback)
-    if (h.consecutiveChargedCount >= MAGE_MAX_CONSECUTIVE_CHARGED) {
-      // Automatic fallback to normal bolt attack (resets consecutiveChargedCount = 0)
-      if (h.activeSwing && h.activeSwing.kind === 'charged' && !h.activeSwing.contactFired) {
-        h.activeSwing = null;
-      }
-      const normalRes = pressAttack('Mage');
-      return {
-        kind: 'combo_fallback',
-        fallbackToNormal: true,
-        heroId: 'Mage',
-        consecutiveChargedCount: h.consecutiveChargedCount,
-        ...normalRes,
       };
     }
 
@@ -503,9 +489,9 @@ export function createCombatActionAimController({
   }
 
   /**
-   * `Hold E` (`skillAimStart`):
-   * Activates the Spellbook terrain-conforming Aim Arrow for Mage's selected `E` spell
-   * (`frost_lance` at fixed `14.5m` length vs `cinder_fall` at `3.0..16.0m` tip distance).
+   * `Hold E` or `Hold Attack` (`skillAimStart`):
+   * Activates the 3D PUBG-style Parabolic Aim Trajectory & Ground Impact Ring for Mage's
+   * aimed spell (`shatterlance` at `0.8..18.0m`, `frost_lance` at `14.5m`, or `cinder_fall` at `3.0..16.0m`).
    */
   function startSkillAim({
     origin = { x: 0, y: 0, z: 0 },
@@ -525,6 +511,8 @@ export function createCombatActionAimController({
     }
     aimState.active = true;
     aimState.spellId = chosenSpell;
+    aimState.customDistance = Number.isFinite(Number(distance)) ? Number(distance) : null;
+    aimState.lastPitch = Number.isFinite(Number(pitch)) ? Number(pitch) : null;
     updateSkillAim({
       origin,
       yaw,
@@ -552,15 +540,47 @@ export function createCombatActionAimController({
   } = {}) {
     const chosenSpell = spellId || heroes.Mage.selectedSpell || 'frost_lance';
     const isShatter = chosenSpell === 'shatterlance';
+    const minDist = isShatter ? SHATTERLANCE_MIN_DISTANCE : CINDER_FALL_MIN_DISTANCE;
+    const maxDist = isShatter ? SHATTERLANCE_MAX_DISTANCE : CINDER_FALL_MAX_DISTANCE;
+
+    if (Number.isFinite(Number(distance))) {
+      aimState.customDistance = clamp(Number(distance), minDist, maxDist);
+    } else if (
+      !isInitialShow &&
+      aimState.customDistance !== null &&
+      Number.isFinite(Number(pitch)) &&
+      aimState.lastPitch !== null &&
+      chosenSpell !== 'frost_lance'
+    ) {
+      const pitchDelta = Number(pitch) - aimState.lastPitch;
+      if (Math.abs(pitchDelta) > 1e-4) {
+        aimState.customDistance = clamp(
+          aimState.customDistance - pitchDelta * 18.0,
+          minDist,
+          maxDist
+        );
+      }
+    }
+    if (Number.isFinite(Number(pitch))) {
+      aimState.lastPitch = Number(pitch);
+    }
+
+    const effectiveDistance =
+      distance !== undefined
+        ? distance
+        : aimState.customDistance !== null
+          ? aimState.customDistance
+          : undefined;
+
     const proj = projectAimRayToGround({
       origin,
       yaw,
       pitch,
-      distance,
+      distance: effectiveDistance,
       spellId: chosenSpell,
       fixedDistance: chosenSpell === 'frost_lance' ? FROST_LANCE_AIM_LENGTH : null,
-      minDistance: isShatter ? SHATTERLANCE_MIN_DISTANCE : CINDER_FALL_MIN_DISTANCE,
-      maxDistance: isShatter ? SHATTERLANCE_MAX_DISTANCE : CINDER_FALL_MAX_DISTANCE,
+      minDistance: minDist,
+      maxDistance: maxDist,
       touchTarget,
       rayOrigin,
       rayDir,
@@ -573,10 +593,11 @@ export function createCombatActionAimController({
     if (typeof pitch === 'number') aimState.pitch = pitch;
     aimState.distance = proj.distance;
     aimState.length = proj.length;
-    aimState.minDistance = isShatter ? SHATTERLANCE_MIN_DISTANCE : CINDER_FALL_MIN_DISTANCE;
-    aimState.maxDistance = isShatter ? SHATTERLANCE_MAX_DISTANCE : CINDER_FALL_MAX_DISTANCE;
+    aimState.minDistance = minDist;
+    aimState.maxDistance = maxDist;
     aimState.dirX = proj.dirX;
     aimState.dirZ = proj.dirZ;
+    aimState.direction = { x: proj.dirX, y: 0, z: proj.dirZ };
     aimState.targetPos = { ...proj.targetPos };
 
     if (aimState.active) {

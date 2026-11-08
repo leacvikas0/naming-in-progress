@@ -241,12 +241,12 @@ const SKY_FRAG = /* glsl */ `
       }
     }
 
-    // 5. Divine Verdict Colossal Black-Crimson Eclipse Disc & Abyssal Storm-Cloud Compression (Frame 37, Frame 57, Frame 41)
+    // 5. Divine Verdict World-Fixed Black-Crimson-Gold Eclipse Disc, Swirling Cel Filaments & Storm-Cloud Amphitheater
     if (ecW > 0.001) {
-      // Blend sky gradient toward deep abyssal blue-black (#050710 zenith, #120916 mid, #2b0c18 horizon)
-      vec3 ecZenith  = vec3(0.0016, 0.0024, 0.0054); // #050710
-      vec3 ecMid     = vec3(0.0062, 0.0028, 0.0086); // #120916
-      vec3 ecHorizon = vec3(0.0242, 0.0038, 0.0098); // #2b0c18
+      // Blend sky gradient toward deep abyssal indigo-crimson (#050710 zenith, #14091a mid, #2d0c18 horizon)
+      vec3 ecZenith  = vec3(0.0016, 0.0024, 0.0054);
+      vec3 ecMid     = vec3(0.0072, 0.0028, 0.0102);
+      vec3 ecHorizon = vec3(0.0262, 0.0042, 0.0108);
       vec3 ecSky = mix(ecHorizon, ecMid, smoothstep(0.004, 0.18, h));
       ecSky = mix(ecSky, ecZenith, smoothstep(0.12, 0.54, h));
 
@@ -256,16 +256,41 @@ const SKY_FRAG = /* glsl */ `
       vec2 ecLocal = vec2(dot(d, ecRight), dot(d, ecUp));
 
       float angEclipse = acos(clamp(dot(d, ecDir), -1.0, 1.0));
-      float ecRadius = 0.325;
+      float ecRadius = 0.315;
+      float polarAng = atan(ecLocal.y, ecLocal.x);
 
-      // Exponential blood-crimson outer corona (#e60c2c -> #7f081a, pure ruby R >> G, B > G)
-      float outerDelta = max(0.0, angEclipse - ecRadius * 0.94);
-      float coronaGlow = exp(-outerDelta * 6.8) * 0.58 + exp(-outerDelta * 20.0) * 0.72;
-      vec3 crimsonDeep  = vec3(0.24, 0.002, 0.012);
-      vec3 crimsonVivid = vec3(0.82, 0.006, 0.036);
-      ecSky += mix(crimsonDeep, crimsonVivid, clamp(coronaGlow, 0.0, 1.0)) * coronaGlow;
+      // Swirling Nebula Marbling across the upper sky vault around the Eclipse
+      float nebRadial = max(0.0, angEclipse - ecRadius * 0.85);
+      vec2 nebUv = ecLocal * 2.8 + vec2(sin(uTime * 0.04) * 0.25, -uTime * 0.03);
+      float nebN1 = vnoise2(nebUv * 2.2 + vec2(1.3, -0.9));
+      float nebN2 = vnoise2(nebUv * 4.8 - vec2(uTime * 0.05, 1.7));
+      float nebMarble = smoothstep(0.38, 0.74, nebN1 * 0.62 + nebN2 * 0.38) * exp(-nebRadial * 2.4);
+      vec3 nebCrimson = vec3(0.32, 0.006, 0.028);
+      vec3 nebGold    = vec3(0.58, 0.14, 0.024);
+      ecSky += mix(nebCrimson, nebGold, smoothstep(0.55, 0.82, nebN2)) * nebMarble * 0.42;
 
-      // Multi-layered Billowing Storm-Cloud Amphitheater compressed beneath & around the Eclipse Disc (Frame 37 / 57 / 41)
+      // Swirling Cel-Stepped Crimson-Gold Coronal Filaments radiating from the Eclipse limb
+      float outerDelta = max(0.0, angEclipse - ecRadius * 0.92);
+      float swirlCoord = polarAng * 3.8 + outerDelta * 14.0 - uTime * 0.28;
+      float filN1 = vnoise2(vec2(cos(swirlCoord) * 2.4 + sin(polarAng * 5.0), outerDelta * 9.5 - uTime * 0.18));
+      float filN2 = vnoise2(vec2(sin(swirlCoord * 1.7) * 3.8, outerDelta * 18.0 + uTime * 0.24));
+      float filamentRaw = (filN1 * 0.64 + filN2 * 0.36) * exp(-outerDelta * 5.6);
+      float filamentStep1 = smoothstep(0.22, 0.30, filamentRaw);
+      float filamentStep2 = smoothstep(0.42, 0.52, filamentRaw);
+      float filamentStep3 = smoothstep(0.62, 0.72, filamentRaw);
+
+      vec3 crimsonDeep  = vec3(0.26, 0.003, 0.014);
+      vec3 crimsonVivid = vec3(0.88, 0.012, 0.042); // #ff2a3c
+      vec3 solarAmber   = vec3(0.96, 0.28, 0.022);  // #ff9e1b
+      vec3 solarGold    = vec3(1.15, 0.64, 0.16);   // #ffd166
+
+      float coronaGlow = exp(-outerDelta * 6.4) * 0.52 + exp(-outerDelta * 19.0) * 0.68;
+      vec3 coronaCol = mix(crimsonDeep, crimsonVivid, clamp(coronaGlow + filamentStep1 * 0.45, 0.0, 1.0));
+      coronaCol = mix(coronaCol, solarAmber, filamentStep2 * 0.78);
+      coronaCol = mix(coronaCol, solarGold, filamentStep3 * 0.85);
+      ecSky += coronaCol * (coronaGlow + filamentStep1 * 0.38 + filamentStep2 * 0.34);
+
+      // Multi-layered Billowing Storm-Cloud Amphitheater compressed beneath & around the Eclipse Disc
       if (d.y > 0.02 && d.y < 0.78) {
         vec2 stormUv = vec2(ecLocal.x * 2.4, (d.y - 0.16) * 4.2);
         float drift = uTime * 0.015;
@@ -281,17 +306,16 @@ const SKY_FRAG = /* glsl */ `
         float cloudDensity = smoothstep(0.32, 0.68, fbmStorm + verticalBand * 0.45) * verticalBand * voidClearance;
 
         if (cloudDensity > 0.005) {
-          // Sample slightly toward the Eclipse center to detect upper cloud ridges facing the crimson corona
           vec2 toEc = -normalize(ecLocal + vec2(1e-5, 0.02));
           float nTowardsEc = vnoise2((stormUv + toEc * 0.16) * vec2(2.6, 3.2) + vec2(drift, -drift * 0.4)) * 0.65
                            + vnoise2((stormUv + toEc * 0.16) * vec2(5.4, 6.8) - vec2(drift * 1.3, 0.7)) * 0.35;
           float rimFacingEc = clamp((fbmStorm - nTowardsEc) * 3.2 + 0.45, 0.0, 1.0);
           float proxEc = exp(-max(0.0, angEclipse - ecRadius) * 4.2);
 
-          // 3-band anime storm cloud cel shading: charcoal-obsidian belly -> slate-storm mid -> blood-crimson backlit crown
+          // 3-band anime storm cloud cel shading: charcoal-obsidian belly -> slate-storm mid -> crimson-gold backlit crown
           vec3 stormBelly = vec3(0.014, 0.002, 0.012);
-          vec3 stormMid   = mix(vec3(0.036, 0.003, 0.022), vec3(0.28, 0.002, 0.016), proxEc * 0.85);
-          vec3 stormRim   = mix(vec3(0.075, 0.004, 0.038), vec3(0.92, 0.004, 0.046), clamp(proxEc * 1.30, 0.0, 1.0));
+          vec3 stormMid   = mix(vec3(0.036, 0.003, 0.022), vec3(0.32, 0.012, 0.018), proxEc * 0.85);
+          vec3 stormRim   = mix(vec3(0.085, 0.006, 0.038), mix(crimsonVivid, solarAmber, 0.32), clamp(proxEc * 1.30, 0.0, 1.0));
 
           float celStep1 = smoothstep(0.36, 0.48, fbmStorm + rimFacingEc * 0.25);
           float celStep2 = smoothstep(0.58, 0.72, fbmStorm + rimFacingEc * 0.38) * smoothstep(0.15, 0.85, proxEc);
@@ -302,17 +326,18 @@ const SKY_FRAG = /* glsl */ `
         }
       }
 
-      // Colossal Black Eclipse Void (radius 0.325 rad, pure obsidian interior #020103)
+      // Colossal Black Eclipse Void (radius 0.315 rad, pure obsidian interior #020103)
       float voidMask = 1.0 - smoothstep(ecRadius - 0.005, ecRadius + 0.003, angEclipse);
       float innerEdgeGlow = smoothstep(ecRadius - 0.055, ecRadius - 0.002, angEclipse) * voidMask;
       vec3 voidInterior = vec3(0.0006, 0.0003, 0.0010) + crimsonDeep * (innerEdgeGlow * 0.28);
       ecSky = mix(ecSky, voidInterior, voidMask);
 
-      // Searing blood-crimson coronal ring right on the Eclipse boundary (pure ruby R >> G, B > G)
-      float coronalRim = smoothstep(ecRadius + 0.022, ecRadius + 0.001, angEclipse)
+      // Searing cel-stepped crimson-gold coronal ring right on the Eclipse boundary
+      float coronalRim = smoothstep(ecRadius + 0.026, ecRadius + 0.001, angEclipse)
                        * smoothstep(ecRadius - 0.018, ecRadius - 0.001, angEclipse);
-      vec3 rimCrimson = vec3(1.18, 0.008, 0.048);
-      ecSky += rimCrimson * (coronalRim * 1.35);
+      float rimFlare = smoothstep(0.42, 0.68, filN1);
+      vec3 rimCol = mix(vec3(1.12, 0.018, 0.048), solarGold, rimFlare * 0.58);
+      ecSky += rimCol * (coronalRim * 1.35);
 
       col = mix(col, ecSky, ecW);
     }
@@ -1434,9 +1459,35 @@ export function createTimeOfDaySky({
     activeLightDir,
     eclipseWeight: 0.0,
     eclipseCompression: 0.0,
+    eclipseProgress: 0.0,
+    targetEclipseWeight: 0.0,
+    targetEclipseCompression: 0.0,
     windTimeScale: 1.0,
     eclipseDir,
   };
+
+  let customEclipseHoriz = null;
+  let lastEclipseWallMs = null;
+  let wasTargetActive = false;
+  let steppedThisFrame = false;
+
+  function applyEclipseProgressToVectors() {
+    const smoothProg = smoothstep01(0.0, 1.0, clamp01(state.eclipseProgress));
+    state.eclipseWeight = state.targetEclipseWeight * smoothProg;
+    state.eclipseCompression = state.targetEclipseCompression * smoothProg;
+
+    // World-fixed Northern sky anchor (never glued to camera.getWorldDirection!):
+    // Slowly descends from high overhead (elevY = 0.72) down to northern horizon-mid (elevY = 0.32, z = -0.75)
+    const elevY = THREE.MathUtils.lerp(0.72, 0.32, smoothProg);
+    if (customEclipseHoriz) {
+      const horizScale = Math.sqrt(Math.max(0, 1.0 - elevY * elevY));
+      state.eclipseDir
+        .set(customEclipseHoriz.x * horizScale, elevY, customEclipseHoriz.z * horizScale)
+        .normalize();
+    } else {
+      state.eclipseDir.set(0.0, elevY, -0.75).normalize();
+    }
+  }
 
   function syncEclipseUniforms() {
     skyUniforms.uEclipseWeight.value = state.eclipseWeight;
@@ -1447,52 +1498,95 @@ export function createTimeOfDaySky({
     livingAirUniforms.uEclipsePetalWeight.value = state.eclipseWeight;
   }
 
+  function stepEclipseRamp(dtSec) {
+    const safeDt = Math.max(0.0, Number(dtSec) || 0);
+    if (safeDt <= 0) return;
+    if (state.targetEclipseWeight > 0.001) {
+      // Gradual 3.5-second overhead descent and sky transition (never instant red sky on Frame 1!)
+      state.eclipseProgress = clamp01(state.eclipseProgress + safeDt / 3.5);
+    } else if (state.eclipseProgress > 0.0) {
+      state.eclipseProgress = clamp01(state.eclipseProgress - safeDt / 1.2);
+    }
+    applyEclipseProgressToVectors();
+  }
+
   function setEclipseState({
-    weight = 0.0,
-    compression = 0.0,
+    active = undefined,
+    progress = undefined,
+    weight = undefined,
+    compression = undefined,
     windTimeScale = 1.0,
     dir = null,
-    camera: camOverride = null,
+    immediate = false,
+    dt = undefined,
   } = {}) {
-    if (weight !== undefined && weight !== null) {
-      state.eclipseWeight = clamp01(Number(weight) || 0);
-    }
-    if (compression !== undefined && compression !== null) {
-      state.eclipseCompression = clamp01(Number(compression) || 0);
-    }
+    const resolvedWeight =
+      weight !== undefined && weight !== null
+        ? clamp01(Number(weight) || 0)
+        : active !== undefined
+          ? active
+            ? 1.0
+            : 0.0
+          : state.targetEclipseWeight;
+    const resolvedCompression =
+      compression !== undefined && compression !== null
+        ? clamp01(Number(compression) || 0)
+        : resolvedWeight;
+
+    const nowTargetActive = resolvedWeight > 0.001;
+    const justActivated = nowTargetActive && !wasTargetActive;
+    wasTargetActive = nowTargetActive;
+
+    state.targetEclipseWeight = resolvedWeight;
+    state.targetEclipseCompression = resolvedCompression;
+
     if (windTimeScale !== undefined && windTimeScale !== null) {
       const wts = Number(windTimeScale);
       state.windTimeScale = Number.isFinite(wts) ? Math.max(0, wts) : 1.0;
     }
 
-    const activeCam = camOverride || camera;
-    let hx = 0;
-    let hz = -1;
-    let hasDir = false;
-
     if (dir && Number.isFinite(dir.x) && Number.isFinite(dir.z)) {
-      hx = dir.x;
-      hz = dir.z;
-      hasDir = true;
-    } else if (activeCam && typeof activeCam.getWorldDirection === 'function') {
-      activeCam.getWorldDirection(_tmpEclipseDir);
-      hx = _tmpEclipseDir.x;
-      hz = _tmpEclipseDir.z;
-      hasDir = true;
+      const hLen = Math.hypot(dir.x, dir.z);
+      if (hLen > 1e-5) {
+        customEclipseHoriz = { x: dir.x / hLen, z: dir.z / hLen };
+      } else {
+        customEclipseHoriz = null;
+      }
+    } else {
+      customEclipseHoriz = null;
     }
 
-    if (hasDir) {
-      const hLen = Math.hypot(hx, hz);
-      if (hLen > 1e-5) {
-        hx /= hLen;
-        hz /= hLen;
-      } else {
-        hx = 0;
-        hz = -1;
-      }
-      const elevY = 0.42;
-      const horizScale = Math.sqrt(Math.max(0, 1.0 - elevY * elevY));
-      state.eclipseDir.set(hx * horizScale, elevY, hz * horizScale).normalize();
+    const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const wallDt =
+      typeof dt === 'number'
+        ? dt
+        : lastEclipseWallMs !== null
+          ? THREE.MathUtils.clamp((nowMs - lastEclipseWallMs) * 0.001, 0.0, 0.05)
+          : 0.0;
+    lastEclipseWallMs = nowMs;
+
+    if (typeof progress === 'number' && Number.isFinite(progress)) {
+      state.eclipseProgress = clamp01(progress);
+      applyEclipseProgressToVectors();
+      steppedThisFrame = true;
+    } else if (immediate || state.windTimeScale === 0.0) {
+      state.eclipseProgress = nowTargetActive ? 1.0 : 0.0;
+      applyEclipseProgressToVectors();
+      steppedThisFrame = true;
+    } else if (justActivated && dt === undefined) {
+      // Frame 1 of [R] Commune: start at overhead elevY = 0.72 and uEclipseWeight = 0.0 (zero instant snap!)
+      state.eclipseProgress = 0.0;
+      applyEclipseProgressToVectors();
+      steppedThisFrame = true;
+    } else if (!nowTargetActive && wallDt === 0.0 && dt === undefined) {
+      state.eclipseProgress = 0.0;
+      applyEclipseProgressToVectors();
+      steppedThisFrame = true;
+    } else if (wallDt > 0.0) {
+      stepEclipseRamp(wallDt);
+      steppedThisFrame = true;
+    } else {
+      applyEclipseProgressToVectors();
     }
 
     syncEclipseUniforms();
@@ -1615,7 +1709,19 @@ export function createTimeOfDaySky({
     return state;
   }
 
+  let lastSkyElapsed = null;
+
   function update(elapsed = 0) {
+    if (lastSkyElapsed !== null && !steppedThisFrame) {
+      const elapsedDelta = elapsed - lastSkyElapsed;
+      if (elapsedDelta > 0 && elapsedDelta < 0.25) {
+        const realDt = state.windTimeScale > 0.05 ? elapsedDelta / state.windTimeScale : elapsedDelta;
+        stepEclipseRamp(realDt);
+      }
+    }
+    lastSkyElapsed = elapsed;
+    steppedThisFrame = false;
+
     skyUniforms.uTime.value = elapsed;
     cloudUniforms.uTime.value = elapsed;
     sunbeamUniforms.uTime.value = elapsed;

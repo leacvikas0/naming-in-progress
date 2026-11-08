@@ -1,54 +1,78 @@
 // ============================================================================
 // world/src/net/room-progression.js
 //
-// Wave 3 & 4 Co-Op Room Phrase Generator, Invite Link Builder & Non-Linear /
-// Sequential 3-Stone Progression State Machine for Amarante:
+// Wave 3 & 4 Co-Op Room Phrase Generator, Invite Link Builder & Per-Stone
+// Bitmask Progression State Machine (`stonesSolvedMask` 0b000..0b111) for Amarante:
 // - Poetic romantic room phrases ("Rain on warm limestone", "Love is curiosity", etc.)
 // - Canonical room code normalization & `?room=` URL builder
-// - Non-Linear & Sequential Sacred Inscription Stone Progression:
-//   * Supports `{ iceUnlocked, fireUnlocked, ultimateUnlocked }` so solving
-//     Fire first unlocks `[E]` as Fire (`tabToggleVisible: false`), solving
-//     Ice first unlocks `[E]` as Ice (`tabToggleVisible: false`), and `[Tab]`
-//     only appears when BOTH `iceUnlocked` AND `fireUnlocked` are true!
-//   * Also maintains full backwards compatibility with sequential `0 -> 1 -> 2 -> 3`
-//     (`solveNextStone()`) for existing room tests.
-//   * Zero hand-holding tutorial popups (`showTutorialPopups: false`).
+// - Integrated 3 Sacred Inscription Monument Coordinates:
+//   * Stone 1 (`site1_well`, `stage: 1`): `x: 0.0, z: 0.0, radius: 6.5` (Village Well)
+//   * Stone 2 (`site2_platform`, `stage: 2`): `x: 44.0, z: 16.0, radius: 6.5` (Whispering Grove Circular Platform)
+//   * Stone 3 (`site3_wall`, `stage: 3`): `x: -21.6, z: 20.4, radius: 6.5` (Hidden Lovers' Wall behind Secluded Cottage)
+// - Out-of-Order Safe Progression Rule (`1 -> 3 -> 2` Safe, `unlockedStage = stonesSolvedCount`):
+//   * Solving Stone 1 (`stone1Solved = true`) unlocks Stage 1 (`Ice [E]`) + Mode A Field Heal.
+//   * Once `stone1Solved === true`, solving whichever remaining stone the couple visits
+//     second (`Stone 2` OR `Stone 3`, `stonesSolvedCount === 2`) unlocks Stage 2
+//     (`Fire [E]` + `[Tab]` Switcher)—never skipping Fire or unlocking Fire+Ice Q before Fire exists!
+//   * Solving the third and final stone (`stonesSolvedMask === 0b111`, `stonesSolvedCount === 3`)
+//     unlocks Stage 3 (`[Q]` Ultimates + Mode B Full Eclipse Main Divine Blessing).
 // ============================================================================
 
 export const ROMANTIC_ROOM_PHRASES = Object.freeze([
+  'Love is curiosity',
   'Rain on warm limestone',
   'Two lanterns under wisteria',
   'Snowmelt in the orchard',
   'Wild clover at dusk',
   'Petals on still water',
-  'Love is curiosity',
 ]);
 
 export const SACRED_INSCRIPTION_STONES = Object.freeze([
-  {
-    id: 'stone_plaza',
+  Object.freeze({
+    id: 'site1_well',
+    siteId: 'site1_well',
+    legacyId: 'stone_plaza',
+    stage: 1,
     index: 1,
-    name: 'Weathered Stele of the Town Plaza',
+    name: 'Sacred Well of the Town Plaza',
     zone: 'plaza',
     elementHint: 'ice',
-    position: { x: 0, z: -14 },
-  },
-  {
-    id: 'stone_grove',
+    x: 0.0,
+    z: 0.0,
+    radius: 6.5,
+    position: Object.freeze({ x: 0.0, z: 0.0 }),
+    aliases: Object.freeze(['site1_well', 'site1', 'stone_plaza', 'plaza', 'well', '1']),
+  }),
+  Object.freeze({
+    id: 'site2_platform',
+    siteId: 'site2_platform',
+    legacyId: 'stone_grove',
+    stage: 2,
     index: 2,
-    name: 'Blossom-Wreathed Stele of the Wisteria Grove',
+    name: 'Whispering Grove Circular Platform',
     zone: 'grove',
     elementHint: 'fire',
-    position: { x: 44, z: 16 },
-  },
-  {
-    id: 'stone_pier',
+    x: 44.0,
+    z: 16.0,
+    radius: 6.5,
+    position: Object.freeze({ x: 44.0, z: 16.0 }),
+    aliases: Object.freeze(['site2_platform', 'site2', 'stone_grove', 'grove', 'platform', 'wisteria', '2']),
+  }),
+  Object.freeze({
+    id: 'site3_wall',
+    siteId: 'site3_wall',
+    legacyId: 'stone_pier',
+    stage: 3,
     index: 3,
-    name: 'Mist-Carved Stele of the Lakeside Pier',
-    zone: 'pier',
+    name: "Hidden Lovers' Wall behind the Secluded Cottage",
+    zone: 'wall',
     elementHint: 'ultimate',
-    position: { x: -42, z: 18 },
-  },
+    x: -21.6,
+    z: 20.4,
+    radius: 6.5,
+    position: Object.freeze({ x: -21.6, z: 20.4 }),
+    aliases: Object.freeze(['site3_wall', 'site3', 'stone_pier', 'pier', 'wall', 'cottage', '3']),
+  }),
 ]);
 
 export const STAGE_ABILITY_UNLOCKS = Object.freeze({
@@ -79,7 +103,7 @@ export const STAGE_ABILITY_UNLOCKS = Object.freeze({
       qUltimateName: null,
       abilities: Object.freeze([
         'Arcane 3-Bolt Combo',
-        'Hold: Stationary Shatterlance (max 3 consecutive)',
+        'Hold: Parabolic Shatterlance',
       ]),
     }),
   }),
@@ -111,8 +135,8 @@ export const STAGE_ABILITY_UNLOCKS = Object.freeze({
       qUltimateName: null,
       abilities: Object.freeze([
         'Arcane 3-Bolt Combo',
-        'Hold: Stationary Shatterlance',
-        'Hold/Release E: Frost Lance (14.5m ice spear line, 8.5s cooldown)',
+        'Hold: Parabolic Shatterlance',
+        'Hold/Release E: Frost Lance (14.5m ice spear line, 7.5s cooldown)',
       ]),
     }),
   }),
@@ -152,7 +176,7 @@ export const STAGE_ABILITY_UNLOCKS = Object.freeze({
       qUltimateName: null,
       abilities: Object.freeze([
         'Arcane 3-Bolt Combo',
-        'Hold: Stationary Shatterlance',
+        'Hold: Parabolic Shatterlance',
         'Tab: Toggle Frost Lance / Cinder Fall',
         'Hold/Release E: Cinder Fall (3..16m aimed meteor) & Frost Lance',
       ]),
@@ -177,13 +201,13 @@ export const STAGE_ABILITY_UNLOCKS = Object.freeze({
       fireSword: true,
       tabToggle: true,
       qUltimate: 'sky_lightning_awakening',
-      qUltimateName: 'Sky-Lightning Awakening',
+      qUltimateName: 'Sun & Tide Combined Breathing',
       abilities: Object.freeze([
         'Sword 4-Hit Combo',
         'Hold: Frontal Shield Block',
         'Tab: Toggle Ice / Fire Element',
         'E: Fire Sword & Ice Sword',
-        'Q: Sky-Lightning Awakening (sword-raise lightning strike + 10s 2x double damage)',
+        'Q: Sun & Tide Twin-Element Blade (12s 2x double damage + dual Rime & Solar marks)',
       ]),
     }),
     mage: Object.freeze({
@@ -193,13 +217,13 @@ export const STAGE_ABILITY_UNLOCKS = Object.freeze({
       cinderFall: true,
       tabToggle: true,
       qUltimate: 'storm_cataclysm',
-      qUltimateName: 'Storm Cataclysm',
+      qUltimateName: 'Starfall Meteor Cataclysm',
       abilities: Object.freeze([
         'Arcane 3-Bolt Combo',
-        'Hold: Stationary Shatterlance',
+        'Hold: Parabolic Shatterlance',
         'Tab: Toggle Frost Lance / Cinder Fall',
         'Hold/Release E: Cinder Fall & Frost Lance',
-        'Q: Storm Cataclysm (6s stationary devastating tempest — Knight must protect)',
+        'Q: Starfall Meteor Shower (6s 10-meteor sky bombardment)',
       ]),
     }),
   }),
@@ -298,26 +322,61 @@ export function parseRoomFromUrl(urlOrSearch, fallback = 'LOVE') {
 }
 
 /**
- * Resolves any stone identifier (`'stone_plaza'`, `'stone_pier'`, `'stone_grove'`,
- * `1`, `2`, `3`, `'plaza'`, `'pier'`, `'grove'`) to the canonical stone metadata.
+ * Resolves any stone identifier (`'site1_well'`, `'site2_platform'`, `'site3_wall'`,
+ * `'stone_plaza'`, `'stone_grove'`, `'stone_pier'`, `1`, `2`, `3`, `'well'`, `'grove'`, `'wall'`)
+ * to the canonical stone metadata.
  */
 export function resolveInscriptionStone(stoneIdOrIndex) {
   if (typeof stoneIdOrIndex === 'number') {
-    const byIdx = SACRED_INSCRIPTION_STONES.find((s) => s.index === stoneIdOrIndex);
+    const byIdx = SACRED_INSCRIPTION_STONES.find((s) => s.index === stoneIdOrIndex || s.stage === stoneIdOrIndex);
     if (byIdx) return byIdx;
   }
-  const raw = String(stoneIdOrIndex || 'stone_plaza').trim().toLowerCase();
+  const raw = String(stoneIdOrIndex || 'site1_well').trim().toLowerCase();
   for (const stone of SACRED_INSCRIPTION_STONES) {
     if (
       stone.id === raw ||
+      stone.siteId === raw ||
+      stone.legacyId === raw ||
       stone.zone === raw ||
       String(stone.index) === raw ||
-      raw.includes(stone.zone)
+      stone.aliases.includes(raw) ||
+      stone.aliases.some((alias) => alias.length >= 4 && raw.includes(alias))
     ) {
       return stone;
     }
   }
   return SACRED_INSCRIPTION_STONES[0];
+}
+
+export function findNearestInscriptionStone(x, z, maxRadius = null) {
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+  let bestStone = null;
+  let bestDist = Infinity;
+  for (const stone of SACRED_INSCRIPTION_STONES) {
+    const d = Math.hypot(x - stone.x, z - stone.z);
+    const limit = maxRadius !== null && maxRadius !== undefined ? maxRadius : stone.radius;
+    if (d <= limit && d < bestDist) {
+      bestDist = d;
+      bestStone = stone;
+    }
+  }
+  return bestStone ? { stone: bestStone, distance: bestDist } : null;
+}
+
+export function computeStonesBitmask({
+  stone1Solved = false,
+  stone2Solved = false,
+  stone3Solved = false,
+} = {}) {
+  return (stone1Solved ? 1 : 0) | (stone2Solved ? 2 : 0) | (stone3Solved ? 4 : 0);
+}
+
+export function computeStonesSolvedCount({
+  stone1Solved = false,
+  stone2Solved = false,
+  stone3Solved = false,
+} = {}) {
+  return (stone1Solved ? 1 : 0) + (stone2Solved ? 1 : 0) + (stone3Solved ? 1 : 0);
 }
 
 export function getAbilityUnlocksForStage(
@@ -422,22 +481,62 @@ export function getAbilityUnlocksForStage(
 
 /**
  * Creates the Sacred Inscription Stone Progression state machine supporting
- * BOTH non-linear unlocks (`{ iceUnlocked, fireUnlocked, ultimateUnlocked }`)
- * and sequential stage progression (`0 -> 1 -> 2 -> 3`):
- * - Solving `stone_pier` (`(-42, 18)`) or an Ice riddle unlocks `iceUnlocked = true`.
- * - Solving `stone_grove` (`(44, 16)`) or a Fire riddle unlocks `fireUnlocked = true`.
- * - Solving `stone_plaza` (`(0, -14)`) or the Sovereign riddle unlocks `ultimateUnlocked = true`.
+ * per-stone bitmask tracking (`stone1Solved`, `stone2Solved`, `stone3Solved`,
+ * `stonesSolvedMask = 0b000..0b111`, `stonesSolvedCount = 0..3`) and the
+ * Out-of-Order Progression Rule (`1 -> 3 -> 2` Safe: `unlockedStage = stonesSolvedCount`):
+ * - Solving Stone 1 (`site1_well`, `(0, 0)`) unlocks Stage 1 (`Ice [E]`) + Mode A Field Heal.
+ * - Solving whichever remaining stone the couple visits second (`Stone 2` OR `Stone 3`,
+ *   so `stonesSolvedCount === 2`) unlocks Stage 2 (`Fire [E]` + `[Tab]` Switcher),
+ *   so visiting Stone 3 before Stone 2 NEVER skips Fire or unlocks Fire+Ice Q before Fire exists!
+ * - Solving the 3rd and final stone (`stonesSolvedMask === 0b111`, `stonesSolvedCount === 3`)
+ *   unlocks Stage 3 (`[Q]` Ultimates + Mode B Full Eclipse Main Divine Blessing).
  */
 export function createRoomProgressionState(initial = {}) {
-  let unlockedStage = Math.max(
+  const initMask = Number.isFinite(Number(initial.stonesSolvedMask))
+    ? Math.max(0, Math.min(7, Math.floor(Number(initial.stonesSolvedMask))))
+    : null;
+
+  const initStage = Math.max(
     0,
-    Math.min(3, Math.floor(Number(initial.unlockedStage ?? initial.stonesSolved ?? 0) || 0))
+    Math.min(
+      3,
+      Math.floor(
+        Number(
+          initial.unlockedStage ??
+            initial.stonesSolvedCount ??
+            initial.stonesSolved ??
+            0
+        ) || 0
+      )
+    )
   );
-  let stonesSolved = Math.max(
-    unlockedStage,
-    Math.min(3, Math.floor(Number(initial.stonesSolved ?? unlockedStage) || 0))
+
+  let stone1Solved =
+    typeof initial.stone1Solved === 'boolean'
+      ? initial.stone1Solved
+      : initMask !== null
+        ? Boolean(initMask & 1)
+        : initStage >= 1 || Boolean(initial.trueNameDiscovered);
+  let stone2Solved =
+    typeof initial.stone2Solved === 'boolean'
+      ? initial.stone2Solved
+      : initMask !== null
+        ? Boolean(initMask & 2)
+        : initStage >= 2;
+  let stone3Solved =
+    typeof initial.stone3Solved === 'boolean'
+      ? initial.stone3Solved
+      : initMask !== null
+        ? Boolean(initMask & 4)
+        : initStage >= 3;
+
+  let stonesSolvedMask = computeStonesBitmask({ stone1Solved, stone2Solved, stone3Solved });
+  let stonesSolvedCount = computeStonesSolvedCount({ stone1Solved, stone2Solved, stone3Solved });
+  let stonesSolved = Math.max(initStage, stonesSolvedCount);
+  let unlockedStage = stonesSolved;
+  let trueNameDiscovered = Boolean(
+    initial.trueNameDiscovered || stone1Solved || unlockedStage >= 1
   );
-  unlockedStage = stonesSolved;
 
   let iceUnlocked =
     typeof initial.iceUnlocked === 'boolean' ? initial.iceUnlocked : unlockedStage >= 1;
@@ -447,8 +546,17 @@ export function createRoomProgressionState(initial = {}) {
     typeof initial.ultimateUnlocked === 'boolean' ? initial.ultimateUnlocked : unlockedStage >= 3;
 
   let communeDiscovered = Boolean(
-    initial.communeDiscovered || iceUnlocked || fireUnlocked || ultimateUnlocked || unlockedStage >= 1
+    initial.communeDiscovered ||
+      trueNameDiscovered ||
+      stone1Solved ||
+      stone2Solved ||
+      stone3Solved ||
+      iceUnlocked ||
+      fireUnlocked ||
+      ultimateUnlocked ||
+      unlockedStage >= 1
   );
+
   const stonesReadSet = new Set(
     Array.isArray(initial.stonesRead)
       ? initial.stonesRead.map((s) => resolveInscriptionStone(s).id)
@@ -457,23 +565,54 @@ export function createRoomProgressionState(initial = {}) {
   if (stonesReadSet.size > 0) {
     communeDiscovered = true;
   }
-  let lastReadStoneId = initial.lastReadStoneId || null;
+  let lastReadStoneId = initial.lastReadStoneId
+    ? resolveInscriptionStone(initial.lastReadStoneId).id
+    : null;
 
-  function recomputeStageCounts() {
-    const count =
+  function syncFromStoneFlags() {
+    stonesSolvedMask = computeStonesBitmask({ stone1Solved, stone2Solved, stone3Solved });
+    stonesSolvedCount = computeStonesSolvedCount({ stone1Solved, stone2Solved, stone3Solved });
+    if (stone1Solved) {
+      trueNameDiscovered = true;
+      communeDiscovered = true;
+    }
+    // Out-of-Order Progression Rule (`unlockedStage = stonesSolvedCount`):
+    // 1st stone -> Stage 1 (Ice [E])
+    // 2nd stone (Stone 2 OR Stone 3) -> Stage 2 (Fire [E] + [Tab] Switcher)
+    // 3rd stone (0b111) -> Stage 3 ([Q] Ultimates + Mode B Divine Miracle)
+    stonesSolved = stonesSolvedCount;
+    unlockedStage = stonesSolvedCount;
+    iceUnlocked = stonesSolvedCount >= 1;
+    fireUnlocked = stonesSolvedCount >= 2;
+    ultimateUnlocked = stonesSolvedCount >= 3;
+    if (stonesSolvedCount > 0) {
+      communeDiscovered = true;
+    }
+  }
+
+  function recomputeStageCountsFromExplicitFlags() {
+    const flagCount =
       (iceUnlocked ? 1 : 0) + (fireUnlocked ? 1 : 0) + (ultimateUnlocked ? 1 : 0);
-    stonesSolved = Math.max(stonesSolved, count);
+    stonesSolvedMask = computeStonesBitmask({ stone1Solved, stone2Solved, stone3Solved });
+    stonesSolvedCount = computeStonesSolvedCount({ stone1Solved, stone2Solved, stone3Solved });
+    stonesSolved = Math.max(stonesSolvedCount, flagCount);
     unlockedStage = ultimateUnlocked
       ? 3
       : iceUnlocked && fireUnlocked
         ? 2
         : iceUnlocked || fireUnlocked
           ? 1
-          : 0;
+          : stonesSolvedCount;
+    if (stone1Solved || unlockedStage >= 1) {
+      trueNameDiscovered = true;
+    }
   }
 
   function getNextStoneIndex() {
-    return Math.min(3, stonesSolved + 1);
+    if (!stone1Solved) return 1;
+    if (!stone2Solved) return 2;
+    if (!stone3Solved) return 3;
+    return 3;
   }
 
   function getHudVisibility() {
@@ -501,15 +640,25 @@ export function createRoomProgressionState(initial = {}) {
     });
     return {
       unlockedStage,
-      communeDiscovered,
+      stonesSolved,
+      stonesSolvedCount,
+      stonesSolvedMask,
+      stone1Solved: Boolean(stone1Solved),
+      stone2Solved: Boolean(stone2Solved),
+      stone3Solved: Boolean(stone3Solved),
+      trueNameDiscovered: Boolean(trueNameDiscovered),
+      communeDiscovered: Boolean(communeDiscovered),
       iceUnlocked: Boolean(iceUnlocked),
       fireUnlocked: Boolean(fireUnlocked),
       ultimateUnlocked: Boolean(ultimateUnlocked),
+      modeBUnlocked: stonesSolvedMask === 0b111 && Boolean(ultimateUnlocked),
       activeElement: fireUnlocked && !iceUnlocked ? 'fire' : 'ice',
       stonesRead: Array.from(stonesReadSet),
-      stonesSolved,
       nextStoneIndex,
-      allStonesSolved: stonesSolved >= 3 || Boolean(iceUnlocked && fireUnlocked && ultimateUnlocked),
+      allStonesSolved:
+        stonesSolvedMask === 0b111 ||
+        stonesSolved >= 3 ||
+        Boolean(iceUnlocked && fireUnlocked && ultimateUnlocked),
       lastReadStoneId,
       showTutorialPopups: false,
       hudVisibility: getHudVisibility(),
@@ -522,13 +671,15 @@ export function createRoomProgressionState(initial = {}) {
     stonesReadSet.add(stone.id);
     communeDiscovered = true;
     lastReadStoneId = stone.id;
-    const sequentialRiddleStage = getNextStoneIndex();
+    const sequentialRiddleStage = Math.min(3, stonesSolved + 1);
     return {
       stoneId: stone.id,
+      siteId: stone.siteId,
+      stoneStage: stone.stage,
       stoneName: stone.name,
       stoneZone: stone.zone,
       sequentialRiddleStage,
-      nextStoneIndex: sequentialRiddleStage,
+      nextStoneIndex: getNextStoneIndex(),
       communeDiscovered: true,
       showTutorialPopups: false,
       state: getState(),
@@ -536,86 +687,186 @@ export function createRoomProgressionState(initial = {}) {
   }
 
   /**
-   * Non-linearly unlocks a specific power (`'ice'`, `'fire'`, or `'ultimate'`)
-   * or sets explicit `{ iceUnlocked, fireUnlocked, ultimateUnlocked }` flags.
+   * Explicitly sets stone solved flags or element unlock flags.
    */
   function setUnlocks(patch = {}) {
     if (typeof patch.communeDiscovered === 'boolean') {
       communeDiscovered = patch.communeDiscovered;
     }
-    if (typeof patch.iceUnlocked === 'boolean') {
-      iceUnlocked = patch.iceUnlocked;
+    if (typeof patch.trueNameDiscovered === 'boolean') {
+      trueNameDiscovered = patch.trueNameDiscovered;
     }
-    if (typeof patch.fireUnlocked === 'boolean') {
-      fireUnlocked = patch.fireUnlocked;
+    const hasStonePatch =
+      typeof patch.stone1Solved === 'boolean' ||
+      typeof patch.stone2Solved === 'boolean' ||
+      typeof patch.stone3Solved === 'boolean' ||
+      Number.isFinite(Number(patch.stonesSolvedMask));
+
+    if (Number.isFinite(Number(patch.stonesSolvedMask))) {
+      const m = Math.max(0, Math.min(7, Math.floor(Number(patch.stonesSolvedMask))));
+      stone1Solved = Boolean(m & 1);
+      stone2Solved = Boolean(m & 2);
+      stone3Solved = Boolean(m & 4);
     }
-    if (typeof patch.ultimateUnlocked === 'boolean') {
-      ultimateUnlocked = patch.ultimateUnlocked;
+    if (typeof patch.stone1Solved === 'boolean') stone1Solved = patch.stone1Solved;
+    if (typeof patch.stone2Solved === 'boolean') stone2Solved = patch.stone2Solved;
+    if (typeof patch.stone3Solved === 'boolean') stone3Solved = patch.stone3Solved;
+
+    if (hasStonePatch) {
+      syncFromStoneFlags();
     }
-    if (iceUnlocked || fireUnlocked || ultimateUnlocked) {
-      communeDiscovered = true;
+
+    const hasExplicitElementPatch =
+      typeof patch.iceUnlocked === 'boolean' ||
+      typeof patch.fireUnlocked === 'boolean' ||
+      typeof patch.ultimateUnlocked === 'boolean';
+
+    if (hasExplicitElementPatch) {
+      if (typeof patch.iceUnlocked === 'boolean') iceUnlocked = patch.iceUnlocked;
+      if (typeof patch.fireUnlocked === 'boolean') fireUnlocked = patch.fireUnlocked;
+      if (typeof patch.ultimateUnlocked === 'boolean') ultimateUnlocked = patch.ultimateUnlocked;
+      if (iceUnlocked && !stone1Solved && !hasStonePatch) stone1Solved = true;
+      if (fireUnlocked && !stone2Solved && !stone3Solved && !hasStonePatch) stone2Solved = true;
+      if (ultimateUnlocked && !stone3Solved && !hasStonePatch) stone3Solved = true;
+      if (iceUnlocked || fireUnlocked || ultimateUnlocked) {
+        communeDiscovered = true;
+      }
+      recomputeStageCountsFromExplicitFlags();
     }
-    stonesSolved =
-      (iceUnlocked ? 1 : 0) + (fireUnlocked ? 1 : 0) + (ultimateUnlocked ? 1 : 0);
-    recomputeStageCounts();
+
     return getState();
   }
 
   /**
-   * Solves a specific stone (`'stone_pier'`, `'stone_grove'`, `'stone_plaza'`)
-   * or riddle kind (`'ice'`, `'fire'`, `'ultimate'` / `'sovereign'`) non-linearly:
-   * - `stone_pier` (`(-42, 18)`) or Ice riddle -> `iceUnlocked = true`
-   * - `stone_grove` (`(44, 16)`) or Fire riddle -> `fireUnlocked = true`
-   * - `stone_plaza` (`(0, -14)`) or Sovereign / Ultimate riddle -> `ultimateUnlocked = true`
+   * Solves a specific stone (`1` / `'site1_well'`, `2` / `'site2_platform'`, `3` / `'site3_wall'`)
+   * using the Out-of-Order Progression Rule (`unlockedStage = stonesSolvedCount`):
+   * - Solving Stone 1 (`site1_well`) sets `stone1Solved = true` -> Stage 1 (Ice [E]).
+   * - Once `stone1Solved === true`, solving whichever stone is visited second
+   *   (`Stone 2` OR `Stone 3`, so `stonesSolvedCount === 2`) unlocks Stage 2
+   *   (`Fire [E]` + `[Tab]` Switcher) so Fire is NEVER skipped!
+   * - Solving the third stone (`stonesSolvedMask === 0b111`, `stonesSolvedCount === 3`)
+   *   unlocks Stage 3 (`[Q]` Ultimates + Mode B Full Eclipse Main Divine Blessing).
+   * Also supports direct legacy element keywords (`'ice'`, `'fire'`, `'ultimate'`).
    */
-  function solveStone(stoneIdOrKind = 'stone_pier') {
+  function solveStone(stoneIdOrKind = 'site1_well') {
     communeDiscovered = true;
-    const raw = String(stoneIdOrKind || 'stone_pier').trim().toLowerCase();
-    let unlockedKind = 'ice';
-    let resolvedStoneId = 'stone_pier';
+    const raw =
+      typeof stoneIdOrKind === 'number'
+        ? String(stoneIdOrKind)
+        : String(stoneIdOrKind || 'site1_well').trim().toLowerCase();
 
-    if (
-      raw === 'stone_grove' ||
-      raw.includes('grove') ||
-      raw.includes('wisteria') ||
+    // Check if caller passed an explicit element keyword rather than a stone ID
+    const isDirectElementKeyword =
+      raw === 'ice' ||
+      raw === 'rime' ||
+      raw === 'frost_lance' ||
+      raw === 'ice_sword' ||
       raw === 'fire' ||
       raw === 'solar' ||
       raw === 'cinder' ||
       raw === 'cinder_fall' ||
-      raw === 'fire_sword'
-    ) {
-      fireUnlocked = true;
-      unlockedKind = 'fire';
-      resolvedStoneId = 'stone_grove';
-    } else if (
-      raw === 'stone_plaza' ||
-      raw.includes('plaza') ||
-      raw.includes('town') ||
-      raw.includes('sovereign') ||
+      raw === 'fire_sword' ||
       raw === 'ultimate' ||
       raw === 'storm' ||
       raw === 'tempest' ||
       raw === 'q' ||
       raw === 'storm_cataclysm' ||
-      raw === 'sky_lightning_awakening'
+      raw === 'sky_lightning_awakening';
+
+    let resolvedStone = SACRED_INSCRIPTION_STONES[0];
+    let unlockedKind = 'ice';
+
+    if (
+      raw === '1' ||
+      raw === 'site1_well' ||
+      raw === 'site1' ||
+      raw === 'stone_plaza' ||
+      raw.includes('well') ||
+      raw.includes('plaza')
     ) {
-      ultimateUnlocked = true;
-      unlockedKind = 'ultimate';
-      resolvedStoneId = 'stone_plaza';
+      resolvedStone = SACRED_INSCRIPTION_STONES[0];
+      stone1Solved = true;
+      syncFromStoneFlags();
+      unlockedKind = unlockedStage === 3 ? 'ultimate' : unlockedStage === 2 ? 'fire' : 'ice';
+    } else if (
+      raw === '2' ||
+      raw === 'site2_platform' ||
+      raw === 'site2' ||
+      raw === 'stone_grove' ||
+      raw.includes('platform') ||
+      raw.includes('grove') ||
+      raw.includes('wisteria')
+    ) {
+      resolvedStone = SACRED_INSCRIPTION_STONES[1];
+      stone2Solved = true;
+      syncFromStoneFlags();
+      unlockedKind = unlockedStage === 3 ? 'ultimate' : unlockedStage === 2 ? 'fire' : 'ice';
+    } else if (
+      raw === '3' ||
+      raw === 'site3_wall' ||
+      raw === 'site3' ||
+      raw === 'stone_pier' ||
+      raw.includes('wall') ||
+      raw.includes('pier') ||
+      raw.includes('cottage')
+    ) {
+      resolvedStone = SACRED_INSCRIPTION_STONES[2];
+      stone3Solved = true;
+      syncFromStoneFlags();
+      unlockedKind = unlockedStage === 3 ? 'ultimate' : unlockedStage === 2 ? 'fire' : 'ice';
+    } else if (isDirectElementKeyword) {
+      if (
+        raw === 'fire' ||
+        raw === 'solar' ||
+        raw === 'cinder' ||
+        raw === 'cinder_fall' ||
+        raw === 'fire_sword'
+      ) {
+        resolvedStone = SACRED_INSCRIPTION_STONES[1];
+        stone2Solved = true;
+        fireUnlocked = true;
+        unlockedKind = 'fire';
+      } else if (
+        raw === 'ultimate' ||
+        raw === 'storm' ||
+        raw === 'tempest' ||
+        raw === 'q' ||
+        raw === 'storm_cataclysm' ||
+        raw === 'sky_lightning_awakening'
+      ) {
+        resolvedStone = SACRED_INSCRIPTION_STONES[2];
+        stone3Solved = true;
+        ultimateUnlocked = true;
+        unlockedKind = 'ultimate';
+      } else {
+        resolvedStone = SACRED_INSCRIPTION_STONES[0];
+        stone1Solved = true;
+        iceUnlocked = true;
+        unlockedKind = 'ice';
+      }
+      recomputeStageCountsFromExplicitFlags();
     } else {
-      iceUnlocked = true;
+      resolvedStone = SACRED_INSCRIPTION_STONES[0];
+      stone1Solved = true;
+      syncFromStoneFlags();
       unlockedKind = 'ice';
-      resolvedStoneId = 'stone_pier';
     }
 
-    stonesReadSet.add(resolvedStoneId);
-    lastReadStoneId = resolvedStoneId;
-    recomputeStageCounts();
+    stonesReadSet.add(resolvedStone.id);
+    lastReadStoneId = resolvedStone.id;
     const snapshot = getState();
     return {
       advanced: true,
-      stoneId: resolvedStoneId,
+      stoneId: resolvedStone.id,
+      solvedStoneId: resolvedStone.id,
+      solvedStoneNumber: resolvedStone.stage,
       unlockedKind,
+      stone1Solved: Boolean(stone1Solved),
+      stone2Solved: Boolean(stone2Solved),
+      stone3Solved: Boolean(stone3Solved),
+      stonesSolvedMask,
+      stonesSolvedCount,
+      trueNameDiscovered: Boolean(trueNameDiscovered),
       iceUnlocked: Boolean(iceUnlocked),
       fireUnlocked: Boolean(fireUnlocked),
       ultimateUnlocked: Boolean(ultimateUnlocked),
@@ -635,8 +886,7 @@ export function createRoomProgressionState(initial = {}) {
   }
 
   /**
-   * Advances progression sequentially (`0 -> 1 -> 2 -> 3`) when a Stone's
-   * riddle / Proof of Love is solved via `Commune`.
+   * Advances progression by solving the next unsolved stone (`0 -> 1 -> 2 -> 3`).
    */
   function solveNextStone(requestedStage = null) {
     communeDiscovered = true;
@@ -645,6 +895,8 @@ export function createRoomProgressionState(initial = {}) {
       return {
         advanced: false,
         stage: 3,
+        stonesSolvedMask,
+        stonesSolvedCount,
         state: getState(),
       };
     }
@@ -657,20 +909,40 @@ export function createRoomProgressionState(initial = {}) {
         advanced: false,
         stage: unlockedStage,
         expectedStage: expectedNext,
+        stonesSolvedMask,
+        stonesSolvedCount,
         state: getState(),
       };
     }
 
-    stonesSolved = Math.min(3, expectedNext);
-    unlockedStage = stonesSolved;
-    if (unlockedStage >= 1) iceUnlocked = true;
-    if (unlockedStage >= 2) fireUnlocked = true;
-    if (unlockedStage >= 3) ultimateUnlocked = true;
+    let solvedStone = SACRED_INSCRIPTION_STONES[0];
+    if (!stone1Solved) {
+      stone1Solved = true;
+      solvedStone = SACRED_INSCRIPTION_STONES[0];
+    } else if (!stone2Solved) {
+      stone2Solved = true;
+      solvedStone = SACRED_INSCRIPTION_STONES[1];
+    } else if (!stone3Solved) {
+      stone3Solved = true;
+      solvedStone = SACRED_INSCRIPTION_STONES[2];
+    }
+
+    syncFromStoneFlags();
+    stonesReadSet.add(solvedStone.id);
+    lastReadStoneId = solvedStone.id;
 
     const snapshot = getState();
     return {
       advanced: true,
       stage: unlockedStage,
+      unlockedStage,
+      solvedStoneId: solvedStone.id,
+      solvedStoneNumber: solvedStone.stage,
+      stonesSolvedMask,
+      stonesSolvedCount,
+      stone1Solved: Boolean(stone1Solved),
+      stone2Solved: Boolean(stone2Solved),
+      stone3Solved: Boolean(stone3Solved),
       knightUnlock: snapshot.unlocks.knight,
       mageUnlock: snapshot.unlocks.mage,
       hudVisibility: snapshot.hudVisibility,
@@ -684,11 +956,32 @@ export function createRoomProgressionState(initial = {}) {
     if (typeof verdictObj.communeDiscovered === 'boolean') {
       communeDiscovered = verdictObj.communeDiscovered;
     }
-    if (typeof verdictObj.iceUnlocked === 'boolean') iceUnlocked = verdictObj.iceUnlocked;
-    if (typeof verdictObj.fireUnlocked === 'boolean') fireUnlocked = verdictObj.fireUnlocked;
-    if (typeof verdictObj.ultimateUnlocked === 'boolean') {
-      ultimateUnlocked = verdictObj.ultimateUnlocked;
+    if (typeof verdictObj.trueNameDiscovered === 'boolean' && verdictObj.trueNameDiscovered) {
+      trueNameDiscovered = true;
     }
+    if (verdictObj.spoke_true_name) {
+      trueNameDiscovered = true;
+    }
+
+    if (Number.isFinite(Number(verdictObj.stonesSolvedMask))) {
+      const m = Math.max(0, Math.min(7, Math.floor(Number(verdictObj.stonesSolvedMask))));
+      stone1Solved = Boolean(stone1Solved || (m & 1));
+      stone2Solved = Boolean(stone2Solved || (m & 2));
+      stone3Solved = Boolean(stone3Solved || (m & 4));
+      syncFromStoneFlags();
+      return getState();
+    }
+
+    const explicitStone =
+      verdictObj.solvedStoneId ||
+      verdictObj.solvedStoneNumber ||
+      verdictObj.stoneId ||
+      verdictObj.stone;
+    if (explicitStone) {
+      solveStone(explicitStone);
+      return getState();
+    }
+
     const explicitElement =
       verdictObj.unlockedElement ||
       verdictObj.element ||
@@ -697,16 +990,20 @@ export function createRoomProgressionState(initial = {}) {
       solveStone(explicitElement);
       return getState();
     }
+
+    if (typeof verdictObj.iceUnlocked === 'boolean') iceUnlocked = verdictObj.iceUnlocked;
+    if (typeof verdictObj.fireUnlocked === 'boolean') fireUnlocked = verdictObj.fireUnlocked;
+    if (typeof verdictObj.ultimateUnlocked === 'boolean') {
+      ultimateUnlocked = verdictObj.ultimateUnlocked;
+    }
+
     const awakenedStage = Number(verdictObj.awakenedStage || 0);
     if (verdictObj.verdict === 'awakening' || awakenedStage > unlockedStage) {
       solveNextStone(stonesSolved + 1);
       return getState();
     }
-    if (verdictObj.stoneId || verdictObj.stone) {
-      solveNextStone(stonesSolved + 1);
-      return getState();
-    }
-    recomputeStageCounts();
+
+    recomputeStageCountsFromExplicitFlags();
     return getState();
   }
 
@@ -720,34 +1017,77 @@ export function createRoomProgressionState(initial = {}) {
     if (remote.communeDiscovered || stonesReadSet.size > 0) {
       communeDiscovered = true;
     }
-    if (typeof remote.lastReadStoneId === 'string' && remote.lastReadStoneId) {
-      lastReadStoneId = remote.lastReadStoneId;
+    if (remote.trueNameDiscovered) {
+      trueNameDiscovered = true;
     }
+    if (typeof remote.lastReadStoneId === 'string' && remote.lastReadStoneId) {
+      lastReadStoneId = resolveInscriptionStone(remote.lastReadStoneId).id;
+    }
+
+    const hasRemoteMask = Number.isFinite(Number(remote.stonesSolvedMask));
+    const hasRemoteStoneFlags =
+      typeof remote.stone1Solved === 'boolean' ||
+      typeof remote.stone2Solved === 'boolean' ||
+      typeof remote.stone3Solved === 'boolean';
+
+    if (hasRemoteMask) {
+      const m = Math.max(0, Math.min(7, Math.floor(Number(remote.stonesSolvedMask))));
+      stone1Solved = Boolean(stone1Solved || (m & 1));
+      stone2Solved = Boolean(stone2Solved || (m & 2));
+      stone3Solved = Boolean(stone3Solved || (m & 4));
+    }
+    if (typeof remote.stone1Solved === 'boolean') {
+      stone1Solved = Boolean(stone1Solved || remote.stone1Solved);
+    }
+    if (typeof remote.stone2Solved === 'boolean') {
+      stone2Solved = Boolean(stone2Solved || remote.stone2Solved);
+    }
+    if (typeof remote.stone3Solved === 'boolean') {
+      stone3Solved = Boolean(stone3Solved || remote.stone3Solved);
+    }
+
+    if (hasRemoteMask || hasRemoteStoneFlags) {
+      syncFromStoneFlags();
+      return getState();
+    }
+
     const remoteStage = Math.max(
       0,
       Math.min(
         3,
-        Math.floor(Number(remote.unlockedStage ?? remote.stonesSolved ?? 0) || 0)
+        Math.floor(
+          Number(
+            remote.unlockedStage ??
+              remote.stonesSolvedCount ??
+              remote.stonesSolved ??
+              0
+          ) || 0
+        )
       )
     );
     if (remoteStage > unlockedStage) {
-      unlockedStage = remoteStage;
-      stonesSolved = remoteStage;
-      if (unlockedStage >= 1) iceUnlocked = true;
-      if (unlockedStage >= 2) fireUnlocked = true;
-      if (unlockedStage >= 3) ultimateUnlocked = true;
-      communeDiscovered = true;
+      if (remoteStage >= 1) stone1Solved = true;
+      if (remoteStage >= 2) stone2Solved = true;
+      if (remoteStage >= 3) stone3Solved = true;
+      syncFromStoneFlags();
     }
+
     if (typeof remote.iceUnlocked === 'boolean') iceUnlocked = remote.iceUnlocked;
     if (typeof remote.fireUnlocked === 'boolean') fireUnlocked = remote.fireUnlocked;
     if (typeof remote.ultimateUnlocked === 'boolean') ultimateUnlocked = remote.ultimateUnlocked;
-    recomputeStageCounts();
+    recomputeStageCountsFromExplicitFlags();
     return getState();
   }
 
   function reset() {
+    stone1Solved = false;
+    stone2Solved = false;
+    stone3Solved = false;
+    stonesSolvedMask = 0;
+    stonesSolvedCount = 0;
     unlockedStage = 0;
     stonesSolved = 0;
+    trueNameDiscovered = false;
     iceUnlocked = false;
     fireUnlocked = false;
     ultimateUnlocked = false;

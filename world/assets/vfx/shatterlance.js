@@ -567,6 +567,10 @@ export class ShatterlanceSystem {
     this.castLength = this.config.range;
     this.active = false;
     this.age = 0;
+    this.chargeHoldActive = false;
+    this.chargeHoldTime = 0;
+    this.chargeProgress = 0;
+    this.fromChargeHold = false;
 
     this._shakeOffset = new THREE.Vector3();
     this._hitstopScale = 1.0;
@@ -644,9 +648,10 @@ export class ShatterlanceSystem {
 
   _seedRecords(seed = 1.0) {
     const c = this.config;
-    const flightDuration = this.castLength / Math.max(1.0, c.speed);
-    this.flightStartTime = c.assembly;
-    this.impactTime = c.assembly + flightDuration;
+    const effectiveAssembly = this.fromChargeHold ? 0.05 : c.assembly;
+    const flightDuration = Math.max(0.04, this.castLength / Math.max(1.0, c.speed));
+    this.flightStartTime = effectiveAssembly;
+    this.impactTime = effectiveAssembly + flightDuration;
     this.totalDuration = this.impactTime + c.lifetime + c.fadeTime;
 
     this.intakeRecords = [];
@@ -706,19 +711,228 @@ export class ShatterlanceSystem {
     }
   }
 
-  cast(origin, direction, options = {}) {
+  _resolveOriginAndDirection({ origin, direction, dirX, dirZ, yaw } = {}) {
     if (origin) {
-      this.origin.set(origin.x ?? origin[0] ?? 0, origin.y ?? origin[1] ?? 0, origin.z ?? origin[2] ?? 0);
+      this.origin.set(
+        origin.x ?? origin[0] ?? this.origin.x,
+        origin.y ?? origin[1] ?? this.origin.y,
+        origin.z ?? origin[2] ?? this.origin.z
+      );
     }
-    if (direction) {
-      const dx = direction.x ?? direction[0] ?? 1;
-      const dz = direction.z ?? direction[2] ?? 0;
-      const len = Math.hypot(dx, dz) || 1;
-      this.direction.set(dx / len, 0, dz / len);
+    this.origin.y = this.getGroundHeight(this.origin.x, this.origin.z);
+
+    let rDx = null;
+    let rDz = null;
+    if (direction && (direction.x !== undefined || direction.z !== undefined || Array.isArray(direction))) {
+      const dx = Number(direction.x ?? direction[0] ?? 0);
+      const dz = Number(direction.z ?? direction[2] ?? 0);
+      if (Math.hypot(dx, dz) > 1e-5) {
+        rDx = dx;
+        rDz = dz;
+      }
+    }
+    if (rDx === null && Number.isFinite(dirX) && Number.isFinite(dirZ) && Math.hypot(dirX, dirZ) > 1e-5) {
+      rDx = Number(dirX);
+      rDz = Number(dirZ);
+    }
+    if (rDx === null && Number.isFinite(yaw)) {
+      rDx = Math.sin(Number(yaw));
+      rDz = Math.cos(Number(yaw));
+    }
+    if (rDx !== null && rDz !== null) {
+      const len = Math.hypot(rDx, rDz) || 1.0;
+      this.direction.set(rDx / len, 0, rDz / len);
     }
     this.side.set(-this.direction.z, 0, this.direction.x);
-    this.castLength = options.range ?? this.config.range;
-    this.origin.y = this.getGroundHeight(this.origin.x, this.origin.z);
+  }
+
+  /**
+   * Renders a continuously spinning 3D cel-shaded crystalline ice vortex + orbiting
+   * frost shards suspended in mid-air at the Mage's raised staff tip (`origin.y + 1.25m`,
+   * `0.65m` forward) for as long as the player holds Attack!
+   */
+  updateChargeHold({
+    origin,
+    direction,
+    dirX,
+    dirZ,
+    yaw,
+    chargeProgress,
+    active = true,
+    dt = 0.016,
+  } = {}) {
+    if (!active) {
+      return this.cancelCharge();
+    }
+
+    this._resolveOriginAndDirection({ origin, direction, dirX, dirZ, yaw });
+
+    if (!this.chargeHoldActive) {
+      this.chargeHoldActive = true;
+      this.chargeHoldTime = 0;
+    }
+    if (Number.isFinite(dt) && dt > 0) {
+      this.chargeHoldTime += dt;
+    }
+
+    const t = this.chargeHoldTime;
+    const prog = Number.isFinite(chargeProgress)
+      ? clamp(chargeProgress, 0.25, 1.0)
+      : clamp(t / 0.55, 0.28, 1.0);
+    this.chargeProgress = prog;
+
+    this.active = true;
+    this.group.visible = true;
+    this.sharedUniforms.uTime.value = t;
+    this.sharedUniforms.uChargeProgress.value = 0.5 + 0.5 * Math.sin(t * 6.5);
+
+    this._renderStaffVortexFrame(t, prog);
+    return this;
+  }
+
+  _renderStaffVortexFrame(t, prog) {
+    const c = this.config;
+    const staffForward = 0.65;
+    const staffHeight = 1.25;
+    const centerX = this.origin.x + this.direction.x * staffForward;
+    const centerZ = this.origin.z + this.direction.z * staffForward;
+    const centerY = this.getGroundHeight(centerX, centerZ) + staffHeight;
+
+    // 1. DC 1: 32 Orbiting 3D Crystalline Frost Shards swirling continuously around staff tip
+    let intakeSlot = 0;
+    const vortexScale = 0.65 + 0.35 * prog;
+    for (let i = 0; i < MAX_INTAKE_SHARDS; i++) {
+      const rec = this.intakeRecords[i];
+      const orbitSpeed = 6.2 + (i % 5) * 1.15;
+      const swirlAng = rec.ringAng + t * orbitSpeed * (i % 2 === 0 ? 1 : -1);
+      const orbitRad = (0.34 + 0.48 * ((i % 7) / 6)) * vortexScale * (0.88 + 0.14 * Math.sin(t * 5.0 + i));
+      const axialOff = ((i / MAX_INTAKE_SHARDS) - 0.5) * 1.15 * vortexScale + Math.cos(t * 4.2 + i) * 0.12;
+
+      const rx = Math.cos(swirlAng) * orbitRad;
+      const ry = Math.sin(swirlAng) * orbitRad;
+
+      const wx = centerX + this.direction.x * axialOff + this.side.x * rx;
+      const wz = centerZ + this.direction.z * axialOff + this.side.z * rx;
+      const wy = Math.max(this.getGroundHeight(wx, wz) + 0.35, centerY + ry);
+
+      _dummy.position.set(wx, wy, wz);
+      // Orient each crystal shard tangentially along the spinning vortex + tilted toward aim axis
+      const targetX = centerX + this.direction.x * 0.95 - this.side.x * ry * 0.65;
+      const targetY = centerY + rx * 0.65;
+      const targetZ = centerZ + this.direction.z * 0.95 - this.side.z * ry * 0.65;
+      _pos.set(targetX - wx, targetY - wy, targetZ - wz);
+      if (_pos.lengthSq() > 1e-4) {
+        _pos.normalize();
+        _quat.setFromUnitVectors(UP, _pos);
+      } else {
+        _quat.identity();
+      }
+      _rotQuat.setFromAxisAngle(UP, t * rec.spin * 1.6);
+      _dummy.quaternion.copy(_quat).multiply(_rotQuat);
+
+      const sc = rec.size * (0.78 + 0.34 * prog);
+      _dummy.scale.set(sc * 0.62, sc * 1.55, sc * 0.62);
+      _dummy.updateMatrix();
+      this.intakeShardsMesh.setMatrixAt(intakeSlot, _dummy.matrix);
+
+      const mOff = intakeSlot * 4;
+      this.intakeMetaAttr.array[mOff + 0] = rec.seed;
+      this.intakeMetaAttr.array[mOff + 1] = 0.85 + 0.25 * prog;
+      this.intakeMetaAttr.array[mOff + 2] = 1.0;
+      this.intakeMetaAttr.array[mOff + 3] = 0.0;
+      intakeSlot++;
+    }
+    this.intakeShardsMesh.count = intakeSlot;
+    this.intakeShardsMesh.instanceMatrix.needsUpdate = true;
+    this.intakeMetaAttr.needsUpdate = true;
+
+    // 2. DC 2: Rapidly Spinning 7-Fluted Crystalline Lance Core + Counter-Rotating Vortex Collars at Staff Tip
+    let lanceSlot = 0;
+    const bob = Math.sin(t * 8.5) * 0.035;
+    _quat.setFromUnitVectors(_forwardZ, this.direction);
+    _rotQuat.setFromAxisAngle(_forwardZ, t * 11.5);
+    _quat.multiply(_rotQuat);
+
+    _dummy.position.set(centerX, centerY + bob, centerZ);
+    _dummy.quaternion.copy(_quat);
+    _dummy.scale.set(
+      c.lanceRadius * (0.68 + 0.34 * prog),
+      c.lanceRadius * (0.68 + 0.34 * prog),
+      c.lanceLength * (0.42 + 0.28 * prog)
+    );
+    _dummy.updateMatrix();
+    this.greatLanceMesh.setMatrixAt(lanceSlot, _dummy.matrix);
+    this.lanceMetaAttr.setXYZW(lanceSlot, 1.1, 1.15, 0.0, 0.0);
+    lanceSlot++;
+
+    // Slot 1: Counter-spinning wide crystalline vortex ring collar at staff tip
+    _quat.setFromUnitVectors(_forwardZ, this.direction);
+    _rotQuat.setFromAxisAngle(_forwardZ, -t * 14.0);
+    _quat.multiply(_rotQuat);
+    _dummy.position.set(
+      centerX + this.direction.x * 0.18,
+      centerY + bob,
+      centerZ + this.direction.z * 0.18
+    );
+    _dummy.quaternion.copy(_quat);
+    _dummy.scale.set(
+      c.lanceRadius * (1.28 + 0.35 * prog),
+      c.lanceRadius * (1.28 + 0.35 * prog),
+      0.55
+    );
+    _dummy.updateMatrix();
+    this.greatLanceMesh.setMatrixAt(lanceSlot, _dummy.matrix);
+    this.lanceMetaAttr.setXYZW(lanceSlot, 2.7, 1.25, 1.0, 0.0);
+    lanceSlot++;
+
+    this.greatLanceMesh.count = lanceSlot;
+    this.greatLanceMesh.instanceMatrix.needsUpdate = true;
+    this.lanceMetaAttr.needsUpdate = true;
+
+    // 3. DC 3: Zero impact wedges while holding charge
+    this.shatterWedgesMesh.count = 0;
+    this.shatterWedgesMesh.instanceMatrix.needsUpdate = true;
+
+    // 4. DC 4: Spinning 8-Pointed Crystalline Star-Rime Glyph beneath Mage's feet while charging
+    const castYaw = Math.atan2(this.direction.x, this.direction.z);
+    const groundY = this.getGroundHeight(this.origin.x, this.origin.z) + 0.042;
+    _dummy.position.set(this.origin.x, groundY, this.origin.z);
+    _dummy.quaternion.setFromAxisAngle(UP, castYaw + t * 1.25);
+    const glyphRad = 1.65 * (0.75 + 0.25 * prog);
+    _dummy.scale.set(glyphRad, 1.0, glyphRad);
+    _dummy.updateMatrix();
+    this.groundDecalMesh.setMatrixAt(0, _dummy.matrix);
+    this.decalMetaAttr.setXYZW(0, 0.15, 1.0, 0.19, 1.0);
+    this.groundDecalMesh.count = 1;
+    this.groundDecalMesh.instanceMatrix.needsUpdate = true;
+    this.decalMetaAttr.needsUpdate = true;
+  }
+
+  cancelCharge() {
+    if (!this.chargeHoldActive) return this;
+    this.chargeHoldActive = false;
+    this.chargeHoldTime = 0;
+    this.chargeProgress = 0;
+    this.clear();
+    return this;
+  }
+
+  cast(origin, direction, options = {}) {
+    const wasHoldingCharge = Boolean(this.chargeHoldActive || options.fromChargeHold);
+    this.chargeHoldActive = false;
+    this.chargeHoldTime = 0;
+    this.fromChargeHold = wasHoldingCharge;
+
+    this._resolveOriginAndDirection({
+      origin,
+      direction,
+      dirX: options.dirX ?? options.aim?.dirX,
+      dirZ: options.dirZ ?? options.aim?.dirZ,
+      yaw: options.yaw ?? options.aim?.yaw,
+    });
+
+    const rawRange = options.distance ?? options.range ?? options.aim?.distance ?? this.config.range;
+    this.castLength = clamp(Number(rawRange) || this.config.range, 0.8, 18.0);
 
     this._seedRecords(options.seed ?? 1.0);
     this.active = true;
@@ -742,6 +956,7 @@ export class ShatterlanceSystem {
   }
 
   seek(timeSeconds) {
+    this.chargeHoldActive = false;
     if (timeSeconds < 0 || timeSeconds > this.totalDuration + 0.1) {
       this.clear();
       return this;
@@ -753,18 +968,22 @@ export class ShatterlanceSystem {
     this.sharedUniforms.uTime.value = timeSeconds;
 
     const c = this.config;
-    const assemblyU = saturate(timeSeconds / Math.max(0.05, c.assembly));
+    const effectiveAssembly = this.fromChargeHold ? 0.05 : c.assembly;
+    const startHoverDist = this.fromChargeHold
+      ? Math.min(0.65, this.castLength * 0.35)
+      : Math.min(c.hoverForward, this.castLength * 0.45);
+    const assemblyU = saturate(timeSeconds / Math.max(0.03, effectiveAssembly));
     const flightDuration = Math.max(0.04, this.castLength / Math.max(1.0, c.speed));
-    const flightU = saturate((timeSeconds - c.assembly) / flightDuration);
+    const flightU = saturate((timeSeconds - effectiveAssembly) / flightDuration);
     const impactElapsed = timeSeconds - this.impactTime;
     const postImpactU = saturate(impactElapsed / Math.max(0.1, c.lifetime + c.fadeTime));
 
-    this.sharedUniforms.uChargeProgress.value = timeSeconds < c.assembly ? assemblyU : 1.0;
+    this.sharedUniforms.uChargeProgress.value = timeSeconds < effectiveAssembly ? assemblyU : 1.0;
 
     // 1. Evaluate Spiraling Coaxial Intake Shards (DC 1)
     let intakeSlot = 0;
     if (timeSeconds <= this.impactTime + 0.02) {
-      const hoverDist = lerp(c.hoverForward, this.castLength, flightU);
+      const hoverDist = lerp(startHoverDist, this.castLength, flightU);
       const centerX = this.origin.x + this.direction.x * hoverDist;
       const centerZ = this.origin.z + this.direction.z * hoverDist;
       const centerY = this.getGroundHeight(centerX, centerZ) + c.lanceHeight;
@@ -772,7 +991,7 @@ export class ShatterlanceSystem {
       for (let i = 0; i < MAX_INTAKE_SHARDS; i++) {
         const rec = this.intakeRecords[i];
         const shardProgress = saturate((assemblyU - rec.stagger) / Math.max(0.15, 1.0 - rec.stagger));
-        if (shardProgress >= 0.992 && timeSeconds > c.assembly + 0.03) continue;
+        if (shardProgress >= 0.992 && timeSeconds > effectiveAssembly + 0.03) continue;
 
         const pull = 1.0 - Math.pow(shardProgress, c.intakeEase);
         const swirlAng = rec.ringAng + timeSeconds * 3.8;
@@ -824,14 +1043,14 @@ export class ShatterlanceSystem {
     let lanceSlot = 0;
     const lanceVisible = timeSeconds <= this.impactTime + 0.02;
     if (lanceVisible) {
-      const dist = lerp(c.hoverForward, this.castLength, flightU);
+      const dist = lerp(startHoverDist, this.castLength, flightU);
       const lx = this.origin.x + this.direction.x * dist;
       const lz = this.origin.z + this.direction.z * dist;
-      const bob = timeSeconds < c.assembly ? Math.sin(timeSeconds * 9.5) * 0.04 : 0.0;
+      const bob = timeSeconds < effectiveAssembly ? Math.sin(timeSeconds * 9.5) * 0.04 : 0.0;
       const ly = this.getGroundHeight(lx, lz) + c.lanceHeight + bob;
 
       _quat.setFromUnitVectors(_forwardZ, this.direction);
-      const rollAng = timeSeconds * (timeSeconds < c.assembly ? 1.8 : 8.5);
+      const rollAng = timeSeconds * (timeSeconds < effectiveAssembly ? 1.8 : 8.5);
       _rotQuat.setFromAxisAngle(_forwardZ, rollAng);
       _quat.multiply(_rotQuat);
 
@@ -844,7 +1063,7 @@ export class ShatterlanceSystem {
       _dummy.scale.set(
         c.lanceRadius * radGrow,
         c.lanceRadius * radGrow,
-        c.lanceLength * lenGrow
+        Math.min(c.lanceLength, Math.max(1.4, this.castLength * 0.85)) * lenGrow
       );
       _dummy.updateMatrix();
       this.greatLanceMesh.setMatrixAt(lanceSlot, _dummy.matrix);
@@ -927,8 +1146,8 @@ export class ShatterlanceSystem {
 
     // Muzzle / Hover Assembly Snow-Rime Star-Plate underneath the assembling Great-Lance
     if (timeSeconds <= this.impactTime + 0.45) {
-      const hoverX = this.origin.x + this.direction.x * c.hoverForward;
-      const hoverZ = this.origin.z + this.direction.z * c.hoverForward;
+      const hoverX = this.origin.x + this.direction.x * startHoverDist;
+      const hoverZ = this.origin.z + this.direction.z * startHoverDist;
       const hoverY = this.getGroundHeight(hoverX, hoverZ) + 0.042;
       _dummy.position.set(hoverX, hoverY, hoverZ);
       _dummy.quaternion.setFromAxisAngle(UP, castYaw + timeSeconds * 0.35);
@@ -941,7 +1160,7 @@ export class ShatterlanceSystem {
     }
 
     // Track decal along railgun path
-    const trackReach = timeSeconds < c.assembly ? 0.35 * assemblyU : clamp(0.35 + 0.65 * flightU, 0.0, 1.0);
+    const trackReach = timeSeconds < effectiveAssembly ? 0.35 * assemblyU : clamp(0.35 + 0.65 * flightU, 0.0, 1.0);
     if (trackReach > 0.02) {
       const midDist = this.castLength * 0.5;
       const tx = this.origin.x + this.direction.x * midDist;
@@ -993,6 +1212,16 @@ export class ShatterlanceSystem {
 
   update(dt) {
     if (!this.active) return;
+    if (this.chargeHoldActive) {
+      if (Number.isFinite(dt) && dt > 0) {
+        this.chargeHoldTime += dt;
+      }
+      const prog = clamp(this.chargeHoldTime / 0.55, 0.28, 1.0);
+      this.sharedUniforms.uTime.value = this.chargeHoldTime;
+      this.sharedUniforms.uChargeProgress.value = 0.5 + 0.5 * Math.sin(this.chargeHoldTime * 6.5);
+      this._renderStaffVortexFrame(this.chargeHoldTime, prog);
+      return;
+    }
     const nextAge = this.age + dt;
     if (nextAge > this.totalDuration) {
       this.clear();
@@ -1005,6 +1234,7 @@ export class ShatterlanceSystem {
     if (!this.active || !this.group.visible) {
       return {
         active: false,
+        chargeHoldActive: false,
         drawCalls: 0,
         activeIntakeShards: 0,
         activeLanceParts: 0,
@@ -1019,7 +1249,8 @@ export class ShatterlanceSystem {
     if (this.groundDecalMesh.count > 0) drawCalls++;
     return {
       active: true,
-      age: Number(this.age.toFixed(3)),
+      chargeHoldActive: Boolean(this.chargeHoldActive),
+      age: Number((this.chargeHoldActive ? this.chargeHoldTime : this.age).toFixed(3)),
       drawCalls,
       activeIntakeShards: this.intakeShardsMesh.count,
       activeLanceParts: this.greatLanceMesh.count,
@@ -1030,6 +1261,10 @@ export class ShatterlanceSystem {
 
   clear() {
     this.active = false;
+    this.chargeHoldActive = false;
+    this.chargeHoldTime = 0;
+    this.chargeProgress = 0;
+    this.fromChargeHold = false;
     this.age = 0;
     this._shakeOffset.set(0, 0, 0);
     this._hitstopScale = 1.0;
