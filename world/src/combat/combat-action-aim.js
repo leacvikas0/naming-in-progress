@@ -111,8 +111,8 @@ export const MAGE_COMBO_SPECS = [
     startTime: 0,
     baseTimeScale: 1.0,
     timeScale: 1.0,
-    duration: 0.5,
-    contactFrac: 0.4,
+    duration: 0.56,
+    contactFrac: 0.48,
     stepDist: 0,
     hopVy: 0,
     cameraImpulse: 0,
@@ -123,8 +123,8 @@ export const MAGE_COMBO_SPECS = [
     startTime: 0,
     baseTimeScale: 1.0,
     timeScale: 1.0,
-    duration: 0.5,
-    contactFrac: 0.42,
+    duration: 0.56,
+    contactFrac: 0.48,
     stepDist: 0,
     hopVy: 0,
     cameraImpulse: 0,
@@ -540,26 +540,15 @@ export function createCombatActionAimController({
   } = {}) {
     const chosenSpell = spellId || heroes.Mage.selectedSpell || 'frost_lance';
     const isShatter = chosenSpell === 'shatterlance';
-    const minDist = isShatter ? SHATTERLANCE_MIN_DISTANCE : CINDER_FALL_MIN_DISTANCE;
-    const maxDist = isShatter ? SHATTERLANCE_MAX_DISTANCE : CINDER_FALL_MAX_DISTANCE;
+    const hasCustomDist =
+      Number.isFinite(Number(distance)) || aimState.customDistance !== null;
+    const minDist =
+      isShatter || hasCustomDist ? SHATTERLANCE_MIN_DISTANCE : CINDER_FALL_MIN_DISTANCE;
+    const maxDist =
+      isShatter || hasCustomDist ? SHATTERLANCE_MAX_DISTANCE : CINDER_FALL_MAX_DISTANCE;
 
     if (Number.isFinite(Number(distance))) {
       aimState.customDistance = clamp(Number(distance), minDist, maxDist);
-    } else if (
-      !isInitialShow &&
-      aimState.customDistance !== null &&
-      Number.isFinite(Number(pitch)) &&
-      aimState.lastPitch !== null &&
-      chosenSpell !== 'frost_lance'
-    ) {
-      const pitchDelta = Number(pitch) - aimState.lastPitch;
-      if (Math.abs(pitchDelta) > 1e-4) {
-        aimState.customDistance = clamp(
-          aimState.customDistance - pitchDelta * 18.0,
-          minDist,
-          maxDist
-        );
-      }
     }
     if (Number.isFinite(Number(pitch))) {
       aimState.lastPitch = Number(pitch);
@@ -577,8 +566,8 @@ export function createCombatActionAimController({
       yaw,
       pitch,
       distance: effectiveDistance,
-      spellId: chosenSpell,
-      fixedDistance: chosenSpell === 'frost_lance' ? FROST_LANCE_AIM_LENGTH : null,
+      spellId: effectiveDistance !== undefined ? 'shatterlance' : chosenSpell,
+      fixedDistance: null,
       minDistance: minDist,
       maxDistance: maxDist,
       touchTarget,

@@ -70,7 +70,7 @@ function createEmptyTreeShadowArray() {
 
 export function createEmptyCharShadowArray() {
   const arr = [];
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 10; i++) {
     arr.push(new THREE.Vector4(9999.0, 9999.0, 0.72, 0.0));
   }
   return arr;
@@ -405,7 +405,7 @@ export function createGouacheMaterial({
       uniform sampler2D uBakedShadowAO;
       uniform sampler2D uMeadowCanvasTex;
       uniform float uUseBakedShadowAO;
-      uniform vec4 uCharShadows[8];
+      uniform vec4 uCharShadows[10];
       uniform sampler2D uWorldMask;
       uniform float uUseMask;
       uniform float uWorldExtent;
@@ -436,7 +436,7 @@ export function createGouacheMaterial({
         vec2 perpDir = vec2(-shadowDir.y, shadowDir.x);
         float shd = 0.0;
 
-        for (int c = 0; c < 8; c++) {
+        for (int c = 0; c < 10; c++) {
           vec4 ch = uCharShadows[c];
           if (ch.w < 0.02) continue;
           float wWeight = clamp(ch.w, 0.0, 1.0);

@@ -121,58 +121,47 @@ const SVG_SACRED_LOTUS = `
 </svg>
 `;
 
-/* Multi-Layered Cel-Shaded Cryo Ice-Lance / Glacial Star Crest for [E] Ice */
+/* Refined Precision Crystalline Crest for [E] Ice (Warm Ivory + Subtle Silver-Ice #bae6fd Accent) */
 const SVG_ICE_CRYSTAL_GLYPH = `
 <svg class="sh-skill-glyph-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-  <!-- Crisp Cel Outline -->
-  <polygon points="24,4 30.5,18.5 44,24 30.5,29.5 24,44 17.5,29.5 4,24 17.5,18.5" fill="#0f172a"/>
-  <!-- Outer Glacial Facets -->
-  <polygon points="24,6.5 29.2,19.2 41.5,24 29.2,28.8 24,41.5 18.8,28.8 6.5,24 18.8,19.2" fill="#0284c7"/>
+  <!-- Subtle Geometric Diamond Frame -->
+  <rect x="13" y="13" width="22" height="22" rx="1.5" transform="rotate(45 24 24)" stroke="#bae6fd" stroke-width="1.5" opacity="0.58"/>
   <!-- Diagonal Frost Spines -->
-  <polygon points="11.5,11.5 21.5,19.5 19.5,21.5" fill="#38bdf8"/>
-  <polygon points="36.5,11.5 26.5,19.5 28.5,21.5" fill="#38bdf8"/>
-  <polygon points="11.5,36.5 21.5,28.5 19.5,26.5" fill="#38bdf8"/>
-  <polygon points="36.5,36.5 26.5,28.5 28.5,26.5" fill="#38bdf8"/>
-  <!-- Mid Crystalline Highlight -->
-  <polygon points="24,9.5 27.6,20.4 38.5,24 27.6,27.6 24,38.5 20.4,27.6 9.5,24 20.4,20.4" fill="#38bdf8"/>
-  <!-- Pure White Diamond Core -->
-  <polygon points="24,15 26.4,21.6 33,24 26.4,26.4 24,33 21.6,26.4 15,24 21.6,21.6" fill="#f0f9ff"/>
+  <path d="M13.5 13.5 L34.5 34.5 M34.5 13.5 L13.5 34.5" stroke="#bae6fd" stroke-width="1.8" stroke-linecap="round" opacity="0.82"/>
+  <!-- Outer Silver-Ice Star Facets -->
+  <polygon points="24,6 28.4,19.6 42,24 28.4,28.4 24,42 19.6,28.4 6,24 19.6,19.6" fill="#bae6fd" opacity="0.88"/>
+  <!-- Pure Warm-Ivory Core -->
+  <polygon points="24,11.5 26.8,21.2 36.5,24 26.8,26.8 24,36.5 21.2,26.8 11.5,24 21.2,21.2" fill="#ffffff"/>
 </svg>
 `;
 
-/* Multi-Layered Cel-Shaded Pyro Sunfire Flame Crest for [E] Fire */
+/* Refined Precision Sunfire Crest for [E] Fire (Warm Ivory + Subtle Ember-Gold #fed7aa Accent) */
 const SVG_FIRE_SUNFIRE_GLYPH = `
 <svg class="sh-skill-glyph-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-  <!-- Crisp Cel Outline -->
-  <path d="M24 4 C30 11, 39 17.5, 37.5 29.5 C36.2 38.2, 30.5 43, 24 43 C17.5 43, 11.8 38.2, 10.5 29.5 C9 19.5, 15.5 13, 18.5 9.5 C18 14, 20 16.5, 24 4 Z" fill="#1c1210"/>
-  <!-- Outer Blazing Crimson-Orange Tongue -->
-  <path d="M24 6.8 C29.2 13, 36.8 18.8, 35.5 29.2 C34.4 36.6, 29.5 40.8, 24 40.8 C18.5 40.8, 13.6 36.6, 12.5 29.2 C11.3 20.8, 16.5 15.2, 19.2 12 C19.2 15.8, 21.2 17.5, 24 6.8 Z" fill="#ff3b1f"/>
-  <!-- Mid Solar Amber Flame -->
-  <path d="M24.5 14 C28.5 18.8, 32.8 23.2, 31.6 30.8 C30.6 35.8, 27.6 38.8, 24 38.8 C20.4 38.8, 17.2 35.8, 16.4 30.8 C15.6 25.2, 19.2 21, 21.2 18.4 C21.4 21.2, 22.8 22, 24.5 14 Z" fill="#ff9e1b"/>
-  <!-- Incandescent Gold-White Core -->
-  <path d="M24 22.5 C26.6 25.8, 28.4 28.8, 27.5 33.4 C26.8 36.2, 25.5 37.5, 24 37.5 C22.5 37.5, 21.2 36.2, 20.5 33.4 C19.6 28.8, 21.4 25.8, 24 22.5 Z" fill="#fff3b0"/>
+  <!-- Subtle Geometric Solar Halo -->
+  <circle cx="24" cy="25" r="14.5" stroke="#fed7aa" stroke-width="1.5" stroke-dasharray="3.5 2.5" opacity="0.55"/>
+  <!-- Outer Warm Ember-Gold Flame Silhouette -->
+  <path d="M24 6.5 C29 12.8, 36.2 18.6, 35 28.8 C34 36, 29.2 40.2, 24 40.2 C18.8 40.2, 14 36, 13 28.8 C11.8 20.6, 16.8 15, 19.5 11.8 C19.5 15.5, 21.4 17.2, 24 6.5 Z" fill="#fed7aa" opacity="0.90"/>
+  <!-- Pure Warm-Ivory Inner Flame Core -->
+  <path d="M24.2 14.2 C27.8 18.6, 31.6 22.8, 30.6 29.8 C29.8 34.4, 27 37.2, 24 37.2 C21 37.2, 18.2 34.4, 17.4 29.8 C16.6 24.6, 19.8 20.8, 21.5 18.4 C21.6 21, 22.8 21.8, 24.2 14.2 Z" fill="#ffffff"/>
 </svg>
 `;
 
-/* Clean Left-Side [Tab] Element Switch: Bespoke Multi-Layered Cel-Shaded Ice & Fire SVGs + Horizontal Text ONLY when switching */
+/* Clean Left-Side [Tab] Element Switch: Refined Minimalist Ice & Fire Glyphs + Horizontal Text when switching */
 const SVG_TAB_SWAP_GLYPH = `
 <span class="sh-tab-switch-inner">
   <span class="sh-tab-icons-pair">
     <span class="sh-tab-opt sh-tab-opt-ice" data-el-opt="ice" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
-        <polygon points="12,1.5 15.2,8.8 22.5,12 15.2,15.2 12,22.5 8.8,15.2 1.5,12 8.8,8.8" fill="#0f172a"/>
-        <polygon points="12,3 14.6,9.4 21,12 14.6,14.6 12,21 9.4,14.6 3,12 9.4,9.4" fill="#0284c7"/>
-        <path d="M5.5 5.5L18.5 18.5M18.5 5.5L5.5 18.5" stroke="#38bdf8" stroke-width="1.8" stroke-linecap="round"/>
-        <polygon points="12,5.2 13.8,10.2 18.8,12 13.8,13.8 12,18.8 10.2,13.8 5.2,12 10.2,10.2" fill="#38bdf8"/>
-        <polygon points="12,8.2 13,11 15.8,12 13,13 12,15.8 11,13 8.2,12 11,11" fill="#f0f9ff"/>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+        <path d="M6.2 6.2L17.8 17.8M17.8 6.2L6.2 17.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.72"/>
+        <polygon points="12,2.5 14.3,9.7 21.5,12 14.3,14.3 12,21.5 9.7,14.3 2.5,12 9.7,9.7" fill="currentColor"/>
+        <polygon points="12,6.5 13.3,10.7 17.5,12 13.3,13.3 12,17.5 10.7,13.3 6.5,12 10.7,10.7" fill="#ffffff"/>
       </svg>
     </span>
     <span class="sh-tab-opt sh-tab-opt-fire" data-el-opt="fire" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
-        <path d="M12 1.8C15.4 5.6 19.6 9.2 18.8 15.2C18.1 19.6 15.2 22.2 12 22.2C8.8 22.2 5.9 19.6 5.2 15.2C4.5 10.2 7.6 6.8 9.2 4.8C9 7.2 10.1 8.4 12 1.8Z" fill="#1c1210"/>
-        <path d="M12 3.4C14.8 6.8 18.3 9.8 17.6 15C17 18.8 14.6 21 12 21C9.4 21 7 18.8 6.4 15C5.8 10.8 8.3 7.8 9.7 6C9.7 8 10.7 8.9 12 3.4Z" fill="#ff3b1f"/>
-        <path d="M12.2 7.4C14.2 9.8 16.2 12.2 15.6 15.8C15.1 18.3 13.7 19.8 12 19.8C10.3 19.8 8.8 18.3 8.4 15.8C8 13 9.7 10.8 10.7 9.5C10.8 11 11.5 11.4 12.2 7.4Z" fill="#ff9e1b"/>
-        <path d="M12 11.8C13.3 13.5 14.2 15 13.7 17.2C13.4 18.6 12.7 19.3 12 19.3C11.3 19.3 10.6 18.6 10.3 17.2C9.8 15 10.7 13.5 12 11.8Z" fill="#fff3b0"/>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+        <path d="M12 3.2C14.8 6.6 18.2 9.6 17.5 14.8C16.9 18.6 14.5 20.8 12 20.8C9.5 20.8 7.1 18.6 6.5 14.8C5.9 10.6 8.4 7.6 9.8 5.8C9.8 7.8 10.8 8.7 12 3.2Z" fill="currentColor"/>
+        <path d="M12.1 8.2C13.9 10.4 15.6 12.5 15.1 15.8C14.7 18 13.5 19.3 12 19.3C10.5 19.3 9.3 18 8.9 15.8C8.5 13.3 10 11.4 10.9 10.2C11 11.5 11.6 11.8 12.1 8.2Z" fill="#ffffff"/>
       </svg>
     </span>
   </span>
@@ -211,7 +200,7 @@ const SCULPTED_HUD_CSS = `
     --hud-ink-muted: rgba(255, 255, 255, 0.82);
     --hud-ring-border: rgba(255, 255, 255, 0.78);
     --hud-ring-inner: rgba(255, 255, 255, 0.22);
-    --hud-ring-fill: rgba(34, 38, 46, 0.28);
+    --hud-ring-fill: rgba(22, 26, 34, 0.52);
     --hud-shadow: rgba(15, 23, 42, 0.24);
     --hud-accent: #facc15;
   }
@@ -242,9 +231,9 @@ const SCULPTED_HUD_CSS = `
     cursor: pointer;
     border-radius: 50%;
     background: var(--hud-ring-fill);
-    border: 1.8px solid var(--hud-ring-border);
+    border: 1.5px solid var(--hud-ring-border);
     box-shadow:
-      inset 0 0 0 3px var(--hud-ring-inner),
+      inset 0 0 0 2.5px var(--hud-ring-inner),
       0 4px 14px var(--hud-shadow);
     color: #ffffff;
     display: inline-flex;
@@ -277,15 +266,15 @@ const SCULPTED_HUD_CSS = `
   }
 
   #sculpted-slot-e[data-element="ice"] .sh-vertical-fill {
-    background: linear-gradient(180deg, rgba(125, 211, 252, 0.78) 0%, rgba(14, 165, 233, 0.62) 100%);
+    background: linear-gradient(180deg, rgba(186, 230, 253, 0.14) 0%, rgba(22, 26, 34, 0.28) 100%);
   }
 
   #sculpted-slot-e[data-element="fire"] .sh-vertical-fill {
-    background: linear-gradient(180deg, rgba(253, 186, 116, 0.82) 0%, rgba(234, 88, 12, 0.68) 100%);
+    background: linear-gradient(180deg, rgba(254, 215, 170, 0.16) 0%, rgba(22, 26, 34, 0.28) 100%);
   }
 
   #sculpted-slot-q .sh-vertical-fill {
-    background: linear-gradient(180deg, rgba(253, 224, 71, 0.82) 0%, rgba(56, 189, 248, 0.72) 100%);
+    background: linear-gradient(180deg, rgba(254, 240, 138, 0.16) 0%, rgba(22, 26, 34, 0.28) 100%);
   }
 
   #sculpted-commune-btn .sh-vertical-fill {
@@ -598,7 +587,7 @@ const SCULPTED_HUD_CSS = `
     display: inline-flex;
   }
 
-  /* LEFT-SIDE [Tab] ELEMENT SWITCH (~30% down from top-left): Icons first, text ahead ONLY when switching */
+  /* LEFT-SIDE [Tab] ELEMENT SWITCH (~30% down from top-left): Dark-frosted glass pill + subtle elemental icon accent */
   #sculpted-slot-tab,
   #sculpted-hud-root.profile-tablet #sculpted-slot-tab,
   #sculpted-hud-root.profile-desktop #sculpted-slot-tab {
@@ -611,9 +600,9 @@ const SCULPTED_HUD_CSS = `
     height: 38px;
     padding: 4px 8px;
     border-radius: 999px;
-    background: rgba(34, 38, 46, 0.34);
+    background: rgba(22, 26, 34, 0.52);
     border: 1.5px solid rgba(255, 255, 255, 0.78);
-    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.22);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.24);
     gap: 6px;
   }
 
@@ -640,20 +629,21 @@ const SCULPTED_HUD_CSS = `
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    color: rgba(255, 255, 255, 0.52);
-    transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
+    border: 1px solid transparent;
+    color: rgba(255, 255, 255, 0.46);
+    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
   }
 
   #sculpted-slot-tab[data-element="ice"] .sh-tab-opt-ice {
-    background: rgba(56, 189, 248, 0.55);
-    color: #ffffff;
-    box-shadow: 0 0 8px rgba(56, 189, 248, 0.45);
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(186, 230, 253, 0.68);
+    color: #bae6fd;
   }
 
   #sculpted-slot-tab[data-element="fire"] .sh-tab-opt-fire {
-    background: rgba(251, 146, 60, 0.62);
-    color: #ffffff;
-    box-shadow: 0 0 8px rgba(251, 146, 60, 0.45);
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(254, 215, 170, 0.68);
+    color: #fed7aa;
   }
 
   /* Horizontal text ahead of icons — hidden at rest, expands out when switching */

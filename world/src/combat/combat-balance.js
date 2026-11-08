@@ -60,7 +60,7 @@ export const HERO_STATS = {
     interceptCd: 6.0,
     interceptRange: 9.0,
     interceptKnockback: 3.8,
-    infusedMult: 1.35,
+    infusedMult: 1.25,
     xpPerKill: 45,
     xpPerLevel: 90,
   },
@@ -107,11 +107,11 @@ export function getKnightLevelStats(level = 1) {
   return {
     level: cleanLevel,
     dmgMult: Number((1.0 + 0.12 * (cleanLevel - 1)).toFixed(3)),
-    iceSlowFactor: clamp(Number((0.25 + 0.04 * cleanLevel).toFixed(3)), 0.25, 0.65),
-    iceSlowDuration: 4.5,
+    iceSlowFactor: clamp(Number((0.15 + 0.025 * cleanLevel).toFixed(3)), 0.15, 0.25),
+    iceSlowDuration: 3.0,
     fireStrikeBonus: 6 + 3 * cleanLevel,
     fireBurnDps: 8 + 4 * cleanLevel,
-    fireBurnDuration: 4.0,
+    fireBurnDuration: 3.5,
   };
 }
 
@@ -131,7 +131,7 @@ export const BREATHING_STYLES = {
     element: 'ice',
     name: 'Glacial Tide',
     mark: 'rime',
-    dmgMult: 1.35,
+    dmgMult: 1.25,
     duration: KNIGHT_POWER_SWORD_DURATION,
     colorHex: '#38bdf8',
     detonationId: 'shatterblow',
@@ -141,7 +141,7 @@ export const BREATHING_STYLES = {
     element: 'fire',
     name: 'Hinokami Sunfire',
     mark: 'solar',
-    dmgMult: 1.35,
+    dmgMult: 1.25,
     duration: KNIGHT_POWER_SWORD_DURATION,
     colorHex: '#ff6a12',
     detonationId: 'solar_flare',
@@ -151,7 +151,7 @@ export const BREATHING_STYLES = {
     element: 'storm',
     name: 'Thunderclap Wisteria',
     mark: 'tempest',
-    dmgMult: 1.35,
+    dmgMult: 1.25,
     duration: 12.0,
     colorHex: '#a855f7',
     detonationId: 'thunderchain',
@@ -161,7 +161,7 @@ export const BREATHING_STYLES = {
     element: 'eclipse',
     name: 'Sun & Tide Eclipse',
     mark: 'eclipse',
-    dmgMult: 1.5,
+    dmgMult: 1.4,
     duration: 22.0,
     colorHex: '#fb923c',
     detonationId: 'solar_flare',
@@ -250,31 +250,46 @@ export const WINGMAN_SPELL_ROTATION = [
 /* ------------------------------------------------------------------------- */
 
 export const DETONATIONS = {
+  rime_shatter: {
+    id: 'rime_shatter',
+    mark: 'rime',
+    tier: 1,
+    label: 'RIME SHATTER!',
+    bonusDmg: 42,
+    radius: 3.8,
+    stun: 0.75,
+    knockback: 3.8,
+    resonanceGain: 14,
+    qEnergyBonusBoth: 12,
+  },
   shatterblow: {
     id: 'shatterblow',
     mark: 'rime',
+    tier: 2,
     label: 'SHATTERBLOW!',
     bonusDmg: 65,
     radius: 4.2,
-    stun: 1.4,
-    knockback: 5.5,
+    stun: 1.1,
+    knockback: 4.5,
     resonanceGain: 20,
     qEnergyBonusBoth: 20,
   },
   solar_flare: {
     id: 'solar_flare',
     mark: 'solar',
+    tier: 2,
     label: 'SOLAR FLARE!',
     bonusDmg: 70,
     radius: 4.5,
-    launchVy: 7.5,
-    knockback: 6.0,
+    stun: 1.0,
+    knockback: 4.8,
     resonanceGain: 20,
     qEnergyBonusBoth: 20,
   },
   thunderchain: {
     id: 'thunderchain',
     mark: 'tempest',
+    tier: 2,
     label: 'THUNDERCHAIN!',
     bonusDmg: 60,
     radius: 7.5,
@@ -292,8 +307,7 @@ export const MARK_TO_DETONATION = {
   eclipse: DETONATIONS.solar_flare,
 };
 
-export const FINISHER_SOURCES = new Set([
-  'combo3',
+export const HEAVY_FINISHER_SOURCES = new Set([
   'combo4',
   'charged',
   'heavy',
@@ -302,9 +316,13 @@ export const FINISHER_SOURCES = new Set([
   'mage_heavy',
   'couples_ultimate',
   'storm_cataclysm',
-  'knight_sky_lightning',
+]);
+
+export const FINISHER_SOURCES = new Set([
+  ...HEAVY_FINISHER_SOURCES,
   'frost_lance',
   'cinder_fall',
+  'storm_lance',
 ]);
 
 export const COUPLES_ULTIMATE = {
@@ -325,9 +343,9 @@ export const COUPLES_ULTIMATE = {
 /* ------------------------------------------------------------------------- */
 
 export const MAX_POOL_SIZE = 19;
-export const MAX_CONCURRENT_ENEMIES = 5;
-export const MAX_ATTACK_TOKENS = 3;
-export const ENEMY_WINDUP_SECONDS = 0.65;
+export const MAX_CONCURRENT_ENEMIES = 8;
+export const MAX_ATTACK_TOKENS = 4;
+export const ENEMY_WINDUP_SECONDS = 0.50;
 
 export const ENEMY_ARCHETYPES = {
   skeleton_minion: {
@@ -335,13 +353,13 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Skeleton_Minion',
     poolRole: 'Skeleton_Minion',
     name: 'Skeleton Minion',
-    maxHp: 85,
-    dmg: 12,
-    speed: 5.8,
+    maxHp: 140,
+    dmg: 15,
+    speed: 7.2,
     qEnergyReward: 18,
     attackRange: 2.3,
-    windupDuration: 0.55,
-    attackCooldown: 1.9,
+    windupDuration: 0.45,
+    attackCooldown: 0.95,
     telegraphRadius: 1.65,
     scale: 1.0,
   },
@@ -350,13 +368,13 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Skeleton_Warrior',
     poolRole: 'Skeleton_Warrior',
     name: 'Skeleton Warrior',
-    maxHp: 145,
-    dmg: 16,
-    speed: 4.8,
+    maxHp: 250,
+    dmg: 20,
+    speed: 6.2,
     qEnergyReward: 24,
     attackRange: 2.5,
-    windupDuration: ENEMY_WINDUP_SECONDS,
-    attackCooldown: 2.2,
+    windupDuration: 0.50,
+    attackCooldown: 1.10,
     telegraphRadius: 1.85,
     scale: 1.05,
     frontalBasicBoltDr: 0.50,
@@ -366,13 +384,13 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Skeleton_Rogue',
     poolRole: 'Skeleton_Rogue',
     name: 'Skeleton Rogue',
-    maxHp: 110,
-    dmg: 15,
-    speed: 6.6,
+    maxHp: 185,
+    dmg: 18,
+    speed: 8.0,
     qEnergyReward: 24,
     attackRange: 2.2,
-    windupDuration: 0.55,
-    attackCooldown: 1.8,
+    windupDuration: 0.42,
+    attackCooldown: 0.85,
     telegraphRadius: 1.65,
     scale: 1.0,
     isFlanker: true,
@@ -382,30 +400,30 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Skeleton_Mage',
     poolRole: 'Skeleton_Mage',
     name: 'Skeleton Mage',
-    maxHp: 105,
-    dmg: 16,
-    speed: 4.4,
+    maxHp: 175,
+    dmg: 19,
+    speed: 5.2,
     qEnergyReward: 26,
     attackRange: 10.5,
-    windupDuration: ENEMY_WINDUP_SECONDS,
-    attackCooldown: 2.7,
+    windupDuration: 0.52,
+    attackCooldown: 1.35,
     telegraphRadius: 2.2,
     scale: 1.02,
     isRanged: true,
-    projectileSpeed: 11.0,
+    projectileSpeed: 14.5,
   },
   orc_raider: {
     id: 'orc_raider',
     charId: 'OrcRaider',
     poolRole: 'OrcRaider',
     name: 'Valley Orc Raider',
-    maxHp: 175,
-    dmg: 19,
-    speed: 6.2,
+    maxHp: 310,
+    dmg: 23,
+    speed: 7.6,
     qEnergyReward: 30,
     attackRange: 2.5,
-    windupDuration: ENEMY_WINDUP_SECONDS,
-    attackCooldown: 2.0,
+    windupDuration: 0.48,
+    attackCooldown: 1.00,
     telegraphRadius: 1.9,
     scale: 1.12,
     isFlanker: true,
@@ -415,19 +433,19 @@ export const ENEMY_ARCHETYPES = {
     charId: 'PlantWarrior',
     poolRole: 'PlantWarrior',
     name: 'Briar Plant Warrior',
-    maxHp: 165,
-    dmg: 17,
-    speed: 5.2,
+    maxHp: 280,
+    dmg: 21,
+    speed: 6.4,
     qEnergyReward: 28,
     attackRange: 10.5,
     meleeAttackRange: 2.8,
     rangedMinDist: 6.5,
     meleeMaxDist: 4.5,
     isHybridRangedMelee: true,
-    projectileSpeed: 11.5,
+    projectileSpeed: 14.5,
     fireVulnerabilityMult: 1.35,
-    windupDuration: ENEMY_WINDUP_SECONDS,
-    attackCooldown: 2.1,
+    windupDuration: 0.48,
+    attackCooldown: 1.05,
     telegraphRadius: 1.9,
     scale: 1.08,
   },
@@ -436,13 +454,13 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Werewolf_Wolf',
     poolRole: 'Werewolf_Wolf',
     name: 'Moonlit Werewolf',
-    maxHp: 190,
-    dmg: 21,
-    speed: 6.8,
+    maxHp: 350,
+    dmg: 25,
+    speed: 8.4,
     qEnergyReward: 32,
     attackRange: 2.5,
-    windupDuration: 0.58,
-    attackCooldown: 1.85,
+    windupDuration: 0.44,
+    attackCooldown: 0.90,
     telegraphRadius: 1.85,
     scale: 1.15,
     isFlanker: true,
@@ -453,13 +471,13 @@ export const ENEMY_ARCHETYPES = {
     charId: 'BlackKnight',
     poolRole: 'BlackKnight',
     name: 'Obsidian Black Knight',
-    maxHp: 340,
-    dmg: 24,
-    speed: 4.6,
+    maxHp: 580,
+    dmg: 28,
+    speed: 6.0,
     qEnergyReward: 50,
     attackRange: 2.8,
-    windupDuration: ENEMY_WINDUP_SECONDS,
-    attackCooldown: 2.1,
+    windupDuration: 0.52,
+    attackCooldown: 1.15,
     telegraphRadius: 2.2,
     scale: 1.22,
     isElite: true,
@@ -471,18 +489,18 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Necromancer',
     poolRole: 'Necromancer',
     name: 'Grove Necromancer Sovereign',
-    maxHp: 820,
-    dmg: 26,
-    speed: 3.8,
+    maxHp: 1250,
+    dmg: 30,
+    speed: 5.2,
     qEnergyReward: 90,
     attackRange: 10.5,
-    windupDuration: 0.70,
-    attackCooldown: 2.5,
+    windupDuration: 0.55,
+    attackCooldown: 1.30,
     telegraphRadius: 2.6,
     scale: 1.32,
     isBoss: true,
     isRanged: true,
-    projectileSpeed: 11.5,
+    projectileSpeed: 14.5,
     summonCooldown: 10.0,
     maxActiveSummons: 2,
     summonArchetypes: ['skeleton_rogue', 'werewolf'],
@@ -494,13 +512,13 @@ export const ENEMY_ARCHETYPES = {
     charId: 'OrcBrute',
     poolRole: 'OrcBrute',
     name: 'Ironcrag Orc Brute',
-    maxHp: 750,
-    dmg: 28,
-    speed: 4.5,
+    maxHp: 1350,
+    dmg: 32,
+    speed: 5.8,
     qEnergyReward: 80,
     attackRange: 3.4,
-    windupDuration: 0.72,
-    attackCooldown: 2.3,
+    windupDuration: 0.56,
+    attackCooldown: 1.25,
     telegraphRadius: 2.9,
     scale: 1.35,
     isBoss: true,
@@ -512,13 +530,13 @@ export const ENEMY_ARCHETYPES = {
     charId: 'FrostGolem',
     poolRole: 'FrostGolem',
     name: 'Ancient Frost Golem',
-    maxHp: 1450,
-    dmg: 32,
-    speed: 4.1,
+    maxHp: 2200,
+    dmg: 36,
+    speed: 5.6,
     qEnergyReward: 120,
     attackRange: 3.6,
-    windupDuration: 0.75,
-    attackCooldown: 2.4,
+    windupDuration: 0.58,
+    attackCooldown: 1.30,
     telegraphRadius: 3.3,
     scale: 1.48,
     isBoss: true,
@@ -530,13 +548,13 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Skeleton_Golem',
     poolRole: 'Skeleton_Golem',
     name: 'Ossuary Skeleton Golem',
-    maxHp: 950,
+    maxHp: 1650,
     dmg: 34,
-    speed: 4.3,
+    speed: 5.6,
     qEnergyReward: 100,
     attackRange: 3.5,
-    windupDuration: 0.72,
-    attackCooldown: 2.35,
+    windupDuration: 0.58,
+    attackCooldown: 1.30,
     telegraphRadius: 3.1,
     scale: 1.38,
     isBoss: true,
@@ -548,13 +566,13 @@ export const ENEMY_ARCHETYPES = {
     charId: 'BlackKnight',
     poolRole: 'BlackKnight',
     name: 'Twilight Elite Captain',
-    maxHp: 320,
-    dmg: 24,
-    speed: 4.6,
+    maxHp: 480,
+    dmg: 26,
+    speed: 6.0,
     qEnergyReward: 50,
     attackRange: 2.8,
-    windupDuration: ENEMY_WINDUP_SECONDS,
-    attackCooldown: 2.2,
+    windupDuration: 0.50,
+    attackCooldown: 1.15,
     telegraphRadius: 2.4,
     scale: 1.18,
     isElite: true,
@@ -564,13 +582,13 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Skeleton_Warrior',
     poolRole: 'Skeleton_Warrior',
     name: 'Shrine Royal Guard',
-    maxHp: 210,
+    maxHp: 280,
     dmg: 22,
-    speed: 4.5,
+    speed: 6.0,
     qEnergyReward: 32,
     attackRange: 2.6,
-    windupDuration: ENEMY_WINDUP_SECONDS,
-    attackCooldown: 2.2,
+    windupDuration: 0.50,
+    attackCooldown: 1.15,
     telegraphRadius: 2.0,
     scale: 1.08,
   },
@@ -579,13 +597,13 @@ export const ENEMY_ARCHETYPES = {
     charId: 'FrostGolem',
     poolRole: 'Boss_Sovereign',
     name: 'The Hollow Sovereign',
-    maxHp: 1400,
-    dmg: 34,
-    speed: 4.2,
+    maxHp: 2200,
+    dmg: 36,
+    speed: 5.6,
     qEnergyReward: 120,
     attackRange: 3.6,
-    windupDuration: ENEMY_WINDUP_SECONDS,
-    attackCooldown: 2.4,
+    windupDuration: 0.58,
+    attackCooldown: 1.30,
     telegraphRadius: 3.3,
     scale: 1.42,
     isBoss: true,
@@ -600,16 +618,16 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Necromancer',
     poolRole: 'Necromancer',
     name: 'Night Demon Tree',
-    maxHp: 680,
-    dmg: 28,
+    maxHp: 950,
+    dmg: 30,
     speed: 0.0,
     qEnergyReward: 85,
     isStationary: true,
     isElite: true,
     isBoss: true,
     attackRange: 3.6,
-    windupDuration: 0.72,
-    attackCooldown: 2.6,
+    windupDuration: 0.55,
+    attackCooldown: 1.35,
     telegraphRadius: 3.2,
     scale: 1.35,
     batSummonCooldown: 10.0,
@@ -623,9 +641,9 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Skeleton_Rogue',
     poolRole: 'Skeleton_Rogue',
     name: 'Nightwing Bat',
-    maxHp: 55,
-    dmg: 14,
-    speed: 6.2,
+    maxHp: 90,
+    dmg: 16,
+    speed: 7.8,
     qEnergyReward: 18,
     isFlying: true,
     isSummon: true,
@@ -633,8 +651,8 @@ export const ENEMY_ARCHETYPES = {
     swoopHeight: 1.2,
     preferredTarget: 'Mage',
     attackRange: 2.1,
-    windupDuration: 0.55,
-    attackCooldown: 1.9,
+    windupDuration: 0.45,
+    attackCooldown: 1.00,
     telegraphRadius: 1.55,
     scale: 0.72,
   },
@@ -671,8 +689,8 @@ export const STONE_STRONGHOLDS = Object.freeze({
     bannerTitle: 'SACRED WELL OF THE PLAZA',
     bannerSubtitle: 'Clear the Vanguard or Guard Your Partner While They Read the Stone',
     center: Object.freeze({ x: 0.0, z: 0.0, y: 0.0 }),
-    triggerRadius: 14.0,
-    ambushRadius: 12.0,
+    triggerRadius: 22.0,
+    ambushRadius: 14.0,
     outerPatrol: Object.freeze([
       Object.freeze({ archetype: 'skeleton_minion', x: -5.5, z: 7.5 }),
       Object.freeze({ archetype: 'skeleton_minion', x: 5.5, z: 7.5 }),
@@ -682,6 +700,8 @@ export const STONE_STRONGHOLDS = Object.freeze({
       Object.freeze({ archetype: 'skeleton_warrior', x: -7.2, z: -5.8 }),
       Object.freeze({ archetype: 'skeleton_warrior', x: 7.2, z: -5.8 }),
       Object.freeze({ archetype: 'skeleton_rogue', x: -8.6, z: 2.4 }),
+      Object.freeze({ archetype: 'skeleton_rogue', x: 8.2, z: 3.4 }),
+      Object.freeze({ archetype: 'orc_raider', x: 0.0, z: 8.8 }),
       Object.freeze({ archetype: 'skeleton_mage', x: 8.6, z: -3.2 }),
     ]),
   }),
@@ -692,7 +712,7 @@ export const STONE_STRONGHOLDS = Object.freeze({
     bannerTitle: 'WHISPERING GROVE MEDALLION',
     bannerSubtitle: 'Vanquish the Grove Necromancer Sovereign to Unseal the Floor Inscription',
     center: Object.freeze({ x: 44.0, z: 16.0, y: 0.0 }),
-    triggerRadius: 16.0,
+    triggerRadius: 22.0,
     bossArchetype: 'necromancer',
     summonCooldown: 10.0,
     maxActiveSummons: 2,
@@ -700,6 +720,8 @@ export const STONE_STRONGHOLDS = Object.freeze({
       Object.freeze({ archetype: 'necromancer', x: 44.0, z: 16.0, isBoss: true }),
       Object.freeze({ archetype: 'plant_warrior', x: 39.8, z: 18.8 }),
       Object.freeze({ archetype: 'plant_warrior', x: 48.2, z: 18.8 }),
+      Object.freeze({ archetype: 'skeleton_rogue', x: 41.2, z: 13.2 }),
+      Object.freeze({ archetype: 'werewolf', x: 46.8, z: 13.2 }),
     ]),
   }),
   site3_wall: Object.freeze({
@@ -709,12 +731,14 @@ export const STONE_STRONGHOLDS = Object.freeze({
     bannerTitle: "HIDDEN LOVERS' WALL",
     bannerSubtitle: 'Shatter the Obsidian Guard & Heavy Breaker to Reach the Cottage Wall',
     center: Object.freeze({ x: -21.6, z: 20.4, y: 0.0 }),
-    triggerRadius: 15.0,
+    triggerRadius: 20.0,
     spawns: Object.freeze([
       Object.freeze({ archetype: 'black_knight', x: -19.8, z: 17.8, isElite: true }),
       Object.freeze({ archetype: 'orc_brute', x: -23.4, z: 18.0, isBoss: true }),
       Object.freeze({ archetype: 'skeleton_rogue', x: -17.2, z: 21.6 }),
       Object.freeze({ archetype: 'skeleton_rogue', x: -25.6, z: 21.6 }),
+      Object.freeze({ archetype: 'orc_raider', x: -21.6, z: 15.6 }),
+      Object.freeze({ archetype: 'skeleton_mage', x: -18.5, z: 24.2 }),
     ]),
   }),
   apex_finale: Object.freeze({
@@ -724,11 +748,13 @@ export const STONE_STRONGHOLDS = Object.freeze({
     bannerTitle: 'APEX FINALE · TITANS OF THE ECLIPSE',
     bannerSubtitle: 'Unleash Twin-Element Blade, Starfall Cataclysm & Main Divine Blessing',
     center: Object.freeze({ x: 0.0, z: 0.0, y: 0.0 }),
-    triggerRadius: 24.0,
+    triggerRadius: 26.0,
     spawns: Object.freeze([
       Object.freeze({ archetype: 'frost_golem', x: 0.0, z: -11.5, isBoss: true }),
       Object.freeze({ archetype: 'skeleton_golem', x: -5.2, z: -9.8, isBoss: true }),
       Object.freeze({ archetype: 'orc_raider', x: 5.2, z: -9.8 }),
+      Object.freeze({ archetype: 'orc_raider', x: -6.8, z: -6.4 }),
+      Object.freeze({ archetype: 'werewolf', x: 6.8, z: -6.4 }),
       Object.freeze({ archetype: 'skeleton_mage', x: 0.0, z: -14.8 }),
     ]),
   }),
@@ -737,32 +763,32 @@ export const STONE_STRONGHOLDS = Object.freeze({
 export const SURVIVAL_WAVE_POOLS = Object.freeze({
   0: Object.freeze({
     stonesSolvedCount: 0,
-    intervalMin: 40.0,
-    intervalMax: 52.0,
-    spawnRadiusMin: 18.0,
-    spawnRadiusMax: 25.0,
-    minCount: 3,
-    maxCount: 4,
+    intervalMin: 22.0,
+    intervalMax: 28.0,
+    spawnRadiusMin: 14.0,
+    spawnRadiusMax: 20.0,
+    minCount: 4,
+    maxCount: 7,
     pool: Object.freeze(['skeleton_minion', 'skeleton_warrior', 'skeleton_rogue']),
   }),
   1: Object.freeze({
     stonesSolvedCount: 1,
-    intervalMin: 40.0,
-    intervalMax: 52.0,
-    spawnRadiusMin: 18.0,
-    spawnRadiusMax: 25.0,
+    intervalMin: 22.0,
+    intervalMax: 28.0,
+    spawnRadiusMin: 14.0,
+    spawnRadiusMax: 20.0,
     minCount: 4,
-    maxCount: 5,
+    maxCount: 7,
     pool: Object.freeze(['skeleton_warrior', 'skeleton_rogue', 'skeleton_mage', 'orc_raider']),
   }),
   2: Object.freeze({
     stonesSolvedCount: 2,
-    intervalMin: 40.0,
-    intervalMax: 52.0,
-    spawnRadiusMin: 18.0,
-    spawnRadiusMax: 25.0,
+    intervalMin: 22.0,
+    intervalMax: 28.0,
+    spawnRadiusMin: 14.0,
+    spawnRadiusMax: 20.0,
     minCount: 4,
-    maxCount: 5,
+    maxCount: 7,
     maxElites: 1,
     pool: Object.freeze([
       'orc_raider',
@@ -774,12 +800,12 @@ export const SURVIVAL_WAVE_POOLS = Object.freeze({
   }),
   3: Object.freeze({
     stonesSolvedCount: 3,
-    intervalMin: 42.0,
-    intervalMax: 52.0,
-    spawnRadiusMin: 18.0,
-    spawnRadiusMax: 25.0,
+    intervalMin: 22.0,
+    intervalMax: 28.0,
+    spawnRadiusMin: 14.0,
+    spawnRadiusMax: 20.0,
     minCount: 4,
-    maxCount: 5,
+    maxCount: 7,
     isApexFinale: true,
     pool: Object.freeze(['frost_golem', 'skeleton_golem', 'orc_raider', 'werewolf']),
   }),
@@ -1298,9 +1324,10 @@ export function allocateAttackTokens(enemies, maxTokens = MAX_ATTACK_TOKENS) {
     return aDist - bDist;
   });
 
-  // Enforce Shared Encounter Director fairness guarantee: at most 2 melee windups
-  // + 1 ranged attacker against the same hero simultaneously, up to maxTokens total.
+  // Enforce Shared Encounter Director fairness guarantee: up to 2 simultaneous melee windups
+  // + 1 ranged commitment per target hero (maxTokens = 4 across both heroes).
   const holders = [];
+  const overflow = [];
   const meleeCountByHero = { Knight: 0, Mage: 0 };
   const rangedCountByHero = { Knight: 0, Mage: 0 };
 
@@ -1309,14 +1336,30 @@ export function allocateAttackTokens(enemies, maxTokens = MAX_ATTACK_TOKENS) {
     const targetHeroId = e.targetHeroId === 'Mage' ? 'Mage' : 'Knight';
     const isRangedNow = Boolean(e.isRanged || e.usingRangedMode);
     const heroCapOk = isRangedNow
-      ? rangedCountByHero[targetHeroId] < 2
-      : meleeCountByHero[targetHeroId] < 3;
+      ? rangedCountByHero[targetHeroId] < 1
+      : meleeCountByHero[targetHeroId] < 2;
 
     if (holders.length < maxTokens && heroCapOk) {
       e.hasAttackToken = true;
       holders.push(e);
       if (isRangedNow) rangedCountByHero[targetHeroId]++;
       else meleeCountByHero[targetHeroId]++;
+    } else {
+      overflow.push(e);
+    }
+  }
+
+  // If all enemies are targeting one hero (e.g. wave start or single-target unit test),
+  // fill remaining token slots up to maxTokens so tokens never go unused.
+  for (let i = 0; i < overflow.length; i++) {
+    const e = overflow[i];
+    const targetHeroId = e.targetHeroId === 'Mage' ? 'Mage' : 'Knight';
+    const otherHeroId = targetHeroId === 'Mage' ? 'Knight' : 'Mage';
+    const otherHeroTargeted =
+      meleeCountByHero[otherHeroId] + rangedCountByHero[otherHeroId] > 0;
+    if (holders.length < maxTokens && !otherHeroTargeted) {
+      e.hasAttackToken = true;
+      holders.push(e);
     } else {
       e.hasAttackToken = false;
       if (e.aiState === 'windup') {
@@ -1338,17 +1381,17 @@ export const POWERUP_TETHER_DISTANCE = 6.0;
 export const DIVINE_BLESSING_DURATION = 25.0;
 export const DIVINE_BLESSING_TETHER_DISTANCE = 6.0;
 export const DIVINE_BLESSING_TETHER_GRACE_SECONDS = 2.5;
-export const DIVINE_BLESSING_DMG_MULT = 2.0;
+export const DIVINE_BLESSING_DMG_MULT = 1.5;
 export const DIVINE_BLESSING_Q_CD_MULT = 1 / 3;
 export const DIVINE_BLESSING_E_CD_MULT = 0.5;
 export const ALTAR_STELE_POS = { x: 0.0, z: 0.0, y: 0.0, triggerRadius: 6.5 };
 
 /**
- * Applies a hit (`hitSpec`) to `enemy`, resolves Sword Breathing multipliers,
- * Knight Level scaling, Ice Sword slow (movement, attack speed & damage) and
- * Fire Sword persistent burn DoT, Knight Q 2.0x double damage, PlantWarrior
- * 1.35x Fire vulnerability, BlackKnight ±70° frontal shield guard (80% DR vs
- * flank/detonation stagger), Boss 70%/35% phase thresholds, and Physical Detonations.
+ * Applies a hit (`hitSpec`) to `enemy`, resolves bounded Sword Breathing multipliers,
+ * Knight Level scaling, capped Ice Sword slow (max 25% regular / 15% boss-elite for 3.0s)
+ * and Fire Sword persistent burn DoT, PlantWarrior 1.35x Fire vulnerability,
+ * BlackKnight ±70° frontal shield guard (80% DR vs flank/detonation stagger),
+ * Boss 70%/35% phase thresholds, and Two-Tier Physical Detonations.
  */
 export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = []) {
   if (!enemy || enemy.dead || enemy.hp <= 0) {
@@ -1421,14 +1464,11 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
       ? lvlStats.fireStrikeBonus
       : 0;
 
-  let rawDirectDmg = Math.round(
-    (baseDmg * levelMult + fireBonus) *
-      infusedMult *
-      empoweredMult *
-      dodgeMult *
-      communeMult *
-      ultMult
+  const totalMult = Math.min(
+    2.25,
+    infusedMult * empoweredMult * dodgeMult * communeMult * ultMult
   );
+  let rawDirectDmg = Math.round((baseDmg * levelMult + fireBonus) * totalMult);
 
   // PlantWarrior 1.35x Fire (`solar` / `cinder_fall`) vulnerability
   const isFireAttack =
@@ -1446,12 +1486,14 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     rawDirectDmg = Math.round(rawDirectDmg * fireVuln);
   }
 
-  // Apply Knight E Power Sword Ice Slow or Fire Burn DoT on sword hits
+  // Apply Knight E Power Sword Ice Slow (capped at 0.25 regular / 0.15 elite-boss for 3.0s) or Fire Burn DoT
   let iceSlowApplied = false;
   let fireBurnApplied = false;
   if (isSwordHit && (effectiveInfusion === 'rime' || effectiveInfusion === 'eclipse')) {
+    const maxSlowCap = enemy.isBoss || enemy.isElite ? 0.15 : 0.25;
+    const cappedSlow = Math.min(maxSlowCap, lvlStats.iceSlowFactor);
     enemy.iceSlowTimer = Math.max(enemy.iceSlowTimer || 0, lvlStats.iceSlowDuration);
-    enemy.iceSlowFactor = Math.max(enemy.iceSlowFactor || 0, lvlStats.iceSlowFactor);
+    enemy.iceSlowFactor = Math.min(maxSlowCap, Math.max(enemy.iceSlowFactor || 0, cappedSlow));
     enemy.slowTimer = Math.max(enemy.slowTimer || 0, lvlStats.iceSlowDuration);
     enemy.slowFactor = enemy.iceSlowFactor;
     iceSlowApplied = true;
@@ -1462,27 +1504,91 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     fireBurnApplied = true;
   }
 
-  // Check if this hit triggers a Physical Detonation on a marked enemy
-  const canDetonate = Boolean(hitSpec.detonatesMark || FINISHER_SOURCES.has(source));
+  // Two-Tier Detonation Rules:
+  // 1. Determine incoming attackElement
+  let attackElement = 'none';
+  if (effectiveInfusion === 'eclipse' || source === 'couples_ultimate') {
+    attackElement = 'eclipse';
+  } else if (
+    effectiveInfusion === 'tempest' ||
+    source === 'storm_lance' ||
+    source === 'storm_cataclysm'
+  ) {
+    attackElement = 'tempest';
+  } else if (
+    effectiveInfusion === 'rime' ||
+    source === 'frost_lance' ||
+    source === 'shatterlance' ||
+    hitSpec.applyMark === 'rime'
+  ) {
+    attackElement = 'rime';
+  } else if (
+    effectiveInfusion === 'solar' ||
+    source === 'cinder_fall' ||
+    hitSpec.applyMark === 'solar'
+  ) {
+    attackElement = 'solar';
+  }
+
+  const isHeavyFinisher =
+    source === 'shatterlance' ||
+    source === 'combo4' ||
+    source === 'heavy' ||
+    source === 'charged' ||
+    source === 'intercept' ||
+    source === 'couples_ultimate' ||
+    source === 'storm_cataclysm' ||
+    source === 'mage_heavy' ||
+    Boolean(hitSpec.detonatesMark);
+
   const activeMark =
     enemy.mark && (enemy.markTimer === undefined || enemy.markTimer > 0) ? enemy.mark : null;
 
   let detonationSpec = null;
-  const isEclipseDetonation =
-    canDetonate &&
-    !hitSpec.knightUltActive &&
-    (activeMark === 'eclipse' ||
-      (effectiveInfusion === 'eclipse' &&
-        (activeMark === 'rime' || activeMark === 'solar' || isSwordHit)));
+  if (activeMark) {
+    // Tier 2: Cross-Element Detonation (60-70 AoE Dmg + 1.0-1.1s stun + +20 Q Energy to both)
+    if (
+      activeMark === 'rime' &&
+      (attackElement === 'solar' ||
+        attackElement === 'tempest' ||
+        (attackElement === 'eclipse' && (enemy.detonationCdTimer || 0) <= 0))
+    ) {
+      detonationSpec = DETONATIONS.shatterblow;
+      if (attackElement === 'eclipse') {
+        enemy.detonationCdTimer = 3.5;
+      }
+    } else if (
+      activeMark === 'solar' &&
+      (attackElement === 'rime' ||
+        attackElement === 'tempest' ||
+        (attackElement === 'eclipse' && (enemy.detonationCdTimer || 0) <= 0))
+    ) {
+      detonationSpec = DETONATIONS.solar_flare;
+      if (attackElement === 'eclipse') {
+        enemy.detonationCdTimer = 3.5;
+      }
+    } else if (
+      activeMark === 'tempest' &&
+      (attackElement !== 'none' || isHeavyFinisher)
+    ) {
+      detonationSpec = DETONATIONS.thunderchain;
+    } else if (
+      activeMark === 'eclipse' &&
+      (isHeavyFinisher || (attackElement !== 'none' && attackElement !== 'eclipse')) &&
+      (enemy.detonationCdTimer || 0) <= 0
+    ) {
+      detonationSpec = DETONATIONS.solar_flare;
+      enemy.detonationCdTimer = 3.5;
+    } else if (isHeavyFinisher && (enemy.detonationCdTimer || 0) <= 0) {
+      // Tier 1: Heavy Finisher Same-Element Shatter (42 AoE Dmg + 0.75s stun + Guard Shatter, 3.5s CD)
+      detonationSpec = DETONATIONS.rime_shatter;
+      enemy.detonationCdTimer = 3.5;
+    }
 
-  if (activeMark && canDetonate && MARK_TO_DETONATION[activeMark]) {
-    detonationSpec = MARK_TO_DETONATION[activeMark];
-    enemy.mark = null;
-    enemy.markTimer = 0;
-  } else if (isEclipseDetonation) {
-    detonationSpec = DETONATIONS.solar_flare;
-    enemy.mark = null;
-    enemy.markTimer = 0;
+    if (detonationSpec) {
+      enemy.mark = null;
+      enemy.markTimer = 0;
+    }
   }
 
   const attackerX = hitSpec.attackerPos?.x ?? (enemy.x || 0);
@@ -1510,12 +1616,12 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     if (detonationSpec) {
       guardShattered = true;
       enemy.shieldGuarding = false;
-      enemy.stunTimer = Math.max(enemy.stunTimer || 0, 1.4);
+      enemy.stunTimer = Math.max(enemy.stunTimer || 0, detonationSpec.stun || 1.0);
     } else if (isFrontalHit && enemy.aiState !== 'windup') {
       const dr = Number(enemy.directionalShieldDr ?? 0.80);
       rawDirectDmg = Math.max(1, Math.round(rawDirectDmg * (1.0 - dr)));
       frontalShieldBlocked = true;
-    } else if (!isFrontalHit) {
+    } else if (!isFrontalHit && enemy.aiState !== 'windup') {
       guardShattered = true;
       enemy.shieldGuarding = false;
       enemy.stunTimer = Math.max(enemy.stunTimer || 0, 0.85);
@@ -1557,10 +1663,8 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
 
   if (detonationSpec) {
     resonanceGain += detonationSpec.resonanceGain;
-    const bonusBase = isEclipseDetonation
-      ? Math.round((DETONATIONS.solar_flare.bonusDmg + DETONATIONS.shatterblow.bonusDmg) * 0.75)
-      : detonationSpec.bonusDmg;
-    const bonusDmg = Math.round(bonusBase * empoweredMult * ultMult);
+    // Fixed bonusDmg (42 for Tier 1 Rime Shatter, 60-70 for Tier 2 Cross-Element Detonation; never scaled by ultMult/empoweredMult)
+    const bonusDmg = detonationSpec.bonusDmg;
     const affectedIds = [];
 
     const targets =
@@ -1582,9 +1686,7 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
         }
         affectedIds.push(t.instanceId || t.id || i);
 
-        const stunDur = isEclipseDetonation
-          ? Math.max(detonationSpec.stun || 0, DETONATIONS.shatterblow.stun)
-          : detonationSpec.stun;
+        const stunDur = detonationSpec.stun;
         if (stunDur) {
           t.stunTimer = Math.max(t.stunTimer || 0, stunDur);
           t.hasAttackToken = false;
@@ -1593,11 +1695,6 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
             t.windupTimer = 0;
             t.telegraphProgress = 0;
           }
-        }
-
-        if (detonationSpec.launchVy) {
-          t.vy = detonationSpec.launchVy;
-          t.grounded = false;
         }
 
         if (detonationSpec.pullStrength) {
@@ -1626,6 +1723,7 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     detonationResult = {
       id: detonationSpec.id,
       mark: detonationSpec.mark,
+      tier: detonationSpec.tier || 2,
       label: detonationSpec.label,
       bonusDmg,
       radius: detonationSpec.radius,
@@ -1637,9 +1735,7 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
   } else {
     const nextMark =
       hitSpec.applyMark ||
-      (isSwordHit && !FINISHER_SOURCES.has(source) && effectiveInfusion !== 'none'
-        ? effectiveInfusion
-        : null);
+      (isSwordHit && effectiveInfusion !== 'none' ? effectiveInfusion : null);
     if (nextMark && enemy.hp > 0) {
       enemy.mark = nextMark;
       enemy.markTimer = hitSpec.markDuration ?? 6.0;
@@ -1804,6 +1900,8 @@ export function createHeadlessCampaignSim() {
     { slotIndex: 3, poolRole: 'Skeleton_Rogue', busy: false, visible: false, enemy: null },
     { slotIndex: 4, poolRole: 'Skeleton_Mage', busy: false, visible: false, enemy: null },
     { slotIndex: 5, poolRole: 'Boss_Sovereign', busy: false, visible: false, enemy: null },
+    { slotIndex: 6, poolRole: 'OrcRaider', busy: false, visible: false, enemy: null },
+    { slotIndex: 7, poolRole: 'PlantWarrior', busy: false, visible: false, enemy: null },
   ];
 
   let activeEnemies = [];
@@ -1840,12 +1938,14 @@ export function createHeadlessCampaignSim() {
       if (!bossSlot.busy) return bossSlot;
     }
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < poolSlots.length; i++) {
+      if (i === 5) continue;
       if (!poolSlots[i].busy && poolSlots[i].poolRole === archetypeSpec.poolRole) {
         return poolSlots[i];
       }
     }
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < poolSlots.length; i++) {
+      if (i === 5) continue;
       if (!poolSlots[i].busy) {
         return poolSlots[i];
       }
@@ -1907,6 +2007,7 @@ export function createHeadlessCampaignSim() {
       active: true,
       mark: null,
       markTimer: 0,
+      detonationCdTimer: 0,
       stunTimer: 0,
       slowTimer: 0,
       iceSlowTimer: 0,
@@ -1916,7 +2017,7 @@ export function createHeadlessCampaignSim() {
       aiState: 'orbit',
       windupTimer: 0,
       telegraphProgress: 0,
-      cooldownTimer: 0.4,
+      cooldownTimer: 0.25,
       hasAttackToken: false,
       distToTarget: 10,
     };
@@ -2085,7 +2186,11 @@ export function createHeadlessCampaignSim() {
       ) ||
       activeEnemies[0];
 
-    if (!heroes.Knight.powerSwordActive && !heroes.Knight.ultActive) {
+    if (
+      !heroes.Knight.powerSwordActive &&
+      !heroes.Knight.ultActive &&
+      heroes.Knight.breathingStyle === 'none'
+    ) {
       igniteKnightBreathing(spell.infusion, HERO_STATS.Knight.powerSwordDuration);
     }
     heroes.Mage.spellCooldowns[spell.id] = spell.cd;
@@ -2268,12 +2373,12 @@ export function createHeadlessCampaignSim() {
         target,
         {
           source: 'knight_sky_lightning',
-          baseDmg: 75,
+          baseDmg: 22,
           infusion: styleId,
           knightLevel: heroes.Knight.level,
           knightUltActive: true,
           ultDmgMult: KNIGHT_ULT_DMG_MULT,
-          detonatesMark: true,
+          detonatesMark: false,
           attackerPos: heroes.Knight,
         },
         activeEnemies
@@ -2518,14 +2623,13 @@ export function createHeadlessCampaignSim() {
     return { hits, resonance: heartResonance };
   }
 
-  function applyDamageToHero(heroId, amount, attackerEnemy = null) {
+  function applyDamageToHero(heroId, amount) {
     const h = heroes[heroId];
     if (!h || h.downed || h.iframeTimer > 0) {
       return { absorbed: 0, hpLost: 0, downed: false, interceptedByKnight: false };
     }
 
-    const slowReduction = clamp(Number(attackerEnemy?.iceSlowFactor) || 0, 0, 0.75);
-    let effectiveAmount = Math.max(1, Math.round(amount * (1.0 - slowReduction)));
+    let effectiveAmount = Math.max(1, Math.round(amount));
 
     if (heroId === 'Mage' && heroes.Knight.shieldBlocking && !heroes.Knight.downed) {
       const blockedDmg = Math.max(
@@ -2726,6 +2830,9 @@ export function createHeadlessCampaignSim() {
         e.markTimer = Math.max(0, e.markTimer - dt);
         if (e.markTimer <= 0) e.mark = null;
       }
+      if (e.detonationCdTimer > 0) {
+        e.detonationCdTimer = Math.max(0, e.detonationCdTimer - dt);
+      }
       if (e.stunTimer > 0) {
         e.stunTimer = Math.max(0, e.stunTimer - dt);
       }
@@ -2757,8 +2864,8 @@ export function createHeadlessCampaignSim() {
 
     for (const e of activeEnemies) {
       if (e.dead || e.hp <= 0 || e.stunTimer > 0) continue;
-      const slowMult = 1.0 - clamp(e.iceSlowFactor || 0, 0, 0.75);
-      if (e.cooldownTimer > 0) e.cooldownTimer = Math.max(0, e.cooldownTimer - dt * slowMult);
+      const slowMult = 1.0 - clamp(e.iceSlowFactor || 0, 0, 0.25);
+      if (e.cooldownTimer > 0) e.cooldownTimer = Math.max(0, e.cooldownTimer - dt);
 
       if (e.hasAttackToken) {
         if (e.aiState === 'windup') {
@@ -2812,6 +2919,8 @@ export function createHeadlessCampaignSim() {
         const spId = spellOrder[spellIdx % spellOrder.length];
         spellIdx++;
         castSpell(spId, target);
+        // Attune Knight to opposite element for cross-element synergy in auto-play
+        igniteKnightBreathing(spId === 'cinder_fall' ? 'rime' : 'solar', 13.0);
 
         if (!target.dead) knightAttack('combo1', target);
         if (!target.dead) knightAttack('combo2', target);

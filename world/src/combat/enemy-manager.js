@@ -256,7 +256,7 @@ export async function createEnemyManager({
     for (let i = 0; i < activeEnemies.length; i++) {
       const e = activeEnemies[i];
       if (e && !e.dead && e.char?.mixer) {
-        const iceMult = 1.0 - clamp(e.iceSlowFactor || 0, 0, 0.75);
+        const iceMult = 1.0 - clamp(e.iceSlowFactor || 0, 0, 0.25);
         e.char.mixer.timeScale = iceMult * globalEnemyTimeScale;
       }
     }
@@ -321,7 +321,10 @@ export async function createEnemyManager({
     const activeVisible = allPoolSlots.filter((s) => s.busy && s.char.group.visible).length;
     if (activeVisible >= MAX_CONCURRENT_ENEMIES) return null;
 
-    const desiredCharId = archetypeSpec.charId || archetypeSpec.poolRole || 'Skeleton_Warrior';
+    const isStringArg = typeof archetypeSpec === 'string';
+    const desiredCharId = isStringArg
+      ? archetypeSpec
+      : archetypeSpec?.charId || archetypeSpec?.poolRole || 'Skeleton_Warrior';
     const matchingBuckets = poolByCharId[desiredCharId];
     if (Array.isArray(matchingBuckets)) {
       for (let i = 0; i < matchingBuckets.length; i++) {
@@ -331,7 +334,7 @@ export async function createEnemyManager({
       }
     }
 
-    if (archetypeSpec.isBoss) {
+    if (!isStringArg && archetypeSpec?.isBoss) {
       for (let i = 0; i < allPoolSlots.length; i++) {
         if (!allPoolSlots[i].busy && allPoolSlots[i].isBossSlot) {
           return allPoolSlots[i];
@@ -455,7 +458,7 @@ export async function createEnemyManager({
       force: true,
     });
 
-    const orbitSign = (nextInstanceSeq % 2 === 0 ? 1 : -1) * (0.75 + (nextInstanceSeq % 3) * 0.18);
+    const orbitSign = (nextInstanceSeq % 2 === 0 ? 1 : -1) * (1.55 + (nextInstanceSeq % 3) * 0.275);
     const summonCooldownVal = Number(arch.summonCooldown ?? arch.batSummonCooldown ?? 0);
     const maxSummonsVal = Number(arch.maxActiveSummons ?? arch.maxActiveBats ?? 0);
     const initSummonTimer = Number(
@@ -482,7 +485,7 @@ export async function createEnemyManager({
       meleeMaxDist: arch.meleeMaxDist ?? 4.5,
       isHybridRangedMelee: Boolean(arch.isHybridRangedMelee),
       usingRangedMode: Boolean(arch.isRanged || arch.isHybridRangedMelee),
-      projectileSpeed: arch.projectileSpeed ?? 11.5,
+      projectileSpeed: arch.projectileSpeed ?? 14.5,
       fireVulnerabilityMult: arch.fireVulnerabilityMult ?? 1.0,
       directionalShieldConeDeg: arch.directionalShieldConeDeg ?? 0,
       directionalShieldDr: arch.directionalShieldDr ?? 0.80,
@@ -532,6 +535,7 @@ export async function createEnemyManager({
       active: true,
       mark: null,
       markTimer: 0,
+      detonationCdTimer: 0,
       stunTimer: 0,
       knockdownTimer: 0,
       prayerAirborneSlowMo: false,
@@ -542,7 +546,7 @@ export async function createEnemyManager({
       iceSlowFactor: 0,
       burnTimer: 0,
       burnDps: 0,
-      spawnAnimTimer: 0.48,
+      spawnAnimTimer: 0.28,
       attackAnimTimer: 0,
       aiState: 'orbit',
       windupTimer: 0,
@@ -550,12 +554,12 @@ export async function createEnemyManager({
       telegraphX: clampedPos.x,
       telegraphY: groundY + 0.04,
       telegraphZ: clampedPos.z,
-      cooldownTimer: 0.55 + (slot.slotIndex % 3) * 0.25,
+      cooldownTimer: 0.18 + (slot.slotIndex % 3) * 0.12,
       hasAttackToken: false,
       orbitSpeed: orbitSign,
       standoffDist: arch.isRanged
         ? 6.6 + (slot.slotIndex % 2) * 1.1
-        : 3.3 + (slot.slotIndex % 3) * 0.55,
+        : 2.15 + (slot.slotIndex % 3) * 0.32,
       distToTarget: 10.0,
       targetHeroId: spawnSpec.preferredTarget || arch.preferredTarget || 'Knight',
       huntingMage: Boolean((spawnSpec.preferredTarget || arch.preferredTarget) === 'Mage'),
@@ -630,7 +634,7 @@ export async function createEnemyManager({
     const effectiveKey =
       enemy.shieldGuarding && (clipKey === 'idle' || clipKey === 'walk') ? 'block' : clipKey;
     if (enemy.char.anim.currentKey === effectiveKey) return;
-    const slowMult = (1.0 - clamp(enemy.iceSlowFactor || 0, 0, 0.75)) * globalEnemyTimeScale;
+    const slowMult = (1.0 - clamp(enemy.iceSlowFactor || 0, 0, 0.25)) * globalEnemyTimeScale;
     enemy.char.play(effectiveKey, {
       loop: true,
       fade: 0.15,
@@ -718,10 +722,28 @@ export async function createEnemyManager({
     );
     const attackerRole = isMagicHit ? 'Mage' : 'Knight';
 
+    const wasInWindup = enemy.aiState === 'windup';
+    const savedWindupTimer = enemy.windupTimer;
+    const savedTelegraphProgress = enemy.telegraphProgress;
+
     const result = applyHitAndResolveDetonation(enemy, hitSpec, activeEnemies);
     result.killerRole = attackerRole;
     result.isMagicKill = isMagicHit;
     result.isSwordKill = !isMagicHit;
+
+    // Elite & Boss Windup Super-Armor: basic hits and non-detonation skills do NOT interrupt windup
+    const canBreakWindupSuperArmor = Boolean(
+      result.detonation ||
+        result.guardShattered ||
+        source === 'intercept' ||
+        source === 'couples_ultimate'
+    );
+    if (wasInWindup && (enemy.isElite || enemy.isBoss) && !canBreakWindupSuperArmor) {
+      enemy.stunTimer = 0;
+      enemy.aiState = 'windup';
+      enemy.windupTimer = savedWindupTimer;
+      enemy.telegraphProgress = savedTelegraphProgress;
+    }
 
     // Update dynamic threat scores on this enemy
     if (result.damageDealt > 0) {
@@ -809,7 +831,7 @@ export async function createEnemyManager({
         enemy.attackAnimTimer = 0.45;
         enemy.char.play('hit_B', { loop: false, fade: 0.06, force: true });
       } else {
-        enemy.attackAnimTimer = 0.32;
+        enemy.attackAnimTimer = 0.12;
         enemy.char.play('hit_A', { loop: false, fade: 0.06, force: true });
       }
     }
@@ -1069,7 +1091,7 @@ export async function createEnemyManager({
         }
       }
 
-      const iceTimeMult = (1.0 - clamp(e.iceSlowFactor || 0, 0, 0.75)) * globalEnemyTimeScale;
+      const iceTimeMult = (1.0 - clamp(e.iceSlowFactor || 0, 0, 0.25)) * globalEnemyTimeScale;
 
       if (e.prayerAirborneSlowMo && !e.grounded) {
         if (e.slowTimer > 0) {
@@ -1103,6 +1125,9 @@ export async function createEnemyManager({
         e.markTimer = Math.max(0, e.markTimer - dt);
         if (e.markTimer <= 0) e.mark = null;
       }
+      if (e.detonationCdTimer > 0) {
+        e.detonationCdTimer = Math.max(0, e.detonationCdTimer - dt);
+      }
       if (e.stunTimer > 0) {
         e.stunTimer = Math.max(0, e.stunTimer - dt);
         if (e.stunTimer <= 0 && e.directionalShieldConeDeg > 0) {
@@ -1113,7 +1138,7 @@ export async function createEnemyManager({
         e.knockdownTimer = Math.max(0, e.knockdownTimer - dt);
       }
       if (e.cooldownTimer > 0) {
-        e.cooldownTimer = Math.max(0, e.cooldownTimer - dt * iceTimeMult);
+        e.cooldownTimer = Math.max(0, e.cooldownTimer - dt * globalEnemyTimeScale);
       }
 
       // Decay dynamic threat timers (12%/s on RecentDamageThreat, 8.0s on KillStreakThreat)
@@ -1279,7 +1304,7 @@ export async function createEnemyManager({
           ? e.slowFactor > 0
             ? 1.0 - clamp(e.slowFactor, 0, 0.85)
             : 0.3
-          : 1.0 - clamp(e.iceSlowFactor || 0, 0, 0.75);
+          : 1.0 - clamp(e.iceSlowFactor || 0, 0, 0.25);
       const slowMult = baseSlowMult * globalEnemyTimeScale;
 
       if (e.stunTimer <= 0 && e.knockdownTimer <= 0 && e.hitstopTimer <= 0 && e.grounded && targetHero) {
@@ -1330,8 +1355,7 @@ export async function createEnemyManager({
               e.shieldGuarding = true;
             }
 
-            const dmgReduction = clamp(e.iceSlowFactor || 0, 0, 0.75);
-            const outgoingDmg = Math.max(1, Math.round(e.dmg * (1.0 - dmgReduction)));
+            const outgoingDmg = e.dmg;
 
             if (e.usingRangedMode) {
               const castDirX = Math.sin(e.yaw);
@@ -1349,7 +1373,7 @@ export async function createEnemyManager({
                   y: (targetHero.y ?? walkableHeightAt(targetHero.x, targetHero.z)) + 1.05,
                   z: targetHero.z,
                 },
-                speed: e.projectileSpeed || 11.5,
+                speed: e.projectileSpeed || 14.5,
                 dmg: outgoingDmg,
                 radius: 0.42,
                 targetHeroId: targetHero.id || 'Knight',
@@ -1434,11 +1458,30 @@ export async function createEnemyManager({
               force: true,
             });
           } else {
-            playEnemyLocomotion(e, 'idle');
+            // Actively circle-strafe around the target hero at 0.72 * speed while on attack cooldown
+            const strafeSign = e.orbitSpeed >= 0 ? 1 : -1;
+            const desiredRadius = e.usingRangedMode
+              ? Math.max(4.5, effectiveAttackRange * 0.72)
+              : Math.max(1.75, effectiveAttackRange * 0.78);
+            const radialPull = clamp((dist - desiredRadius) * 2.2, -0.45, 0.45);
+            const strafeSpeed = 0.72 * e.speed * slowMult;
+            const tangX = -dirZ * strafeSign;
+            const tangZ = dirX * strafeSign;
+            const vxStrafe = (tangX + dirX * radialPull) * strafeSpeed;
+            const vzStrafe = (tangZ + dirZ * radialPull) * strafeSpeed;
+            const nextPos = applyEnemySpatialConstraints(
+              e.x + vxStrafe * dt,
+              e.z + vzStrafe * dt,
+              e.radius
+            );
+            e.x = nextPos.x;
+            e.z = nextPos.z;
+            e.y = walkableHeightAt(e.x, e.z);
+            playEnemyLocomotion(e, strafeSpeed > 4.2 ? 'run' : 'walk');
           }
         } else {
           const radialErr = dist - e.standoffDist;
-          const radialSpeed = clamp(radialErr * 1.8, -e.speed * 0.65, e.speed * 0.85) * slowMult;
+          const radialSpeed = clamp(radialErr * 2.4, -e.speed * 0.75, e.speed * 0.95) * slowMult;
           const tangX = -dirZ * e.orbitSpeed * slowMult;
           const tangZ = dirX * e.orbitSpeed * slowMult;
           const vxMove = dirX * radialSpeed + tangX * 1.45;
@@ -1452,7 +1495,8 @@ export async function createEnemyManager({
           e.x = nextPos.x;
           e.z = nextPos.z;
           e.y = walkableHeightAt(e.x, e.z);
-          playEnemyLocomotion(e, Math.hypot(vxMove, vzMove) > 0.6 ? 'walk' : 'idle');
+          const moveSpd = Math.hypot(vxMove, vzMove);
+          playEnemyLocomotion(e, moveSpd > 4.2 ? 'run' : moveSpd > 0.45 ? 'walk' : 'idle');
         }
       }
 

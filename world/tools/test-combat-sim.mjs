@@ -155,12 +155,28 @@ await check('2. HERO_STATS (incl. 120 HP Mage & 12s Knight Q), SPELLS & DETONATI
   assert.equal(SPELLS.storm_lance.mark, 'tempest');
   assert.equal(SPELLS.storm_lance.chainCount, 3);
 
+  assert.equal(DETONATIONS.rime_shatter.bonusDmg, 42);
+  assert.equal(DETONATIONS.rime_shatter.stun, 0.75);
   assert.equal(DETONATIONS.shatterblow.bonusDmg, 65);
-  assert.equal(DETONATIONS.shatterblow.stun, 1.4);
+  assert.equal(DETONATIONS.shatterblow.stun, 1.1);
   assert.equal(DETONATIONS.solar_flare.bonusDmg, 70);
-  assert.equal(DETONATIONS.solar_flare.launchVy, 7.5);
+  assert.equal(DETONATIONS.solar_flare.stun, 1.0);
+  assert.equal(DETONATIONS.solar_flare.knockback, 4.8);
+  assert.equal(DETONATIONS.solar_flare.launchVy, undefined);
   assert.equal(DETONATIONS.thunderchain.bonusDmg, 60);
   assert.equal(DETONATIONS.thunderchain.pullStrength, 5.0);
+
+  assert.equal(MAX_CONCURRENT_ENEMIES, 8);
+  assert.equal(MAX_ATTACK_TOKENS, 4);
+  assert.equal(ENEMY_ARCHETYPES.skeleton_minion.maxHp, 140);
+  assert.equal(ENEMY_ARCHETYPES.skeleton_minion.speed, 7.2);
+  assert.equal(ENEMY_ARCHETYPES.skeleton_rogue.maxHp, 185);
+  assert.equal(ENEMY_ARCHETYPES.skeleton_rogue.speed, 8.0);
+  assert.equal(ENEMY_ARCHETYPES.skeleton_warrior.maxHp, 250);
+  assert.equal(ENEMY_ARCHETYPES.skeleton_warrior.speed, 6.2);
+  assert.equal(ENEMY_ARCHETYPES.werewolf.maxHp, 350);
+  assert.equal(ENEMY_ARCHETYPES.werewolf.speed, 8.4);
+  assert.equal(ENEMY_ARCHETYPES.black_knight.maxHp, 580);
 });
 
 await check('3. ACT_DEFINITIONS match exact geography.js coordinates & obstacle clearances', () => {
@@ -199,7 +215,7 @@ await check('3. ACT_DEFINITIONS match exact geography.js coordinates & obstacle 
   assert.equal(act3.center.x, 0.0);
   assert.equal(act3.center.z, -85.5);
   assert.equal(act3.arenaRadius, 12.8);
-  assert.equal(ENEMY_ARCHETYPES.boss_sovereign.maxHp, 1400);
+  assert.equal(ENEMY_ARCHETYPES.boss_sovereign.maxHp, 2200);
 
   const pushed = resolveShrineObstacles(-5.8, -87.8, 0.6, true);
   assert.ok(Math.hypot(pushed.x - -5.8, pushed.z - -87.8) >= 2.19);
@@ -293,7 +309,7 @@ await check('5. 1-Input Swing Buffer, 1.0x -> 1.30x Mash Speed Ramp, and Contact
 /* 4. Knight Kit: Tab Ice/Fire, Shield Block, E Power Sword, Q & Leveling    */
 /* ------------------------------------------------------------------------- */
 
-await check('6. Knight Kit: Tab toggles ice/fire, Hold Shield Block (80% DR), E Power Sword (13s active / 18s cd = 5s downtime, Ice slow & Fire burn), Q (10s 2x dmg), and XP leveling', () => {
+await check('6. Knight Kit: Tab toggles ice/fire, Hold Shield Block (80% DR), E Power Sword (13s active / 18s cd = 5s downtime, Ice slow & Fire burn), Q (10s bounded mult), and XP leveling', () => {
   const sim = createHeadlessCampaignSim();
   sim.moveHeroesTo(ACT_DEFINITIONS.act1_arena.center.x, ACT_DEFINITIONS.act1_arena.center.z);
   const enemy = sim.activeEnemies[0];
@@ -306,7 +322,7 @@ await check('6. Knight Kit: Tab toggles ice/fire, Hold Shield Block (80% DR), E 
   const t2 = sim.knightToggleElement();
   assert.equal(t2.element, 'ice');
 
-  // 6B. Knight E (Power Sword - Ice): 13s active, 18s cooldown = 5s downtime; slows enemy speed, attack & outgoing damage
+  // 6B. Knight E (Power Sword - Ice): 13s active, 18s cooldown = 5s downtime; slows enemy speed & windup (capped <= 0.25)
   const pIce = sim.knightActivatePowerSword();
   assert.equal(pIce.activated, true);
   assert.equal(pIce.element, 'ice');
@@ -319,6 +335,7 @@ await check('6. Knight Kit: Tab toggles ice/fire, Hold Shield Block (80% DR), E 
   assert.ok(enemy.iceSlowTimer > 0);
   const lvl1Slow = getKnightLevelStats(1).iceSlowFactor;
   assert.equal(enemy.iceSlowFactor, lvl1Slow);
+  assert.ok(lvl1Slow <= 0.25);
 
   // Step 13.0s -> Power Sword active duration expires, leaving exactly 5.0s downtime on the 18.0s cooldown!
   sim.step(13.0);
@@ -353,28 +370,35 @@ await check('6. Knight Kit: Tab toggles ice/fire, Hold Shield Block (80% DR), E 
   assert.equal(kDmgRes.hpLost, 10, 'Shield Block must reduce 50 incoming damage by 80% to 10');
   sim.knightHoldShieldBlock(false);
 
-  // 6E. Knight Q (Twin-Element Awakening): 12.0s of 2.0x double damage
+  // 6E. Knight Q (Twin-Element Awakening): 12.0s active, bounded multiplier (capped at 2.25x, no frame-0 nuke!)
   const target3 = sim.activeEnemies.find((e) => !e.dead);
   target3.hp = 500;
   target3.maxHp = 500;
+  target3.mark = null;
   const baseSwing = sim.knightAttack('combo1', target3);
+  target3.mark = null;
   const qRes = sim.knightCastSkyLightningUlt(target3);
   assert.equal(qRes.activated, true);
   assert.equal(qRes.duration, 12.0);
   assert.equal(qRes.dmgMult, 2.0);
+  assert.equal(qRes.strikeResult.detonation, null, 'Knight Q ignition pulse must not self-detonate');
+  assert.ok(qRes.strikeResult.damageDealt <= 80, 'Knight Q ignition pulse must be a small stagger pulse, not a 446-dmg nuke');
+  target3.mark = null;
   const ultSwing = sim.knightAttack('combo1', target3);
-  assert.equal(ultSwing.damageDealt, baseSwing.damageDealt * 2, 'Knight Q must grant 2.0x double sword damage');
+  assert.ok(ultSwing.damageDealt > baseSwing.damageDealt && ultSwing.damageDealt <= 70, 'Knight Q boosts slash damage within bounded 2.25x cap');
 
-  // 6F. Killing enemies grants XP and levels up Knight (scaling damage & Ice/Fire sword potency)
+  // 6F. Killing enemies grants XP and levels up Knight (scaling damage & Ice/Fire sword potency up to 0.25 cap)
   const startLevel = sim.heroes.Knight.level;
   for (const e of [...sim.activeEnemies]) {
-    sim.knightAttack('combo4', e);
-    sim.knightAttack('combo4', e);
+    while (!e.dead && e.hp > 0) {
+      sim.knightAttack('combo4', e);
+    }
   }
   assert.ok(sim.heroes.Knight.level > startLevel, 'Killing enemies must level up Knight');
   assert.ok(
-    getKnightLevelStats(sim.heroes.Knight.level).iceSlowFactor > lvl1Slow,
-    'Higher Knight level must increase Ice Sword slow potency'
+    getKnightLevelStats(sim.heroes.Knight.level).iceSlowFactor > lvl1Slow &&
+      getKnightLevelStats(sim.heroes.Knight.level).iceSlowFactor <= 0.25,
+    'Higher Knight level must increase Ice Sword slow potency up to 0.25 cap'
   );
 });
 
@@ -489,10 +513,10 @@ await check('8. Partner Commune (<= 6.0m) & Blessing Tether (<= 6.0m) distances 
 });
 
 /* ------------------------------------------------------------------------- */
-/* 7. Soft-Lock, 3-Token Cap, Physical Detonations & Full 3-Act Campaign Sim */
+/* 7. Soft-Lock, 4-Token Cap, Two-Tier Detonations & Full 3-Act Campaign Sim */
 /* ------------------------------------------------------------------------- */
 
-await check('9. selectSoftLockTarget, allocateAttackTokens, Physical Detonations & Boss Bone Aegis work deterministically', () => {
+await check('9. selectSoftLockTarget, allocateAttackTokens (4 tokens), Two-Tier Detonations & Boss Bone Aegis work deterministically', () => {
   const origin = { x: 0, z: 0 };
   const enemies = [
     { id: 'behind', x: 0, z: -12, hp: 100, dead: false, active: true },
@@ -501,12 +525,13 @@ await check('9. selectSoftLockTarget, allocateAttackTokens, Physical Detonations
   assert.equal(selectSoftLockTarget(origin, 0, enemies)?.id, 'in_cone_marked');
 
   const tokenPool = [
-    { id: 'e1', hp: 100, dead: false, active: true, distToTarget: 3.0, aiState: 'windup' },
-    { id: 'e2', hp: 100, dead: false, active: true, distToTarget: 4.0, isBoss: true },
-    { id: 'e3', hp: 100, dead: false, active: true, distToTarget: 2.5 },
-    { id: 'e4', hp: 100, dead: false, active: true, distToTarget: 5.0 },
+    { id: 'e1', hp: 100, dead: false, active: true, distToTarget: 3.0, aiState: 'windup', targetHeroId: 'Knight' },
+    { id: 'e2', hp: 100, dead: false, active: true, distToTarget: 4.0, isBoss: true, targetHeroId: 'Knight' },
+    { id: 'e3', hp: 100, dead: false, active: true, distToTarget: 2.5, targetHeroId: 'Mage' },
+    { id: 'e4', hp: 100, dead: false, active: true, distToTarget: 5.0, targetHeroId: 'Mage' },
+    { id: 'e5', hp: 100, dead: false, active: true, distToTarget: 6.0, targetHeroId: 'Knight' },
   ];
-  assert.equal(allocateAttackTokens(tokenPool, MAX_ATTACK_TOKENS).length, 3);
+  assert.equal(allocateAttackTokens(tokenPool, MAX_ATTACK_TOKENS).length, 4);
 
   const boss = {
     id: 'sovereign',
@@ -529,16 +554,39 @@ await check('9. selectSoftLockTarget, allocateAttackTokens, Physical Detonations
   assert.equal(triggerHit.aegisRaised, true);
   assert.equal(boss.aegisLayers, 2);
 
-  applyHitAndResolveDetonation(boss, { source: 'combo3', baseDmg: 38, infusion: 'rime' }, [boss]);
+  // Basic combo3 of same element ('rime') must NOT self-detonate 'rime' mark!
+  const basicSameElem = applyHitAndResolveDetonation(
+    boss,
+    { source: 'combo3', baseDmg: 38, infusion: 'rime' },
+    [boss]
+  );
+  assert.equal(basicSameElem.detonation, null, 'Basic combo3 of same element must NOT self-detonate');
+  assert.equal(boss.aegisLayers, 2);
+
+  // Tier 1 Heavy Finisher ('combo4') of same element ('rime') triggers RIME SHATTER! (42 AoE Dmg) and breaks 1 aegis layer!
+  const tier1Shatter = applyHitAndResolveDetonation(
+    boss,
+    { source: 'combo4', baseDmg: 46, infusion: 'rime' },
+    [boss]
+  );
+  assert.equal(tier1Shatter.detonation?.id, 'rime_shatter');
+  assert.equal(tier1Shatter.detonation?.bonusDmg, 42);
   assert.equal(boss.aegisLayers, 1);
 
+  // Tier 2 Cross-Element ('solar' mark + 'rime' Frost Lance) triggers SOLAR FLARE! (70 AoE Dmg) and breaks final aegis layer!
   applyHitAndResolveDetonation(boss, { source: 'cinder_fall', baseDmg: 54, applyMark: 'solar' }, [boss]);
-  applyHitAndResolveDetonation(boss, { source: 'combo4', baseDmg: 46, infusion: 'solar' }, [boss]);
+  const tier2Cross = applyHitAndResolveDetonation(
+    boss,
+    { source: 'frost_lance', baseDmg: 48, applyMark: 'rime' },
+    [boss]
+  );
+  assert.equal(tier2Cross.detonation?.id, 'solar_flare');
+  assert.equal(tier2Cross.detonation?.bonusDmg, 70);
   assert.equal(boss.aegisLayers, 0);
   assert.equal(boss.aegisActive, false);
 });
 
-await check('10. Full 3-Act Valley Expedition & Pooled Enemy Manager (incl. telegraphRingMesh.visible = false) pass 100%', async () => {
+await check('10. Full 3-Act Valley Expedition & Pooled Enemy Manager (8 concurrent cap, pool fallback, active strafing, Road Vanguard Pack & Solo Wingman Synergy) pass 100%', async () => {
   const fullSim = createHeadlessCampaignSim();
   const outcome = fullSim.runFullCampaignAutoPlay();
   assert.equal(outcome.completed, true, 'Campaign must reach victory_dawn');
@@ -583,8 +631,8 @@ await check('10. Full 3-Act Valley Expedition & Pooled Enemy Manager (incl. tele
   assert.equal(em.poolSlots.length, 6);
   assert.equal(em.telegraphRingMesh.visible, false, 'telegraphRingMesh must stay permanently hidden');
   em.spawnWave(ACT_DEFINITIONS.act1_arena.waves[1], 'act1_arena');
-  assert.equal(em.visibleCount, 5);
-  assert.equal(em.spawnQueue.length, 1);
+  assert.equal(em.visibleCount, 6, 'All 6 enemies in Wave 2 spawn concurrently under MAX_CONCURRENT_ENEMIES = 8');
+  assert.equal(em.spawnQueue.length, 0);
   assert.equal(em.telegraphRingMesh.visible, false);
 
   // Verify live CampaignLoop + EnemyManager integration for Knight & Mage Wave 2B kits
@@ -1090,6 +1138,127 @@ await check('13. Final Playable Master Plan: Knight E Summon Lock on Tab, Shared
   assert.equal(prog.getState().stonesSolvedMask, 0b111);
   assert.equal(prog.getState().unlockedStage, 3);
   assert.equal(prog.getState().ultimateUnlocked, true);
+});
+
+await check('14. Overhaul Verification: 8-Slot Pool Fallback, Active Cooldown Circle-Strafing, Elite Windup Super-Armor, South Road Vanguard Pack, 22-28s Survival Waves & Solo Wingman Opposite-Element Synergy', async () => {
+  const { createEnemyManager } = await import('../src/combat/enemy-manager.js');
+  const mockKit = {
+    async loadAnimationPacks() {},
+    async createCharacter(charId) {
+      const group = new THREE.Group();
+      const modelRoot = new THREE.Group();
+      group.add(modelRoot);
+      let currentKey = 'idle';
+      return {
+        id: charId,
+        group,
+        modelRoot,
+        mixer: { timeScale: 1.0 },
+        anim: {
+          get currentKey() {
+            return currentKey;
+          },
+        },
+        play(key) {
+          currentKey = key;
+        },
+        poseAt(key) {
+          currentKey = key;
+        },
+        update() {},
+      };
+    },
+  };
+
+  const em = await createEnemyManager({
+    scene: new THREE.Scene(),
+    kit: mockKit,
+    walkableHeightAt: () => 0.0,
+    resolveCollisions: (x, z) => ({ x, z, wrapped: false }),
+  });
+
+  // 14A. 8-Slot Pool Fallback when requesting 4 of the same archetype (only 2 dedicated slots)
+  em.clearAllEnemies();
+  for (let i = 0; i < 8; i++) {
+    em.spawnImmediateFromSpec({ archetype: 'skeleton_warrior', x: i * 1.5, z: 10.0 });
+  }
+  assert.equal(em.activeEnemies.length, 8, 'Pool fallback must allow full 8 concurrent enemies even if same archetype');
+  assert.equal(em.visibleCount, 8);
+
+  // 14B. Active Cooldown Circle-Strafing (Never stand still in idle when hasAttackToken && cooldownTimer > 0)
+  em.clearAllEnemies();
+  const rusher = em.spawnImmediateFromSpec({ archetype: 'skeleton_rogue', x: 0.0, z: 1.8 });
+  rusher.spawnAnimTimer = 0;
+  rusher.cooldownTimer = 0.8;
+  const startX = rusher.x;
+  em.update(0.1, {
+    Knight: { id: 'Knight', x: 0, y: 0, z: 0, yaw: 0 },
+    Mage: { id: 'Mage', x: 5, y: 0, z: 5, yaw: 0 },
+  });
+  assert.equal(rusher.hasAttackToken, true);
+  assert.notEqual(rusher.char.anim.currentKey, 'idle', 'Token holder on cooldown must circle-strafe, never idle');
+  assert.ok(Math.abs(rusher.x - startX) > 0.05, 'Token holder on cooldown must physically move to flank');
+
+  // 14C. Elite/Boss Windup Super-Armor: basic hit does NOT cancel windup; Detonation or Intercept DOES
+  em.clearAllEnemies();
+  const elite = em.spawnImmediateFromSpec({ archetype: 'black_knight', x: 0, z: 2.0 });
+  elite.aiState = 'windup';
+  elite.windupTimer = 0.20;
+  elite.shieldGuarding = false;
+  em.applyHitToEnemy(elite, { source: 'combo1', baseDmg: 22, infusion: 'rime', attackerPos: { x: 0, z: 0 } });
+  assert.equal(elite.aiState, 'windup', 'Elite in windup must have super-armor against basic combo1');
+  assert.equal(elite.mark, 'rime');
+
+  // Now hit the rime-marked elite with opposite-element Fire ('solar') -> SHATTERBLOW! breaks windup super-armor!
+  const detRes = em.applyHitToEnemy(elite, { source: 'combo3', baseDmg: 38, infusion: 'solar', attackerPos: { x: 0, z: 0 } });
+  assert.equal(detRes.detonation?.id, 'shatterblow');
+  assert.equal(elite.aiState, 'orbit', 'Cross-element detonation must interrupt Elite windup super-armor');
+  assert.ok(elite.stunTimer >= 1.0);
+
+  // 14D. Immediate South Road Vanguard Pack & Fast 22-28s Survival Waves
+  em.clearAllEnemies();
+  const loop = createCampaignLoop({
+    scene: new THREE.Scene(),
+    walkableHeightAt: () => 0.0,
+    enemyManager: em,
+    combatSfx: createCombatSfx(),
+    openValleyMode: true,
+  });
+  loop.setUnlockedStage(2, 0b011);
+  assert.equal(loop.survivalWaveTimer, 6.0, 'Initial survivalWaveTimer must be 6.0s');
+
+  // First update near Flower Field start (0, 124) automatically spawns the 4-enemy South Road Vanguard Pack
+  const startHeroes = {
+    Knight: { id: 'Knight', x: 0, y: 0, z: 124.0, yaw: Math.PI },
+    Mage: { id: 'Mage', x: 1.6, y: 0, z: 124.0, yaw: Math.PI },
+  };
+  loop.update(0.1, { heroStates: startHeroes, activeHeroId: 'Knight', soloWingmanActive: false });
+  assert.equal(em.activeEnemies.length, 4, 'South Road Vanguard Pack of 4 hunters must spawn automatically near z = 124');
+  for (const e of em.activeEnemies) {
+    assert.ok(e.z >= 95.0 && e.z <= 105.0, `Vanguard enemy z (${e.z}) must be in [96..104] road zone`);
+  }
+
+  // Trigger a survival wave at z = 124 -> must clamp within [-148, 148] (not [-108, 108]) and set 22..28s timer
+  const waveDef = loop.triggerSurvivalWave(startHeroes.Knight);
+  assert.ok(waveDef.spawns.length >= 4 && waveDef.spawns.length <= 7);
+  assert.ok(loop.survivalWaveTimer >= 22.0 && loop.survivalWaveTimer <= 28.0);
+  assert.ok(waveDef.spawns.some((s) => s.z > 108.0), 'Survival wave at z=124 must not be clamped to z<=108');
+
+  // 14E. Solo AI Wingman Opposite-Element Synergy (AI Mage casts cinder_fall while Human Knight has Ice Sword 'rime' without overwriting Knight's 'rime' blade!)
+  loop.performPartnerSkill('Knight', startHeroes);
+  assert.equal(loop.combatHeroes.Knight.breathingStyle, 'rime');
+  for (let i = 0; i < 20; i++) {
+    loop.update(0.1, { heroStates: startHeroes, activeHeroId: 'Knight', soloWingmanActive: true });
+  }
+  assert.equal(
+    loop.combatHeroes.Knight.breathingStyle,
+    'rime',
+    'AI Wingman Mage casting opposite-element spell must NEVER overwrite Human Knight active rime blade'
+  );
+  assert.ok(
+    em.activeEnemies.some((e) => e.mark === 'solar' || e.hp < e.maxHp),
+    'AI Wingman Mage must cast opposite-element cinder_fall even while Knight breathingStyle !== none'
+  );
 });
 
 console.log(`\nALL ${passed} WAVE 2B COMBAT & CAMPAIGN TESTS PASSED!\n`);

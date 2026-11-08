@@ -1864,14 +1864,10 @@ sculptedHud = createSculptedHud({
       });
     }
   },
-  onAimMove: ({ clientY, dx = 0, dy = 0, spellId, slot } = {}) => {
+  onAimMove: ({ clientY, dx = 0, dy = 0 } = {}) => {
     if (coopSystem.player.activeHeroId === 'Mage') {
-      const isShatter =
-        spellId === 'shatterlance' ||
-        slot === 'Attack' ||
-        coopSystem.actionAim?.aimState?.spellId === 'shatterlance';
-      const minD = isShatter ? 0.8 : 3.0;
-      const maxD = isShatter ? 18.0 : 16.0;
+      const minD = 0.8;
+      const maxD = 18.0;
       if (typeof dx === 'number' && Math.abs(dx) > 0) {
         camState.yaw -= dx * 0.0055;
         coopSystem.heroStates.Mage.yaw = camState.yaw;
@@ -2708,7 +2704,7 @@ function syncCharacterGroundShadows() {
     coopSystem?.enemyManager?.pool ||
     [];
   let filled = 0;
-  for (let i = 0; i < pool.length && filled < 6; i++) {
+  for (let i = 0; i < pool.length && filled < 8; i++) {
     const slot = pool[i];
     const eGrp = slot?.char?.group;
     if (eGrp && eGrp.visible && slot.busy !== false) {
@@ -2717,7 +2713,7 @@ function syncCharacterGroundShadows() {
       filled++;
     }
   }
-  while (filled < 6) {
+  while (filled < 8) {
     setSlot(2 + filled, 9999.0, 9999.0, 0.70, 0.0);
     filled++;
   }
@@ -3011,10 +3007,8 @@ export function setProfile(profileName) {
   buildMeadowForProfile(activeProfile);
   const pool = coopSystem?.enemyManager?.allPoolSlots || [];
   const showMobOutlines = activeProfile !== 'tablet';
-  for (let i = 0; i < pool.length; i++) {
-    const slot = pool[i];
-    if (!slot || slot.isBossSlot) continue;
-    slot.char?.modelRoot?.traverse?.((obj) => {
+  const toggleBackSideOutlines = (rootObj) => {
+    rootObj?.traverse?.((obj) => {
       if (
         obj.isSkinnedMesh &&
         (obj.name?.includes('Outline') || obj.material?.side === THREE.BackSide)
@@ -3022,7 +3016,14 @@ export function setProfile(profileName) {
         obj.visible = showMobOutlines;
       }
     });
+  };
+  for (let i = 0; i < pool.length; i++) {
+    const slot = pool[i];
+    if (!slot) continue;
+    toggleBackSideOutlines(slot.char?.modelRoot || slot.char?.group);
   }
+  toggleBackSideOutlines(coopSystem?.knight?.modelRoot || coopSystem?.knight?.group);
+  toggleBackSideOutlines(coopSystem?.mage?.modelRoot || coopSystem?.mage?.group);
   touchHud.setProfileMode(activeProfile);
   sculptedHud?.setProfileMode(activeProfile);
   applyTimeOfDay(currentTodT);
@@ -3256,7 +3257,12 @@ window.addEventListener('keydown', (e) => {
     activeGameplayShotSpec = null;
     if (camState.mode === 'vista') camState.mode = 'player';
     if (coopSystem.player.activeHeroId === 'Mage') {
-      coopSystem.startSkillAim({ yaw: camState.yaw, pitch: camState.pitch });
+      eAimDragDistance = 9.5;
+      coopSystem.startSkillAim({
+        yaw: camState.yaw,
+        pitch: camState.pitch,
+        distance: eAimDragDistance,
+      });
     } else {
       coopSystem.triggerAction('skill');
     }
@@ -3288,7 +3294,7 @@ window.addEventListener('keydown', (e) => {
   } else if (!wasPressed && k === 'h') {
     toggleHud(hudEl && hudEl.style.display === 'none');
   } else if (['w', 'a', 's', 'd', ' '].includes(k)) {
-    if (lmbHoldTimer) {
+    if (coopSystem.player.activeHeroId !== 'Mage' && lmbHoldTimer) {
       clearTimeout(lmbHoldTimer);
       lmbHoldTimer = null;
     }
@@ -3316,7 +3322,11 @@ window.addEventListener('keyup', (e) => {
     coopSystem.player.activeHeroId === 'Mage' &&
     coopSystem.actionAim?.aimState?.active
   ) {
-    coopSystem.releaseSkillAim({ yaw: camState.yaw, pitch: camState.pitch });
+    coopSystem.releaseSkillAim({
+      distance: eAimDragDistance,
+      yaw: camState.yaw,
+      pitch: camState.pitch,
+    });
   }
 });
 
@@ -3365,10 +3375,10 @@ canvas.addEventListener('mousedown', (e) => {
     updateViewButtons();
   }
 
-  // Zero-lag 0ms LMB attack + Hold (180ms Mage Shatterlance Aim / 280ms Knight Shield Block)
+  // Zero-lag 0ms LMB attack + Hold (140ms Mage Shatterlance Aim / 280ms Knight Shield Block)
   coopSystem.triggerAction('attack');
   if (lmbHoldTimer) clearTimeout(lmbHoldTimer);
-  const holdDelay = coopSystem.player.activeHeroId === 'Mage' ? 180 : 280;
+  const holdDelay = coopSystem.player.activeHeroId === 'Mage' ? 140 : 280;
   lmbHoldTimer = setTimeout(() => {
     lmbHoldTimer = null;
     if (pointerDragging && !coopSystem?.campaignLoop?.isControlLocked?.()) {
@@ -3435,15 +3445,14 @@ window.addEventListener('blur', () => {
 });
 
 window.addEventListener('mousemove', (e) => {
-  const isShatterAim =
+  const isMageAiming =
     coopSystem?.player?.activeHeroId === 'Mage' &&
-    coopSystem.actionAim?.aimState?.active &&
-    coopSystem.actionAim.aimState.spellId === 'shatterlance';
+    Boolean(coopSystem.actionAim?.aimState?.active);
   if (document.pointerLockElement === canvas) {
     const mx = e.movementX || 0;
     const my = e.movementY || 0;
     applyCameraOrbitDelta(mx, my);
-    if (isShatterAim) {
+    if (isMageAiming) {
       eAimDragDistance = clamp(eAimDragDistance - my * 0.085, 0.8, 18.0);
       coopSystem.updateSkillAim({
         distance: eAimDragDistance,
@@ -3453,13 +3462,13 @@ window.addEventListener('mousemove', (e) => {
     }
     return;
   }
-  if (!pointerDragging) return;
   const dx = e.clientX - lastMouseX;
   const dy = e.clientY - lastMouseY;
   lastMouseX = e.clientX;
   lastMouseY = e.clientY;
+  if (!pointerDragging && !isMageAiming) return;
   applyCameraOrbitDelta(dx, dy);
-  if (isShatterAim) {
+  if (isMageAiming) {
     eAimDragDistance = clamp(eAimDragDistance - dy * 0.085, 0.8, 18.0);
     coopSystem.updateSkillAim({
       distance: eAimDragDistance,

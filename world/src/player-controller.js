@@ -1310,22 +1310,20 @@ export async function createCoopPlayerSystem({
       st.mashTimeScale = swing.mashTimeScale;
       st.bufferedAttack = hCtrl.bufferedAttack;
 
-      // Soft-lock orientation at swing start so the character faces the target
-      const partner = heroStates[swing.heroId === 'Knight' ? 'Mage' : 'Knight'];
-      const maxRange =
-        swing.heroId === 'Knight'
-          ? 7.5
-          : swing.kind === 'charged'
-            ? SPELLS.shatterlance.range
-            : HERO_STATS.Mage.boltRange;
-      const softTarget = selectSoftLockTarget(
-        st,
-        st.yaw,
-        enemyManager.activeEnemies,
-        { maxRange, partnerPos: partner }
-      );
-      if (softTarget) {
-        st.yaw = Math.atan2(softTarget.x - st.x, softTarget.z - st.z);
+      // Soft-lock orientation at swing start for Knight melee swings only;
+      // Mage keeps camera yaw at 0ms so Hold-LMB upgrades cleanly into Shatterlance aim,
+      // while tap bolts still acquire soft-lock targets at onContactHit!
+      if (swing.heroId === 'Knight') {
+        const partner = heroStates.Mage;
+        const softTarget = selectSoftLockTarget(
+          st,
+          st.yaw,
+          enemyManager.activeEnemies,
+          { maxRange: 7.5, partnerPos: partner }
+        );
+        if (softTarget) {
+          st.yaw = Math.atan2(softTarget.x - st.x, softTarget.z - st.z);
+        }
       }
 
       // Smooth per-frame lunge velocity up to contactTime (replaces frame-0 teleport snap!)
@@ -2080,11 +2078,12 @@ export async function createCoopPlayerSystem({
     if (isPlayerControlLocked()) return { blockedByControlLock: true };
     const mageState = heroStates.Mage;
     const chosenSpell = opts.spellId || heroStates.Mage.selectedSpell || 'frost_lance';
+    if (typeof opts.yaw === 'number') {
+      mageState.yaw = opts.yaw;
+      applyTransform(mageState);
+    }
     if (chosenSpell === 'shatterlance') {
       actionAim.cancelSwing('Mage');
-      if (typeof opts.yaw === 'number') {
-        mageState.yaw = opts.yaw;
-      }
       mageState.lungeRemaining = 0;
       mageState.actionState = 'cast_hold';
       mageState.actionTimer = 999;
@@ -2406,39 +2405,9 @@ export async function createCoopPlayerSystem({
     }
   }
 
-  // Browser input hooks for `Tab` element toggle (keeping `Alt+Tab` for hero swap),
-  // `Hold E` / `Release E` Spellbook Aim Arrow, and `mouseup` Shield Block release.
+  // Browser input hooks for `mouseup` / `pointerup` Shield Block release.
+  // (`keydown` / `keyup` for `Tab` and `E` are handled authoritatively in `main.js`.)
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-    window.addEventListener(
-      'keydown',
-      (e) => {
-        if (isPlayerControlLocked()) return;
-        const k = (e.key || '').toLowerCase();
-        if (k === 'tab' && !e.altKey) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          toggleElement(activeHeroId);
-          return;
-        }
-        if (k === 'e' && !e.repeat && activeHeroId === 'Mage') {
-          e.stopImmediatePropagation();
-          startSkillAim();
-        }
-      },
-      true
-    );
-
-    window.addEventListener(
-      'keyup',
-      (e) => {
-        const k = (e.key || '').toLowerCase();
-        if (k === 'e' && activeHeroId === 'Mage' && actionAim.aimState.active) {
-          releaseSkillAim();
-        }
-      },
-      true
-    );
-
     window.addEventListener('mouseup', () => {
       if (heroStates.Knight.shieldBlocking) {
         actionAim.releaseHeavy('Knight');
@@ -2547,8 +2516,9 @@ export async function createCoopPlayerSystem({
       leader.mashTimeScale = actionAim.heroes[leader.id].mashTimeScale;
 
       if (actionAim.aimState.active && activeHeroId === 'Mage') {
-        const aimYaw = camYaw !== undefined && camYaw !== 0 ? camYaw : actionAim.aimState.yaw ?? heroStates.Mage.yaw;
+        const aimYaw = typeof camYaw === 'number' ? camYaw : actionAim.aimState.yaw ?? heroStates.Mage.yaw;
         heroStates.Mage.yaw = aimYaw;
+        applyTransform(heroStates.Mage);
         actionAim.updateSkillAim({
           origin: { x: heroStates.Mage.x, y: heroStates.Mage.y, z: heroStates.Mage.z },
           yaw: aimYaw,
@@ -2688,11 +2658,12 @@ export async function createCoopPlayerSystem({
       const moveZ = fz * nz + rz * nx;
 
       // Damp WASD movement to 0.18x during active melee attacks so feet stay planted and never skate!
-      const blockMult = leader.shieldBlocking ? 0.35 : 1.0;
+      const isMageAimingNow = Boolean(leader.id === 'Mage' && actionAim.aimState.active);
+      const blockMult = leader.shieldBlocking ? 0.35 : isMageAimingNow ? 0.55 : 1.0;
       const actionMult = leader.actionState && !leader.shieldBlocking ? 0.18 : 1.0;
       const spd =
         player.speed *
-        (isSprinting ? player.sprintMult : moveMag < 0.55 ? 0.56 : 1.0) *
+        (isSprinting && !isMageAimingNow ? player.sprintMult : moveMag < 0.55 ? 0.56 : 1.0) *
         blockMult *
         actionMult;
 
@@ -2716,9 +2687,18 @@ export async function createCoopPlayerSystem({
 
       const activeSw = actionAim.heroes[leader.id]?.activeSwing;
       const lockYawForStrike = Boolean(
-        activeSw && !activeSw.contactFired && activeSw.elapsed < activeSw.contactTime
+        isMageAimingNow ||
+          (activeSw && !activeSw.contactFired && activeSw.elapsed < activeSw.contactTime)
       );
-      if (!lockYawForStrike) {
+      if (isMageAimingNow) {
+        leader.yaw = typeof camYaw === 'number' ? camYaw : actionAim.aimState.yaw ?? leader.yaw;
+        applyTransform(leader);
+        actionAim.updateSkillAim({
+          origin: { x: leader.x, y: walkableHeightAt(leader.x, leader.z), z: leader.z },
+          yaw: leader.yaw,
+          pitch: lastKnownCamPitch,
+        });
+      } else if (!lockYawForStrike) {
         const targetYaw = Math.atan2(moveX, moveZ);
         leader.yaw += shortestAngleDiff(targetYaw, leader.yaw) * Math.min(1, 14 * dt);
       }

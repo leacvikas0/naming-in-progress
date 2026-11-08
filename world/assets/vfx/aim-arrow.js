@@ -1,35 +1,24 @@
 // ============================================================================
 // world/assets/vfx/aim-arrow.js
 //
-// Wave 2A: Sculpted 3D Beveled Relief Spellbook Aim Arrow & Impact Reticle
+// Functional, Simple, Elegant 3D Ballistic Trajectory Arc & Elevated Precision Reticle
 //
 // Visual & Engineering Contract:
-// - Replaces flat 2D ground decals with a true 3D extruded, beveled relief
-//   mesh (`0cm` grounded skirt -> `6.8cm` beveled shoulder flats -> `9.8cm`
-//   crowned central spine ridge) that conforms dynamically to Haru-machi's
-//   terrain height `getGroundHeight(x, z)`.
-// - Packs 4 closed, outward-wound 3D manifold sub-meshes into 1 single
-//   indexed `BufferGeometry` (`1` draw call active, `0` draw calls hidden):
-//     1. Part 0: 3D Extruded Beveled Shaft (`24` lengthwise rows x `7`-point
-//        3D cross-section + front/back 3D end caps) with raised central spine.
-//     2. Part 1: 3D Sculpted Swept-Wing Chevron Spearhead (`14` rows x `7`-point
-//        3D diamond-ridge cross-section + swept barb back walls, `11cm` peak).
-//     3. Part 2: Outer 3D Beveled Target Ring / Glacial Apex Collar (`48`
-//        angular segments x `5`-point 3D trapezoid/ridge profile + 8 raised
-//        3D crown battlements).
-//     4. Part 3: Inner 3D Beveled Bullseye Ring & 4 Compass Chevrons (`32`
-//        angular segments x `5`-point 3D profile).
-// - Universal "Zero Glass" Law: Hardware-opaque (`transparent: false,
-//   depthWrite: true, side: THREE.FrontSide`) matte gouache cel-shader driven
-//   by true 3D surface normals (`vNormal`) and 3D relief height (`vHeight`).
-//     * Mode `'frost_lance'` (or `'ice'`): fixed `14.5m` length, crisp glacial
-//       cyan-white spine (`#e0f7ff`), cerulean-ice bevels (`#38bdf8`), deep
-//       alpine-slate side walls (`#1e4e68`), dark navy-indigo base skirt (`#0c2d48`).
-//     * Mode `'cinder_fall'` (or `'fire'`): variable tip distance clamped to
-//       `3.0..16.0m` with a sculpted 3D volcanic crater ring at the tip,
-//       sunlit cream-gold spine (`#fef08a`), warm terracotta-amber bevels
-//       (`#f97316`), crimson-garnet side walls (`#be123c`), dark umber-wine
-//       base skirt (`#27091c`).
+// - Clean, sleek 3D parabolic trajectory ribbon (`0.18m-0.24m` width, `0.10m`
+//   vertical thickness) curving smoothly from the Mage's raised staff crystal
+//   (`originGroundY + 1.45m`) through a clear ballistic peak
+//   (`arcPeak = clamp(1.15 + L * 0.18, 1.35, 3.85)`) down into the elevated
+//   center bullseye (`endGroundY + 0.42m`).
+// - Elevated 3D Target Impact Ring (`PART 2`) & Center Bullseye Beacon (`PART 3`)
+//   with a clean vertical cylinder wall (`endGroundY + 0.05m` up to `+0.56m`)
+//   so the landing circle and bullseye sit unmistakably above the `40cm-70cm`
+//   3D meadow grass at every distance (`0.8m` to `18.0m`).
+// - Functional, modern, high-contrast warm ivory-champagne palette (`#fffaf0`
+//   core with subtle silver-frost `#e2e8f0` edge for Ice, `#fff7ed` core with
+//   warm amber `#fdba74` edge for Fire) — zero overly-Ghibli cartoon blue slop
+//   or heavy black cartoon ink borders.
+// - Single indexed `BufferGeometry` (`1` draw call active, `0` hidden,
+//   `transparent: false, depthTest: true, depthWrite: true, renderOrder: 6`).
 // ============================================================================
 
 import * as THREE from 'three';
@@ -41,9 +30,9 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 export const AIM_ARROW_DEFAULTS = Object.freeze({
   gridCols: 6,
   gridRows: 36,
-  groundOffset: 0.016,
-  staffHeightOffset: 1.15,
-  endHeightOffset: 0.08,
+  groundOffset: 0.02,
+  staffHeightOffset: 1.45,
+  endHeightOffset: 0.42,
   frostLanceLength: 14.5,
   cinderFallDefaultDistance: 11.5,
   shatterlanceDefaultDistance: 7.5,
@@ -52,38 +41,39 @@ export const AIM_ARROW_DEFAULTS = Object.freeze({
   frostHalfSpan: 1.45,
   cinderHalfSpan: 2.05,
 
-  // Mode 'frost_lance' / 'shatterlance' ('ice') Linear-sRGB Uniforms
-  colorIceCore: '#e8faff',
-  colorIceMid: '#38bdf8',
-  colorIceWall: '#0284c7',
-  colorIceInk: '#18121e',
+  // Mode 'frost_lance' / 'shatterlance' ('ice') — Clean Luminous Ivory-Champagne & Subtle Frost Silver
+  colorIceCore: '#fffaf0',
+  colorIceMid: '#f1f5f9',
+  colorIceWall: '#cbd5e1',
+  colorIceInk: '#64748b',
 
-  // Mode 'cinder_fall' ('fire') Linear-sRGB Uniforms
-  colorFireCore: '#fef3a8',
-  colorFireAmber: '#ff6a12',
-  colorFireCrimson: '#be123c',
-  colorFireInk: '#18121e',
+  // Mode 'cinder_fall' ('fire') — Clean Warm Ivory & Subtle Solar Amber
+  colorFireCore: '#fff7ed',
+  colorFireAmber: '#fdba74',
+  colorFireCrimson: '#f97316',
+  colorFireInk: '#9a3412',
 });
 
-// 7-point 3D cross-section for the Parabolic Trajectory Arc (Part 0) & Plunge Tip (Part 1)
-// latFrac in [-1, 1], heightM in meters, normal (nx, ny)
+// Sleek 7-point 3D cross-section for the Parabolic Trajectory Arc (Part 0) & Pointer Tip (Part 1)
+// latFrac in [-1, 1], heightM in meters (0.10m vertical thickness), normal (nx, ny)
 const SHAFT_PROFILE = [
-  { lat: -1.00, h: 0.000, nx: -0.86, ny: 0.51, ridge: 0.0 }, // 0: left ink border edge
-  { lat: -0.74, h: 0.046, nx: -0.32, ny: 0.95, ridge: 0.45 }, // 1: left beveled top shoulder
-  { lat: -0.26, h: 0.038, nx: -0.12, ny: 0.99, ridge: 0.35 }, // 2: left inner flute channel
-  { lat:  0.00, h: 0.074, nx:  0.00, ny: 1.00, ridge: 1.00 }, // 3: raised 3D central trajectory spine
-  { lat:  0.26, h: 0.038, nx:  0.12, ny: 0.99, ridge: 0.35 }, // 4: right inner flute channel
-  { lat:  0.74, h: 0.046, nx:  0.32, ny: 0.95, ridge: 0.45 }, // 5: right beveled top shoulder
-  { lat:  1.00, h: 0.000, nx:  0.86, ny: 0.51, ridge: 0.0 }, // 6: right ink border edge
+  { lat: -1.00, h: 0.000, nx: -0.92, ny: 0.39, ridge: 0.00 }, // 0: left lower edge
+  { lat: -0.78, h: 0.072, nx: -0.34, ny: 0.94, ridge: 0.55 }, // 1: left beveled top shoulder
+  { lat: -0.32, h: 0.088, nx: -0.10, ny: 0.99, ridge: 0.82 }, // 2: left inner crown flat
+  { lat:  0.00, h: 0.100, nx:  0.00, ny: 1.00, ridge: 1.00 }, // 3: sleek central trajectory spine (+0.10m)
+  { lat:  0.32, h: 0.088, nx:  0.10, ny: 0.99, ridge: 0.82 }, // 4: right inner crown flat
+  { lat:  0.78, h: 0.072, nx:  0.34, ny: 0.94, ridge: 0.55 }, // 5: right beveled top shoulder
+  { lat:  1.00, h: 0.000, nx:  0.92, ny: 0.39, ridge: 0.00 }, // 6: right lower edge
 ];
 
-// 5-point 3D cross-section for the Closed Beveled Ground Impact Rings (Part 2 & Part 3)
+// Elevated 5-point 3D cross-section for Target Impact Ring (Part 2) & Center Bullseye Beacon (Part 3)
+// Vertical cylinder wall from +0.05m up to +0.55m so it sits cleanly above 40cm-70cm meadow grass!
 const RING_PROFILE = [
-  { rOff: -1.00, h: 0.000, nr: -0.82, ny: 0.57, ridge: 0.0 }, // 0: inner grounded ink skirt
-  { rOff: -0.52, h: 0.064, nr: -0.24, ny: 0.97, ridge: 0.55 }, // 1: inner bevel shoulder
-  { rOff:  0.00, h: 0.092, nr:  0.00, ny: 1.00, ridge: 1.00 }, // 2: crowned top ridge
-  { rOff:  0.52, h: 0.064, nr:  0.24, ny: 0.97, ridge: 0.55 }, // 3: outer bevel shoulder
-  { rOff:  1.00, h: 0.000, nr:  0.82, ny: 0.57, ridge: 0.0 }, // 4: outer grounded ink skirt
+  { rOff: -1.00, h: 0.050, nr: -0.95, ny: 0.31, ridge: 0.08 }, // 0: inner cylinder base skirt (+0.05m)
+  { rOff: -0.72, h: 0.495, nr: -0.28, ny: 0.96, ridge: 0.78 }, // 1: inner elevated rim shoulder (+0.495m)
+  { rOff:  0.00, h: 0.550, nr:  0.00, ny: 1.00, ridge: 1.00 }, // 2: flat-top precision reticle crown (+0.55m)
+  { rOff:  0.72, h: 0.495, nr:  0.28, ny: 0.96, ridge: 0.78 }, // 3: outer elevated rim shoulder (+0.495m)
+  { rOff:  1.00, h: 0.050, nr:  0.95, ny: 0.31, ridge: 0.08 }, // 4: outer cylinder base skirt (+0.05m)
 ];
 
 const SHAFT_ROWS = 32;
@@ -92,8 +82,8 @@ const OUTER_RING_SEGS = 48;
 const INNER_RING_SEGS = 32;
 
 /**
- * Builds the multi-part 3D beveled geometry for the PUBG-style Parabolic Trajectory Arc
- * and 3D Ground Impact Ring (1 single indexed BufferGeometry, 1 draw call active, 0 hidden).
+ * Builds the 4-part 3D geometry for the Parabolic Trajectory Arc and Elevated
+ * Ground Reticle (1 single indexed BufferGeometry, 1 draw call active, 0 hidden).
  */
 export function createAimArrowGeometry() {
   const positions = [];
@@ -114,13 +104,13 @@ export function createAimArrowGeometry() {
   }
 
   // ---------------------------------------------------------------------------
-  // PART 0: 3D Parabolic Trajectory Arc Ribbon (SHAFT_ROWS = 32, 7 cols)
+  // PART 0: Sleek 3D Parabolic Trajectory Arc Ribbon (SHAFT_ROWS = 32, 7 cols)
   // ---------------------------------------------------------------------------
   const shaftCols = SHAFT_PROFILE.length; // 7
   const shaftStartV = positions.length / 3;
   for (let r = 0; r <= SHAFT_ROWS; r++) {
     const u = r / SHAFT_ROWS;
-    const endCapScale = r === 0 ? 0.0 : r === 1 ? 0.72 : 1.0;
+    const endCapScale = r === 0 ? 0.0 : r === 1 ? 0.78 : 1.0;
     for (let c = 0; c < shaftCols; c++) {
       const p = SHAFT_PROFILE[c];
       const v01 = c / (shaftCols - 1);
@@ -141,17 +131,17 @@ export function createAimArrowGeometry() {
   }
 
   // ---------------------------------------------------------------------------
-  // PART 1: 3D Ballistic Impact Chevron Plunge Head (HEAD_ROWS = 12, 7 cols)
+  // PART 1: Clean Tapered Terminal Pointer into Bullseye Center (HEAD_ROWS = 12, 7 cols)
   // ---------------------------------------------------------------------------
   const headStartV = positions.length / 3;
   for (let r = 0; r <= HEAD_ROWS; r++) {
     const u = r / HEAD_ROWS;
-    const endCapScale = r === 0 || r === HEAD_ROWS ? 0.0 : r === 1 ? 0.85 : 1.0 - Math.pow(u, 2.2) * 0.35;
+    const endCapScale = r === HEAD_ROWS ? 0.0 : 1.0 - Math.pow(u, 1.8) * 0.35;
     for (let c = 0; c < shaftCols; c++) {
       const p = SHAFT_PROFILE[c];
       const v01 = c / (shaftCols - 1);
-      const headH = p.h * 1.18 * endCapScale;
-      pushVert(u, v01, 1, c, p.lat, headH, p.nx, p.ny, 0.0, p.ridge * (r === 0 ? 0.0 : 1.0));
+      const headH = p.h * endCapScale;
+      pushVert(u, v01, 1, c, p.lat, headH, p.nx, p.ny, 0.0, p.ridge);
     }
   }
   for (let r = 0; r < HEAD_ROWS; r++) {
@@ -168,7 +158,7 @@ export function createAimArrowGeometry() {
   }
 
   // ---------------------------------------------------------------------------
-  // PART 2: Outer 3D Cel-Shaded Ground Impact Ring (48 segs x 5 cols)
+  // PART 2: Elevated Precision Outer Target Ring (48 segs x 5 cols)
   // ---------------------------------------------------------------------------
   const ringCols = RING_PROFILE.length; // 5
   const outerRingStartV = positions.length / 3;
@@ -194,7 +184,7 @@ export function createAimArrowGeometry() {
   }
 
   // ---------------------------------------------------------------------------
-  // PART 3: Inner 3D Beveled Bullseye Target Ring (32 segs x 5 cols)
+  // PART 3: Elevated Center Bullseye Beacon Ring (32 segs x 5 cols)
   // ---------------------------------------------------------------------------
   const innerRingStartV = positions.length / 3;
   for (let s = 0; s <= INNER_RING_SEGS; s++) {
@@ -202,7 +192,7 @@ export function createAimArrowGeometry() {
     for (let c = 0; c < ringCols; c++) {
       const p = RING_PROFILE[c];
       const v01 = c / (ringCols - 1);
-      pushVert(u, v01, 3, c, p.rOff, p.h * 0.88, p.nr, p.ny, 0.0, p.ridge);
+      pushVert(u, v01, 3, c, p.rOff, p.h * 1.04, p.nr, p.ny, 0.0, p.ridge);
     }
   }
   for (let s = 0; s < INNER_RING_SEGS; s++) {
@@ -299,8 +289,6 @@ function createAimArrowMaterial(noiseAtlas, config) {
       varying vec3 vWorldNormal;
 
       void main() {
-        float alongM = vCoord.x;
-        float latM = vCoord.y;
         float hM = vCoord.z;
         float ridgeMetric = clamp(vCoord.w, 0.0, 1.0);
         float partId = vBlueprint.x;
@@ -309,41 +297,34 @@ function createAimArrowMaterial(noiseAtlas, config) {
         float isFire = step(0.5, uMode);
 
         vec3 N = normalize(vWorldNormal);
-        vec3 L = normalize(vec3(uSunDir.x, max(0.45, uSunDir.y), uSunDir.z));
-        float ndl = dot(N, L) * 0.5 + 0.5;
         float topFacing = clamp(abs(N.y), 0.0, 1.0);
 
-        // Gouache noise + PUBG ballistic chevron pulses scrolling from staff tip to landing ring
-        vec4 nSample = texture2D(
-          uNoiseAtlas,
-          vec2(alongM * 0.32 - uTime * 0.85, latM * 0.55 + 0.37)
-        );
+        // Clean forward-flowing chevron segments along the trajectory arc
+        // and crisp 4-cardinal precision tick accents on the target ring
         float isArcOrHead = step(partId, 1.5);
-        float scrollWave = fract(uParam * 6.5 - abs(vBlueprint.w) * 0.55 - uTime * 2.35);
-        float chevronPulse = step(0.26, scrollWave) * (1.0 - step(0.68, scrollWave));
-        float ringPulse = (1.0 - isArcOrHead) * step(0.35, fract(uParam * 8.0 - uTime * 1.4));
-        float flowHighlight = chevronPulse * isArcOrHead * smoothstep(0.02, 0.055, hM) + ringPulse * 0.35;
+        float chevronPhase = fract(uParam * 8.0 - profileEdge * 0.35 - uTime * 1.85);
+        float chevronBand = smoothstep(0.18, 0.28, chevronPhase) * (1.0 - smoothstep(0.68, 0.78, chevronPhase));
+        float cardinalTicks = (1.0 - isArcOrHead) * smoothstep(0.72, 0.92, abs(cos(uParam * 12.56637)));
 
-        // Crisp dark cel ink framing (#18121e) along outer borders & base skirt (Zero Glass rule)
-        float skirtInk = max(1.0 - smoothstep(0.008, 0.026, hM), smoothstep(0.78, 0.94, profileEdge));
-        float sideWallFactor = 1.0 - smoothstep(0.52, 0.86, topFacing);
-        float spineCrown = smoothstep(0.58, 0.90, ridgeMetric) * smoothstep(0.032, 0.068, hM);
+        float crownMask = smoothstep(0.45, 0.82, ridgeMetric);
+        float sideTrim = smoothstep(0.76, 0.96, profileEdge) * (1.0 - topFacing * 0.5);
+        float lowerSkirt = (1.0 - isArcOrHead) * (1.0 - smoothstep(0.18, 0.44, hM));
 
         vec3 col;
         if (isFire < 0.5) {
-          // Ice Mode ('frost_lance' & 'shatterlance'): Vibrant Icy Cyan (#38bdf8) + Glacial Core (#e8faff) + Dark Ink (#18121e)
-          vec3 topGouache = mix(uIceMid * 0.94, uIceMid * 1.12, step(0.48, ndl + (nSample.g - 0.5) * 0.14));
-          col = mix(topGouache, uIceWall, sideWallFactor * 0.85);
-          float coreMask = clamp(spineCrown + flowHighlight * 0.78 + step(1.5, partId) * smoothstep(0.68, 0.94, ridgeMetric) * 0.88, 0.0, 1.0);
-          col = mix(col, uIceCore * 1.14, step(0.40, coreMask));
-          col = mix(col, uIceInk, step(0.52, skirtInk) * 0.95);
+          // Clean Luminous Warm Ivory-Champagne (#fffaf0) + Subtle Frost-Silver Edge (#e2e8f0 / #cbd5e1)
+          vec3 edgeCol = mix(uIceWall, uIceMid, crownMask);
+          vec3 brightCore = uIceCore * 1.12;
+          float coreBlend = clamp(crownMask * 0.76 + chevronBand * isArcOrHead * 0.38 + cardinalTicks * 0.35, 0.0, 1.0);
+          col = mix(edgeCol, brightCore, coreBlend);
+          col = mix(col, uIceInk, max(sideTrim * 0.45, lowerSkirt * 0.55));
         } else {
-          // Fire Mode ('cinder_fall'): Blazing Solar (#ff6a12) + Sunlit Gold Core (#fef3a8) + Dark Ink (#18121e)
-          vec3 topGouache = mix(uFireCrimson * 1.04, uFireAmber * 1.12, step(0.44, ndl + ridgeMetric * 0.25 + (nSample.g - 0.5) * 0.14));
-          col = mix(topGouache, uFireCrimson * 0.80, sideWallFactor * 0.85);
-          float coreMask = clamp(spineCrown + flowHighlight * 0.80 + step(1.5, partId) * smoothstep(0.68, 0.94, ridgeMetric) * 0.90, 0.0, 1.0);
-          col = mix(col, uFireCore * 1.15, step(0.40, coreMask));
-          col = mix(col, uFireInk, step(0.52, skirtInk) * 0.95);
+          // Clean Luminous Warm Ivory (#fff7ed) + Subtle Solar Amber Edge (#fdba74 / #f97316)
+          vec3 edgeCol = mix(uFireCrimson, uFireAmber, crownMask);
+          vec3 brightCore = uFireCore * 1.14;
+          float coreBlend = clamp(crownMask * 0.74 + chevronBand * isArcOrHead * 0.40 + cardinalTicks * 0.35, 0.0, 1.0);
+          col = mix(edgeCol, brightCore, coreBlend);
+          col = mix(col, uFireInk, max(sideTrim * 0.45, lowerSkirt * 0.55));
         }
 
         gl_FragColor = vec4(col, 1.0);
@@ -388,7 +369,7 @@ export class AimArrowSystem {
     this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.mesh.name = 'AimArrow_DC1_TerrainRibbon';
     this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = 2;
+    this.mesh.renderOrder = 6;
     this.group.add(this.mesh);
   }
 
@@ -516,7 +497,7 @@ export class AimArrowSystem {
     const isFire = this.mode === 'cinder_fall';
     const isShatter = this.mode === 'shatterlance';
     const L = clamp(this.length, c.minDistance, c.maxDistance);
-    const yBaseOffset = c.groundOffset ?? 0.016;
+    const yBaseOffset = c.groundOffset ?? 0.02;
 
     const posArr = this.geometry.attributes.position.array;
     const normArr = this.geometry.attributes.normal.array;
@@ -532,18 +513,18 @@ export class AimArrowSystem {
     const sx = this.side.x;
     const sz = this.side.z;
 
-    // PUBG-Style 3D Parabolic Trajectory parameters from staff tip to ground landing point
-    const startY = originGroundY + (c.staffHeightOffset ?? 1.15);
+    // Clean 3D Parabolic Trajectory from raised staff crystal (+1.45m) to elevated bullseye (+0.42m)
+    const startY = originGroundY + (c.staffHeightOffset ?? 1.45);
     const endGroundX = ox + dx * L;
     const endGroundZ = oz + dz * L;
     const endGroundY = this.getGroundHeight(endGroundX, endGroundZ);
-    const endY = endGroundY + (c.endHeightOffset ?? 0.08);
-    const arcPeak = clamp(0.32 + L * 0.135, 0.36, 2.55);
+    const endY = endGroundY + (c.endHeightOffset ?? 0.42);
+    const arcPeak = clamp(1.15 + L * 0.18, 1.35, 3.85);
 
-    const shaftStart = Math.min(0.38, L * 0.25);
-    const headLen = Math.min(1.15, Math.max(0.28, L * 0.28));
+    const shaftStart = Math.min(0.42, L * 0.22);
+    const headLen = Math.min(0.72, Math.max(0.22, L * 0.18));
     const headApex = L;
-    const headBase = Math.max(shaftStart + 0.12, headApex - headLen);
+    const headBase = Math.max(shaftStart + 0.10, headApex - headLen);
 
     const evalParabolaY = (alongDist) => {
       const t = clamp((alongDist - shaftStart) / Math.max(0.15, L - shaftStart), 0.0, 1.0);
@@ -557,21 +538,22 @@ export class AimArrowSystem {
       return ((endY - startY) + 4.0 * arcPeak * (1.0 - 2.0 * t)) / span;
     };
 
+    // Sleek 0.18m-0.24m full ribbon width (half-width 0.09m-0.12m)
     const baseRibbonHalfW = this.customWidth
-      ? clamp(this.customWidth * 0.12, 0.12, 0.36)
+      ? clamp(this.customWidth * 0.08, 0.08, 0.14)
       : isFire
-        ? 0.20
+        ? 0.115
         : isShatter
-          ? 0.18
-          : 0.21;
+          ? 0.095
+          : 0.105;
 
     const outerRingRadius = this.customRadius
       ? clamp(this.customRadius, 0.55, 3.2)
       : isFire
-        ? 1.72
+        ? 1.55
         : isShatter
-          ? 1.38
-          : 1.08;
+          ? 1.25
+          : 1.05;
 
     for (let i = 0; i < vertCount; i++) {
       const bOff = i * 4;
@@ -590,13 +572,13 @@ export class AimArrowSystem {
       let wnz = 0.0;
 
       if (partId < 0.5) {
-        // PART 0: 3D Parabolic Trajectory Arc Ribbon (from staff height down to headBase)
+        // PART 0: Sleek 3D Parabolic Trajectory Arc Ribbon (from staff crystal to headBase)
         const prof = SHAFT_PROFILE[colIdx] || SHAFT_PROFILE[3];
         const rIdx = Math.round(u * SHAFT_ROWS);
-        const endCapScale = rIdx === 0 ? 0.0 : rIdx === 1 ? 0.72 : 1.0;
-        const shaftHalfW = baseRibbonHalfW * (0.72 + 0.38 * u);
+        const endCapScale = rIdx === 0 ? 0.0 : rIdx === 1 ? 0.78 : 1.0;
+        const shaftHalfW = baseRibbonHalfW * (0.82 + 0.22 * Math.sin(u * Math.PI));
 
-        alongM = shaftStart + u * (headBase + 0.08 - shaftStart);
+        alongM = shaftStart + u * (headBase - shaftStart);
         latM = latOrR * shaftHalfW;
         localH = prof.h * endCapScale;
 
@@ -615,24 +597,17 @@ export class AimArrowSystem {
         posArr[pOff + 1] = wy;
         posArr[pOff + 2] = wz;
       } else if (partId < 1.5) {
-        // PART 1: 3D Ballistic Plunge Chevron Spearhead into Ground Impact Ring Center
+        // PART 1: Clean Tapered Terminal Pointer into Center Bullseye (no cartoon surfboard barbs!)
         const prof = SHAFT_PROFILE[colIdx] || SHAFT_PROFILE[3];
         const rIdx = Math.round(u * HEAD_ROWS);
-        const tipEnv = 1.0 - u;
-        const maxBarbHalfW = baseRibbonHalfW * 2.35;
-        const halfW = Math.max(0.025, tipEnv * maxBarbHalfW);
-        const barbSweepBack = Math.abs(latOrR) * Math.min(0.38, headLen * 0.42) * tipEnv;
+        const taper = 1.0 - Math.pow(u, 1.35) * 0.78;
+        const halfW = Math.max(0.02, baseRibbonHalfW * 1.04 * taper);
 
-        alongM = headBase + u * (headApex - headBase) - barbSweepBack;
+        alongM = headBase + u * (headApex - headBase);
         latM = latOrR * halfW;
 
-        const endCapScale =
-          rIdx === 0 || rIdx === HEAD_ROWS
-            ? 0.0
-            : rIdx === 1
-              ? 0.88
-              : 1.0 - Math.pow(u, 2.2) * 0.32;
-        localH = prof.h * 1.22 * endCapScale;
+        const endCapScale = rIdx === HEAD_ROWS ? 0.0 : 1.0 - Math.pow(u, 1.8) * 0.35;
+        localH = prof.h * endCapScale;
 
         const wx = ox + dx * alongM + sx * latM;
         const wz = oz + dz * alongM + sz * latM;
@@ -649,25 +624,25 @@ export class AimArrowSystem {
         posArr[pOff + 1] = wy;
         posArr[pOff + 2] = wz;
       } else if (partId < 2.5) {
-        // PART 2: Outer 3D Cel-Shaded Ground Impact Ring (Centered at Landing Point L)
+        // PART 2: Elevated Precision Outer Target Ring (+0.55m top crown above 70cm meadow grass)
         const prof = RING_PROFILE[colIdx] || RING_PROFILE[2];
         const ang = u * TAU;
         const cosA = Math.cos(ang);
         const sinA = Math.sin(ang);
 
-        const crownLobes = isFire ? Math.cos(ang * 8.0) : Math.cos(ang * 6.0);
-        const baseRingR = outerRingRadius + 0.08 * Math.max(0.0, crownLobes);
-        const ringHalfThick = isFire ? 0.16 : 0.14;
+        const baseRingR = outerRingRadius;
+        const ringHalfThick = isFire ? 0.105 : 0.095;
         const centerAlong = L;
 
         const rActual = baseRingR + latOrR * ringHalfThick;
         alongM = centerAlong + cosA * rActual;
         latM = sinA * rActual;
-        localH = prof.h * (1.05 + 0.20 * Math.max(0.0, crownLobes));
+        localH = prof.h;
 
         const wx = ox + dx * alongM + sx * latM;
         const wz = oz + dz * alongM + sz * latM;
-        wy = this.getGroundHeight(wx, wz) + yBaseOffset + localH;
+        const sampleGroundY = Math.max(endGroundY, this.getGroundHeight(wx, wz));
+        wy = sampleGroundY + localH;
 
         const radDirX = dx * cosA + sx * sinA;
         const radDirZ = dz * cosA + sz * sinA;
@@ -679,24 +654,25 @@ export class AimArrowSystem {
         posArr[pOff + 1] = wy;
         posArr[pOff + 2] = wz;
       } else {
-        // PART 3: Inner 3D Beveled Bullseye Ring (Centered at Landing Point L)
+        // PART 3: Elevated Center Bullseye Beacon Ring (+0.57m top crown at Landing Center L)
         const prof = RING_PROFILE[colIdx] || RING_PROFILE[2];
         const ang = u * TAU;
         const cosA = Math.cos(ang);
         const sinA = Math.sin(ang);
 
-        const baseRingR = outerRingRadius * 0.46;
-        const ringHalfThick = isFire ? 0.12 : 0.10;
+        const baseRingR = outerRingRadius * 0.32;
+        const ringHalfThick = 0.075;
         const centerAlong = L;
 
         const rActual = baseRingR + latOrR * ringHalfThick;
         alongM = centerAlong + cosA * rActual;
         latM = sinA * rActual;
-        localH = prof.h * 0.92;
+        localH = prof.h * 1.04;
 
         const wx = ox + dx * alongM + sx * latM;
         const wz = oz + dz * alongM + sz * latM;
-        wy = this.getGroundHeight(wx, wz) + yBaseOffset + localH;
+        const sampleGroundY = Math.max(endGroundY, this.getGroundHeight(wx, wz));
+        wy = sampleGroundY + localH;
 
         const radDirX = dx * cosA + sx * sinA;
         const radDirZ = dz * cosA + sz * sinA;

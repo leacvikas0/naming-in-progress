@@ -330,8 +330,9 @@ export function createCampaignLoop({
     site3_wall: -1,
     apex_finale: -1,
   };
-  let survivalWaveTimer = 44.0;
+  let survivalWaveTimer = 6.0;
   let survivalWaveSeed = 0;
+  let roadVanguardSpawned = false;
   let manualUnlockedStage = null;
   let manualStonesSolvedMask = null;
 
@@ -1481,7 +1482,12 @@ export function createCampaignLoop({
     }
 
     addResonance(spell.resonanceGain);
-    if (!combatHeroes.Knight.powerSwordActive && !combatHeroes.Knight.ultActive) {
+    if (
+      !combatHeroes.Knight.powerSwordActive &&
+      !combatHeroes.Knight.ultActive &&
+      !options.fromWingmanAi &&
+      combatHeroes.Knight.breathingStyle === 'none'
+    ) {
       setKnightBreathing(
         combatHeroes.Knight.sunSwornBreathing ? 'eclipse' : spell.infusion,
         Math.max(KNIGHT_POWER_SWORD_DURATION, combatHeroes.Knight.sunSwornTimer)
@@ -1634,8 +1640,10 @@ export function createCampaignLoop({
         }
         if (h.result?.detonation) {
           addResonance(DETONATIONS[h.result.detonation.id]?.resonanceGain || 18);
-          addHeroQEnergy('Knight', Q_ENERGY_CONFIG.detonationBonusBoth);
-          addHeroQEnergy('Mage', Q_ENERGY_CONFIG.detonationBonusBoth);
+          if ((h.result.detonation.tier ?? 2) >= 2) {
+            addHeroQEnergy('Knight', Q_ENERGY_CONFIG.detonationBonusBoth);
+            addHeroQEnergy('Mage', Q_ENERGY_CONFIG.detonationBonusBoth);
+          }
           if (vfxKit?.swordVfx?.triggerDetonation) {
             vfxKit.swordVfx.triggerDetonation(h.result.detonation.id, {
               x: h.result.detonation.x,
@@ -1768,8 +1776,10 @@ export function createCampaignLoop({
           awardKnightKillXp(h.enemy, h.result);
         }
         if (h.result?.detonation) {
-          addHeroQEnergy('Knight', Q_ENERGY_CONFIG.detonationBonusBoth);
-          addHeroQEnergy('Mage', Q_ENERGY_CONFIG.detonationBonusBoth);
+          if ((h.result.detonation.tier ?? 2) >= 2) {
+            addHeroQEnergy('Knight', Q_ENERGY_CONFIG.detonationBonusBoth);
+            addHeroQEnergy('Mage', Q_ENERGY_CONFIG.detonationBonusBoth);
+          }
           if (vfxKit?.swordVfx?.triggerDetonation) {
             vfxKit.swordVfx.triggerDetonation(h.result.detonation.id, {
               x: h.result.detonation.x,
@@ -1910,8 +1920,10 @@ export function createCampaignLoop({
         }
         if (h.result?.detonation) {
           addResonance(DETONATIONS[h.result.detonation.id]?.resonanceGain || 18);
-          addHeroQEnergy('Knight', Q_ENERGY_CONFIG.detonationBonusBoth);
-          addHeroQEnergy('Mage', Q_ENERGY_CONFIG.detonationBonusBoth);
+          if ((h.result.detonation.tier ?? 2) >= 2) {
+            addHeroQEnergy('Knight', Q_ENERGY_CONFIG.detonationBonusBoth);
+            addHeroQEnergy('Mage', Q_ENERGY_CONFIG.detonationBonusBoth);
+          }
           vfxKit?.swordVfx?.triggerDetonation?.(h.result.detonation.id, h.result.detonation);
           combatSfx?.playDetonation?.(h.result.detonation.id);
           onDetonation?.(h.result.detonation, h.enemy);
@@ -2068,16 +2080,16 @@ export function createCampaignLoop({
     if (enemyManager) {
       hits = enemyManager.applyAreaOrLineHit({
         origin: kPos,
-        radius: 6.5,
+        radius: 3.8,
         hitSpec: {
           source: 'knight_sky_lightning',
-          baseDmg: 75,
+          baseDmg: 22,
           infusion: styleId,
           knightLevel: combatHeroes.Knight.level,
           knightUltActive: true,
           ultDmgMult: KNIGHT_ULT_DMG_MULT,
           partnerSwordMult: combatHeroes.Knight.partnerSwordMult,
-          detonatesMark: true,
+          detonatesMark: false,
           attackerPos: kPos,
         },
       });
@@ -2497,6 +2509,35 @@ export function createCampaignLoop({
     return triggeredNow;
   }
 
+  function spawnRoadVanguardPack(centerPos = { x: 0, z: 102 }) {
+    if (!enemyManager) return [];
+    roadVanguardSpawned = true;
+    const cx = clamp(Number(centerPos?.x ?? 0), -3.5, 3.5);
+    const cz = clamp(Number(centerPos?.z ?? 102), 96.0, 104.0);
+    const vanguardSpecs = [
+      { archetype: 'skeleton_warrior', x: Number((cx - 2.4).toFixed(2)), z: Number(clamp(cz - 2.2, 96.0, 104.0).toFixed(2)) },
+      { archetype: 'skeleton_warrior', x: Number((cx + 2.4).toFixed(2)), z: Number(clamp(cz - 1.8, 96.0, 104.0).toFixed(2)) },
+      { archetype: 'skeleton_rogue', x: Number((cx - 3.2).toFixed(2)), z: Number(clamp(cz + 1.4, 96.0, 104.0).toFixed(2)) },
+      { archetype: 'orc_raider', x: Number((cx + 3.2).toFixed(2)), z: Number(clamp(cz + 1.8, 96.0, 104.0).toFixed(2)) },
+    ];
+    const spawned = [];
+    for (let i = 0; i < vanguardSpecs.length; i++) {
+      const e = enemyManager.spawnImmediateFromSpec?.(vanguardSpecs[i]);
+      if (e) spawned.push(e);
+    }
+    emitBanner(
+      'SOUTH ROAD VANGUARD PACK',
+      '4 Valley Hunters Block the Trail Ahead — Cut Through Together!',
+      'wave'
+    );
+    return spawned;
+  }
+
+  function startExpedition(centerPos = { x: 0, z: 102 }) {
+    survivalWaveTimer = 6.0;
+    return spawnRoadVanguardPack(centerPos);
+  }
+
   function triggerSurvivalWave(leaderPos) {
     if (!leaderPos || !enemyManager) return null;
     const mask = getStonesSolvedMask();
@@ -2514,9 +2555,21 @@ export function createCampaignLoop({
 
     let archetypes = [];
     if (Array.isArray(poolDef.pool) && poolDef.pool.length > 0) {
-      const count = poolDef.minCount || 4;
+      const minC = poolDef.minCount || 4;
+      const maxC = poolDef.maxCount || 7;
+      const count = minC + (survivalWaveSeed % Math.max(1, maxC - minC + 1));
+      let eliteAdded = 0;
+      const maxElites = poolDef.maxElites ?? 2;
       for (let i = 0; i < count; i++) {
-        archetypes.push(poolDef.pool[(survivalWaveSeed + i) % poolDef.pool.length]);
+        let pick = poolDef.pool[(survivalWaveSeed + i) % poolDef.pool.length];
+        if (pick === 'black_knight') {
+          if (eliteAdded >= maxElites) {
+            pick = poolDef.pool[0];
+          } else {
+            eliteAdded++;
+          }
+        }
+        archetypes.push(pick);
       }
     } else if (Array.isArray(poolDef) && poolDef.length > 0) {
       const comp = poolDef[survivalWaveSeed % poolDef.length];
@@ -2525,13 +2578,15 @@ export function createCampaignLoop({
     if (archetypes.length === 0) return null;
 
     survivalWaveSeed += 1;
-    survivalWaveTimer = 42.0 + (survivalWaveSeed % 3) * 4.5; // 42..51s
+    survivalWaveTimer = 22.0 + (survivalWaveSeed % 3) * 3.0; // 22..28s
 
+    const rMin = poolDef.spawnRadiusMin || 14.0;
+    const rMax = poolDef.spawnRadiusMax || 20.0;
     const spawns = archetypes.map((archetype, idx, arr) => {
       const angle = (idx / Math.max(1, arr.length)) * Math.PI * 2 + survivalWaveSeed * 0.85;
-      const dist = 19.0 + (idx % 3) * 2.5;
-      const sx = clamp(leaderPos.x + Math.cos(angle) * dist, -108, 108);
-      const sz = clamp(leaderPos.z + Math.sin(angle) * dist, -108, 108);
+      const dist = rMin + (idx % 3) * ((rMax - rMin) * 0.5);
+      const sx = clamp(leaderPos.x + Math.cos(angle) * dist, -148, 148);
+      const sz = clamp(leaderPos.z + Math.sin(angle) * dist, -148, 148);
       return {
         archetype,
         x: Number(sx.toFixed(2)),
@@ -2544,7 +2599,17 @@ export function createCampaignLoop({
       label: `Stage ${stageIdx} Valley Hunting Pack`,
       spawns,
     };
-    enemyManager.spawnWave?.(waveDef, currentActId);
+    if (
+      Array.isArray(enemyManager.activeEnemies) &&
+      enemyManager.activeEnemies.length > 0 &&
+      enemyManager.spawnImmediateFromSpec
+    ) {
+      for (let i = 0; i < spawns.length; i++) {
+        enemyManager.spawnImmediateFromSpec(spawns[i]);
+      }
+    } else {
+      enemyManager.spawnWave?.(waveDef, currentActId);
+    }
     emitBanner('VALLEY HUNTING PACK', waveDef.label, 'wave');
     return waveDef;
   }
@@ -3019,6 +3084,12 @@ export function createCampaignLoop({
     const leaderPos = knight || mage;
 
     if (openValleyMode && !indicatorsHiddenForShot && leaderPos) {
+      if (!roadVanguardSpawned && leaderPos.z > 65) {
+        spawnRoadVanguardPack({
+          x: clamp(leaderPos.x, -3.5, 3.5),
+          z: clamp(leaderPos.z - 22.0, 96.0, 104.0),
+        });
+      }
       checkStrongholdTriggers(leaderPos);
     } else if (act && leaderPos && !actTriggered && currentActId !== 'victory_dawn') {
       const dCenter = Math.hypot(
@@ -3099,7 +3170,7 @@ export function createCampaignLoop({
           !isControlLocked() &&
           currentActId !== 'victory_dawn' &&
           leaderPos &&
-          enemyManager.activeEnemies.length < 2 &&
+          enemyManager.activeEnemies.length < 3 &&
           enemyManager.spawnQueue.length === 0
         ) {
           const nearestHaven = selectNearestSafeHavenWaypoint(leaderPos);
@@ -3107,7 +3178,7 @@ export function createCampaignLoop({
             leaderPos.x - nearestHaven.x,
             leaderPos.z - nearestHaven.z
           );
-          if (distHaven > 16.0) {
+          if (distHaven > 8.5) {
             survivalWaveTimer -= dt;
             if (survivalWaveTimer <= 0) {
               triggerSurvivalWave(leaderPos);
@@ -3143,9 +3214,31 @@ export function createCampaignLoop({
       enemyManager.activeEnemies.length > 0 &&
       !isControlLocked()
     ) {
+      const stage2Unlocked =
+        getUnlockedStage() >= 2 ||
+        (getStonesSolvedMask() & 2) !== 0 ||
+        (!getProgressionState && manualUnlockedStage === null);
+      const stage1Unlocked =
+        stage2Unlocked || getUnlockedStage() >= 1 || (getStonesSolvedMask() & 1) !== 0;
+
       if (activeHeroId === 'Mage') {
         // Human is playing Mage -> AI Wingman is Knight!
         if (knight && !combatHeroes.Knight.downed && !knight.actionState) {
+          if (
+            stage1Unlocked &&
+            !combatHeroes.Knight.powerSwordActive &&
+            !combatHeroes.Knight.ultActive &&
+            combatHeroes.Knight.powerSwordCd <= 0.05
+          ) {
+            const mageElem = combatHeroes.Mage.selectedElement || 'ice';
+            combatHeroes.Knight.selectedElement = stage2Unlocked
+              ? mageElem === 'fire'
+                ? 'ice'
+                : 'fire'
+              : 'ice';
+            performPartnerSkill('Knight', heroStates);
+          }
+
           wingmanBoltTimer -= dt;
           if (wingmanBoltTimer <= 0) {
             const target = enemyManager.activeEnemies.find(
@@ -3153,16 +3246,23 @@ export function createCampaignLoop({
                 e &&
                 !e.dead &&
                 e.active &&
-                Math.hypot(e.x - knight.x, e.z - knight.z) <= 4.4
+                Math.hypot(e.x - knight.x, e.z - knight.z) <= 4.6
             );
             if (target) {
-              wingmanBoltTimer = 1.05;
-              const sIdx = wingmanBoltIdx % 3;
+              wingmanBoltTimer = 0.92;
+              const sIdx = wingmanBoltIdx % 4;
               wingmanBoltIdx++;
-              const swingClip = sIdx === 0 ? 'combo1' : sIdx === 1 ? 'combo2' : 'combo3';
+              const swingClip =
+                sIdx === 0
+                  ? 'combo1'
+                  : sIdx === 1
+                    ? 'combo2'
+                    : sIdx === 2
+                      ? 'combo3'
+                      : 'combo4';
               knight.yaw = Math.atan2(target.x - knight.x, target.z - knight.z);
               knight.actionState = swingClip;
-              knight.actionTimer = 0.52;
+              knight.actionTimer = 0.50;
               knight.char?.play?.(swingClip, {
                 loop: false,
                 fade: 0.07,
@@ -3184,11 +3284,21 @@ export function createCampaignLoop({
         wingmanCastTimer -= dt;
         wingmanBoltTimer -= dt;
 
-        if (wingmanCastTimer <= 0 && combatHeroes.Knight.breathingStyle === 'none') {
-          wingmanCastTimer = 9.0;
-          wingmanBoltTimer = 1.15;
-          const nextSpellId =
-            WINGMAN_SPELL_ROTATION[wingmanSpellIdx % WINGMAN_SPELL_ROTATION.length];
+        if (wingmanCastTimer <= 0) {
+          wingmanCastTimer = 6.5;
+          wingmanBoltTimer = 1.05;
+          let nextSpellId;
+          const kStyle = combatHeroes.Knight.breathingStyle;
+          if (stage2Unlocked && kStyle === 'rime') {
+            nextSpellId = 'cinder_fall';
+          } else if (stage2Unlocked && kStyle === 'solar') {
+            nextSpellId = 'frost_lance';
+          } else if (!stage2Unlocked) {
+            nextSpellId = wingmanSpellIdx % 2 === 0 ? 'frost_lance' : 'shatterlance';
+          } else {
+            nextSpellId =
+              WINGMAN_SPELL_ROTATION[wingmanSpellIdx % WINGMAN_SPELL_ROTATION.length];
+          }
           wingmanSpellIdx++;
           combatHeroes.Mage.spellCooldowns[nextSpellId] = 0;
           const target = enemyManager.activeEnemies[0];
@@ -3204,10 +3314,13 @@ export function createCampaignLoop({
               timeScale: 1.0,
               force: true,
             });
-            castSpell(nextSpellId, mage, yaw, knight);
+            castSpell(nextSpellId, mage, yaw, knight, {
+              fromWingmanAi: true,
+              ignoreCooldown: true,
+            });
           }
         } else if (wingmanBoltTimer <= 0) {
-          wingmanBoltTimer = 1.12;
+          wingmanBoltTimer = 1.05;
           const bIdx = wingmanBoltIdx % 3;
           wingmanBoltIdx++;
           const boltClip =
@@ -3325,7 +3438,7 @@ export function createCampaignLoop({
     }
   }
 
-  function resetCampaign() {
+  function resetCampaign(options = {}) {
     clearDivineBlessing();
     verdictSequence.active = false;
     verdictSequence.kind = null;
@@ -3391,10 +3504,14 @@ export function createCampaignLoop({
     for (const k of Object.keys(strongholdWaveIndex)) {
       strongholdWaveIndex[k] = -1;
     }
-    survivalWaveTimer = 44.0;
+    survivalWaveTimer = 6.0;
+    roadVanguardSpawned = false;
     enemyManager?.setGlobalEnemyTimeScale?.(1.0);
     heartResonance = 25;
     transitionToAct('act1_arena');
+    if (options?.spawnRoadVanguard) {
+      spawnRoadVanguardPack(options?.vanguardCenter || { x: 0, z: 102 });
+    }
   }
 
   function setIndicatorsHiddenForShot(hidden, heroStates = null) {
@@ -3470,6 +3587,9 @@ export function createCampaignLoop({
     get strongholdClearedMask() {
       return strongholdClearedMask;
     },
+    get survivalWaveTimer() {
+      return survivalWaveTimer;
+    },
     isControlLocked,
     isDivineBlessingActive,
     getDivineBlessingRemaining,
@@ -3489,6 +3609,8 @@ export function createCampaignLoop({
     transitionToAct,
     activatePierSanctuary,
     checkStrongholdTriggers,
+    spawnRoadVanguardPack,
+    startExpedition,
     triggerSurvivalWave,
     handlePlayerHit,
     applyCommuneVerdict,
