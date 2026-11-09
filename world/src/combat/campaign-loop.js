@@ -2160,18 +2160,18 @@ export function createCampaignLoop({
     const strikePos = { x: strikeX, y: strikeY, z: strikeZ };
 
     if (vfxKit?.cinderFall?.cast) {
-      // Primary meteor streaking down from 15.5m sky height
-      const dirAng = (meteorIndex % 2 === 0 ? 0.32 : -0.32) + Math.sin(meteorIndex * 1.7) * 0.18;
+      // Primary meteor streaking diagonally across the sky (~42 deg entry angle)
+      const dirAng = (meteorIndex % 2 === 0 ? 1.12 : -1.12) + Math.sin(meteorIndex * 1.7) * 0.16;
       const dirX = Math.sin(dirAng);
       const dirZ = Math.cos(dirAng);
       vfxKit.cinderFall.cast(
-        { x: strikeX - dirX * 4.2, y: strikeY, z: strikeZ - dirZ * 4.2 },
+        { x: strikeX - dirX * 11.2, y: strikeY, z: strikeZ - dirZ * 11.2 },
         { x: dirX, y: 0, z: dirZ },
         {
           fromSky: true,
-          skyHeight: 15.5,
-          range: 4.2,
-          distance: 4.2,
+          skyHeight: 13.5,
+          range: 11.2,
+          distance: 11.2,
           targetPos: strikePos,
           initialAge: 0.0,
           seed: 1.0 + meteorIndex * 0.73,
@@ -2184,14 +2184,17 @@ export function createCampaignLoop({
       const chaserX = center.x + Math.cos(chaserAng) * zoneRadius * chaserRad;
       const chaserZ = center.z + Math.sin(chaserAng) * zoneRadius * chaserRad;
       const chaserY = walkableHeightAt(chaserX, chaserZ);
+      const chaserDirAng = -dirAng * 0.85 + 0.18;
+      const chaserDirX = Math.sin(chaserDirAng);
+      const chaserDirZ = Math.cos(chaserDirAng);
       vfxKit.cinderFall.cast(
-        { x: chaserX - dirX * 4.0, y: chaserY, z: chaserZ - dirZ * 4.0 },
-        { x: dirX, y: 0, z: dirZ },
+        { x: chaserX - chaserDirX * 10.8, y: chaserY, z: chaserZ - chaserDirZ * 10.8 },
+        { x: chaserDirX, y: 0, z: chaserDirZ },
         {
           fromSky: true,
-          skyHeight: 16.5,
-          range: 4.0,
-          distance: 4.0,
+          skyHeight: 14.2,
+          range: 10.8,
+          distance: 10.8,
           targetPos: { x: chaserX, y: chaserY, z: chaserZ },
           initialAge: -0.09,
           seed: 2.3 + meteorIndex * 1.19,
