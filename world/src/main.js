@@ -674,7 +674,110 @@ let communeClient = null;
 /* 7. Stage 3–5 Co-Op Player System & Xiaomi Pad 7 Touch HUD                 */
 /* ------------------------------------------------------------------------- */
 
-const coopSystem = await createCoopPlayerSystem({
+let coopSystem = null;
+
+// Render the initial 3D valley & mount the pixelated dither title screen at 0ms BEFORE awaiting character GLBs
+// so there is never a separate pre-boot screen before the pixelated reveal!
+{
+  const initPose = getOpeningCameraPose(FLOW_STEPS.TITLE, walkableHeightAt);
+  camState.mode = 'vista';
+  camState.vistaPos.set(...initPose.pos);
+  camState.vistaTarget.set(...initPose.target);
+  camera.position.copy(camState.vistaPos);
+  camera.lookAt(camState.vistaTarget);
+  camera.fov = initPose.fov || 48;
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  sky.update(0);
+  terrainKit.update(
+    0.016,
+    0,
+    sky.activeLightDir,
+    sky.state.daylight,
+    sky.state.fogColor,
+    sky.state.worldTint,
+    camera,
+    activeProfile
+  );
+  village.update(0.016);
+  meadow.update(0, camState.vistaTarget, camera);
+  post.render(0.016);
+}
+
+appFlow = createAppFlow({
+  container: document.getElementById('hud'),
+  onCreateWorld: ({ roomPhrase, role }) => {
+    if (!coopSystem) return;
+    coopSystem.coopClient.setRoomCode(roomPhrase);
+    if (role && coopSystem.player.activeHeroId !== role) {
+      coopSystem.swapActiveHero();
+    }
+  },
+  onJoinWorld: ({ roomPhrase, role }) => {
+    if (!coopSystem) return;
+    coopSystem.coopClient.setRoomCode(roomPhrase);
+    if (role && coopSystem.player.activeHeroId !== role) {
+      coopSystem.swapActiveHero();
+    }
+  },
+  onRoleSelect: (nextRole) => {
+    if (!coopSystem) return;
+    coopSystem.coopClient.setPreferredRole(nextRole);
+    if (coopSystem.player.activeHeroId !== nextRole) {
+      coopSystem.swapActiveHero();
+    }
+  },
+  onToggleReady: (ready) => {
+    coopSystem?.coopClient?.setReady(ready);
+  },
+  onStartGame: (payload = {}) => {
+    if (!coopSystem) return;
+    const chosenRole =
+      payload?.localRole || payload?.role || appFlow?.getState?.()?.localRole;
+    if (chosenRole && coopSystem.player.activeHeroId !== chosenRole) {
+      coopSystem.swapActiveHero();
+    }
+    const activeRole = coopSystem.player.activeHeroId || 'Knight';
+    const pName = String(
+      payload?.playerName || appFlow?.getState?.()?.playerName || ''
+    ).trim();
+    const partnerName = String(
+      payload?.partnerName || appFlow?.getState?.()?.partnerName || ''
+    ).trim();
+    const kName =
+      payload?.knightName ||
+      (activeRole === 'Knight' ? pName || 'Knight' : partnerName || 'Knight');
+    const mName =
+      payload?.mageName ||
+      (activeRole === 'Mage' ? pName || 'Mage' : partnerName || 'Mage');
+    sculptedHud?.setPlayerNames?.({
+      Knight: kName,
+      Mage: mName,
+      knight: kName,
+      mage: mName,
+      primaryName: pName || activeRole,
+      partnerName: partnerName || (activeRole === 'Knight' ? 'Mage' : 'Knight'),
+      playerName: pName || activeRole,
+      localRole: activeRole,
+    });
+
+    coopSystem.coopClient.startExpedition();
+    coopSystem.teleportLeaderAndPartner(0.0, 124.0, Math.PI);
+    camState.mode = 'player';
+    camState.yaw = Math.PI;
+    camState.pitch = 0.14;
+    camState.dist = 8.4;
+    sculptedHud?.setVisible(true);
+    updateCamera();
+  },
+  onFlowStepChanged: (step) => {
+    if (coopSystem) {
+      applyOpeningFlowCameraAndPoses(step);
+    }
+  },
+});
+
+coopSystem = await createCoopPlayerSystem({
   scene,
   walkableHeightAt,
   resolveCollisions,
@@ -1023,45 +1126,6 @@ function applyOpeningFlowCameraAndPoses(step) {
   }
   updateCamera();
 }
-
-appFlow = createAppFlow({
-  container: document.getElementById('hud'),
-  onCreateWorld: ({ roomPhrase, role }) => {
-    coopSystem.coopClient.setRoomCode(roomPhrase);
-    if (role && coopSystem.player.activeHeroId !== role) {
-      coopSystem.swapActiveHero();
-    }
-  },
-  onJoinWorld: ({ roomPhrase, role }) => {
-    coopSystem.coopClient.setRoomCode(roomPhrase);
-    if (role && coopSystem.player.activeHeroId !== role) {
-      coopSystem.swapActiveHero();
-    }
-  },
-  onRoleSelect: (nextRole) => {
-    coopSystem.coopClient.setPreferredRole(nextRole);
-    if (coopSystem.player.activeHeroId !== nextRole) {
-      coopSystem.swapActiveHero();
-    }
-  },
-  onToggleReady: (ready) => {
-    coopSystem.coopClient.setReady(ready);
-  },
-  onStartGame: () => {
-    coopSystem.coopClient.startExpedition();
-    // Drop both heroes at the Southern Flower Field trailhead (0, 124) facing north toward Town!
-    coopSystem.teleportLeaderAndPartner(0.0, 124.0, Math.PI);
-    camState.mode = 'player';
-    camState.yaw = Math.PI;
-    camState.pitch = 0.14;
-    camState.dist = 8.4;
-    sculptedHud?.setVisible(true);
-    updateCamera();
-  },
-  onFlowStepChanged: (step) => {
-    applyOpeningFlowCameraAndPoses(step);
-  },
-});
 
 if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
   navigator.serviceWorker.register('/world/sw.js').catch(() => {});
