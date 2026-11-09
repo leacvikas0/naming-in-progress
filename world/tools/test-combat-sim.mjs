@@ -584,7 +584,7 @@ await check('10. Full 3-Act Valley Expedition & Pooled Enemy Manager (incl. tele
     resolveCollisions: (x, z) => ({ x, z, wrapped: false }),
   });
 
-  assert.equal(em.poolSlots.length, 6);
+  assert.equal(em.poolSlots.length, 10); // encounter design: per-role rigs incl. Golem + Necromancer
   assert.equal(em.telegraphRingMesh.visible, false, 'telegraphRingMesh must stay permanently hidden');
   em.spawnWave(ACT_DEFINITIONS.act1_arena.waves[1], 'act1_arena');
   assert.equal(em.visibleCount, 5);

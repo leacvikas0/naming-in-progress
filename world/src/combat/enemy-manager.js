@@ -33,7 +33,117 @@ import {
   ICE_DAMAGE_REDUCTION_CAP,
   ACT_HP_SCALE,
   BOSS_HP_SCALE,
+  ENEMY_ATTACKS,
+  PARRY_WINDOW,
+  STAGGER_SECONDS,
+  SHIELD_BASH_AFTER_BLOCKS,
+  ROGUE_DODGE_COOLDOWN,
+  MAGE_SUMMON_COOLDOWN,
+  NECRO_WARD_SECONDS,
+  CAPTAIN_RALLY_SECONDS,
+  CAPTAIN_RALLY_SPEED_MULT,
+  MINION_REASSEMBLE_SECONDS,
+  BOSS_DOWN_WINDOW,
+  BOSS_P3_SPEED,
+  attackTimeline,
+  advanceAttackClip,
+  isParryTiming,
+  isInAttackArc,
+  initPoise,
+  tickPoise,
+  resolvePreHit,
+  resolvePostHit,
+  canStartWindup,
+  recordWindup,
+  strideTimeScale,
+  bossPhaseFor,
+  selectBossAttack,
+  tickBonePile,
+  isPileFinisher,
+  selectHuntTarget,
 } from './combat-balance.js';
+
+// Native clip lengths (KayKit 1.1) used when a rig/mocked kit cannot report durations.
+const CLIP_FALLBACK_SECONDS = {
+  Skeletons_Spawn_Ground: 3.567,
+  Skeletons_Death: 2.0,
+  Skeletons_Death_Resurrect: 2.7,
+  Skeletons_Awaken_Floor: 2.3,
+  Skeletons_Awaken_Standing: 1.0,
+  Skeletons_Taunt: 1.033,
+  Skeletons_Taunt_Longer: 3.0,
+  Ranged_Magic_Summon: 4.3,
+  Ranged_Magic_Raise: 2.1,
+  Flexing: 4.3,
+  Death_A: 1.667,
+  Dodge_Left: 0.4,
+  Dodge_Right: 0.4,
+  Dodge_Backward: 0.4,
+};
+
+/** Plays a native clip, falling back to a semantic key when the rig lacks it (e.g. Rig_Large). */
+function safePlay(char, clip, opts, fallback = null) {
+  const has = !char.resolveClipName || char.resolveClipName(clip);
+  try {
+    if (has) return char.play(clip, opts) || null;
+  } catch (_) {
+    /* fall through to the semantic fallback */
+  }
+  if (!fallback) return null;
+  try {
+    return char.play(fallback, opts) || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function clipSeconds(char, clip) {
+  return char.getClipDuration?.(clip) || CLIP_FALLBACK_SECONDS[clip] || 1.0;
+}
+
+// Opaque crimson petal-crack ground decal for AREA attacks only (no alpha, no fog, discard cutout).
+function createPetalCrackDecal() {
+  const mat = new THREE.ShaderMaterial({
+    transparent: false,
+    depthWrite: true,
+    fog: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+    uniforms: { uProgress: { value: 0 } },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */ `
+      uniform float uProgress;
+      varying vec2 vUv;
+      void main() {
+        vec2 p = vUv * 2.0 - 1.0;
+        float r = length(p);
+        float a = atan(p.y, p.x);
+        float petalR = 0.8 + 0.2 * cos(a * 6.0);
+        float edge = r / petalR;
+        bool outline = edge > 0.93 && edge < 1.0;
+        float crackW = 0.07 + 0.06 * (1.0 - r);
+        float crack = abs(sin(a * 4.5 + sin(r * 11.0) * 0.55));
+        bool cracks = crack < crackW && edge < uProgress;
+        float ring = abs(edge - uProgress * 0.9);
+        bool front = ring < 0.025 && uProgress < 0.98;
+        if (!(outline || cracks || front)) discard;
+        vec3 deep = vec3(0.36, 0.02, 0.06);
+        vec3 hot = vec3(0.98, 0.16, 0.22);
+        vec3 col = outline ? mix(deep, hot, uProgress * 0.6) : mix(hot, vec3(1.0, 0.55, 0.45), step(0.98, uProgress));
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.name = 'enemyAreaPetalCrackDecal';
+  mesh.renderOrder = 2;
+  mesh.visible = false;
+  mesh.frustumCulled = false;
+  return mesh;
+}
 
 export const BOSS_SOVEREIGN_CELL_OVERRIDES = {
   r0c3: [42, 30, 52],
@@ -116,36 +226,32 @@ export async function createEnemyManager({
   telegraphRingMesh.visible = false;
   telegraphRingMesh.count = 0;
 
-  // Pre-allocate the fixed 6-slot Skeleton + Boss Sovereign pool in parallel
-  const [
-    skelWarrior0,
-    skelWarrior1,
-    skelMinion,
-    skelRogue,
-    skelMage,
-    bossSovereign,
-  ] = await Promise.all([
-    charKit.createCharacter('Skeleton_Warrior', { initialClip: 'idle' }),
-    charKit.createCharacter('Skeleton_Warrior', { initialClip: 'idle' }),
-    charKit.createCharacter('Skeleton_Minion', { initialClip: 'idle' }),
-    charKit.createCharacter('Skeleton_Rogue', { initialClip: 'idle' }),
-    charKit.createCharacter('Skeleton_Mage', { initialClip: 'idle' }),
-    charKit.createCharacter('Skeleton_Warrior', {
-      targetHeight: TARGET_CHARACTER_HEIGHT * 1.42,
-      outlineThickness: 0.015,
-      cellOverrides: BOSS_SOVEREIGN_CELL_OVERRIDES,
-      initialClip: 'idle',
-    }),
-  ]);
-
-  const rawPoolSpec = [
-    { slotIndex: 0, poolRole: 'Skeleton_Warrior', char: skelWarrior0, isBossSlot: false },
-    { slotIndex: 1, poolRole: 'Skeleton_Warrior', char: skelWarrior1, isBossSlot: false },
-    { slotIndex: 2, poolRole: 'Skeleton_Minion', char: skelMinion, isBossSlot: false },
-    { slotIndex: 3, poolRole: 'Skeleton_Rogue', char: skelRogue, isBossSlot: false },
-    { slotIndex: 4, poolRole: 'Skeleton_Mage', char: skelMage, isBossSlot: false },
-    { slotIndex: 5, poolRole: 'Boss_Sovereign', char: bossSovereign, isBossSlot: true },
+  // Fixed pool (indices 0/4/5 are relied on by shot poses: Warrior, Mage, boss). Hidden slots
+  // cost no draw calls or mixer updates; MAX_CONCURRENT_ENEMIES caps what is visible.
+  const POOL_LAYOUT = [
+    ['Skeleton_Warrior', false],
+    ['Skeleton_Warrior', false],
+    ['Skeleton_Minion', false],
+    ['Skeleton_Rogue', false],
+    ['Skeleton_Mage', false],
+    ['Skeleton_Golem', true],
+    ['Skeleton_Minion', false],
+    ['Skeleton_Minion', false],
+    ['Skeleton_Rogue', false],
+    ['Necromancer', false],
   ];
+  const pooledChars = await Promise.all(
+    POOL_LAYOUT.map(([charId, isBoss]) =>
+      charKit.createCharacter(charId, isBoss ? { outlineThickness: 0.015, initialClip: 'idle' } : { initialClip: 'idle' })
+    )
+  );
+
+  const rawPoolSpec = POOL_LAYOUT.map(([charId, isBoss], i) => ({
+    slotIndex: i,
+    poolRole: charId,
+    char: pooledChars[i],
+    isBossSlot: isBoss,
+  }));
 
   const poolSlots = rawPoolSpec.map((item) => {
     enableCharacterFrustumCulling(item.char, item.isBossSlot ? 4.8 : 3.4);
@@ -185,23 +291,22 @@ export async function createEnemyManager({
     if (activeVisible >= MAX_CONCURRENT_ENEMIES) return null;
 
     if (archetypeSpec.isBoss) {
-      const bossSlot = poolSlots[5];
-      if (!bossSlot.busy) return bossSlot;
+      const bossSlot = poolSlots.find((s) => s.isBossSlot);
+      return bossSlot && !bossSlot.busy ? bossSlot : null;
     }
 
-    for (let i = 0; i < 5; i++) {
+    let roleExists = false;
+    for (let i = 0; i < poolSlots.length; i++) {
       const s = poolSlots[i];
-      if (!s.busy && s.poolRole === archetypeSpec.poolRole) {
-        return s;
-      }
+      if (s.isBossSlot || s.poolRole !== archetypeSpec.poolRole) continue;
+      roleExists = true;
+      if (!s.busy) return s;
     }
-
-    for (let i = 0; i < 5; i++) {
-      if (!poolSlots[i].busy) {
-        return poolSlots[i];
-      }
+    // Wait for a matching rig rather than wearing the wrong model; only fall back if none exists.
+    if (roleExists) return null;
+    for (let i = 0; i < poolSlots.length; i++) {
+      if (!poolSlots[i].busy && !poolSlots[i].isBossSlot) return poolSlots[i];
     }
-
     return null;
   }
 
@@ -295,7 +400,20 @@ export async function createEnemyManager({
     slot.char.group.rotation.y = initialYaw;
     slot.char.group.visible = !frozenShotId;
     slot.char.mixer.timeScale = 1.0;
-    slot.char.play('spawn', { loop: false, fade: 0.08, timeScale: 1.35, force: true });
+    let spawnAnimTimer = 0.48;
+    if (spawnSpec.dormant) {
+      const pose = spawnSpec.dormant === 'standing' ? 'Skeletons_Inactive_Standing_Pose' : 'Skeletons_Inactive_Floor_Pose';
+      safePlay(slot.char, pose, { loop: true, fade: 0, force: true }, 'idle');
+      spawnAnimTimer = 0;
+    } else if (arch.isBoss) {
+      safePlay(slot.char, 'Flexing', { loop: false, fade: 0.08, timeScale: 1.6, force: true }, 'spawn');
+      spawnAnimTimer = 1.6;
+    } else if (arch.reassembles) {
+      safePlay(slot.char, 'Skeletons_Spawn_Ground', { loop: false, fade: 0.05, timeScale: 2.0, force: true }, 'spawn');
+      spawnAnimTimer = 1.5;
+    } else {
+      slot.char.play('spawn', { loop: false, fade: 0.08, timeScale: 1.35, force: true });
+    }
 
     const orbitSign = (nextInstanceSeq % 2 === 0 ? 1 : -1) * (0.75 + (nextInstanceSeq % 3) * 0.18);
 
@@ -350,7 +468,7 @@ export async function createEnemyManager({
       iceSlowFactor: 0,
       burnTimer: 0,
       burnDps: 0,
-      spawnAnimTimer: 0.48,
+      spawnAnimTimer,
       attackAnimTimer: 0,
       aiState: 'orbit',
       windupTimer: 0,
@@ -366,7 +484,51 @@ export async function createEnemyManager({
         : 3.3 + (slot.slotIndex % 3) * 0.55,
       distToTarget: 10.0,
       targetHeroId: 'Knight',
+      // Encounter-design state (see combat-balance.js §4b)
+      rig: slot.isBossSlot ? 'large' : 'medium',
+      attacks: arch.attacks || ['warrior_chop'],
+      reassembles: Boolean(arch.reassembles),
+      shieldWall: Boolean(arch.shieldWall),
+      hunter: Boolean(arch.hunter),
+      summons: Boolean(arch.summons),
+      wards: Boolean(arch.wards),
+      rallies: Boolean(arch.rallies),
+      attack: null,
+      lastAttackId: null,
+      stateTimer: 0,
+      shieldUp: false,
+      shieldDownTimer: 0,
+      blockedHits: 0,
+      counterReady: false,
+      dodgeCooldown: 0,
+      summonCooldown: 5.0 + (slot.slotIndex % 3),
+      eruptionCooldown: 4.0,
+      wardCooldown: 4.0,
+      rallyCooldown: 6.0,
+      rallyTimer: 0,
+      tauntCooldown: 2.0 + (slot.slotIndex % 4),
+      invulnTimer: 0,
+      isPile: false,
+      pileTimer: 0,
+      behaviour: 'strafe',
+      behaviourTimer: 0.6 + (slot.slotIndex % 3) * 0.4,
+      phase: 'p1',
+      downTimer: 0,
+      rising: false,
+      lastContact: null,
+      wakeRadius: spawnSpec.wakeRadius ?? 6.5,
+      tokenIneligible: false,
     };
+    initPoise(enemy, arch.poise || 0);
+    if (spawnSpec.dormant) {
+      enemy.aiState = 'dormant';
+      enemy.dormantKind = spawnSpec.dormant;
+      enemy.tokenIneligible = true;
+    } else if (spawnAnimTimer > 0.6) {
+      enemy.aiState = 'awakening';
+      enemy.stateTimer = spawnAnimTimer;
+      enemy.tokenIneligible = true;
+    }
 
     slot.busy = true;
     slot.enemy = enemy;
@@ -387,9 +549,15 @@ export async function createEnemyManager({
     enemy.active = false;
     activeEnemies = activeEnemies.filter((e) => e !== enemy);
 
-    while (spawnQueue.length > 0 && activeEnemies.length < MAX_CONCURRENT_ENEMIES) {
-      const nextSpec = spawnQueue.shift();
-      spawnImmediateFromSpec(nextSpec);
+    // One pass over the queue: specs whose rig is still busy are re-queued, not retried forever.
+    const pending = spawnQueue;
+    spawnQueue = [];
+    for (let i = 0; i < pending.length; i++) {
+      if (activeEnemies.length >= MAX_CONCURRENT_ENEMIES) {
+        spawnQueue.push(pending[i]);
+      } else {
+        spawnImmediateFromSpec(pending[i]);
+      }
     }
   }
 
@@ -418,15 +586,35 @@ export async function createEnemyManager({
     return activeEnemies;
   }
 
-  function playEnemyLocomotion(enemy, clipKey) {
+  const LOCO_FALLBACK = {
+    Skeletons_Walking: 'walk',
+    Walking_A: 'walk',
+    Running_A: 'run',
+    Running_Strafe_Left: 'walk',
+    Running_Strafe_Right: 'walk',
+    Walking_Backwards: 'walk',
+    Melee_Blocking: 'idle',
+  };
+
+  /**
+   * Looping locomotion with stride matching: the clip's timeScale follows the enemy's actual
+   * ground speed / the clip's native stride so feet don't slide. Accepts semantic keys too.
+   */
+  function playEnemyLocomotion(enemy, clipKey, groundSpeed = null) {
     if (enemy.dead || enemy.spawnAnimTimer > 0 || enemy.attackAnimTimer > 0) return;
+    const mixerScale = Math.max(0.05, enemy.char.mixer.timeScale || 1.0);
+    const scale = enemy.group.scale.x || 1.0;
+    const clipName = enemy.char.resolveClipName?.(clipKey) || clipKey;
+    const ts =
+      groundSpeed === null
+        ? 1.0
+        : strideTimeScale(clipName, groundSpeed, { rig: enemy.rig, scale }) / mixerScale;
+    if (enemy.char.anim.currentKey === clipKey && enemy.locoAction) {
+      enemy.locoAction.setEffectiveTimeScale?.(ts);
+      return;
+    }
     if (enemy.char.anim.currentKey === clipKey) return;
-    const slowMult = 1.0 - clamp(enemy.iceSlowFactor || 0, 0, 0.75);
-    enemy.char.play(clipKey, {
-      loop: true,
-      fade: 0.15,
-      timeScale: (enemy.isBoss ? 0.92 : 1.0) * slowMult,
-    });
+    enemy.locoAction = safePlay(enemy.char, clipKey, { loop: true, fade: 0.18, timeScale: ts }, LOCO_FALLBACK[clipKey] || 'idle');
   }
 
   function actHpScale(arch) {
@@ -451,10 +639,57 @@ export async function createEnemyManager({
     }
   }
 
+  function noDamageResult(extra = {}) {
+    return { damageDealt: 0, killed: false, detonation: null, aegisRaised: false, aegisBroken: false, ...extra };
+  }
+
   function applyHitToEnemy(enemy, hitSpec = {}) {
     if (!enemy || enemy.dead || !enemy.active) return null;
 
+    if (enemy.aiState === 'dormant') wakeEnemy(enemy);
+
+    // Bone piles ignore physical hits; detonations / Mage spells finish them for good.
+    if (enemy.isPile) {
+      if (!isPileFinisher(hitSpec, null)) return noDamageResult({ pileImmune: true });
+      finishPile(enemy, hitSpec);
+      return noDamageResult({ killed: true, finishedPile: true });
+    }
+
+    const pre = resolvePreHit(enemy, hitSpec);
+    if (pre === 'dodge') {
+      enemyDodge(enemy, hitSpec.attackerPos, 'side');
+      return noDamageResult({ dodged: true });
+    }
+    if (pre === 'blocked') {
+      enemy.blockedHits++;
+      if (enemy.blockedHits >= SHIELD_BASH_AFTER_BLOCKS) {
+        enemy.blockedHits = 0;
+        enemy.counterReady = true;
+      }
+      enemy.hitstopTimer = Math.max(enemy.hitstopTimer, 0.03);
+      enemy.attackAnimTimer = 0.3;
+      safePlay(enemy.char, 'Melee_Block_Hit', { loop: false, fade: 0.05, force: true }, 'hit_A');
+      enemy.char.mixer.timeScale = 0.05;
+      return noDamageResult({ blocked: true });
+    }
+    if (pre === 'pierce' || pre === 'guardbreak') {
+      enemy.shieldUp = false;
+      enemy.shieldDownTimer = 3.0;
+    }
+
+    const hpBefore = enemy.hp;
     const result = applyHitAndResolveDetonation(enemy, hitSpec, activeEnemies);
+    if (enemy.invulnTimer > 0) {
+      if (result.detonation) {
+        enemy.invulnTimer = 0; // Necromancer wards break on detonation
+      } else {
+        enemy.hp = hpBefore;
+        enemy.dead = false;
+        result.damageDealt = 0;
+        result.killed = false;
+        result.warded = true;
+      }
+    }
 
     const hitstopSec = result.detonation ? 0.07 : 0.035;
     enemy.hitstopTimer = Math.max(enemy.hitstopTimer, hitstopSec);
@@ -488,16 +723,39 @@ export async function createEnemyManager({
       }
     }
 
+    if (enemy.isBoss && result.aegisRaised) bossAegisRoar(enemy);
+    if (enemy.isBoss && result.aegisBroken && !enemy.aegisActive) bossDownWindow(enemy);
+
     for (let i = 0; i < activeEnemies.length; i++) {
       const e = activeEnemies[i];
-      if ((e.dead || e.hp <= 0) && e.deathTimer <= 0) {
-        markEnemyDeadAndNotify(e, result);
+      if ((e.dead || e.hp <= 0) && e.deathTimer <= 0 && !e.isPile) {
+        const finisher = e === enemy ? isPileFinisher(hitSpec, result) : Boolean(result.detonation);
+        if (e.reassembles && !finisher) {
+          collapseToPile(e);
+        } else {
+          markEnemyDeadAndNotify(e, result);
+        }
       }
     }
 
-    if (!enemy.dead && enemy.aiState !== 'windup' && result.damageDealt > 0) {
-      enemy.attackAnimTimer = 0.32;
-      enemy.char.play('hit_A', { loop: false, fade: 0.06, force: true });
+    if (!enemy.dead && !enemy.isPile && result.damageDealt > 0) {
+      let reaction = resolvePostHit(enemy, hitSpec, result.damageDealt);
+      if (pre === 'guardbreak') reaction = 'stagger';
+      if (enemy.aiState === 'down' || enemy.aiState === 'roar') reaction = 'none';
+      if (reaction === 'interrupt' || reaction === 'stagger') {
+        const secs =
+          reaction === 'interrupt' && !enemy.isElite && !enemy.isBoss
+            ? STAGGER_SECONDS.trash
+            : enemy.isBoss
+              ? STAGGER_SECONDS.boss
+              : enemy.isElite
+                ? STAGGER_SECONDS.elite
+                : STAGGER_SECONDS.trash;
+        enterStagger(enemy, secs, (enemy.slotIndex + Math.round(enemy.hp)) % 2 ? 'Hit_B' : 'Hit_A');
+      } else if (reaction === 'flinch' && enemy.aiState === 'orbit') {
+        enemy.attackAnimTimer = 0.32;
+        safePlay(enemy.char, enemy.slotIndex % 2 ? 'Hit_B' : 'Hit_A', { loop: false, fade: 0.06, force: true }, 'hit_A');
+      }
     }
 
     if (onEnemyDamaged && result.damageDealt > 0) {
@@ -591,9 +849,615 @@ export async function createEnemyManager({
     return { triggered: false };
   }
 
+  /* ----------------------------------------------------------------------- */
+  /* Encounter behaviours (2026-11-09 combat encounter design)                */
+  /* ----------------------------------------------------------------------- */
+  const TOKENLESS_STATES = new Set(['dormant', 'awakening', 'pile', 'stagger', 'down', 'roar', 'cast']);
+  const STANDOFF_BEHAVIOURS = ['strafe', 'backoff', 'strafe', 'flank', 'taunt'];
+  let simTime = 0;
+  let rngState = 0x2f6b1d;
+  const windupLog = [];
+  const knightBlock = { active: false, startAt: -99 };
+  let onParryHandler = null;
+  let onWindupHandler = null;
+  const decals = [];
+  for (let i = 0; i < 4; i++) {
+    const mesh = createPetalCrackDecal();
+    rootGroup.add(mesh);
+    decals.push({ mesh, owner: null, ttl: 0 });
+  }
+
+  function rand() {
+    rngState = (Math.imul(rngState, 1664525) + 1013904223) >>> 0;
+    return rngState / 4294967296;
+  }
+
+  function acquireDecal(x, z, radius) {
+    const d = decals.find((it) => !it.owner && it.ttl <= 0);
+    if (!d) return null;
+    d.owner = true;
+    d.mesh.position.set(x, walkableHeightAt(x, z) + 0.035, z);
+    d.mesh.scale.set(radius, radius, 1);
+    d.mesh.material.uniforms.uProgress.value = 0;
+    d.mesh.visible = true;
+    return d;
+  }
+
+  function releaseDecal(d) {
+    d.owner = null;
+    d.ttl = 0;
+    d.mesh.visible = false;
+  }
+
+  function cancelAttack(e) {
+    if (e.attack?.decal) releaseDecal(e.attack.decal);
+    e.attack = null;
+    e.windupTimer = 0;
+    e.telegraphProgress = 0;
+  }
+
+  function enterStagger(e, secs, clip = 'Hit_A') {
+    cancelAttack(e);
+    e.aiState = 'stagger';
+    e.stateTimer = secs;
+    e.attackAnimTimer = 0;
+    e.shieldUp = false;
+    e.hasAttackToken = false;
+    safePlay(e.char, clip, { loop: false, fade: 0.05, force: true }, 'hit_A');
+  }
+
+  function wakeEnemy(e) {
+    if (e.aiState !== 'dormant') return;
+    const clip = e.dormantKind === 'standing' ? 'Skeletons_Awaken_Standing' : 'Skeletons_Awaken_Floor';
+    safePlay(e.char, clip, { loop: false, fade: 0.1, timeScale: 1.25, force: true }, 'spawn');
+    e.aiState = 'awakening';
+    e.stateTimer = clipSeconds(e.char, clip) / 1.25;
+    e.cooldownTimer = Math.max(e.cooldownTimer, 0.6);
+    // One sleeper waking rouses its neighbours so the ambush springs together.
+    for (let i = 0; i < activeEnemies.length; i++) {
+      const o = activeEnemies[i];
+      if (o !== e && o.aiState === 'dormant' && Math.hypot(o.x - e.x, o.z - e.z) < 5.5) wakeEnemy(o);
+    }
+  }
+
+  function collapseToPile(e) {
+    cancelAttack(e);
+    e.dead = false;
+    e.hp = 1;
+    e.isPile = true;
+    e.aiState = 'pile';
+    e.pileTimer = MINION_REASSEMBLE_SECONDS;
+    e.pileFrozen = false;
+    e.hasAttackToken = false;
+    e.tokenIneligible = true;
+    e.mark = null;
+    e.burnTimer = 0;
+    safePlay(e.char, 'Skeletons_Death', { loop: false, fade: 0.08, force: true }, 'downed');
+  }
+
+  function finishPile(e, hitSpec = {}) {
+    e.isPile = false;
+    e.hp = 0;
+    e.dead = true;
+    e.pileFrozen = hitSpec.spellId === 'frost_lance';
+    e.hasAttackToken = false;
+    e.aiState = 'dead';
+    // Frozen piles linger a moment as ice-locked bones; Cinder Fall / detonations scatter them.
+    e.deathTimer = e.pileFrozen ? 1.2 : 0.45;
+    if (onEnemyKilled && !e.xpAwarded) {
+      e.xpAwarded = true;
+      onEnemyKilled(e, { killed: true, source: hitSpec.source, finishedPile: true });
+    }
+  }
+
+  function reassemble(e) {
+    e.isPile = false;
+    e.hp = Math.round(e.maxHp * 0.5);
+    e.aiState = 'awakening';
+    safePlay(e.char, 'Skeletons_Death_Resurrect', { loop: false, fade: 0.06, timeScale: 1.3, force: true }, 'spawn');
+    e.stateTimer = clipSeconds(e.char, 'Skeletons_Death_Resurrect') / 1.3;
+  }
+
+  function enemyDodge(e, fromPos, kind = 'side') {
+    let clip;
+    let sx;
+    let sz;
+    if (kind === 'back') {
+      clip = 'Dodge_Backward';
+      sx = -Math.sin(e.yaw);
+      sz = -Math.cos(e.yaw);
+    } else {
+      const left = rand() < 0.5;
+      clip = left ? 'Dodge_Left' : 'Dodge_Right';
+      // Character-left for a +Z-facing rig is +X rotated by yaw.
+      sx = Math.cos(e.yaw) * (left ? 1 : -1);
+      sz = -Math.sin(e.yaw) * (left ? 1 : -1);
+    }
+    e.vx = sx * 8.5;
+    e.vz = sz * 8.5;
+    e.dodgeCooldown = kind === 'back' ? 3.0 : ROGUE_DODGE_COOLDOWN;
+    e.attackAnimTimer = 0.4;
+    safePlay(e.char, clip, { loop: false, fade: 0.04, force: true }, 'dodge');
+  }
+
+  function parryEnemy(e) {
+    enterStagger(e, e.isBoss ? STAGGER_SECONDS.boss : STAGGER_SECONDS.parry, 'Hit_B');
+    e.hitstopTimer = Math.max(e.hitstopTimer, 0.09);
+    e.char.mixer.timeScale = 0.05;
+    e.lastContact = null;
+    e.parriedCount = (e.parriedCount || 0) + 1;
+    onParryHandler?.(e);
+  }
+
+  /**
+   * Knight block edge from the campaign loop. Raising the shield within PARRY_WINDOW after an
+   * enemy contact frame is a late parry (the pre-contact half is checked at the contact frame).
+   */
+  function notifyKnightBlock(active) {
+    const was = knightBlock.active;
+    knightBlock.active = Boolean(active);
+    if (!knightBlock.active || was) return 0;
+    knightBlock.startAt = simTime;
+    let n = 0;
+    for (let i = 0; i < activeEnemies.length; i++) {
+      const e = activeEnemies[i];
+      const c = e.lastContact;
+      if (!c || e.dead || c.heroId !== 'Knight' || !c.blockable) continue;
+      if (isParryTiming(simTime, c.t, PARRY_WINDOW)) {
+        parryEnemy(e);
+        n++;
+      }
+    }
+    return n;
+  }
+
+  function startCast(e, clip, castFrac, effect, timeScale = 1.0, fallback = 'cast_spell') {
+    cancelAttack(e);
+    const dur = clipSeconds(e.char, clip) / timeScale;
+    e.aiState = 'cast';
+    e.stateTimer = dur;
+    e.castAt = dur * (1 - castFrac);
+    e.castEffect = effect;
+    e.shieldUp = false;
+    safePlay(e.char, clip, { loop: false, fade: 0.1, force: true, timeScale }, fallback);
+  }
+
+  function aliveCount(pred) {
+    let n = 0;
+    for (let i = 0; i < activeEnemies.length; i++) {
+      const o = activeEnemies[i];
+      if (o.active && !o.dead && pred(o)) n++;
+    }
+    return n;
+  }
+
+  function freeSlotFor(role) {
+    return poolSlots.some((s) => !s.busy && s.poolRole === role);
+  }
+
+  function summonMinions(e) {
+    for (let k = 0; k < 2; k++) {
+      const a = e.yaw + (k ? 0.9 : -0.9);
+      spawnImmediateFromSpec({ archetype: 'minion', x: e.x + Math.sin(a) * 2.2, z: e.z + Math.cos(a) * 2.2 });
+    }
+  }
+
+  function bossAegisRoar(e) {
+    cancelAttack(e);
+    e.aiState = 'roar';
+    safePlay(e.char, 'Flexing', { loop: false, fade: 0.1, force: true, timeScale: 1.4 }, 'spawn');
+    e.stateTimer = clipSeconds(e.char, 'Flexing') / 1.4;
+    const adds = [
+      { archetype: 'necromancer', dx: 3.8, dz: -3.0 },
+      { archetype: 'minion', dx: -3.4, dz: 2.2 },
+      { archetype: 'minion', dx: 3.0, dz: 2.6 },
+    ];
+    for (const s of adds) spawnImmediateFromSpec({ archetype: s.archetype, x: e.x + s.dx, z: e.z + s.dz });
+  }
+
+  function bossDownWindow(e) {
+    cancelAttack(e);
+    e.aiState = 'down';
+    e.downTimer = BOSS_DOWN_WINDOW;
+    e.rising = false;
+    safePlay(e.char, 'Death_A', { loop: false, fade: 0.12, force: true }, 'downed');
+  }
+
+  function updateAttackAim(e, target) {
+    const a = e.attack;
+    const atk = a.atk;
+    a.aimX = target.x;
+    a.aimZ = target.z;
+    if (atk.area) {
+      if (atk.areaAtTarget) {
+        a.areaX = target.x;
+        a.areaZ = target.z;
+      } else {
+        const off = (atk.areaOffset || 0) * (e.group.scale.x || 1);
+        a.areaX = e.x + Math.sin(e.yaw) * off;
+        a.areaZ = e.z + Math.cos(e.yaw) * off;
+      }
+      e.telegraphX = a.areaX;
+      e.telegraphZ = a.areaZ;
+      if (a.decal) a.decal.mesh.position.set(a.areaX, walkableHeightAt(a.areaX, a.areaZ) + 0.035, a.areaZ);
+    } else {
+      e.telegraphX = atk.ranged ? target.x : e.x + Math.sin(e.yaw) * atk.range * 0.55;
+      e.telegraphZ = atk.ranged ? target.z : e.z + Math.cos(e.yaw) * atk.range * 0.55;
+    }
+  }
+
+  function startAttack(e, atkId, target) {
+    const atk = ENEMY_ATTACKS[atkId];
+    if (!atk) return false;
+    const speed = e.isBoss && e.phase === 'p3' ? BOSS_P3_SPEED : 1.0;
+    const dur = clipSeconds(e.char, atk.clip);
+    const tl = attackTimeline(atk, dur, speed);
+    e.attack = { id: atkId, atk, dur, tl, clipT: 0, t: 0, contactIdx: 0, speed, recoverT: 0, decal: null, action: null, targetHeroId: target.id || e.targetHeroId };
+    e.aiState = 'windup';
+    e.windupTimer = 0;
+    e.windupDuration = tl.contactTimes[0];
+    e.telegraphProgress = 0.02;
+    e.telegraphRadius = atk.radius || atk.range;
+    e.shieldUp = false;
+    e.lastAttackId = atkId;
+    e.attackAnimTimer = 0;
+    e.attack.action = safePlay(
+      e.char,
+      atk.clip,
+      { loop: false, fade: 0.1, force: true, timeScale: (atk.windupSlow ?? 1) * speed },
+      e.isBoss ? 'charged' : 'combo1'
+    );
+    updateAttackAim(e, target);
+    if (atk.area && !atk.noDecal) e.attack.decal = acquireDecal(e.attack.areaX, e.attack.areaZ, atk.radius);
+    recordWindup(windupLog, e.attack.targetHeroId, simTime);
+    onWindupHandler?.(e, atkId, atk);
+    return true;
+  }
+
+  function resolveContact(e, idx, knight, mage) {
+    const a = e.attack;
+    const atk = a.atk;
+    if (a.decal) {
+      a.decal.mesh.material.uniforms.uProgress.value = 1;
+      a.decal.owner = null;
+      a.decal.ttl = 0.3;
+      a.decal = null;
+    }
+    const heroes = [knight, mage];
+    for (let i = 0; i < heroes.length; i++) {
+      const h = heroes[i];
+      if (!h || h.downed || (h.iframeTimer || 0) > 0) continue;
+      const hid = h.id || (i === 0 ? 'Knight' : 'Mage');
+      let hit;
+      if (atk.area) hit = Math.hypot(h.x - a.areaX, h.z - a.areaZ) <= atk.radius + 0.35;
+      else if (atk.ranged) hit = hid === a.targetHeroId && Math.hypot(h.x - a.aimX, h.z - a.aimZ) <= atk.aimRadius;
+      else hit = isInAttackArc(e, e.yaw, h, atk.range * (e.group.scale.x || 1) + 0.35, atk.arcDeg);
+      if (!hit) continue;
+      const blockable = atk.blockable !== false;
+      if (hid === 'Knight' && blockable && knightBlock.active && isParryTiming(knightBlock.startAt, simTime)) {
+        parryEnemy(e);
+        return;
+      }
+      e.lastContact = { heroId: hid, t: simTime, blockable };
+      if (onPlayerHit) {
+        const dmgReduction = clamp(e.iceSlowFactor || 0, 0, ICE_DAMAGE_REDUCTION_CAP);
+        const dmg = Math.max(1, Math.round(atk.dmg * (1.0 - dmgReduction)));
+        // Read by campaign-loop handlePlayerHit (unblockable Captain chop etc.).
+        e.currentHit = { attackId: a.id, contactIdx: idx, unblockable: !blockable, area: Boolean(atk.area) };
+        onPlayerHit(h, e, dmg);
+        e.currentHit = null;
+      }
+    }
+  }
+
+  function tickAttack(e, dt, target, knight, mage) {
+    const a = e.attack;
+    const m = Math.max(0, e.char.mixer.timeScale ?? 1);
+    if (e.aiState === 'recover') {
+      a.recoverT -= dt * m;
+      if (a.recoverT <= 0) {
+        cancelAttack(e);
+        e.aiState = 'orbit';
+        e.cooldownTimer = e.attackCooldown * (0.8 + rand() * 0.4) * (e.isBoss && e.phase === 'p3' ? 0.7 : 1.0);
+      }
+      return;
+    }
+    const r = advanceAttackClip(a.atk, a.dur, a.clipT, dt * m, a.speed);
+    a.clipT = r.clipT;
+    a.t += dt * m;
+    a.action?.setEffectiveTimeScale?.(r.timeScale);
+    e.windupTimer = a.t;
+    e.telegraphProgress = clamp(a.t / Math.max(0.01, a.tl.contactTimes[0]), 0, 1);
+    if (a.contactIdx === 0 && a.clipT < a.tl.slowEndClip && target) updateAttackAim(e, target);
+    if (a.decal) a.decal.mesh.material.uniforms.uProgress.value = e.telegraphProgress;
+    if (a.atk.lunge && a.contactIdx === 0 && target && a.clipT >= a.tl.slowEndClip - 0.25) {
+      const d = Math.hypot(target.x - e.x, target.z - e.z);
+      if (d > 1.3) {
+        const step = Math.min(d - 1.2, 7.5 * dt * m);
+        const np = applyEnemySpatialConstraints(e.x + ((target.x - e.x) / d) * step, e.z + ((target.z - e.z) / d) * step, e.radius);
+        e.x = np.x;
+        e.z = np.z;
+      }
+    }
+    for (let i = 0; i < r.crossed.length; i++) {
+      if (!e.attack) return; // parried
+      resolveContact(e, r.crossed[i], knight, mage);
+      if (e.attack) e.attack.contactIdx = r.crossed[i] + 1;
+    }
+    if (e.attack && r.finished) {
+      e.aiState = 'recover';
+      e.attack.recoverT = a.atk.recovery ?? 0.4;
+    }
+  }
+
+  function chooseAttack(e, dist) {
+    const sc = e.group.scale.x || 1;
+    if (e.isBoss) {
+      const id = selectBossAttack(e.phase, rand(), e.lastAttackId);
+      if (dist <= ENEMY_ATTACKS[id].range * 0.9) return id;
+      return dist <= ENEMY_ATTACKS.boss_2h.range * 0.9 ? 'boss_2h' : null;
+    }
+    const ok = e.attacks.filter((id) => {
+      const atk = ENEMY_ATTACKS[id];
+      if (!atk) return false;
+      if (atk.cooldown && e.eruptionCooldown > 0) return false;
+      if (atk.lunge) return dist >= atk.minDist && dist <= atk.lunge + atk.range;
+      const reach = atk.area && !atk.areaAtTarget ? atk.radius : atk.range;
+      return dist <= reach * sc * 0.92;
+    });
+    if (!ok.length) return null;
+    let id = ok.find((x) => ENEMY_ATTACKS[x].cooldown) || ok.find((x) => ENEMY_ATTACKS[x].lunge);
+    if (!id) {
+      const pool = ok.length > 1 ? ok.filter((x) => x !== e.lastAttackId) : ok;
+      id = pool[Math.floor(rand() * pool.length)];
+    }
+    if (ENEMY_ATTACKS[id].cooldown) e.eruptionCooldown = ENEMY_ATTACKS[id].cooldown;
+    return id;
+  }
+
+  function moveBy(e, vx, vz, dt) {
+    const np = applyEnemySpatialConstraints(e.x + vx * dt, e.z + vz * dt, e.radius);
+    const moved = Math.hypot(np.x - e.x, np.z - e.z) / Math.max(1e-4, dt);
+    e.x = np.x;
+    e.z = np.z;
+    e.y = walkableHeightAt(e.x, e.z);
+    return moved;
+  }
+
+  function preferredRange(e) {
+    if (e.isRanged) return e.attackRange * 0.8;
+    const atk = ENEMY_ATTACKS[e.attacks.find((id) => !ENEMY_ATTACKS[id]?.lunge) || e.attacks[0]];
+    return Math.max(1.4, (atk?.range || e.attackRange) * (e.group.scale.x || 1) * 0.8);
+  }
+
+  function approach(e, dt, dist, dirX, dirZ, mv) {
+    const want = preferredRange(e);
+    const walkClip = e.reassembles ? 'Skeletons_Walking' : 'Walking_A';
+    if (dist > want) {
+      let speed;
+      let clip;
+      if (e.shieldWall && e.shieldDownTimer <= 0 && dist < 7) {
+        e.shieldUp = true;
+        speed = 1.0 * mv;
+        clip = 'Melee_Blocking';
+      } else {
+        e.shieldUp = false;
+        const run = dist > 4.5;
+        speed = (run ? e.speed : 1.6) * mv;
+        clip = run ? 'Running_A' : walkClip;
+      }
+      const step = Math.min(dist - want * 0.95, speed * dt);
+      const moved = moveBy(e, dirX * (step / dt), dirZ * (step / dt), dt);
+      playEnemyLocomotion(e, clip, moved);
+    } else {
+      e.shieldUp = e.shieldWall && e.shieldDownTimer <= 0;
+      playEnemyLocomotion(e, e.shieldUp ? 'Melee_Blocking' : 'idle');
+    }
+  }
+
+  function standoff(e, dt, target, dist, dirX, dirZ, mv) {
+    e.shieldUp = e.shieldWall && e.shieldDownTimer <= 0;
+    if (e.isRanged && dist < 5.0) {
+      const moved = moveBy(e, -dirX * 1.4 * mv, -dirZ * 1.4 * mv, dt);
+      playEnemyLocomotion(e, 'Walking_Backwards', moved);
+      return;
+    }
+    if (e.shieldUp) {
+      // Shield wall holds formation: slow guarded advance to the standoff ring.
+      if (dist > e.standoffDist + 0.4) {
+        const moved = moveBy(e, dirX * 0.9 * mv, dirZ * 0.9 * mv, dt);
+        playEnemyLocomotion(e, 'Melee_Blocking', moved);
+      } else {
+        playEnemyLocomotion(e, 'Melee_Blocking');
+      }
+      return;
+    }
+    e.behaviourTimer -= dt;
+    if (e.behaviourTimer <= 0) {
+      e.behaviourIdx = (e.behaviourIdx || 0) + 1;
+      e.behaviour = STANDOFF_BEHAVIOURS[(e.behaviourIdx + e.slotIndex) % STANDOFF_BEHAVIOURS.length];
+      e.behaviourTimer = 1.2 + rand() * 1.4;
+      if (e.behaviour === 'strafe' && rand() < 0.35) e.orbitSpeed = -e.orbitSpeed;
+    }
+    if (e.behaviour === 'taunt') {
+      e.behaviour = 'strafe';
+      if (e.tauntCooldown <= 0 && !e.isBoss && dist > 2.5) {
+        e.tauntCooldown = 7.0;
+        startCast(e, 'Skeletons_Taunt', 0, null, 1.0, 'idle');
+        return;
+      }
+    }
+    if (e.behaviour === 'backoff') {
+      if (dist < e.standoffDist + 1.5) {
+        const moved = moveBy(e, -dirX * 1.3 * mv, -dirZ * 1.3 * mv, dt);
+        playEnemyLocomotion(e, 'Walking_Backwards', moved);
+      } else {
+        playEnemyLocomotion(e, 'idle');
+      }
+      return;
+    }
+    let sign = e.orbitSpeed >= 0 ? 1 : -1;
+    if (e.behaviour === 'flank' && Number.isFinite(target.yaw)) {
+      // Circle toward the hero's back.
+      const bx = target.x - Math.sin(target.yaw) * 2.0 - e.x;
+      const bz = target.z - Math.cos(target.yaw) * 2.0 - e.z;
+      sign = -dirZ * bx + dirX * bz >= 0 ? 1 : -1;
+    }
+    const radial = clamp((dist - e.standoffDist) * 1.5, -1.5, 1.5);
+    const tang = (e.behaviour === 'flank' ? 3.0 : 2.3) * mv;
+    const vx = dirX * radial * mv + -dirZ * sign * tang;
+    const vz = dirZ * radial * mv + dirX * sign * tang;
+    const moved = moveBy(e, vx, vz, dt);
+    if (e.isBoss) {
+      playEnemyLocomotion(e, 'Walking_A', moved);
+      return;
+    }
+    // Character-right for a +Z-facing rig is -X rotated by yaw.
+    const rightDot = vx * -Math.cos(e.yaw) + vz * Math.sin(e.yaw);
+    playEnemyLocomotion(e, rightDot >= 0 ? 'Running_Strafe_Right' : 'Running_Strafe_Left', moved);
+  }
+
+  function thinkOrbit(e, dt, target, dist, dirX, dirZ, slowMult) {
+    if (e.attack) cancelAttack(e);
+    const mv = slowMult * (e.rallyTimer > 0 ? CAPTAIN_RALLY_SPEED_MULT : 1.0);
+    if (e.isBoss) e.phase = bossPhaseFor(e.hp / Math.max(1, e.maxHp), e.aegisTriggered);
+    const heroId = target.id || 'Knight';
+
+    if (e.counterReady && dist <= ENEMY_ATTACKS.shield_bash.range + 0.6) {
+      e.counterReady = false;
+      startAttack(e, 'shield_bash', target);
+      return;
+    }
+    if (e.wards && e.dodgeCooldown <= 0 && dist < 3.2) {
+      enemyDodge(e, target, 'back');
+      return;
+    }
+    if (
+      e.summons &&
+      e.summonCooldown <= 0 &&
+      aliveCount((o) => o.archetype === 'minion') < 3 &&
+      freeSlotFor('Skeleton_Minion') &&
+      activeEnemies.length < MAX_CONCURRENT_ENEMIES
+    ) {
+      e.summonCooldown = MAGE_SUMMON_COOLDOWN;
+      startCast(e, 'Ranged_Magic_Summon', 0.5, () => summonMinions(e), 1.6);
+      return;
+    }
+    if (e.wards && e.wardCooldown <= 0) {
+      const ally = activeEnemies.find(
+        (o) => o.active && !o.dead && !o.isPile && (o.shieldWall || o.archetype === 'captain') && o.invulnTimer <= 0 && Math.hypot(o.x - e.x, o.z - e.z) < 12
+      );
+      if (ally) {
+        e.wardCooldown = 9.0;
+        startCast(e, 'Ranged_Magic_Raise', 0.55, () => {
+          if (ally.active && !ally.dead) ally.invulnTimer = NECRO_WARD_SECONDS;
+        }, 1.4);
+        return;
+      }
+    }
+    if (e.rallies && !e.hasAttackToken && e.rallyCooldown <= 0) {
+      e.rallyCooldown = 16.0;
+      startCast(e, 'Skeletons_Taunt_Longer', 0.5, () => {
+        for (let i = 0; i < activeEnemies.length; i++) {
+          const o = activeEnemies[i];
+          if (o.active && !o.dead && Math.hypot(o.x - e.x, o.z - e.z) < 12) o.rallyTimer = CAPTAIN_RALLY_SECONDS;
+        }
+      }, 1.5, 'idle');
+      return;
+    }
+
+    if (e.hasAttackToken) {
+      if (e.cooldownTimer <= 0) {
+        const atkId = chooseAttack(e, dist);
+        if (atkId && canStartWindup(windupLog, heroId, simTime)) {
+          startAttack(e, atkId, target);
+          return;
+        }
+      }
+      approach(e, dt, dist, dirX, dirZ, mv);
+      return;
+    }
+    standoff(e, dt, target, dist, dirX, dirZ, mv);
+  }
+
+  function thinkEnemy(e, dt, target, slowMult, knight, mage) {
+    const dx = target.x - e.x;
+    const dz = target.z - e.z;
+    const dist = Math.hypot(dx, dz) || 1;
+    const dirX = dx / dist;
+    const dirZ = dz / dist;
+
+    let turnRate = 10;
+    switch (e.aiState) {
+      case 'dormant': {
+        const near = [knight, mage].some((h) => h && !h.downed && Math.hypot(h.x - e.x, h.z - e.z) < e.wakeRadius);
+        if (near) wakeEnemy(e);
+        return;
+      }
+      case 'awakening':
+      case 'stagger':
+      case 'roar':
+        e.stateTimer -= dt;
+        if (e.stateTimer <= 0) e.aiState = 'orbit';
+        turnRate = e.aiState === 'roar' ? 2 : 0;
+        break;
+      case 'pile':
+        if (tickBonePile(e, dt) === 'reassemble') reassemble(e);
+        return;
+      case 'down':
+        e.downTimer -= dt;
+        if (!e.rising && e.downTimer <= 1.0) {
+          // Rise: Death_A reversed back to standing.
+          e.rising = true;
+          const dur = clipSeconds(e.char, 'Death_A');
+          safePlay(e.char, 'Death_A', { loop: false, fade: 0.05, force: true, timeScale: -dur / 1.0, startTime: dur - 0.001 }, 'idle');
+        }
+        if (e.downTimer <= 0) {
+          e.aiState = 'orbit';
+          e.cooldownTimer = 0.8;
+        }
+        return;
+      case 'cast':
+        e.stateTimer -= dt;
+        if (e.castEffect && e.stateTimer <= e.castAt) {
+          const fx = e.castEffect;
+          e.castEffect = null;
+          fx();
+        }
+        if (e.stateTimer <= 0) e.aiState = 'orbit';
+        turnRate = 4;
+        break;
+      case 'windup':
+      case 'recover':
+        if (!e.attack) {
+          e.aiState = 'orbit';
+          break;
+        }
+        turnRate = e.aiState === 'windup' && e.attack.contactIdx === 0 && e.attack.clipT < e.attack.tl.slowEndClip ? 5 : 0;
+        tickAttack(e, dt, target, knight, mage);
+        break;
+      default:
+        thinkOrbit(e, dt, target, dist, dirX, dirZ, slowMult);
+    }
+    if (turnRate > 0) {
+      e.yaw += shortestAngleDiff(Math.atan2(dx, dz), e.yaw) * Math.min(1, turnRate * dt * slowMult);
+    }
+  }
+
   function update(dt, heroStates = {}, camera = null) {
     telegraphRingMesh.visible = false;
     telegraphRingMesh.count = 0;
+
+    if (!frozenShotId) simTime += dt;
+    for (let i = 0; i < decals.length; i++) {
+      const d = decals[i];
+      if (frozenShotId) {
+        d.mesh.visible = false;
+      } else if (!d.owner && d.ttl > 0) {
+        d.ttl -= dt;
+        if (d.ttl <= 0) d.mesh.visible = false;
+      }
+    }
 
     if (frozenShotId) {
       if (camera && ARCHITECTURAL_SHOT_SKELETON_POSES[frozenShotId]) {
@@ -686,6 +1550,17 @@ export async function createEnemyManager({
       if (e.cooldownTimer > 0) {
         e.cooldownTimer = Math.max(0, e.cooldownTimer - dt * iceTimeMult);
       }
+      e.dodgeCooldown = Math.max(0, e.dodgeCooldown - dt);
+      e.summonCooldown = Math.max(0, e.summonCooldown - dt);
+      e.eruptionCooldown = Math.max(0, e.eruptionCooldown - dt);
+      e.wardCooldown = Math.max(0, e.wardCooldown - dt);
+      e.rallyCooldown = Math.max(0, e.rallyCooldown - dt);
+      e.rallyTimer = Math.max(0, e.rallyTimer - dt);
+      e.invulnTimer = Math.max(0, e.invulnTimer - dt);
+      e.tauntCooldown = Math.max(0, e.tauntCooldown - dt);
+      e.shieldDownTimer = Math.max(0, e.shieldDownTimer - dt);
+      tickPoise(e, dt);
+      e.tokenIneligible = TOKENLESS_STATES.has(e.aiState);
 
       if (!e.grounded || Math.hypot(e.vx, e.vz) > 0.05) {
         const nextPos = applyEnemySpatialConstraints(
@@ -741,6 +1616,7 @@ export async function createEnemyManager({
           targetHero = dm + 1.2 < dk ? mage : knight;
         }
       }
+      if (e.hunter) targetHero = selectHuntTarget(e, knight, mage) || targetHero;
       if (targetHero) {
         e.targetHeroId = targetHero.id || 'Knight';
         e.distToTarget = Math.hypot(e.x - targetHero.x, e.z - targetHero.z);
@@ -767,96 +1643,7 @@ export async function createEnemyManager({
           : 1.0 - clamp(e.iceSlowFactor || 0, 0, 0.75);
 
       if (e.stunTimer <= 0 && e.knockdownTimer <= 0 && e.hitstopTimer <= 0 && e.grounded && targetHero) {
-        const dx = targetHero.x - e.x;
-        const dz = targetHero.z - e.z;
-        const dist = Math.hypot(dx, dz) || 1;
-        const dirX = dx / dist;
-        const dirZ = dz / dist;
-        const desiredYaw = Math.atan2(dx, dz);
-        e.yaw += shortestAngleDiff(desiredYaw, e.yaw) * Math.min(1, 10 * dt * slowMult);
-
-        if (e.aiState === 'windup') {
-          e.windupTimer += dt * slowMult;
-          e.telegraphProgress = clamp(e.windupTimer / e.windupDuration, 0, 1);
-          e.telegraphY = walkableHeightAt(e.telegraphX, e.telegraphZ) + 0.04;
-
-          if (e.windupTimer >= e.windupDuration) {
-            e.aiState = 'orbit';
-            e.windupTimer = 0;
-            e.telegraphProgress = 0;
-            e.cooldownTimer = e.attackCooldown;
-            e.attackAnimTimer = 0.45;
-
-            const hitDist = Math.hypot(
-              targetHero.x - e.telegraphX,
-              targetHero.z - e.telegraphZ
-            );
-            if (
-              hitDist <= e.telegraphRadius + 0.45 &&
-              !targetHero.downed &&
-              (targetHero.iframeTimer || 0) <= 0
-            ) {
-              if (onPlayerHit) {
-                const dmgReduction = clamp(e.iceSlowFactor || 0, 0, ICE_DAMAGE_REDUCTION_CAP);
-                const outgoingDmg = Math.max(1, Math.round(e.dmg * (1.0 - dmgReduction)));
-                onPlayerHit(targetHero, e, outgoingDmg);
-              }
-            }
-          }
-        } else if (e.hasAttackToken) {
-          if (dist > e.attackRange * 0.92) {
-            const step = Math.min(dist - e.attackRange * 0.8, e.speed * slowMult * dt);
-            const nextPos = applyEnemySpatialConstraints(
-              e.x + dirX * step,
-              e.z + dirZ * step,
-              e.radius
-            );
-            e.x = nextPos.x;
-            e.z = nextPos.z;
-            e.y = walkableHeightAt(e.x, e.z);
-            playEnemyLocomotion(e, dist > 5.0 ? 'run' : 'walk');
-          } else if (e.cooldownTimer <= 0) {
-            e.aiState = 'windup';
-            e.windupTimer = 0;
-            e.telegraphProgress = 0.02;
-            e.telegraphX = e.isRanged ? targetHero.x : e.x + dirX * (e.attackRange * 0.55);
-            e.telegraphZ = e.isRanged ? targetHero.z : e.z + dirZ * (e.attackRange * 0.55);
-            e.telegraphY = walkableHeightAt(e.telegraphX, e.telegraphZ) + 0.04;
-            const atkClip = e.isRanged
-              ? 'cast_shoot'
-              : e.isBoss
-                ? 'charged'
-                : e.slotIndex % 2 === 0
-                  ? 'combo1'
-                  : 'combo2';
-            e.attackAnimTimer = e.windupDuration + 0.25;
-            e.char.play(atkClip, {
-              loop: false,
-              fade: 0.1,
-              timeScale: 0.85 * slowMult,
-              force: true,
-            });
-          } else {
-            playEnemyLocomotion(e, 'idle');
-          }
-        } else {
-          const radialErr = dist - e.standoffDist;
-          const radialSpeed = clamp(radialErr * 1.8, -e.speed * 0.65, e.speed * 0.85) * slowMult;
-          const tangX = -dirZ * e.orbitSpeed * slowMult;
-          const tangZ = dirX * e.orbitSpeed * slowMult;
-          const vxMove = dirX * radialSpeed + tangX * 1.45;
-          const vzMove = dirZ * radialSpeed + tangZ * 1.45;
-
-          const nextPos = applyEnemySpatialConstraints(
-            e.x + vxMove * dt,
-            e.z + vzMove * dt,
-            e.radius
-          );
-          e.x = nextPos.x;
-          e.z = nextPos.z;
-          e.y = walkableHeightAt(e.x, e.z);
-          playEnemyLocomotion(e, Math.hypot(vxMove, vzMove) > 0.6 ? 'walk' : 'idle');
-        }
+        thinkEnemy(e, dt, targetHero, slowMult, knight, mage);
       }
 
       for (let j = i + 1; j < activeEnemies.length; j++) {
@@ -1091,6 +1878,21 @@ export async function createEnemyManager({
     setCurrentActId(actId) {
       currentActId = actId;
     },
+    get simTime() {
+      return simTime;
+    },
+    get areaDecals() {
+      return decals.map((d) => d.mesh);
+    },
+    notifyKnightBlock,
+    setOnParry(fn) {
+      onParryHandler = typeof fn === 'function' ? fn : null;
+    },
+    setOnWindup(fn) {
+      onWindupHandler = typeof fn === 'function' ? fn : null;
+    },
+    startAttack,
+    wakeEnemy,
     spawnWave,
     spawnImmediateFromSpec,
     clearAllEnemies,
