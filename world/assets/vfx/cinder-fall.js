@@ -406,25 +406,42 @@ function createBasaltMagmaMaterial(noiseAtlas, sharedUniforms, config) {
         rockCol = mix(rockCol, uColorRockMid, step(0.50, rockScore));
         rockCol = mix(rockCol, uColorRockLit, step(0.74, rockScore));
 
-        // 5. Tectonic Magma Fissures (cools down to 0 first so orange veins turn into dark charcoal stone!)
+        // 5. Tectonic Magma Fissures & 3-Band Cel-Shaded Front-Face Bow-Shock Fire:
+        //    When in-flight (heat > 1.35), local -Y points forward along the velocity vector.
+        //    3-band cel-shaded flame tongues (crimson -> solar-orange -> white-gold nose tip) climb up
+        //    from the front leading face (vLocalPos.y < 0), while the upper/trailing rock shows dark basalt & magma veins!
+        float inFlightFire = smoothstep(1.30, 1.75, heat);
+        vec2 bowUv = vec2(atan(vLocalPos.z, vLocalPos.x) * 1.15 + seed * 0.31, vLocalPos.y * 0.85 - uTime * 3.8);
+        vec4 nBow0 = texture2D(uNoiseAtlas, bowUv);
+        vec4 nBow1 = texture2D(uNoiseAtlas, bowUv * 2.1 + vec2(0.27, -uTime * 2.5));
+        float bowFlameWave = nBow0.b * 0.62 + nBow1.g * 0.38;
+        float frontFlameCoord = (-vLocalPos.y - 0.12) + (bowFlameWave - 0.48) * 0.68 + (1.0 - ndv) * 0.34;
+        float frontBowMask = inFlightFire * step(0.02, frontFlameCoord);
+
+        vec3 bowFireCol = uColorCrackDeep;
+        bowFireCol = mix(bowFireCol, uColorCrack * 1.16, step(0.22, frontFlameCoord));
+        bowFireCol = mix(bowFireCol, uColorHot * 1.24, step(0.52, frontFlameCoord));
+
         float basalGlow = isSlab * smoothstep(0.42, -0.15, vLocalPos.y);
-        float tectonicGate = smoothstep(0.42, 0.78, nMacro.b + vCavity * 0.65 + basalGlow * 0.75);
-        float seamLine = smoothstep(0.68, 0.93, nFault.r) * tectonicGate;
-        float cavityMagma = smoothstep(0.48, 0.88, vCavity) * smoothstep(0.35, 0.80, nFault.b);
-        float magmaMask = clamp((seamLine * 0.92 + cavityMagma * 0.75 + basalGlow * 0.68) * clamp(heat, 0.0, 1.35), 0.0, 1.0);
+        float tectonicGate = smoothstep(0.36, 0.72, nMacro.b + vCavity * 0.78 + basalGlow * 0.75 + inFlightFire * 0.18);
+        float seamLine = smoothstep(0.54 - inFlightFire * 0.12, 0.84, nFault.r) * tectonicGate;
+        float cavityMagma = smoothstep(0.38 - inFlightFire * 0.10, 0.80, vCavity) * smoothstep(0.26, 0.74, nFault.b);
+        float rockVeins = clamp((seamLine * 0.95 + cavityMagma * 0.85 + basalGlow * 0.68) * clamp(heat, 0.0, 1.45), 0.0, 1.0);
 
-        vec3 magmaCol = mix(uColorCrackDeep, uColorCrack * 1.08, smoothstep(0.18, 0.58, magmaMask));
-        magmaCol = mix(magmaCol, uColorHot * 1.22, smoothstep(0.64, 0.94, magmaMask));
+        vec3 veinCol = mix(uColorCrackDeep, uColorCrack * 1.15, smoothstep(0.18, 0.52, rockVeins));
+        veinCol = mix(veinCol, uColorHot * 1.22, smoothstep(0.62, 0.90, rockVeins));
 
-        vec3 finalColor = mix(rockCol * mix(0.86, 1.0, uDaylight), magmaCol, smoothstep(0.18, 0.45, magmaMask));
+        vec3 finalColor = mix(rockCol * mix(0.86, 1.0, uDaylight), veinCol, smoothstep(0.20, 0.46, rockVeins));
+        finalColor = mix(finalColor, bowFireCol, frontBowMask);
 
         // 6. Glowing Ember Orange Ash Edge (0.06-wide border right next to dissolveProgress)
         float ashEdge = step(0.001, dissolveProgress) * (1.0 - smoothstep(dissolveProgress, dissolveProgress + 0.06, crumbleVal));
         finalColor = mix(finalColor, uColorCrack * 1.35, ashEdge);
 
-        // 7. Crisp Dark Charred Ink Silhouette Rim (dot(N, V))
+        // 7. Silhouette Rim: blazing solar-orange/gold rim on the front/sides when in-flight, dark charred ink after impact
         float inkRim = 1.0 - smoothstep(0.14, 0.24, ndv);
-        finalColor = mix(finalColor, uColorInk, inkRim * (1.0 - max(magmaMask * 0.55, ashEdge)));
+        vec3 rimCol = mix(uColorInk, mix(uColorCrack * 1.20, uColorHot * 1.25, step(0.35, frontFlameCoord)), inFlightFire);
+        finalColor = mix(finalColor, rimCol, inkRim * (1.0 - max(rockVeins * 0.45 * (1.0 - inFlightFire), ashEdge)));
 
         gl_FragColor = vec4(finalColor, 1.0);
       }
@@ -499,24 +516,41 @@ function createFireWakeCutoutMaterial(noiseAtlas, sharedUniforms, config) {
         vec3 V = normalize(cameraPosition - vWorldPos);
         float ndv = clamp(dot(N, V), 0.0, 1.0);
 
-        vec2 scrollUv = vec2(vUv.x * 1.15 + seed * 0.37, vUv.y * 0.95 - uTime * 2.4 + seed * 0.71);
+        float isCometWake = smoothstep(1.35, 1.65, heat);
+
+        // Longitudinal high-speed flame ribbons streaming from the front bow-shock (vUv.y = 0) to the tail tip (vUv.y = 1)
+        vec2 scrollUv = vec2(
+          vUv.x * (1.15 + isCometWake * 1.45) + seed * 0.37,
+          vUv.y * (0.95 - isCometWake * 0.22) - uTime * (2.4 + isCometWake * 2.8) + seed * 0.71
+        );
         vec4 n0 = texture2D(uNoiseAtlas, scrollUv);
-        vec4 n1 = texture2D(uNoiseAtlas, scrollUv * 1.75 + vec2(0.29, -uTime * 1.5));
+        vec4 n1 = texture2D(uNoiseAtlas, scrollUv * 1.95 + vec2(0.29, -uTime * (1.5 + isCometWake * 1.9)));
 
         float tongueWave = n0.b * 0.62 + n1.g * 0.38;
-        float tipErode = smoothstep(1.0, 0.14, vUv.y) * 0.76 + 0.24;
-        float erodedMask = (tongueWave * 0.64 + ndv * 0.52) * tipErode * (1.0 - age * 0.38) * intensity;
+
+        // Erode the bottom cap (vUv.y < 0.10) with noise so the front bow-shock edge has organic flame licks
+        float baseCapErode = mix(1.0, smoothstep(0.02, 0.12, vUv.y + (tongueWave - 0.42) * 0.10), isCometWake);
+        float tipErode = smoothstep(1.0, 0.14, vUv.y) * 0.78 + 0.24;
+
+        // Open a central window over the upper-center rock body (0.14 < vUv.y < 0.46, ndv > 0.48) so the dark magma-veined rock core
+        // is visible inside the fire cradle while roaring flames wrap continuously around its front nose and left/right cheeks!
+        float rockBodyWindow = isCometWake * smoothstep(0.12, 0.20, vUv.y) * smoothstep(0.48, 0.32, vUv.y) * smoothstep(0.46, 0.68, ndv);
+
+        float baseDensity = mix(tongueWave * 0.64 + ndv * 0.52, tongueWave * 0.62 + 0.54, isCometWake);
+        float erodedMask = baseDensity * baseCapErode * tipErode * (1.0 - age * 0.28) * intensity - rockBodyWindow * 0.62;
 
         if (erodedMask < 0.45) discard;
 
-        float fireBand = (erodedMask - 0.45) / 0.55 + heat * 0.18 * (1.0 - vUv.y);
+        // White-gold at the front face & side cheeks -> vibrant solar-orange flame body -> crimson tail tips
+        float fireBand = (erodedMask - 0.45) / 0.55 + heat * 0.25 * pow(1.0 - vUv.y, 1.25);
         vec3 col = uColorFlameEdge;
-        col = mix(col, uColorFlameMid, step(0.26, fireBand));
-        col = mix(col, uColorFlameCore * 1.15, step(0.60, fireBand));
+        col = mix(col, uColorFlameMid, step(0.18, fireBand));
+        col = mix(col, uColorFlameCore * 1.24, step(0.52, fireBand));
 
-        float inkBorder = 1.0 - smoothstep(0.45, 0.53, erodedMask);
+        float inkBorder = 1.0 - smoothstep(0.45, 0.52, erodedMask);
         float silhouetteInk = 1.0 - smoothstep(0.14, 0.24, ndv);
-        col = mix(col, uColorFlameSmoke, max(inkBorder, silhouetteInk * 0.85));
+        float smokeEdge = max(inkBorder, silhouetteInk * 0.85) * mix(1.0, smoothstep(0.45, 0.92, vUv.y) * 0.40, isCometWake);
+        col = mix(col, uColorFlameSmoke, smokeEdge);
 
         gl_FragColor = vec4(col, 1.0);
       }
@@ -644,10 +678,10 @@ function createCraterDecalMaterial(noiseAtlas, sharedUniforms, config) {
 /* 3. Pooled, Deterministic CinderFallSystem (<= 4 Draw Calls)               */
 /* ------------------------------------------------------------------------- */
 
-const MAX_ASTEROID_CORES = 4; // 1 hurtling asteroid in flight -> shatters into 4 jagged broken boulder fragments on impact!
-const MAX_FIRE_TONGUES = 34; // wake plumes (in-flight) + roaring crater eruption fire tongues (post-impact)
-const MAX_CRATER_ROCKS = 40; // 16 crater rim basalt monoliths + 24 ballistic cinder chunks
-const MAX_CRATER_DECALS = 2;
+const MAX_ASTEROID_CORES = 20; // Supports up to 5 overlapping sky-barrage meteors + 4 shattered boulder fragments each!
+const MAX_FIRE_TONGUES = 140; // Wake plumes (in-flight) + roaring crater eruption fire tongues across overlapping meteors
+const MAX_CRATER_ROCKS = 140; // Crater rim basalt monoliths + ballistic cinder chunks across overlapping meteors
+const MAX_CRATER_DECALS = 6;
 
 const BALLISTIC_GRAVITY = -22.0;
 const BALLISTIC_RESTITUTION = 0.32;
@@ -691,6 +725,9 @@ export class CinderFallSystem {
     this.direction = new THREE.Vector3(1, 0, 0);
     this.side = new THREE.Vector3(0, 0, 1);
     this.castLength = this.config.range;
+    this.fromSky = false;
+    this.skyStartHeight = 15.0;
+    this.skyBarrageList = [];
     this.active = false;
     this.age = 0;
 
@@ -788,9 +825,15 @@ export class CinderFallSystem {
       c.minDistance ?? 3.0,
       c.maxDistance ?? 16.0
     );
-    const dist = lerp(c.handForward, targetDist, t);
+    const dist = lerp(this.fromSky ? 0.0 : c.handForward, targetDist, t);
     const x = this.origin.x + this.direction.x * dist;
     const z = this.origin.z + this.direction.z * dist;
+    if (this.fromSky) {
+      const endGroundY = this.getGroundHeight(x, z) + c.endHeight;
+      const skyY = endGroundY + (this.skyStartHeight || 13.5) * (1.0 - t);
+      out.set(x, skyY, z);
+      return out;
+    }
     const baseH = lerp(
       this.origin.y + c.handHeight,
       this.getGroundHeight(x, z) + c.endHeight,
@@ -803,7 +846,9 @@ export class CinderFallSystem {
 
   _seedRecords(seed = 1.0) {
     const c = this.config;
-    this.impactTime = this.castLength / Math.max(1.0, c.speed); // ~0.622s for 14m at 22.5 m/s
+    this.impactTime = this.fromSky
+      ? 0.24
+      : this.castLength / Math.max(1.0, c.speed); // ~0.622s for 14m at 22.5 m/s
     this.totalDuration = this.impactTime + c.lifetime + c.fadeTime;
 
     // 4 Jagged Shattered Boulder Fragments (`asteroidMesh` slots 0..3, scale `0.48..0.64m`)
@@ -886,6 +931,9 @@ export class CinderFallSystem {
   }
 
   cast(origin, direction, options = {}) {
+    this.fromSky = Boolean(options.fromSky || options.skyFall);
+    this.skyStartHeight = Number(options.skyHeight) > 0 ? Number(options.skyHeight) : 15.0;
+
     if (origin) {
       this.origin.set(origin.x ?? origin[0] ?? 0, origin.y ?? origin[1] ?? 0, origin.z ?? origin[2] ?? 0);
     }
@@ -905,13 +953,325 @@ export class CinderFallSystem {
       c.length ??
       c.range;
     this.castLength = clamp(rawDist, c.minDistance ?? 3.0, c.maxDistance ?? 16.0);
+    if (
+      this.fromSky &&
+      options.targetPos &&
+      Number.isFinite(options.targetPos.x) &&
+      Number.isFinite(options.targetPos.z)
+    ) {
+      this.origin.x = options.targetPos.x - this.direction.x * this.castLength;
+      this.origin.z = options.targetPos.z - this.direction.z * this.castLength;
+    }
     this.origin.y = this.getGroundHeight(this.origin.x, this.origin.z);
 
+    if (this.fromSky) {
+      const seedVal = options.seed ?? 1.0 + this.skyBarrageList.length * 0.73;
+      const impactTime = 0.32;
+      const postDuration = 0.88;
+      if (this.skyBarrageList.length >= 6) {
+        this.skyBarrageList.shift();
+      }
+      this.skyBarrageList.push({
+        originX: this.origin.x,
+        originY: this.origin.y,
+        originZ: this.origin.z,
+        dirX: this.direction.x,
+        dirZ: this.direction.z,
+        sideX: this.side.x,
+        sideZ: this.side.z,
+        castLength: this.castLength,
+        skyStartHeight: this.skyStartHeight,
+        age: Number(options.initialAge) || 0.0,
+        impactTime,
+        postDuration,
+        totalDuration: impactTime + postDuration,
+        seed: seedVal,
+      });
+      this.active = true;
+      this.age = 0;
+      this.group.visible = true;
+      this._renderSkyBarrage();
+      return this;
+    }
+
+    this.skyBarrageList.length = 0;
     this._seedRecords(options.seed ?? 1.0);
     this.active = true;
     this.age = 0;
     this.group.visible = true;
     this.seek(0.01);
+    return this;
+  }
+
+  _renderSkyBarrage() {
+    const c = this.config;
+    let astSlot = 0;
+    let wakeSlot = 0;
+    let rockSlot = 0;
+    let decalSlot = 0;
+    let maxShakeEnv = 0;
+    let maxShakeAge = 0;
+
+    for (let mIdx = 0; mIdx < this.skyBarrageList.length; mIdx++) {
+      const m = this.skyBarrageList[mIdx];
+      const timeSeconds = m.age;
+      if (timeSeconds < 0) continue;
+      const flightU = saturate(timeSeconds / Math.max(0.05, m.impactTime));
+      const impactElapsed = timeSeconds - m.impactTime;
+      const postImpactU = saturate(impactElapsed / Math.max(0.1, m.postDuration));
+
+      const impX = m.originX + m.dirX * m.castLength;
+      const impZ = m.originZ + m.dirZ * m.castLength;
+      const impY = this.getGroundHeight(impX, impZ);
+
+      const evalBarragePos = (u, out) => {
+        const t = clamp(u, 0.0, 1.0);
+        const dist = m.castLength * t;
+        const x = m.originX + m.dirX * dist;
+        const z = m.originZ + m.dirZ * dist;
+        const endGroundY = this.getGroundHeight(x, z) + c.endHeight;
+        const skyY = endGroundY + m.skyStartHeight * (1.0 - t);
+        out.set(x, skyY, z);
+        return out;
+      };
+
+      const popIn = smoothstep(0.0, 0.08, flightU);
+
+      // 1. Asteroid Core in flight (oriented along flight vector so local -Y is the front leading face!) OR 3 shattered boulders on impact
+      if (impactElapsed < 0) {
+        evalBarragePos(flightU, _pos);
+        evalBarragePos(Math.max(0.0, flightU - 0.08), _nextPos);
+        _tangent.subVectors(_nextPos, _pos);
+        if (_tangent.lengthSq() < 1e-5) _tangent.set(-m.dirX, 0.72, -m.dirZ);
+        _tangent.normalize();
+        _quat.setFromUnitVectors(UP, _tangent);
+
+        if (astSlot < MAX_ASTEROID_CORES) {
+          _dummy.position.copy(_pos);
+          _euler.set(0, timeSeconds * c.spin * 1.35 + m.seed, 0);
+          _dummy.quaternion.setFromEuler(_euler);
+          _dummy.quaternion.premultiply(_quat);
+          _dummy.scale.set(c.radius * 0.72 * popIn, c.radius * 0.88 * popIn, c.radius * 0.72 * popIn);
+          _dummy.updateMatrix();
+          this.asteroidMesh.setMatrixAt(astSlot, _dummy.matrix);
+          this.asteroidMetaAttr.setXYZW(astSlot, m.seed, 1.85, 0.0, 0.0);
+          astSlot++;
+        }
+      } else {
+        for (let b = 0; b < 3 && astSlot < MAX_ASTEROID_CORES; b++) {
+          const bRec = this.shatteredBoulderRecords[b];
+          const dissolveProgress = smoothstep(0.38, 0.96, postImpactU + bRec.stagger);
+          if (dissolveProgress >= 0.995) continue;
+          const rockHeat = 1.22 * (1.0 - smoothstep(0.08, 0.45, postImpactU + bRec.stagger));
+          const approxX = impX + bRec.startOffsetX + bRec.vx * 0.42;
+          const approxZ = impZ + bRec.startOffsetZ + bRec.vz * 0.42;
+          const floorY = this.getGroundHeight(approxX, approxZ) + bRec.scale * 0.44;
+          evalOneBounceBallistic(
+            impactElapsed,
+            impY + 0.58,
+            bRec.vy,
+            BALLISTIC_GRAVITY,
+            BALLISTIC_RESTITUTION,
+            floorY,
+            _bounceState
+          );
+          _dummy.position.set(
+            impX + bRec.startOffsetX + bRec.vx * _bounceState.horizT,
+            _bounceState.y,
+            impZ + bRec.startOffsetZ + bRec.vz * _bounceState.horizT
+          );
+          _euler.set(
+            0.4 + bRec.spinX * _bounceState.spinT,
+            bRec.ang + m.seed + bRec.spinY * _bounceState.spinT,
+            0.25 + bRec.spinZ * _bounceState.spinT
+          );
+          _dummy.quaternion.setFromEuler(_euler);
+          _dummy.scale.set(bRec.scale * 0.95, bRec.scale * 0.85, bRec.scale * 0.95);
+          _dummy.updateMatrix();
+          this.asteroidMesh.setMatrixAt(astSlot, _dummy.matrix);
+          this.asteroidMetaAttr.setXYZW(astSlot, bRec.seed + m.seed, rockHeat, dissolveProgress, 0.0);
+          astSlot++;
+        }
+      }
+
+      // 2. Front-Face Bow-Shock Fire Cradle & Coaxial Comet Plumes (in flight ONLY, wrapping the rock nose & cheeks!)
+      if (impactElapsed < 0) {
+        evalBarragePos(flightU, _pos);
+        evalBarragePos(Math.max(0.0, flightU - 0.08), _nextPos);
+        _tangent.subVectors(_nextPos, _pos);
+        if (_tangent.lengthSq() < 1e-5) _tangent.set(-m.dirX, 0.72, -m.dirZ);
+        _tangent.normalize();
+        _quat.setFromUnitVectors(UP, _tangent);
+
+        for (let i = 0; i < 5 && wakeSlot < MAX_FIRE_TONGUES; i++) {
+          const rec = this.fireTongueRecords[i];
+          const isFrontSheath = i === 0;
+          const behindDist = (isFrontSheath ? -0.34 : -0.22 + (i - 1) * 0.12) * popIn;
+          const wx = _pos.x + _tangent.x * behindDist;
+          const wy = _pos.y + _tangent.y * behindDist;
+          const wz = _pos.z + _tangent.z * behindDist;
+
+          _dummy.position.set(wx, wy, wz);
+          _euler.set(0, i * (Math.PI * 0.5) + timeSeconds * 3.6 + m.seed, 0);
+          _dummy.quaternion.setFromEuler(_euler);
+          _dummy.quaternion.premultiply(_quat);
+
+          const widthScale = (isFrontSheath ? 1.56 : 1.48 - (i - 1) * 0.06) * popIn;
+          const lenScale = (isFrontSheath ? 3.25 : 4.05 + (i - 1) * 0.35) * popIn;
+          _dummy.scale.set(widthScale, lenScale, widthScale);
+          _dummy.updateMatrix();
+          this.fireWakeMesh.setMatrixAt(wakeSlot, _dummy.matrix);
+          this.wakeMetaAttr.setXYZW(
+            wakeSlot,
+            isFrontSheath ? 0.02 : 0.14 + (i - 1) * 0.06,
+            isFrontSheath ? 1.98 : 1.72,
+            rec.seed + m.seed,
+            1.0
+          );
+          wakeSlot++;
+        }
+      } else if (postImpactU < 0.85) {
+        for (let i = 14; i < 24 && wakeSlot < MAX_FIRE_TONGUES; i++) {
+          const rec = this.fireTongueRecords[i];
+          const tCol = Math.max(0.01, impactElapsed + 0.02);
+          const colFade = 1.0 - smoothstep(0.32, 0.85, postImpactU);
+          const horseshoeAng = rec.ang + m.seed;
+          const rDist = (0.95 + rec.radial * 1.15) * smoothstep(0.0, 0.14, tCol);
+          const fx = impX + Math.cos(horseshoeAng) * rDist;
+          const fz = impZ + Math.sin(horseshoeAng) * rDist;
+          const fy = this.getGroundHeight(fx, fz) + 0.05;
+          _dummy.position.set(fx, fy, fz);
+          _pos.set(Math.cos(horseshoeAng) * 0.32, 1.0, Math.sin(horseshoeAng) * 0.32).normalize();
+          _dummy.quaternion.setFromUnitVectors(UP, _pos);
+          const hScale = rec.scale * (1.45 + 0.85 * (1.0 - rec.radial)) * outQuint(Math.min(1.0, tCol * 5.2)) * colFade;
+          const rScale = rec.scale * 0.75 * colFade;
+          _dummy.scale.set(rScale, hScale, rScale);
+          _dummy.updateMatrix();
+          this.fireWakeMesh.setMatrixAt(wakeSlot, _dummy.matrix);
+          this.wakeMetaAttr.setXYZW(wakeSlot, postImpactU * 0.82, 1.18, rec.seed + m.seed, colFade);
+          wakeSlot++;
+        }
+      }
+
+      // 3. Crater Rim Monoliths & Ballistic Cinders on Impact
+      if (impactElapsed >= -0.01) {
+        const tImp = Math.max(0.0, impactElapsed + 0.01);
+        for (let i = 0; i < 8 && rockSlot < MAX_CRATER_ROCKS; i++) {
+          const slab = this.rimSlabRecords[i * 2];
+          if (!slab) continue;
+          const tSlab = tImp - slab.stagger;
+          if (tSlab < 0) continue;
+          const dissolveProgress = smoothstep(0.38, 0.95, postImpactU + slab.dissolveStagger);
+          if (dissolveProgress >= 0.995) continue;
+          const slabHeat = 1.24 * (1.0 - smoothstep(0.10, 0.48, postImpactU + slab.dissolveStagger));
+          const emerge = outQuint(Math.min(1.0, tSlab / 0.12));
+          const ang = slab.ang + m.seed;
+          const sx = impX + Math.cos(ang) * slab.radial * 0.78;
+          const sz = impZ + Math.sin(ang) * slab.radial * 0.78;
+          const sy = this.getGroundHeight(sx, sz) - 0.14;
+          _dummy.position.set(sx, sy, sz);
+          _pos.set(
+            Math.cos(ang) * Math.sin(slab.lean),
+            Math.cos(slab.lean),
+            Math.sin(ang) * Math.sin(slab.lean)
+          ).normalize();
+          _dummy.quaternion.setFromUnitVectors(UP, _pos);
+          _dummy.scale.set(slab.radius * 0.78 * emerge, slab.height * 0.72 * emerge, slab.radius * 0.78 * emerge);
+          _dummy.updateMatrix();
+          this.craterRocksMesh.setMatrixAt(rockSlot, _dummy.matrix);
+          this.rocksMetaAttr.setXYZW(rockSlot, slab.seed + m.seed, slabHeat, dissolveProgress, 1.0);
+          rockSlot++;
+        }
+
+        for (let i = 0; i < 10 && rockSlot < MAX_CRATER_ROCKS; i++) {
+          const cin = this.cinderRockRecords[i * 2];
+          if (!cin) continue;
+          const dissolveProgress = smoothstep(0.38, 0.95, postImpactU + cin.dissolveStagger);
+          if (dissolveProgress >= 0.995) continue;
+          const cinHeat = 1.15 * (1.0 - smoothstep(0.08, 0.42, postImpactU + cin.dissolveStagger));
+          const approxX = impX + cin.vx * 0.38;
+          const approxZ = impZ + cin.vz * 0.38;
+          const floorY = this.getGroundHeight(approxX, approxZ) + cin.size * 0.40;
+          evalOneBounceBallistic(
+            tImp,
+            impY + 0.44,
+            cin.vy,
+            BALLISTIC_GRAVITY,
+            BALLISTIC_RESTITUTION,
+            floorY,
+            _bounceState
+          );
+          _dummy.position.set(
+            impX + cin.vx * _bounceState.horizT * 0.85,
+            _bounceState.y,
+            impZ + cin.vz * _bounceState.horizT * 0.85
+          );
+          _euler.set(
+            cin.spinX * _bounceState.spinT,
+            cin.ang + m.seed + cin.spinY * _bounceState.spinT,
+            cin.spinZ * _bounceState.spinT
+          );
+          _dummy.quaternion.setFromEuler(_euler);
+          const sc = cin.size * 0.88;
+          _dummy.scale.set(sc * 0.95, sc * 1.35, sc * 0.95);
+          _dummy.updateMatrix();
+          this.craterRocksMesh.setMatrixAt(rockSlot, _dummy.matrix);
+          this.rocksMetaAttr.setXYZW(rockSlot, cin.seed + m.seed, cinHeat, dissolveProgress, 0.4);
+          rockSlot++;
+        }
+      }
+
+      // 4. Crater Lava Decal on Ground
+      if (impactElapsed >= -0.02 && decalSlot < MAX_CRATER_DECALS) {
+        const tCrater = Math.max(0.01, impactElapsed + 0.02);
+        const reach = smoothstep(0.0, 0.14, tCrater);
+        const decalHeat = 1.22 * (1.0 - smoothstep(0.30, 0.85, postImpactU));
+        const castYaw = Math.atan2(m.dirX, m.dirZ) + m.seed * 0.5;
+        _dummy.position.set(impX, impY + 0.042 + decalSlot * 0.003, impZ);
+        _dummy.quaternion.setFromAxisAngle(UP, castYaw);
+        const fRad = c.fissureRadius * 0.72;
+        _dummy.scale.set(fRad, 1.0, fRad);
+        _dummy.updateMatrix();
+        this.craterDecalMesh.setMatrixAt(decalSlot, _dummy.matrix);
+        this.decalMetaAttr.setXYZW(decalSlot, postImpactU, reach, 0.49, decalHeat);
+        decalSlot++;
+      }
+
+      if (impactElapsed >= 0 && impactElapsed <= 0.35) {
+        const env = Math.exp(-impactElapsed * 7.5) * 0.14;
+        if (env > maxShakeEnv) {
+          maxShakeEnv = env;
+          maxShakeAge = impactElapsed;
+        }
+      }
+    }
+
+    this.asteroidMesh.count = astSlot;
+    this.asteroidMesh.instanceMatrix.needsUpdate = true;
+    this.asteroidMetaAttr.needsUpdate = true;
+
+    this.fireWakeMesh.count = wakeSlot;
+    this.fireWakeMesh.instanceMatrix.needsUpdate = true;
+    this.wakeMetaAttr.needsUpdate = true;
+
+    this.craterRocksMesh.count = rockSlot;
+    this.craterRocksMesh.instanceMatrix.needsUpdate = true;
+    this.rocksMetaAttr.needsUpdate = true;
+
+    this.craterDecalMesh.count = decalSlot;
+    this.craterDecalMesh.instanceMatrix.needsUpdate = true;
+    this.decalMetaAttr.needsUpdate = true;
+
+    if (maxShakeEnv > 0) {
+      this._shakeOffset.set(
+        Math.sin(maxShakeAge * 52.0) * maxShakeEnv * 0.7,
+        Math.abs(Math.cos(maxShakeAge * 60.0)) * maxShakeEnv,
+        Math.cos(maxShakeAge * 46.0) * maxShakeEnv * 0.7
+      );
+    } else {
+      this._shakeOffset.set(0, 0, 0);
+    }
+    this._hitstopScale = 1.0;
     return this;
   }
 
@@ -949,21 +1309,28 @@ export class CinderFallSystem {
     const impY = this.getGroundHeight(impX, impZ);
 
     // 1. Evaluate Volcanic Asteroid (DC 1):
-    //    - While `impactElapsed < 0`: slot 0 is the single hurtling 1.08m asteroid.
+    //    - While `impactElapsed < 0`: slot 0 is the single hurtling 1.08m molten fireball asteroid.
     //    - Instant `impactElapsed >= 0`: shatters into 4 jagged broken boulder fragments
     //      (slots 0..3, scale 0.48..0.64m) that bounce once (`restitution = 0.32`),
     //      settle on the crater floor, cool down (`heat -> 0`), and crumble into glowing ash!
     let astSlot = 0;
+    const popIn = smoothstep(0.0, 0.08, flightU);
     if (impactElapsed < 0) {
       this._trajectoryAt(flightU, _pos);
+      this._trajectoryAt(Math.max(0.0, flightU - 0.08), _nextPos);
+      _tangent.subVectors(_nextPos, _pos);
+      if (_tangent.lengthSq() < 1e-5) _tangent.set(-this.direction.x, 0.45, -this.direction.z);
+      _tangent.normalize();
+      _quat.setFromUnitVectors(UP, _tangent);
+
       _dummy.position.copy(_pos);
-      _euler.set(timeSeconds * c.spin, timeSeconds * c.spin * 0.78, timeSeconds * c.spin * 0.52);
+      _euler.set(0, timeSeconds * c.spin * 1.35, 0);
       _dummy.quaternion.setFromEuler(_euler);
-      const popIn = smoothstep(0.0, 0.08, flightU);
-      _dummy.scale.setScalar(c.radius * popIn);
+      _dummy.quaternion.premultiply(_quat);
+      _dummy.scale.set(c.radius * 0.90 * popIn, c.radius * 1.05 * popIn, c.radius * 0.90 * popIn);
       _dummy.updateMatrix();
       this.asteroidMesh.setMatrixAt(astSlot, _dummy.matrix);
-      this.asteroidMetaAttr.setXYZW(astSlot, 1.7, 0.95 + 0.40 * flightU, 0.0, 0.0);
+      this.asteroidMetaAttr.setXYZW(astSlot, 1.7, 1.85, 0.0, 0.0);
       astSlot++;
     } else {
       for (let b = 0; b < this.shatteredBoulderRecords.length; b++) {
@@ -1011,50 +1378,50 @@ export class CinderFallSystem {
     this.asteroidMesh.instanceMatrix.needsUpdate = true;
     this.asteroidMetaAttr.needsUpdate = true;
 
-    // 2. Evaluate Hard-Cutout Cel Fire-Tongue Wake (In-Flight) & Crater Eruption Plumes (Post-Impact) (DC 2)
+    // 2. Evaluate Front-Face Bow-Shock Fire Cradle & Coaxial Comet Plumes (In-Flight) & Crater Eruption Plumes (Post-Impact) (DC 2)
     let wakeSlot = 0;
-    const wakeBurnU = impactElapsed > 0 ? saturate(impactElapsed / Math.max(0.02, c.trailBurnout)) : 0.0;
 
-    for (let i = 0; i < MAX_FIRE_TONGUES; i++) {
+    for (let i = 0; i < 34; i++) {
       const rec = this.fireTongueRecords[i];
-      if (rec.isWake && wakeBurnU < 0.99) {
-        const headU = impactElapsed < 0 ? flightU : 0.96;
-        const tailU = lerp(Math.max(0.0, headU - 0.48), headU, wakeBurnU);
-        const sampleU = lerp(tailU, headU, rec.uOffset);
-        if (sampleU <= 0.01) continue;
-
-        this._trajectoryAt(sampleU, _pos);
-        this._trajectoryAt(Math.max(0.0, sampleU - 0.04), _nextPos);
+      if (!rec) continue;
+      if (rec.isWake && impactElapsed < 0) {
+        if (i >= 5) continue;
+        this._trajectoryAt(flightU, _pos);
+        this._trajectoryAt(Math.max(0.0, flightU - 0.08), _nextPos);
         _tangent.subVectors(_nextPos, _pos);
         if (_tangent.lengthSq() < 1e-5) _tangent.set(-this.direction.x, 0.45, -this.direction.z);
-        _tangent.y += 0.35;
         _tangent.normalize();
+        _quat.setFromUnitVectors(UP, _tangent);
 
-        const swirlR = (1.0 - rec.uOffset) * 0.34;
-        _pos.x += this.side.x * Math.cos(rec.ang + timeSeconds * 5.0) * swirlR;
-        _pos.y += Math.sin(rec.ang + timeSeconds * 5.0) * swirlR * 0.6;
-        _pos.z += this.side.z * Math.cos(rec.ang + timeSeconds * 5.0) * swirlR;
+        const isFrontSheath = i === 0;
+        const behindDist = (isFrontSheath ? -0.18 : -0.06 + (i - 1) * 0.12) * popIn;
+        _pos.x += _tangent.x * behindDist;
+        _pos.y += _tangent.y * behindDist;
+        _pos.z += _tangent.z * behindDist;
 
         _dummy.position.copy(_pos);
-        _quat.setFromUnitVectors(UP, _tangent);
-        _dummy.quaternion.copy(_quat);
-        const wScale = rec.scale * (0.55 + 0.65 * rec.uOffset) * (1.0 - wakeBurnU);
-        _dummy.scale.set(wScale * 0.72, wScale * 1.85, wScale * 0.72);
+        _euler.set(0, i * (Math.PI * 0.5) + timeSeconds * 3.6, 0);
+        _dummy.quaternion.setFromEuler(_euler);
+        _dummy.quaternion.premultiply(_quat);
+
+        const widthScale = (isFrontSheath ? 1.10 : 1.20 - (i - 1) * 0.06) * popIn;
+        const lenScale = (isFrontSheath ? 3.05 : 3.85 + (i - 1) * 0.35) * popIn;
+        _dummy.scale.set(widthScale, lenScale, widthScale);
         _dummy.updateMatrix();
         this.fireWakeMesh.setMatrixAt(wakeSlot, _dummy.matrix);
         this.wakeMetaAttr.setXYZW(
           wakeSlot,
-          wakeBurnU * 0.7 + (1.0 - rec.uOffset) * 0.25,
-          0.95,
+          isFrontSheath ? 0.02 : 0.14 + (i - 1) * 0.06,
+          isFrontSheath ? 1.98 : 1.72,
           rec.seed,
-          1.0 - wakeBurnU
+          1.0
         );
         wakeSlot++;
       } else if (!rec.isWake && impactElapsed >= -0.02 && postImpactU < 0.88) {
         const tCol = Math.max(0.01, impactElapsed + 0.02);
         const colFade = 1.0 - smoothstep(0.38, 0.88, postImpactU);
         const kIdx = i - 14;
-        const kSpan = kIdx / Math.max(1, MAX_FIRE_TONGUES - 15);
+        const kSpan = kIdx / Math.max(1, 34 - 15);
         const horseshoeAng = lerp(-2.65, 0.32, kSpan);
         const rDist = (1.45 + rec.radial * 1.35) * smoothstep(0.0, 0.18, tCol);
         const fx = impX + Math.cos(horseshoeAng) * rDist;
@@ -1197,6 +1564,23 @@ export class CinderFallSystem {
 
   update(dt) {
     if (!this.active) return;
+    if (this.skyBarrageList.length > 0) {
+      this.age += dt;
+      this.sharedUniforms.uTime.value = this.age;
+      for (let i = this.skyBarrageList.length - 1; i >= 0; i--) {
+        const m = this.skyBarrageList[i];
+        m.age += dt;
+        if (m.age > m.totalDuration) {
+          this.skyBarrageList.splice(i, 1);
+        }
+      }
+      if (this.skyBarrageList.length === 0) {
+        this.clear();
+        return;
+      }
+      this._renderSkyBarrage();
+      return;
+    }
     const nextAge = this.age + dt;
     if (nextAge > this.totalDuration) {
       this.clear();
@@ -1235,6 +1619,7 @@ export class CinderFallSystem {
   clear() {
     this.active = false;
     this.age = 0;
+    this.skyBarrageList.length = 0;
     this._shakeOffset.set(0, 0, 0);
     this._hitstopScale = 1.0;
     this.group.visible = false;
