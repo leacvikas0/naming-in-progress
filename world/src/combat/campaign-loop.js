@@ -661,9 +661,26 @@ export function createCampaignLoop({
     // A broken guard can't be raised again until the stagger ends.
     k.shieldBlocking = Boolean(active) && k.guardBrokenTimer <= 0 && k.guard > 0 && !k.downed;
     if (!k.shieldBlocking) k.guardRegenDelay = KNIGHT_GUARD_REGEN_DELAY;
+    // Block edge drives parry timing (±0.15 s of an enemy contact frame).
+    enemyManager?.notifyKnightBlock?.(k.shieldBlocking);
     onHudStateChanged?.(getStateSnapshot());
     return k.shieldBlocking;
   }
+
+  // Parry: the attacker staggers (enemy-manager) and the Knight's guard is refunded.
+  function handleEnemyParried(enemy) {
+    const k = combatHeroes.Knight;
+    k.guard = KNIGHT_GUARD_MAX;
+    k.guardRegenDelay = 0;
+    combatSfx?.playShieldChime?.();
+    emitBanner('PARRY!', `${enemy?.name || 'The enemy'} reels from the perfectly timed guard.`, 'detonation');
+  }
+  enemyManager?.setOnParry?.(handleEnemyParried);
+  enemyManager?.setOnWindup?.((enemy, attackId, atk) => {
+    const kind =
+      atk?.blockable === false || enemy?.isBoss ? 'heavy' : atk?.area ? 'area' : atk?.ranged ? 'cast' : 'melee';
+    combatSfx?.playEnemyWindup?.(kind);
+  });
 
   // Frontal-arc test: is `pos` within the Knight's block arc?
   function isInKnightFrontArc(pos) {
@@ -692,6 +709,7 @@ export function createCampaignLoop({
     k.guardRegenDelay = KNIGHT_GUARD_REGEN_DELAY;
     if (k.guard <= 0 && k.shieldBlocking) {
       k.shieldBlocking = false;
+      enemyManager?.notifyKnightBlock?.(false);
       k.guardBrokenTimer = KNIGHT_GUARD_BREAK_STUN;
       emitBanner('GUARD BROKEN', 'The Knight staggers. Give him a moment to recover.', 'warning');
     }
@@ -816,7 +834,7 @@ export function createCampaignLoop({
     // DR is applied once, on the Knight's own path below.
     if (
       heroId === 'Mage' &&
-      combatHeroes.Knight.shieldBlocking &&
+      combatHeroes.Knight.shieldBlocking && !enemy?.currentHit?.unblockable &&
       !combatHeroes.Knight.downed &&
       knightCoversMage(enemy)
     ) {
@@ -833,7 +851,7 @@ export function createCampaignLoop({
     let effectiveDmg = rawDmg;
     if (
       heroId === 'Knight' &&
-      combatHeroes.Knight.shieldBlocking &&
+      combatHeroes.Knight.shieldBlocking && !enemy?.currentHit?.unblockable &&
       isInKnightFrontArc(enemy)
     ) {
       effectiveDmg = Math.max(
