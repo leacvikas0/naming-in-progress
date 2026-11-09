@@ -674,17 +674,24 @@ let communeClient = null;
 /* 7. Stage 3–5 Co-Op Player System & Xiaomi Pad 7 Touch HUD                 */
 /* ------------------------------------------------------------------------- */
 
+const post = createWorldPost({
+  renderer,
+  scene,
+  camera,
+  width: window.innerWidth,
+  height: window.innerHeight,
+  enabled: true,
+  aaSamples: PROFILES[activeProfile].aaSamples,
+});
 let coopSystem = null;
 
 // Render the initial 3D valley & mount the pixelated dither title screen at 0ms BEFORE awaiting character GLBs
 // so there is never a separate pre-boot screen before the pixelated reveal!
 {
   const initPose = getOpeningCameraPose(FLOW_STEPS.TITLE, walkableHeightAt);
-  camState.mode = 'vista';
-  camState.vistaPos.set(...initPose.pos);
-  camState.vistaTarget.set(...initPose.target);
-  camera.position.copy(camState.vistaPos);
-  camera.lookAt(camState.vistaTarget);
+  const initTarget = new THREE.Vector3(...initPose.target);
+  camera.position.set(...initPose.pos);
+  camera.lookAt(initTarget);
   camera.fov = initPose.fov || 48;
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
@@ -700,7 +707,7 @@ let coopSystem = null;
     activeProfile
   );
   village.update(0.016);
-  meadow.update(0, camState.vistaTarget, camera);
+  meadow.update(0, initTarget, camera);
   post.render(0.016);
 }
 
@@ -1255,15 +1262,6 @@ updateCoopPill(coopSystem.coopClient.getState());
 /* 8. Post-Processing Pipeline (4x MSAA + Bloom + Time-of-Day Grade)         */
 /* ------------------------------------------------------------------------- */
 
-const post = createWorldPost({
-  renderer,
-  scene,
-  camera,
-  width: window.innerWidth,
-  height: window.innerHeight,
-  enabled: true,
-  aaSamples: PROFILES[activeProfile].aaSamples,
-});
 
 /* ------------------------------------------------------------------------- */
 /* 9. Full World Time-of-Day Material Synchronization                        */

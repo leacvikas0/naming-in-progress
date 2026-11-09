@@ -75,6 +75,12 @@
       pointer-events: none;
       z-index: 20;
     }
+    /* No HTML splash: keep legacy bars hidden until the sculpted HUD / dither title mounts */
+    html, body { background: #d8eef5; }
+    body:not(.sculpted-hud-mounted) #top-bar,
+    body:not(.sculpted-hud-mounted) #bottom-bar {
+      visibility: hidden;
+    }
 
     /* --------------------------------------------------------------------- */
     /* Top Bar Layout (Left Party/Co-Op, Center Objective/Boss, Right Debug) */
