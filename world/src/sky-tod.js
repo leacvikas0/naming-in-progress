@@ -1546,17 +1546,17 @@ export function createTimeOfDaySky({
     if (state.mode === 'night') {
       mistCushionUniforms.uMistCool.value.setHex(0x1b2d52);
       mistCushionUniforms.uMistWarm.value.setHex(0x324d80);
-      mistCushionUniforms.uMistOpacity.value = 0.52;
+      mistCushionUniforms.uMistOpacity.value = 0.4; // depth atmosphere in post.js now carries most of the haze
       livingAirUniforms.uWindTint.value.setRGB(0.78, 0.92, 1.15); // Luminous silver-cyan night wind!
     } else if (state.mode === 'evening') {
       mistCushionUniforms.uMistCool.value.setHex(0x986888);
       mistCushionUniforms.uMistWarm.value.setHex(0xffb278);
-      mistCushionUniforms.uMistOpacity.value = 0.72;
+      mistCushionUniforms.uMistOpacity.value = 0.35;
       livingAirUniforms.uWindTint.value.setRGB(1.08, 0.88, 0.82); // Warm rose-gold sunset wind!
     } else {
       mistCushionUniforms.uMistCool.value.copy(skyUniforms.uFog.value).lerp(linearColor(0xdcf2ff), 0.35);
       mistCushionUniforms.uMistWarm.value.copy(sun.color).lerp(linearColor(0xfff6e0), 0.45);
-      mistCushionUniforms.uMistOpacity.value = 1.0;
+      mistCushionUniforms.uMistOpacity.value = 0.7;
       livingAirUniforms.uWindTint.value.setRGB(0.92, 0.98, 1.06); // Pearlescent cyan-ivory day wind!
     }
     livingAirUniforms.uDaylight.value = state.daylight;

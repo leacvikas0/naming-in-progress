@@ -1210,6 +1210,7 @@ export function applyTimeOfDay(modeOrT) {
 
   // 1. Sync Post-Processing Grade & Restrained Bloom
   post.setTimeOfDayGrade(currentTodT);
+  post.setAtmosphere({ fogColor: skyState.fogColor, lightDir: skyState.activeLightDir });
 
   // 2. Sync Scene Fog & Background
   scene.fog.color.copy(skyState.fogColor);
