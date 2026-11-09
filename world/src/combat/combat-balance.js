@@ -73,7 +73,7 @@ export const HERO_STATS = {
     stormCataclysmDuration: MAGE_STORM_CATACLYSM_DURATION, // 6.0s stationary vulnerable channel
     stormCataclysmCd: MAGE_STORM_CATACLYSM_COOLDOWN, // 24.0s
     stormCataclysmWaveDmg: 68,
-    stormCataclysmRadius: 11.0,
+    stormCataclysmRadius: 8.5,
     heavyNovaDmg: 42,
     heavyNovaRadius: 3.5,
     infuseHeal: 45,
@@ -82,11 +82,35 @@ export const HERO_STATS = {
   },
 };
 
+// Production balance levers (2026-11-09 refinement pass). Locked spec values
+// (E 13s/18s, Q 10s x2, shield 80% DR, Mage E 8.5s, 6s storm) are untouched;
+// these bound the stacking and free-defence exploits around them.
+export const KNIGHT_MAX_LEVEL = 5;
+export const KNIGHT_LEVEL_DMG_STEP = 0.08;
+export const ICE_DAMAGE_REDUCTION_CAP = 0.2;
+// Cap on the passive stack (infusion x empowered x perfect-dodge, max 2.28 uncapped).
+// Knight Q's locked x2 applies on top, and divine partner multipliers after that,
+// so the God's help stays a decisive swing.
+export const MORTAL_DMG_MULT_CAP = 1.7;
+// Detonating a mark you primed yourself is weak: synergy should need both heroes.
+export const SELF_DETONATION_MULT = 0.35;
+export const KNIGHT_GUARD_MAX = 100;
+export const KNIGHT_GUARD_HOLD_DRAIN = 7; // per second while held
+export const KNIGHT_GUARD_HIT_COST = 0.6; // fraction of raw damage drained per blocked hit
+export const KNIGHT_GUARD_REGEN = 30; // per second once lowered
+export const KNIGHT_GUARD_REGEN_DELAY = 1.0;
+export const KNIGHT_GUARD_BREAK_STUN = 1.2;
+export const SHIELD_COVER_RADIUS = 6.0; // Mage must be this close to be covered
+export const SHIELD_ARC_COS = 0.5; // +-60 deg frontal block/cover arc
+export const DASH_COOLDOWN = 0.9;
+export const DASH_IFRAMES = 0.22;
+export const PERFECT_DODGE_ICD = 4.0;
+
 export function getKnightLevelStats(level = 1) {
-  const cleanLevel = Math.max(1, Math.floor(Number(level) || 1));
+  const cleanLevel = Math.min(KNIGHT_MAX_LEVEL, Math.max(1, Math.floor(Number(level) || 1)));
   return {
     level: cleanLevel,
-    dmgMult: Number((1.0 + 0.12 * (cleanLevel - 1)).toFixed(3)),
+    dmgMult: Number((1.0 + KNIGHT_LEVEL_DMG_STEP * (cleanLevel - 1)).toFixed(3)),
     iceSlowFactor: clamp(Number((0.25 + 0.04 * cleanLevel).toFixed(3)), 0.25, 0.65),
     iceSlowDuration: 4.5,
     fireStrikeBonus: 6 + 3 * cleanLevel,
@@ -836,14 +860,10 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
       ? lvlStats.fireStrikeBonus
       : 0;
 
-  let rawDirectDmg = Math.round(
-    (baseDmg * levelMult + fireBonus) *
-      infusedMult *
-      empoweredMult *
-      dodgeMult *
-      communeMult *
-      ultMult
-  );
+  const mortalMult =
+    Math.min(MORTAL_DMG_MULT_CAP, infusedMult * empoweredMult * dodgeMult) * ultMult;
+  let rawDirectDmg = Math.round((baseDmg * levelMult + fireBonus) * mortalMult * communeMult);
+  const attackerHero = hitSpec.heroId || (isSwordHit ? 'Knight' : 'Mage');
 
   // Apply Knight E Power Sword Ice Slow or Fire Burn DoT on sword hits
   let iceSlowApplied = false;
@@ -873,6 +893,9 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
       (effectiveInfusion === 'eclipse' &&
         (activeMark === 'rime' || activeMark === 'solar' || isSwordHit)));
 
+  const selfDetonation = Boolean(
+    activeMark && enemy.markOwner && enemy.markOwner === attackerHero
+  );
   if (activeMark && canDetonate && MARK_TO_DETONATION[activeMark]) {
     detonationSpec = MARK_TO_DETONATION[activeMark];
     enemy.mark = null;
@@ -886,16 +909,17 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
   let aegisBroken = false;
 
   if (enemy.isBoss && enemy.aegisActive && enemy.aegisLayers > 0) {
-    if (
-      source === 'couples_ultimate' ||
-      source === 'divine_miracle' ||
-      source === 'storm_cataclysm'
-    ) {
+    if (source === 'couples_ultimate' || source === 'divine_miracle') {
       enemy.aegisLayers = 0;
       enemy.aegisActive = false;
       aegisBroken = true;
       enemy.stunTimer = Math.max(enemy.stunTimer || 0, COUPLES_ULTIMATE.stun);
-    } else if (detonationSpec || source === 'divine_blessing' || source === 'knight_sky_lightning') {
+    } else if (
+      detonationSpec ||
+      source === 'divine_blessing' ||
+      source === 'knight_sky_lightning' ||
+      source === 'storm_cataclysm'
+    ) {
       enemy.aegisLayers = Math.max(0, enemy.aegisLayers - 1);
       aegisBroken = true;
       if (enemy.aegisLayers === 0) {
@@ -924,7 +948,9 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     const bonusBase = isEclipseDetonation
       ? Math.round((DETONATIONS.solar_flare.bonusDmg + DETONATIONS.shatterblow.bonusDmg) * 0.75)
       : detonationSpec.bonusDmg;
-    const bonusDmg = Math.round(bonusBase * empoweredMult * ultMult);
+    const bonusDmg = Math.round(
+      bonusBase * empoweredMult * ultMult * (selfDetonation ? SELF_DETONATION_MULT : 1.0)
+    );
     const affectedIds = [];
 
     const targets =
@@ -1006,6 +1032,7 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
         : null);
     if (nextMark && enemy.hp > 0) {
       enemy.mark = nextMark;
+      enemy.markOwner = attackerHero;
       enemy.markTimer = hitSpec.markDuration ?? 6.0;
     }
 
@@ -1026,7 +1053,7 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     enemy.hp <= enemy.maxHp * (enemy.aegisTriggerHpRatio ?? 0.5)
   ) {
     enemy.aegisTriggered = true;
-    if (source === 'couples_ultimate' || source === 'storm_cataclysm') {
+    if (source === 'couples_ultimate') {
       enemy.aegisActive = false;
       enemy.aegisLayers = 0;
       aegisBroken = true;
@@ -1163,7 +1190,10 @@ export function createHeadlessCampaignSim() {
         : HERO_STATS.Knight.xpPerKill;
     heroes.Knight.kills += 1;
     heroes.Knight.xp += xpGain;
-    while (heroes.Knight.xp >= HERO_STATS.Knight.xpPerLevel) {
+    while (
+      heroes.Knight.xp >= HERO_STATS.Knight.xpPerLevel &&
+      heroes.Knight.level < KNIGHT_MAX_LEVEL
+    ) {
       heroes.Knight.xp -= HERO_STATS.Knight.xpPerLevel;
       heroes.Knight.level += 1;
       eventLog.push({ type: 'knight_level_up', level: heroes.Knight.level });
@@ -1860,18 +1890,18 @@ export function createHeadlessCampaignSim() {
       return { absorbed: 0, hpLost: 0, downed: false, interceptedByKnight: false };
     }
 
-    const slowReduction = clamp(Number(attackerEnemy?.iceSlowFactor) || 0, 0, 0.75);
+    const slowReduction = clamp(
+      Number(attackerEnemy?.iceSlowFactor) || 0,
+      0,
+      ICE_DAMAGE_REDUCTION_CAP
+    );
     let effectiveAmount = Math.max(1, Math.round(amount * (1.0 - slowReduction)));
 
-    // If Mage is attacked while Knight is holding Shield Block, Knight intercepts & blocks 80%!
+    // Shielding Knight intercepts hits on the Mage; DR is applied once, on the Knight's path.
     if (heroId === 'Mage' && heroes.Knight.shieldBlocking && !heroes.Knight.downed) {
-      const blockedDmg = Math.max(
-        1,
-        Math.round(effectiveAmount * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
-      );
-      const knightRes = applyDamageToHero('Knight', blockedDmg, null);
+      const knightRes = applyDamageToHero('Knight', effectiveAmount, null);
       return {
-        absorbed: effectiveAmount - blockedDmg + knightRes.absorbed,
+        absorbed: effectiveAmount - (knightRes.hpLost || 0),
         hpLost: 0,
         knightHpLost: knightRes.hpLost,
         downed: false,

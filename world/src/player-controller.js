@@ -58,6 +58,9 @@ import {
   COMMUNE_RESURRECT_DISTANCE,
   selectSoftLockTarget,
   resolveShrineObstacles,
+  DASH_COOLDOWN,
+  DASH_IFRAMES,
+  PERFECT_DODGE_ICD,
 } from './combat/combat-balance.js';
 import {
   KNIGHT_COMBO_SPECS,
@@ -2061,6 +2064,10 @@ export async function createCoopPlayerSystem({
     }
 
     if (actionType === 'dash') {
+      const dashHero = campaignLoop.combatHeroes[activeHeroId];
+      if (dashHero.downed || dashHero.dashCd > 0) {
+        return { blocked: true, cooldown: dashHero.dashCd };
+      }
       if (leader.id === 'Knight' && leader.shieldBlocking) {
         actionAim.releaseHeavy('Knight');
       }
@@ -2071,11 +2078,13 @@ export async function createCoopPlayerSystem({
         timeScale: 1.25,
         fade: 0.06,
       });
-      campaignLoop.combatHeroes[activeHeroId].iframeTimer = 0.3;
+      dashHero.iframeTimer = DASH_IFRAMES;
+      dashHero.dashCd = DASH_COOLDOWN;
 
-      const dodgeRes = enemyManager.checkPerfectDodge(leader);
+      const dodgeRes = dashHero.dodgeIcd > 0 ? { triggered: false } : enemyManager.checkPerfectDodge(leader);
       if (dodgeRes.triggered) {
-        campaignLoop.combatHeroes[activeHeroId].perfectDodgeBuff = true;
+        dashHero.dodgeIcd = PERFECT_DODGE_ICD;
+        dashHero.perfectDodgeBuff = true;
         campaignLoop.addResonance(dodgeRes.resonanceGain || 20);
         combatSfx.playPerfectDodge();
         onBanner?.({
@@ -2353,7 +2362,15 @@ export async function createCoopPlayerSystem({
 
     const leader = heroStates[activeHeroId];
     const partner = heroStates[partnerHeroId];
-    const controlLocked = isPlayerControlLocked();
+    // Downed heroes can't act; they wait for a partner revive.
+    const controlLocked =
+      isPlayerControlLocked() || Boolean(campaignLoop.combatHeroes[activeHeroId]?.downed);
+
+    // Guard broke (or block was refused) inside the campaign loop: drop the local block pose.
+    if (heroStates.Knight.shieldBlocking && !campaignLoop.combatHeroes.Knight.shieldBlocking) {
+      actionAim.releaseHeavy('Knight');
+      heroStates.Knight.shieldBlocking = false;
+    }
 
     // Advance 1-input swing buffer, mash speed ramp, and contact-frame hit detection
     if (!controlLocked) {

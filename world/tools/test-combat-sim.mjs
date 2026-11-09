@@ -35,6 +35,8 @@ import {
   createCombatActionAimController,
 } from '../src/combat/combat-action-aim.js';
 import {
+  KNIGHT_MAX_LEVEL,
+  MORTAL_DMG_MULT_CAP,
   HERO_STATS,
   BREATHING_STYLES,
   SPELLS,
@@ -638,4 +640,37 @@ await check('10. Full 3-Act Valley Expedition & Pooled Enemy Manager (incl. tele
   assert.equal(liveLoop.combatHeroes.Mage.downed, true);
 });
 
-console.log(`\nALL ${passed} WAVE 2B COMBAT & CAMPAIGN TESTS PASSED!\n`);
+await check('11. Refinement pass: single shield DR on intercept, level cap, passive-stack cap, self-detonation penalty', () => {
+  const sim = createHeadlessCampaignSim();
+  sim.knightHoldShieldBlock(true);
+  const intercept = sim.applyDamageToHero('Mage', 50);
+  assert.equal(intercept.interceptedByKnight, true);
+  assert.equal(intercept.knightHpLost, 10, 'Intercepted 50 dmg must cost the Knight 10 (80% DR applied once)');
+  sim.knightHoldShieldBlock(false);
+
+  assert.equal(getKnightLevelStats(9).level, KNIGHT_MAX_LEVEL);
+
+  const mk = () => ({ hp: 2000, maxHp: 2000, x: 0, z: 0, mark: null });
+  const capped = mk();
+  const capRes = applyHitAndResolveDetonation(capped, {
+    source: 'combo1', baseDmg: 100, infusion: 'solar', empoweredBreathing: true, perfectDodgeBuff: true,
+  }, [capped]);
+  const plain = mk();
+  const plainRes = applyHitAndResolveDetonation(plain, { source: 'combo1', baseDmg: 100, infusion: 'none' }, [plain]);
+  assert.ok(capRes.damageDealt <= Math.ceil((plainRes.damageDealt + 30) * MORTAL_DMG_MULT_CAP));
+
+  const selfE = mk();
+  selfE.mark = 'rime'; selfE.markTimer = 5; selfE.markOwner = 'Knight';
+  const selfRes = applyHitAndResolveDetonation(selfE, { source: 'combo4', baseDmg: 0, heroId: 'Knight' }, [selfE]);
+  const partnerE = mk();
+  partnerE.mark = 'rime'; partnerE.markTimer = 5; partnerE.markOwner = 'Mage';
+  const partnerRes = applyHitAndResolveDetonation(partnerE, { source: 'combo4', baseDmg: 0, heroId: 'Knight' }, [partnerE]);
+  assert.ok(partnerRes.damageDealt > selfRes.damageDealt * 2, 'Partner-primed detonations must hit much harder');
+});
+
+const failedCount = process.exitCode ? 'SOME' : 0;
+if (failedCount) {
+  console.error(`\n${passed} PASSED, SOME WAVE 2B COMBAT & CAMPAIGN TESTS FAILED (see FAIL above)\n`);
+} else {
+  console.log(`\nALL ${passed} WAVE 2B COMBAT & CAMPAIGN TESTS PASSED!\n`);
+}

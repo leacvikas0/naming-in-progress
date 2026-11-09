@@ -30,6 +30,7 @@ import {
   resolveShrineObstacles,
   allocateAttackTokens,
   applyHitAndResolveDetonation,
+  ICE_DAMAGE_REDUCTION_CAP,
 } from './combat-balance.js';
 
 export const BOSS_SOVEREIGN_CELL_OVERRIDES = {
@@ -786,7 +787,7 @@ export async function createEnemyManager({
               (targetHero.iframeTimer || 0) <= 0
             ) {
               if (onPlayerHit) {
-                const dmgReduction = clamp(e.iceSlowFactor || 0, 0, 0.75);
+                const dmgReduction = clamp(e.iceSlowFactor || 0, 0, ICE_DAMAGE_REDUCTION_CAP);
                 const outgoingDmg = Math.max(1, Math.round(e.dmg * (1.0 - dmgReduction)));
                 onPlayerHit(targetHero, e, outgoingDmg);
               }

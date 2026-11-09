@@ -39,6 +39,15 @@ import {
   ALTAR_STELE_POS,
   selectSoftLockTarget,
   getKnightLevelStats,
+  KNIGHT_GUARD_MAX,
+  KNIGHT_GUARD_HOLD_DRAIN,
+  KNIGHT_GUARD_HIT_COST,
+  KNIGHT_GUARD_REGEN,
+  KNIGHT_GUARD_REGEN_DELAY,
+  KNIGHT_GUARD_BREAK_STUN,
+  SHIELD_COVER_RADIUS,
+  SHIELD_ARC_COS,
+  KNIGHT_MAX_LEVEL,
 } from './combat-balance.js';
 import {
   KNIGHT_SHIELD_BLOCK_DR,
@@ -233,6 +242,11 @@ export function createCampaignLoop({
       perfectDodgeBuff: false,
       iframeTimer: 0,
       interceptCd: 0,
+      dashCd: 0,
+      dodgeIcd: 0,
+      guard: KNIGHT_GUARD_MAX,
+      guardRegenDelay: 0,
+      guardBrokenTimer: 0,
     },
     Mage: {
       id: 'Mage',
@@ -258,6 +272,8 @@ export function createCampaignLoop({
       perfectDodgeBuff: false,
       iframeTimer: 0,
       infuseCd: 0,
+      dashCd: 0,
+      dodgeIcd: 0,
       spellCooldowns: {
         frost_lance: 0,
         shatterlance: 0,
@@ -286,6 +302,7 @@ export function createCampaignLoop({
   let wingmanBoltTimer = 0.75;
   let wingmanBoltIdx = 0;
   let bothDownedTimer = 0;
+  let lastHeroStates = null;
   let communeChannelActive = false;
   let indicatorsHiddenForShot = false;
   let divineBlessingActive = false;
@@ -386,7 +403,10 @@ export function createCampaignLoop({
     combatHeroes.Knight.kills += 1;
     combatHeroes.Knight.xp += xpGain;
     let leveledUp = false;
-    while (combatHeroes.Knight.xp >= HERO_STATS.Knight.xpPerLevel) {
+    while (
+      combatHeroes.Knight.xp >= HERO_STATS.Knight.xpPerLevel &&
+      combatHeroes.Knight.level < KNIGHT_MAX_LEVEL
+    ) {
       combatHeroes.Knight.xp -= HERO_STATS.Knight.xpPerLevel;
       combatHeroes.Knight.level += 1;
       leveledUp = true;
@@ -609,9 +629,44 @@ export function createCampaignLoop({
   }
 
   function setKnightShieldBlocking(active = false) {
-    combatHeroes.Knight.shieldBlocking = Boolean(active);
+    const k = combatHeroes.Knight;
+    // A broken guard can't be raised again until the stagger ends.
+    k.shieldBlocking = Boolean(active) && k.guardBrokenTimer <= 0 && k.guard > 0 && !k.downed;
+    if (!k.shieldBlocking) k.guardRegenDelay = KNIGHT_GUARD_REGEN_DELAY;
     onHudStateChanged?.(getStateSnapshot());
-    return combatHeroes.Knight.shieldBlocking;
+    return k.shieldBlocking;
+  }
+
+  // Frontal-arc test: is `pos` within the Knight's block arc?
+  function isInKnightFrontArc(pos) {
+    const k = lastHeroStates?.Knight;
+    if (!k || !pos) return true;
+    const dx = (pos.x ?? 0) - k.x;
+    const dz = (pos.z ?? 0) - k.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.5) return true;
+    const fx = Math.sin(k.yaw || 0);
+    const fz = Math.cos(k.yaw || 0);
+    return (dx * fx + dz * fz) / len >= SHIELD_ARC_COS;
+  }
+
+  function knightCoversMage(enemy) {
+    const k = lastHeroStates?.Knight;
+    const m = lastHeroStates?.Mage;
+    if (!k || !m) return true;
+    if (Math.hypot(m.x - k.x, m.z - k.z) > SHIELD_COVER_RADIUS) return false;
+    return isInKnightFrontArc(enemy);
+  }
+
+  function drainKnightGuard(amount) {
+    const k = combatHeroes.Knight;
+    k.guard = Math.max(0, k.guard - amount);
+    k.guardRegenDelay = KNIGHT_GUARD_REGEN_DELAY;
+    if (k.guard <= 0 && k.shieldBlocking) {
+      k.shieldBlocking = false;
+      k.guardBrokenTimer = KNIGHT_GUARD_BREAK_STUN;
+      emitBanner('GUARD BROKEN', 'The Knight staggers. Give him a moment to recover.', 'warning');
+    }
   }
 
   function reviveAllInstant() {
@@ -728,19 +783,17 @@ export function createCampaignLoop({
       return { absorbed: 0, hpLost: 0, downed: false, interceptedByKnight: false };
     }
 
-    // If Mage is hit while Knight is holding Shield Block, Knight intercepts & blocks 80%!
+    // A shielding Knight covers a nearby Mage against attacks from his front arc.
+    // DR is applied once, on the Knight's own path below.
     if (
       heroId === 'Mage' &&
       combatHeroes.Knight.shieldBlocking &&
-      !combatHeroes.Knight.downed
+      !combatHeroes.Knight.downed &&
+      knightCoversMage(enemy)
     ) {
-      const reducedForKnight = Math.max(
-        1,
-        Math.round(rawDmg * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
-      );
-      const kRes = handlePlayerHit({ id: 'Knight' }, enemy, reducedForKnight);
+      const kRes = handlePlayerHit({ id: 'Knight', char: lastHeroStates?.Knight?.char }, enemy, rawDmg);
       return {
-        absorbed: rawDmg - reducedForKnight + (kRes?.absorbed || 0),
+        absorbed: rawDmg - (kRes?.hpLost || 0),
         hpLost: 0,
         knightHpLost: kRes?.hpLost || 0,
         downed: false,
@@ -749,11 +802,16 @@ export function createCampaignLoop({
     }
 
     let effectiveDmg = rawDmg;
-    if (heroId === 'Knight' && combatHeroes.Knight.shieldBlocking) {
+    if (
+      heroId === 'Knight' &&
+      combatHeroes.Knight.shieldBlocking &&
+      isInKnightFrontArc(enemy)
+    ) {
       effectiveDmg = Math.max(
         1,
         Math.round(rawDmg * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
       );
+      drainKnightGuard(rawDmg * KNIGHT_GUARD_HIT_COST);
     }
 
     let rem = effectiveDmg;
@@ -1783,6 +1841,7 @@ export function createCampaignLoop({
 
     const knight = heroStates?.Knight;
     const mage = heroStates?.Mage;
+    if (knight && mage) lastHeroStates = heroStates;
 
     // 0. Advance Divine Verdict Sequence (2.50s 4-Beat Blessing/Resurrection OR 2.80s Smite)
     let blessingActivatedThisFrame = false;
@@ -1940,6 +1999,18 @@ export function createCampaignLoop({
       }
       if (h.iframeTimer > 0) {
         h.iframeTimer = Math.max(0, h.iframeTimer - dt);
+      }
+      if (h.dashCd > 0) h.dashCd = Math.max(0, h.dashCd - dt);
+      if (h.dodgeIcd > 0) h.dodgeIcd = Math.max(0, h.dodgeIcd - dt);
+      if (h.id === 'Knight') {
+        if (h.guardBrokenTimer > 0) h.guardBrokenTimer = Math.max(0, h.guardBrokenTimer - dt);
+        if (h.shieldBlocking) {
+          drainKnightGuard(KNIGHT_GUARD_HOLD_DRAIN * dt);
+        } else if (h.guardRegenDelay > 0) {
+          h.guardRegenDelay = Math.max(0, h.guardRegenDelay - dt);
+        } else {
+          h.guard = Math.min(KNIGHT_GUARD_MAX, h.guard + KNIGHT_GUARD_REGEN * dt);
+        }
       }
       if (!divineBlessingActive && h.partnerBuffTimer > 0) {
         h.partnerBuffTimer = Math.max(0, h.partnerBuffTimer - dt);
