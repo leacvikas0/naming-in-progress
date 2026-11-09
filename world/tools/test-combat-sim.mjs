@@ -35,6 +35,8 @@ import {
   createCombatActionAimController,
 } from '../src/combat/combat-action-aim.js';
 import {
+  KNIGHT_MAX_LEVEL,
+  MORTAL_DMG_MULT_CAP,
   HERO_STATS,
   BREATHING_STYLES,
   SPELLS,
@@ -628,7 +630,7 @@ await check('10. Full 3-Act Valley Expedition & Pooled Enemy Manager (8 concurre
     resolveCollisions: (x, z) => ({ x, z, wrapped: false }),
   });
 
-  assert.equal(em.poolSlots.length, 6);
+  assert.equal(em.poolSlots.length, 10); // encounter design: per-role rigs incl. Golem + Necromancer
   assert.equal(em.telegraphRingMesh.visible, false, 'telegraphRingMesh must stay permanently hidden');
   em.spawnWave(ACT_DEFINITIONS.act1_arena.waves[1], 'act1_arena');
   assert.equal(em.visibleCount, 6, 'All 6 enemies in Wave 2 spawn concurrently under MAX_CONCURRENT_ENEMIES = 8');
@@ -804,13 +806,13 @@ await check('11. Phase 1 Combat Upgrades: Shatterlance (0.8..18.0m single-hit de
   loop.handlePlayerHit(nearHeroes.Knight, closeEnemy, 15);
   assert.equal(loop.combatHeroes.Mage.reviveTimer, 0);
 
-  // Now hold within 2.8m for 2.55s uninterrupted -> Mage revives at 45% Max HP (54 HP) with 2.0s i-frames!
+  // Hardcore revive rule: partner within 2.5 m for 2.5 s -> 35% Max HP with 1.0 s i-frames.
   for (let s = 0; s < 26; s++) {
     loop.update(0.1, { heroStates: nearHeroes, soloWingmanActive: false });
   }
   assert.equal(loop.combatHeroes.Mage.downed, false);
-  assert.equal(loop.combatHeroes.Mage.hp, Math.round(HERO_STATS.Mage.maxHp * 0.45));
-  assert.ok(loop.combatHeroes.Mage.iframeTimer >= 1.9);
+  assert.equal(loop.combatHeroes.Mage.hp, Math.round(HERO_STATS.Mage.maxHp * 0.35));
+  assert.ok(loop.combatHeroes.Mage.iframeTimer > 0, "revive grants i-frames");
 });
 
 await check('12. Phase 2 Proportional Divine Prayer & Phase 4 Night Demon Tree + Summoned Bats (10.0s summon timer, max 2 bats, 1.2m swoop)', async () => {
@@ -1261,4 +1263,56 @@ await check('14. Overhaul Verification: 8-Slot Pool Fallback, Active Cooldown Ci
   );
 });
 
-console.log(`\nALL ${passed} WAVE 2B COMBAT & CAMPAIGN TESTS PASSED!\n`);
+await check('11. Refinement pass: single shield DR on intercept, level cap, passive-stack cap, self-detonation penalty', () => {
+  const sim = createHeadlessCampaignSim();
+  sim.knightHoldShieldBlock(true);
+  const intercept = sim.applyDamageToHero('Mage', 50);
+  assert.equal(intercept.interceptedByKnight, true);
+  assert.equal(intercept.knightHpLost, 10, 'Intercepted 50 dmg must cost the Knight 10 (80% DR applied once)');
+  sim.knightHoldShieldBlock(false);
+
+  assert.equal(getKnightLevelStats(9).level, KNIGHT_MAX_LEVEL);
+
+  const mk = () => ({ hp: 2000, maxHp: 2000, x: 0, z: 0, mark: null });
+  const capped = mk();
+  const capRes = applyHitAndResolveDetonation(capped, {
+    source: 'combo1', baseDmg: 100, infusion: 'solar', empoweredBreathing: true, perfectDodgeBuff: true,
+  }, [capped]);
+  const plain = mk();
+  const plainRes = applyHitAndResolveDetonation(plain, { source: 'combo1', baseDmg: 100, infusion: 'none' }, [plain]);
+  assert.ok(capRes.damageDealt <= Math.ceil((plainRes.damageDealt + 30) * MORTAL_DMG_MULT_CAP));
+
+  const selfE = mk();
+  selfE.mark = 'rime'; selfE.markTimer = 5; selfE.markOwner = 'Knight';
+  const selfRes = applyHitAndResolveDetonation(selfE, { source: 'combo4', baseDmg: 0, heroId: 'Knight' }, [selfE]);
+  const partnerE = mk();
+  partnerE.mark = 'rime'; partnerE.markTimer = 5; partnerE.markOwner = 'Mage';
+  const partnerRes = applyHitAndResolveDetonation(partnerE, { source: 'combo4', baseDmg: 0, heroId: 'Knight' }, [partnerE]);
+  assert.ok(partnerRes.damageDealt > selfRes.damageDealt * 2, 'Partner-primed detonations must hit much harder');
+});
+
+await check('12. Refinement pass: partner revive by proximity, full wipe restarts the act at full HP without free shield', () => {
+  const loop = createCampaignLoop({ scene: new THREE.Scene(), walkableHeightAt: () => 0, combatSfx: createCombatSfx() });
+  const heroStates = { Knight: { x: 0, y: 0, z: 0, yaw: 0 }, Mage: { x: 1, y: 0, z: 0, yaw: 0 } };
+  loop.combatHeroes.Mage.hp = 0;
+  loop.combatHeroes.Mage.downed = true;
+  for (let i = 0; i < 60; i++) loop.update(0.05, { heroStates, soloWingmanActive: false });
+  assert.equal(loop.combatHeroes.Mage.downed, false, 'Standing beside a downed partner for 2.5s revives them');
+  assert.equal(loop.combatHeroes.Mage.hp, Math.round(HERO_STATS.Mage.maxHp * 0.35));
+
+  loop.combatHeroes.Knight.downed = true;
+  loop.combatHeroes.Knight.hp = 0;
+  loop.combatHeroes.Mage.downed = true;
+  loop.combatHeroes.Mage.hp = 0;
+  for (let i = 0; i < 40; i++) loop.update(0.1, { heroStates, soloWingmanActive: false });
+  assert.equal(loop.combatHeroes.Knight.downed, false);
+  assert.equal(loop.combatHeroes.Knight.hp, HERO_STATS.Knight.maxHp);
+  assert.equal(loop.combatHeroes.Knight.shield, 0, 'No free rebirth shield after a wipe');
+});
+
+const failedCount = process.exitCode ? 'SOME' : 0;
+if (failedCount) {
+  console.error(`\n${passed} PASSED, SOME WAVE 2B COMBAT & CAMPAIGN TESTS FAILED (see FAIL above)\n`);
+} else {
+  console.log(`\nALL ${passed} WAVE 2B COMBAT & CAMPAIGN TESTS PASSED!\n`);
+}

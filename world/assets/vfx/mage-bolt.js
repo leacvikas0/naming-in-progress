@@ -57,6 +57,8 @@ export const MAGE_BOLT_DEFAULTS = Object.freeze({
   handForward: 0.55,
   targetHeight: 1.08,
   impactDuration: 0.46,
+  homingRate: 10.0,
+  homingMaxDrift: 2.5,
 
   // Combo speeds (m/s)
   speedCombo0: 28.0,
@@ -760,12 +762,56 @@ export class MageBoltSystem {
     if (this.volleys.length >= MAX_ACTIVE_VOLLEYS) {
       this.volleys.shift();
     }
+    if (targetPos && this.targetResolver) {
+      const ref = this.targetResolver(vDesc.end);
+      if (ref) {
+        vDesc.trackRef = ref;
+        vDesc.trackOffsetY = vDesc.end.y - (ref.y ?? this.getGroundHeight(ref.x, ref.z));
+        vDesc.homeOrigin = vDesc.end.clone();
+      }
+    }
     this.volleys.push(vDesc);
     this.active = true;
     this.age = 0;
     this.group.visible = true;
     this._evaluateVolleys(this.sharedUniforms.uTime.value);
     return this;
+  }
+
+  /**
+   * Gentle homing: `resolver(endPoint)` returns the enemy (with live x/y/z) a
+   * volley was aimed at, or null. In flight the impact point eases toward that
+   * enemy (max `homingMaxDrift` m) so bolts land on a moving target without
+   * visibly curving like auto-aim.
+   */
+  setTargetResolver(resolver) {
+    this.targetResolver = typeof resolver === 'function' ? resolver : null;
+    return this;
+  }
+
+  _steerVolley(volley, dt) {
+    const ref = volley.trackRef;
+    if (!ref || !volley.homeOrigin) return;
+    const flightEnd = Math.max(...volley.bolts.map((b) => b.launchDelay + b.flightDuration));
+    if (volley.age >= flightEnd || ref.active === false) {
+      volley.trackRef = null;
+      return;
+    }
+    const maxDrift = this.config.homingMaxDrift ?? 2.5;
+    let tx = ref.x - volley.homeOrigin.x;
+    let tz = ref.z - volley.homeOrigin.z;
+    const drift = Math.hypot(tx, tz);
+    if (drift > maxDrift) {
+      tx *= maxDrift / drift;
+      tz *= maxDrift / drift;
+    }
+    const gx = volley.homeOrigin.x + tx;
+    const gz = volley.homeOrigin.z + tz;
+    const gy = (ref.y ?? this.getGroundHeight(gx, gz)) + volley.trackOffsetY;
+    const k = 1.0 - Math.exp(-(this.config.homingRate ?? 10.0) * dt);
+    volley.end.x += (gx - volley.end.x) * k;
+    volley.end.y += (gy - volley.end.y) * k;
+    volley.end.z += (gz - volley.end.z) * k;
   }
 
   cast(origin, direction, options = {}) {
@@ -1009,6 +1055,7 @@ export class MageBoltSystem {
 
     this.age += dt;
     for (let i = this.volleys.length - 1; i >= 0; i--) {
+      this._steerVolley(this.volleys[i], dt);
       this.volleys[i].age += dt;
       if (this.volleys[i].age > this.volleys[i].totalDuration) {
         this.volleys.splice(i, 1);

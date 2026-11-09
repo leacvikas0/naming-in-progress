@@ -46,6 +46,15 @@ import {
   ALTAR_STELE_POS,
   selectSoftLockTarget,
   getKnightLevelStats,
+  KNIGHT_GUARD_MAX,
+  KNIGHT_GUARD_HOLD_DRAIN,
+  KNIGHT_GUARD_HIT_COST,
+  KNIGHT_GUARD_REGEN,
+  KNIGHT_GUARD_REGEN_DELAY,
+  KNIGHT_GUARD_BREAK_STUN,
+  SHIELD_COVER_RADIUS,
+  SHIELD_ARC_COS,
+  KNIGHT_MAX_LEVEL,
 } from './combat-balance.js';
 import {
   KNIGHT_SHIELD_BLOCK_DR,
@@ -61,6 +70,8 @@ import {
 
 const MAX_GROUND_INDICATORS = 36;
 const MAX_CREST_AND_TETHER_INSTANCES = 56;
+const STORM_CATACLYSM_INNER_SAFE_RADIUS = 1.68;
+const _indDummy = new THREE.Object3D();
 
 /* ------------------------------------------------------------------------- */
 /* 1. Shared 2-InstancedMesh Opaque Cel-Shaded Indicator Builders            */
@@ -148,6 +159,7 @@ function createGroundIndicatorInstancedMesh() {
   const mesh = new THREE.InstancedMesh(geo, mat, MAX_GROUND_INDICATORS);
   mesh.name = 'combatGroundIndicatorInstancedMesh';
   mesh.frustumCulled = false;
+  mesh.renderOrder = 16;
   mesh.castShadow = false;
   mesh.receiveShadow = false;
   mesh.renderOrder = 16;
@@ -277,6 +289,11 @@ export function createCampaignLoop({
       perfectDodgeBuff: false,
       iframeTimer: 0,
       interceptCd: 0,
+      dashCd: 0,
+      dodgeIcd: 0,
+      guard: KNIGHT_GUARD_MAX,
+      guardRegenDelay: 0,
+      guardBrokenTimer: 0,
     },
     Mage: {
       id: 'Mage',
@@ -309,6 +326,8 @@ export function createCampaignLoop({
       perfectDodgeBuff: false,
       iframeTimer: 0,
       infuseCd: 0,
+      dashCd: 0,
+      dodgeIcd: 0,
       spellCooldowns: {
         frost_lance: 0,
         shatterlance: 0,
@@ -337,6 +356,10 @@ export function createCampaignLoop({
   let wingmanBoltTimer = 0.75;
   let wingmanBoltIdx = 0;
   let bothDownedTimer = 0;
+  let lastHeroStates = null;
+  const PARTNER_REVIVE_RADIUS = 2.5;
+  const PARTNER_REVIVE_SECONDS = 2.5;
+  const PARTNER_REVIVE_HP = 0.35;
   let communeChannelActive = false;
   let communeMode = 'normal'; // 'normal' | 'divine_miracle'
   let modeAHealCd = 0;
@@ -540,7 +563,10 @@ export function createCampaignLoop({
     combatHeroes.Knight.kills += 1;
     combatHeroes.Knight.xp += xpGain;
     let leveledUp = false;
-    while (combatHeroes.Knight.xp >= HERO_STATS.Knight.xpPerLevel) {
+    while (
+      combatHeroes.Knight.xp >= HERO_STATS.Knight.xpPerLevel &&
+      combatHeroes.Knight.level < KNIGHT_MAX_LEVEL
+    ) {
       combatHeroes.Knight.xp -= HERO_STATS.Knight.xpPerLevel;
       combatHeroes.Knight.level += 1;
       leveledUp = true;
@@ -842,17 +868,71 @@ export function createCampaignLoop({
   }
 
   function setKnightShieldBlocking(active = false) {
-    combatHeroes.Knight.shieldBlocking = Boolean(active);
+    const k = combatHeroes.Knight;
+    // A broken guard can't be raised again until the stagger ends.
+    k.shieldBlocking = Boolean(active) && k.guardBrokenTimer <= 0 && k.guard > 0 && !k.downed;
+    if (!k.shieldBlocking) k.guardRegenDelay = KNIGHT_GUARD_REGEN_DELAY;
+    // Block edge drives parry timing (±0.15 s of an enemy contact frame).
+    enemyManager?.notifyKnightBlock?.(k.shieldBlocking);
     onHudStateChanged?.(getStateSnapshot());
-    return combatHeroes.Knight.shieldBlocking;
+    return k.shieldBlocking;
+  }
+
+  // Parry: the attacker staggers (enemy-manager) and the Knight's guard is refunded.
+  function handleEnemyParried(enemy) {
+    const k = combatHeroes.Knight;
+    k.guard = KNIGHT_GUARD_MAX;
+    k.guardRegenDelay = 0;
+    combatSfx?.playShieldChime?.();
+    emitBanner('PARRY!', `${enemy?.name || 'The enemy'} reels from the perfectly timed guard.`, 'detonation');
+  }
+  enemyManager?.setOnParry?.(handleEnemyParried);
+  enemyManager?.setOnWindup?.((enemy, attackId, atk) => {
+    const kind =
+      atk?.blockable === false || enemy?.isBoss ? 'heavy' : atk?.area ? 'area' : atk?.ranged ? 'cast' : 'melee';
+    combatSfx?.playEnemyWindup?.(kind);
+  });
+
+  // Frontal-arc test: is `pos` within the Knight's block arc?
+  function isInKnightFrontArc(pos) {
+    const k = lastHeroStates?.Knight;
+    if (!k || !pos) return true;
+    const dx = (pos.x ?? 0) - k.x;
+    const dz = (pos.z ?? 0) - k.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.5) return true;
+    const fx = Math.sin(k.yaw || 0);
+    const fz = Math.cos(k.yaw || 0);
+    return (dx * fx + dz * fz) / len >= SHIELD_ARC_COS;
+  }
+
+  function knightCoversMage(enemy) {
+    const k = lastHeroStates?.Knight;
+    const m = lastHeroStates?.Mage;
+    if (!k || !m) return true;
+    if (Math.hypot(m.x - k.x, m.z - k.z) > SHIELD_COVER_RADIUS) return false;
+    return isInKnightFrontArc(enemy);
+  }
+
+  function drainKnightGuard(amount) {
+    const k = combatHeroes.Knight;
+    k.guard = Math.max(0, k.guard - amount);
+    k.guardRegenDelay = KNIGHT_GUARD_REGEN_DELAY;
+    if (k.guard <= 0 && k.shieldBlocking) {
+      k.shieldBlocking = false;
+      enemyManager?.notifyKnightBlock?.(false);
+      k.guardBrokenTimer = KNIGHT_GUARD_BREAK_STUN;
+      emitBanner('GUARD BROKEN', 'The Knight staggers. Give him a moment to recover.', 'warning');
+    }
   }
 
   function reviveAllInstant() {
+    // Wave clear lifts a fallen partner only to a fragile 30%.
     for (const h of Object.values(combatHeroes)) {
       if (h.downed) {
         h.downed = false;
         h.reviveProgress = 0;
-        h.hp = Math.max(h.hp, Math.round(h.maxHp * 0.65));
+        h.hp = Math.max(h.hp, Math.round(h.maxHp * 0.3));
       }
     }
   }
@@ -959,86 +1039,36 @@ export function createCampaignLoop({
       return { absorbed: 0, hpLost: 0, downed: false, interceptedByKnight: false };
     }
 
-    // If Mage is hit while Knight is holding Shield Block, check physical proximity/line interception!
-    // (When coordinates are omitted in headless tests, allow interception for test compatibility.)
+    // A shielding Knight covers a nearby Mage against attacks from his front arc.
+    // DR is applied once, on the Knight's own path below.
     if (
       heroId === 'Mage' &&
-      combatHeroes.Knight.shieldBlocking &&
-      !combatHeroes.Knight.downed
+      combatHeroes.Knight.shieldBlocking && !enemy?.currentHit?.unblockable &&
+      !combatHeroes.Knight.downed &&
+      knightCoversMage(enemy)
     ) {
-      let physicallyIntercepted = true;
-      const kPos = hitOptions?.knightState || targetHeroState?.partnerPos;
-      if (
-        typeof targetHeroState?.x === 'number' &&
-        typeof targetHeroState?.z === 'number' &&
-        typeof kPos?.x === 'number' &&
-        typeof kPos?.z === 'number'
-      ) {
-        const dKnightToMage = Math.hypot(
-          kPos.x - targetHeroState.x,
-          kPos.z - targetHeroState.z
-        );
-        let onAttackLine = false;
-        if (typeof enemy?.x === 'number' && typeof enemy?.z === 'number') {
-          const ax = targetHeroState.x - enemy.x;
-          const az = targetHeroState.z - enemy.z;
-          const aLen = Math.hypot(ax, az) || 1;
-          const nx = ax / aLen;
-          const nz = az / aLen;
-          const kx = kPos.x - enemy.x;
-          const kz = kPos.z - enemy.z;
-          const along = kx * nx + kz * nz;
-          const perp = Math.abs(kx * -nz + kz * nx);
-          onAttackLine = along >= -0.6 && along <= aLen + 1.0 && perp <= 1.8;
-        }
-        physicallyIntercepted = dKnightToMage <= 4.5 || onAttackLine;
-      }
-
-      if (physicallyIntercepted) {
-        const reducedForKnight = Math.max(
-          1,
-          Math.round(rawDmg * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
-        );
-        const kRes = handlePlayerHit({ id: 'Knight' }, enemy, reducedForKnight, {
-          ...hitOptions,
-          alreadyReduced: true,
-        });
-        return {
-          absorbed: rawDmg - reducedForKnight + (kRes?.absorbed || 0),
-          hpLost: 0,
-          knightHpLost: kRes?.hpLost || 0,
-          downed: false,
-          interceptedByKnight: true,
-        };
-      }
+      const kRes = handlePlayerHit({ id: 'Knight', char: lastHeroStates?.Knight?.char }, enemy, rawDmg);
+      return {
+        absorbed: rawDmg - (kRes?.hpLost || 0),
+        hpLost: 0,
+        knightHpLost: kRes?.hpLost || 0,
+        downed: false,
+        interceptedByKnight: true,
+      };
     }
 
     let effectiveDmg = rawDmg;
     if (
       heroId === 'Knight' &&
-      combatHeroes.Knight.shieldBlocking &&
-      !hitOptions?.alreadyReduced
+      combatHeroes.Knight.shieldBlocking && !enemy?.currentHit?.unblockable &&
+      !hitOptions?.alreadyReduced &&
+      isInKnightFrontArc(enemy)
     ) {
-      let inFrontalArc = true;
-      if (
-        typeof targetHeroState?.yaw === 'number' &&
-        typeof targetHeroState?.x === 'number' &&
-        typeof enemy?.x === 'number'
-      ) {
-        const angToEnemy = Math.atan2(
-          enemy.x - targetHeroState.x,
-          enemy.z - targetHeroState.z
-        );
-        inFrontalArc =
-          Math.abs(shortestAngleDiff(angToEnemy, targetHeroState.yaw)) <=
-          (105 * Math.PI) / 180;
-      }
-      if (inFrontalArc) {
-        effectiveDmg = Math.max(
-          1,
-          Math.round(rawDmg * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
-        );
-      }
+      effectiveDmg = Math.max(
+        1,
+        Math.round(rawDmg * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
+      );
+      drainKnightGuard(rawDmg * KNIGHT_GUARD_HIT_COST);
     }
 
     let rem = effectiveDmg;
@@ -1058,6 +1088,8 @@ export function createCampaignLoop({
     }
 
     h.hp = Math.max(0, h.hp - rem);
+    const partnerOfHit = combatHeroes[heroId === 'Knight' ? 'Mage' : 'Knight'];
+    if (rem > 0 && partnerOfHit?.downed) partnerOfHit.reviveProgress *= 0.5;
     if (combatSfx?.playPlayerHit) {
       combatSfx.playPlayerHit();
     }
@@ -1071,7 +1103,7 @@ export function createCampaignLoop({
       }
       emitBanner(
         `${heroId.toUpperCase()} HAS FALLEN!`,
-        'Stand Within 2.8m for 2.5s or Channel Commune to Resurrect Your Beloved!',
+        'Stand beside your beloved to lift them back up, or pray.',
         'warning'
       );
     }
@@ -2064,6 +2096,8 @@ export function createCampaignLoop({
     };
   }
 
+  // Knight Q visual beats (VFX-only; damage/buff numbers are applied up front).
+
   /**
    * Knight `Q` (`ultimate` — Tanjiro Twin-Element Fire+Ice Blade, Cost 100 Q Energy, 12.0s, 2.0x Dmg):
    * Plays native sword-raise pose (`pray_channel` / `burst_aoe`), ignites his blade with
@@ -2102,8 +2136,17 @@ export function createCampaignLoop({
 
     const kPos = heroStates?.Knight || { x: 0, y: 0, z: 0, yaw: 0 };
 
+    // Beats: storm halo descends + sigil (0-0.48s, sword raised) -> column strikes the
+    // blade (0.48s) -> combo4 slam at 0.68s lands the crack shockwave (~0.93s).
     if (vfxKit) {
-      vfxKit.swordVfx?.triggerSwing?.('charged', kPos, kPos.yaw || 0, styleId);
+      if (vfxKit.ultimateVfx?.playKnightAwakening) {
+        vfxKit.ultimateVfx.playKnightAwakening(
+          { x: kPos.x, y: walkableHeightAt(kPos.x, kPos.z), z: kPos.z },
+          { style: styleId, getBladeTip: vfxKit.swordVfx?.getBladeTipFn }
+        );
+      } else {
+        vfxKit.swordVfx?.triggerSwing?.('charged', kPos, kPos.yaw || 0, styleId);
+      }
     }
     combatSfx?.playCouplesUltimate?.();
 
@@ -2562,7 +2605,7 @@ export function createCampaignLoop({
     ) {
       const halfExtent = 9.0;
       const outerR = HERO_STATS.Mage.stormCataclysmRadius || 8.4;
-      const innerR = 1.68;
+      const innerR = STORM_CATACLYSM_INNER_SAFE_RADIUS;
       const cx = catCenter.x;
       const cz = catCenter.z;
       const groundY = walkableHeightAt(cx, cz);
@@ -2759,6 +2802,7 @@ export function createCampaignLoop({
 
     const knight = heroStates?.Knight;
     const mage = heroStates?.Mage;
+    if (knight && mage) lastHeroStates = heroStates;
 
     // 0. Advance Divine Verdict Sequence (4.80s 4-Beat Blessing/Resurrection OR 2.80s Smite)
     let blessingActivatedThisFrame = false;
@@ -2923,6 +2967,18 @@ export function createCampaignLoop({
       }
       if (h.iframeTimer > 0) {
         h.iframeTimer = Math.max(0, h.iframeTimer - dt);
+      }
+      if (h.dashCd > 0) h.dashCd = Math.max(0, h.dashCd - dt);
+      if (h.dodgeIcd > 0) h.dodgeIcd = Math.max(0, h.dodgeIcd - dt);
+      if (h.id === 'Knight') {
+        if (h.guardBrokenTimer > 0) h.guardBrokenTimer = Math.max(0, h.guardBrokenTimer - dt);
+        if (h.shieldBlocking) {
+          drainKnightGuard(KNIGHT_GUARD_HOLD_DRAIN * dt);
+        } else if (h.guardRegenDelay > 0) {
+          h.guardRegenDelay = Math.max(0, h.guardRegenDelay - dt);
+        } else {
+          h.guard = Math.min(KNIGHT_GUARD_MAX, h.guard + KNIGHT_GUARD_REGEN * dt);
+        }
       }
       if (!divineBlessingActive && h.partnerBuffTimer > 0) {
         h.partnerBuffTimer = Math.max(0, h.partnerBuffTimer - dt);
@@ -3139,13 +3195,18 @@ export function createCampaignLoop({
           mage.z = nearest.z + 0.4;
           mage.y = walkableHeightAt(mage.x, mage.z);
 
+          // Full wipe restarts the current act: enemies and wave progress reset,
+          // heroes regroup at the nearest sanctuary. Losing costs the act, not 4 seconds.
+          if (enemyManager) enemyManager.clearAllEnemies();
+          waveIndex = -1;
+          actTriggered = false;
           for (const [id, ch] of Object.entries(combatHeroes)) {
             ch.downed = false;
             ch.reviveTimer = 0;
             ch.reviveProgress = 0;
-            ch.hp = ch.maxHp; // 100% Max HP restored on Safe Haven Rebirth
-            ch.shield = 35;
-            ch.shieldTimer = 6.0;
+            ch.hp = ch.maxHp;
+            ch.shield = 0;
+            ch.shieldTimer = 0;
             ch.iframeTimer = 2.5;
             const st = id === 'Knight' ? knight : mage;
             st.actionState = null;
@@ -3163,41 +3224,39 @@ export function createCampaignLoop({
 
           combatSfx?.playShieldChime?.();
           emitBanner(
-            'SAFE HAVEN REBIRTH · FULL VITALITY RESTORED',
-            `Reborn at ${nearest.name || 'Sanctuary Waypoint'} (100% HP · +35 Ward Shield · All Progress Preserved)`,
-            'blessing'
+            'THE VALLEY FALLS SILENT',
+            'You regroup at the sanctuary stone. The battle begins anew when you return.',
+            'warning'
           );
         }
       } else if (combatHeroes.Knight.downed || combatHeroes.Mage.downed) {
         bothDownedTimer = 0;
-        const downedId = combatHeroes.Knight.downed ? 'Knight' : 'Mage';
-        const downedCh = combatHeroes[downedId];
-        const downedSt = downedId === 'Knight' ? knight : mage;
-        const dPartner = getPartnerDistance(knight, mage);
-        if (dPartner <= COMMUNE_RESURRECT_DISTANCE && !communeChannelActive) {
-          downedCh.reviveTimer = (downedCh.reviveTimer || 0) + dt;
-          downedCh.reviveProgress = clamp(downedCh.reviveTimer / 2.5, 0, 1);
-          if (downedCh.reviveTimer >= 2.5) {
-            downedCh.downed = false;
-            downedCh.reviveTimer = 0;
-            downedCh.reviveProgress = 0;
-            downedCh.hp = Math.max(1, Math.round(downedCh.maxHp * 0.45));
-            downedCh.iframeTimer = Math.max(downedCh.iframeTimer || 0, 2.0);
-            if (downedSt) {
-              downedSt.actionState = null;
-              downedSt.actionTimer = 0;
-              downedSt.char?.play?.('revive', { loop: false, fade: 0.1, force: true });
-            }
-            combatSfx?.playShieldChime?.();
-            emitBanner(
-              `${downedId.toUpperCase()} REVIVED · 45% VITALITY`,
-              'Your Beloved Pulled You Back From the Brink (+2.0s Sacred I-Frames)!',
-              'blessing'
-            );
+        // Partner revive: stand beside your fallen partner; damage and distance set it back.
+        for (const [id, ch] of Object.entries(combatHeroes)) {
+          if (!ch.downed) {
+            ch.reviveProgress = 0;
+            ch.reviveTimer = 0;
+            continue;
           }
-        } else {
-          downedCh.reviveTimer = 0;
-          downedCh.reviveProgress = 0.58 + 0.32 * Math.sin(elapsed * 4.5);
+          const downedSt = id === 'Knight' ? knight : mage;
+          const reviverSt = id === 'Knight' ? mage : knight;
+          const near =
+            !communeChannelActive &&
+            Math.hypot(downedSt.x - reviverSt.x, downedSt.z - reviverSt.z) <= PARTNER_REVIVE_RADIUS;
+          const step = dt / PARTNER_REVIVE_SECONDS;
+          ch.reviveProgress = clamp(ch.reviveProgress + (near ? step : -step * 0.5), 0, 1);
+          if (ch.reviveProgress >= 1) {
+            ch.downed = false;
+            ch.reviveProgress = 0;
+            ch.reviveTimer = 0;
+            ch.hp = Math.round(ch.maxHp * PARTNER_REVIVE_HP);
+            ch.iframeTimer = Math.max(ch.iframeTimer, 1.0);
+            downedSt.actionState = null;
+            downedSt.actionTimer = 0;
+            downedSt.char?.play?.('revive', { loop: false, fade: 0.1, force: true });
+            combatSfx?.playShieldChime?.();
+            emitBanner(`${id.toUpperCase()} RISES AGAIN`, 'Carried back by love alone.', 'blessing');
+          }
         }
       } else {
         bothDownedTimer = 0;

@@ -139,18 +139,18 @@ export const BREATHING_PALETTES = Object.freeze({
   tempest: {
     id: 'tempest',
     label: 'Thunderclap Wisteria',
-    band0: '#3b0764',
-    band1: '#38bdf8',
-    band2: '#fef08a',
-    ink: '#130724',
-    chipCore: '#38bdf8',
+    band0: '#4c1d95',
+    band1: '#b38cf5',
+    band2: '#fff1a8',
+    ink: '#120720',
+    chipCore: '#c4a8ff',
     chipDeep: '#1d1633',
-    chipMid: '#3d3163',
-    chipLit: '#38bdf8',
-    chipSeam: '#fff3a1',
+    chipMid: '#5b3a9e',
+    chipLit: '#ffd84a',
+    chipSeam: '#fff6c8',
     decalDeep: '#161126',
-    decalBase: '#38bdf8',
-    decalEdge: '#fff3a1',
+    decalBase: '#8b5cf6',
+    decalEdge: '#ffe27a',
   },
   eclipse: {
     id: 'eclipse',
@@ -379,13 +379,19 @@ export function createBladeSheathGeometry({ rings = 20, cols = 14 } = {}) {
   return geometry;
 }
 
-const MAX_TRAIL_SLICES = 48;
+const MAX_TRAIL_SLICES = 64;
 const DET_RING_SLICES = 24;
 const TOTAL_RIBBON_SLICES = MAX_TRAIL_SLICES + DET_RING_SLICES;
-const RADIAL_VERTS = 5; // v = 0, 0.25, 0.5, 0.75, 1.0 across guard -> tip
+const RADIAL_VERTS = 7; // v = 0..1 from near the guard out past the tip (brush overhang)
+const STYLE_INDEX = Object.freeze({ none: 0, rime: 1, solar: 2, tempest: 3, eclipse: 4 });
+// Stroke spans [RIBBON_V0 .. reach] x blade length; finishers paint a wider signature arc.
+const RIBBON_V0 = 0.12;
+const RIBBON_REACH = 1.34;
+const RIBBON_REACH_FINISHER = 1.62;
+const BLADE_CACHE_SAMPLES = 32;
 
 /**
- * Dynamic vertex buffer for `liveRibbonMesh` (supports 48 bone-tracked trail slices
+ * Dynamic vertex buffer for `liveRibbonMesh` (supports 64 bone-tracked trail slices
  * + optional 24-slice ground-hugging detonation shockwave crest in 1 single draw call).
  */
 export function createLiveSwordRibbonGeometry() {
@@ -452,6 +458,7 @@ function createBladeSheathMaterial(noiseAtlas, sharedUniforms) {
       uRimeBand1: sharedUniforms.uRimeBand1,
       uRimeBand2: sharedUniforms.uRimeBand2,
       uRimeInk: sharedUniforms.uRimeInk,
+      uAwaken: sharedUniforms.uAwaken,
     },
     vertexShader: /* glsl */ `
       attribute float aEdgeFactor;
@@ -481,6 +488,7 @@ function createBladeSheathMaterial(noiseAtlas, sharedUniforms) {
       uniform vec3 uRimeBand1;
       uniform vec3 uRimeBand2;
       uniform vec3 uRimeInk;
+      uniform float uAwaken;
 
       varying vec2 vUv;
       varying float vEdgeFactor;
@@ -512,9 +520,9 @@ function createBladeSheathMaterial(noiseAtlas, sharedUniforms) {
         vec3 b2 = mix(uColorBand2, uRimeBand2, tideMix);
         vec3 inkCol = mix(uColorInk, uRimeInk, tideMix);
 
-        vec3 col = b0;
-        col = mix(col, b1 * 1.05, step(0.36, bandScore));
-        col = mix(col, b2 * 1.18, step(0.66, bandScore));
+        vec3 col = b0 * 1.2;
+        col = mix(col, b1 * (1.5 + uAwaken * 0.6), step(0.38, bandScore));
+        col = mix(col, b2 * (2.3 + uAwaken * 1.6), step(0.64, bandScore));
 
         float border = 1.0 - smoothstep(0.45, 0.54, tongueMask);
         float rimInk = 1.0 - smoothstep(0.14, 0.24, ndv);
@@ -547,6 +555,9 @@ function createLiveSwordRibbonMaterial(noiseAtlas, sharedUniforms) {
       uRimeBand1: sharedUniforms.uRimeBand1,
       uRimeBand2: sharedUniforms.uRimeBand2,
       uRimeInk: sharedUniforms.uRimeInk,
+      uStyle: sharedUniforms.uStyle,
+      uFinisher: sharedUniforms.uFinisher,
+      uReach: sharedUniforms.uReach,
     },
     vertexShader: /* glsl */ `
       attribute float aSliceAge;
@@ -582,14 +593,150 @@ function createLiveSwordRibbonMaterial(noiseAtlas, sharedUniforms) {
       varying vec3 vWorldPos;
       varying vec3 vWorldNormal;
 
+      uniform float uStyle;
+      uniform float uFinisher;
+      uniform float uReach;
+
+      float tri(float x) { return abs(fract(x) - 0.5) * 4.0 - 1.0; }
+
+      // Demon Slayer breathing brush stroke. u: 0 live blade -> 1 tail, v: 0 near guard -> 1 overhang.
+      // Layering (outside -> in): sumi ink outline, saturated body, HDR core along the cutting edge.
+      vec3 breathingStroke(float u, float v, float age01) {
+        int style = int(uStyle + 0.5);
+        float vTip = (1.0 - ${RIBBON_V0.toFixed(2)}) / (uReach - ${RIBBON_V0.toFixed(2)});
+        float life = max(u, age01 * 0.92);
+        float coreHdr = 2.7 + uFinisher * 0.9;
+        float inkW = 0.026;
+        vec3 b0 = uColorBand0;
+        vec3 b1 = uColorBand1;
+        vec3 b2 = uColorBand2;
+        vec3 ink = uColorInk;
+
+        // Brush envelope: inner edge climbs toward the tip along the tail -> tapered crescent.
+        float lo = mix(0.22, vTip * 0.94, pow(life, 1.1));
+        float hi = vTip + (1.0 - vTip) * (0.50 - 0.42 * life) + uFinisher * 0.05 * (1.0 - life);
+        if (u < 0.035) hi = mix(lo + 0.02, hi, u / 0.035);
+        vec4 nSpk = texture2D(uNoiseAtlas, vec2(u * 3.1, v * 3.3 - uTime * 1.7));
+
+        if (style == 3) {
+          // Thunderclap Wisteria: jagged zig-zag bolt + thin sub-bolt, strobed tail = flash-step afterimages.
+          float cz = mix(0.42, vTip, 0.72) + 0.19 * tri(u * 4.6 + 0.25) + 0.05 * tri(u * 13.0 + 0.6);
+          float hw = 0.1 * (1.0 - 0.5 * life) + 0.022 + uFinisher * 0.03;
+          float d = abs(v - cz);
+          float c2 = cz - 0.21 + 0.09 * tri(u * 7.5 + 1.3);
+          float hw2 = 0.03 * (1.0 - life);
+          float d2 = abs(v - c2);
+          bool strobe = u > 0.26 && fract(u * 6.0 + 0.15) > 0.72;
+          if (!strobe && d < hw + inkW) {
+            if (d > hw) return ink;
+            float e = d / hw;
+            return e < 0.5 ? b2 * coreHdr : b1 * 1.8;
+          }
+          if (u < 0.7 && d2 < hw2 + inkW * 0.7) {
+            return d2 > hw2 ? ink : b2 * coreHdr * 0.8;
+          }
+          float mass = abs(v - cz + 0.04);
+          if (u < 0.2 && mass < 0.17 * (1.0 - u * 4.0) && nSpk.a > 0.55) return b0 * 1.3;
+          if (abs(v - cz) < 0.3 && u < 0.8 && nSpk.a > 0.93) return b2 * coreHdr * 0.7;
+          discard;
+        }
+
+        float crestEyeV = -1.0;
+        float crestC = 0.0;
+        if (style == 1 || style == 4) {
+          // Glacial Tide: rolling crests that rise, curl over and break along the outer edge.
+          crestC = fract(u * 4.2 + 0.12);
+          float bump = pow(crestC, 1.7) * smoothstep(1.0, 0.84, crestC);
+          float amp = 0.24 * (1.0 - 0.5 * life) * (style == 4 ? 0.7 : 1.0);
+          hi += amp * bump;
+          crestEyeV = hi - amp * 0.62;
+        }
+        if (style == 2 || style == 4) {
+          // Hinokami Sunfire: flame tongues lick off the outer/trailing edge.
+          float tn = texture2D(uNoiseAtlas, vec2(u * 5.5 + 0.13, uTime * 0.9 + u * 0.35)).b;
+          float tn2 = texture2D(uNoiseAtlas, vec2(u * 11.0 + 0.71, uTime * 1.7)).b;
+          // ridged -> pointed licks rather than soft swells
+          float tongue = pow(max(0.0, tn - 0.32) / 0.68, 1.3) * 0.42 + pow(max(0.0, tn2 - 0.45) / 0.55, 2.0) * 0.16;
+          hi += tongue * (0.35 + life) * (style == 4 ? 0.65 : 1.0);
+          lo -= 0.05 * tn2 * (1.0 - life);
+        }
+
+        float width = hi - lo;
+        if (width < 0.012) discard;
+        bool inBand = v >= lo && v <= hi;
+        // Dry-brush bristle gaps break the tail into streaks along the stroke.
+        float streak = texture2D(uNoiseAtlas, vec2(u * 0.45 + 0.3, v * 7.0)).b;
+        float dry = smoothstep(0.42, 1.0, life);
+        if (inBand && streak < dry * 0.72) inBand = false;
+
+        if (!inBand) {
+          // Spill: foam flecks (tide) / embers (sun) thrown past the outer edge.
+          if (v > hi && v < hi + 0.17 && u < 0.85) {
+            if ((style == 1 || style == 4) && nSpk.a > 0.80) return b2 * coreHdr * 0.75;
+            if ((style == 2 || style == 4) && nSpk.a > 0.84) return b1 * 2.6;
+          }
+          // Finisher echo arc riding outside the main stroke.
+          if (uFinisher > 0.5 && u > 0.04 && u < 0.78) {
+            float ec = hi + 0.075 + 0.02 * sin(u * 9.0);
+            float ed = abs(v - ec);
+            float ew = 0.018 * (1.0 - u);
+            if (ed < ew + 0.016) return ed < ew ? b2 * coreHdr * 0.9 : ink;
+          }
+          discard;
+        }
+
+        float dLo = v - lo;
+        float dHi = hi - v;
+        if (dLo < inkW * 0.8 || dHi < inkW) return ink;
+        float outer = dHi / width;
+        float e = min(dLo, dHi) / width;
+        vec3 col;
+
+        if (style == 1) {
+          col = b0 * 1.15;
+          if (outer < 0.62) col = b1 * 1.35;
+          if (outer < 0.22) col = b2 * coreHdr;
+          // two flowing current lines, not regular stripes
+          float wl = abs(outer - 0.47 - 0.06 * sin(u * 11.0 + 1.0));
+          float wl2 = abs(outer - 0.74 - 0.05 * sin(u * 8.0 + 2.3));
+          if (wl < 0.022 || (wl2 < 0.016 && u < 0.7)) col = ink;
+          if (outer > 0.24 && outer < 0.62 && wl > 0.022 && wl < 0.06) col = b2 * 1.6;
+          if (outer > 0.18 && outer < 0.24) col = ink;
+        } else if (style == 2) {
+          col = b0 * 1.3;
+          if (e > 0.13) col = b1 * 1.75;
+          if (e > 0.29 && outer < 0.75) col = b2 * coreHdr;
+        } else if (style == 4) {
+          bool tide = outer > 0.5;
+          col = tide ? uRimeBand1 * 1.35 : b1 * 1.75;
+          if (tide && outer > 0.8) col = uRimeBand0 * 1.2;
+          if (!tide && outer < 0.26) col = b2 * coreHdr;
+          if (abs(outer - 0.5) < 0.035) col = ink;
+        } else {
+          col = b1 * 1.1;
+          if (outer < 0.28) col = b2 * 1.9;
+        }
+
+        // Tide curl "eye": inked spiral hole inside each crest.
+        if (crestEyeV > 0.0) {
+          float dc = length(vec2((crestC - 0.78) * 0.36, v - crestEyeV));
+          if (dc < 0.052 && dc > 0.036) col = ink;
+          else if (dc <= 0.036) col = b2 * coreHdr;
+        }
+        return col;
+      }
+
       void main() {
-        // vUv.x = u (0.0 at newest live blade edge -> 1.0 at oldest tail)
-        // vUv.y = v (0.0 at inner crossguard 0.20 -> 1.0 at outer physical tip 1.41)
-        float u = clamp(vUv.x, 0.0, 1.0);
-        float v = clamp(vUv.y, 0.0, 1.0);
         float age01 = clamp(vSliceAge, 0.0, 1.0);
         if (age01 >= 0.995) discard;
+        if (vUv.x < 1.5) {
+          gl_FragColor = vec4(breathingStroke(clamp(vUv.x, 0.0, 1.0), clamp(vUv.y, 0.0, 1.0), age01), 1.0);
+          return;
+        }
 
+        // Detonation crest ring (uv.x offset by +2.0 on the ring slices)
+        float u = clamp(vUv.x - 2.0, 0.0, 1.0);
+        float v = clamp(vUv.y, 0.0, 1.0);
         vec2 nUv = vec2(u * 2.1 + uTime * 2.2, v * 1.45 - uTime * 0.6);
         vec4 n0 = texture2D(uNoiseAtlas, nUv);
         vec4 n1 = texture2D(uNoiseAtlas, nUv * 1.85 + vec2(0.37, 0.61));
@@ -629,6 +776,192 @@ function createLiveSwordRibbonMaterial(noiseAtlas, sharedUniforms) {
         col = mix(col, inkCol, max(max(cutoutInk, outerRazorInk * 0.90), max(max(waveRib1, waveRib2), eclipseSeam)));
 
         gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  });
+}
+
+// Persistent breathing aura: inflated sheath shell carved into style motifs
+// (sun tongues rising, tide swirl, wisteria crackle). uAwaken (Knight Q) swells it
+// and threads gold lightning through every style.
+function createBladeAuraMaterial(noiseAtlas, sharedUniforms, sheathUniforms) {
+  return new THREE.ShaderMaterial({
+    name: 'SwordVfxBladeAuraMaterial',
+    transparent: false,
+    depthWrite: true,
+    depthTest: true,
+    side: THREE.FrontSide,
+    uniforms: {
+      uNoiseAtlas: { value: noiseAtlas },
+      uTime: sharedUniforms.uTime,
+      uAwaken: sharedUniforms.uAwaken,
+      uAuraStyle: { value: 0 },
+      uColorBand0: sheathUniforms.uColorBand0,
+      uColorBand1: sheathUniforms.uColorBand1,
+      uColorBand2: sheathUniforms.uColorBand2,
+      uColorInk: sheathUniforms.uColorInk,
+      uRimeBand1: sharedUniforms.uRimeBand1,
+      uSparkGold: { value: new THREE.Color('#ffd84a') },
+    },
+    vertexShader: /* glsl */ `
+      uniform float uAwaken;
+      varying vec2 vUv;
+      varying vec3 vW;
+      varying vec3 vN;
+      void main() {
+        vec3 p = position;
+        float h = clamp((p.y - 0.22) / 1.26, 0.0, 1.0);
+        float inflate = 2.1 + uAwaken * 1.2;
+        p.x *= inflate * (1.0 + 0.3 * h);
+        p.z *= inflate * 2.4;
+        p.y = 0.18 + (p.y - 0.18) * (1.08 + 0.2 * uAwaken);
+        vUv = uv;
+        vec4 w = modelMatrix * vec4(p, 1.0);
+        vW = w.xyz;
+        vN = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uNoiseAtlas;
+      uniform float uTime;
+      uniform float uAwaken;
+      uniform float uAuraStyle;
+      uniform vec3 uColorBand0;
+      uniform vec3 uColorBand1;
+      uniform vec3 uColorBand2;
+      uniform vec3 uColorInk;
+      uniform vec3 uRimeBand1;
+      uniform vec3 uSparkGold;
+      varying vec2 vUv;
+      varying vec3 vW;
+      varying vec3 vN;
+      void main() {
+        int st = int(uAuraStyle + 0.5);
+        float u = vUv.x;
+        float v = vUv.y;
+        float stepT = floor(uTime * 14.0);
+        vec3 col;
+        float ndv = abs(dot(normalize(vN), normalize(cameraPosition - vW)));
+
+        // Awakened: gold/violet lightning threads on any style.
+        // Thin zig-zag filament: |tri| ridge of a low-frequency wave, re-struck at 14 Hz.
+        float zig = abs(fract(v * 3.2 + 0.35 * sin(u * 6.2832 + stepT * 1.7)) - 0.5);
+        if (uAwaken > 0.01) {
+          float lane = texture2D(uNoiseAtlas, vec2(u + stepT * 0.37, stepT * 0.11)).b;
+          if (zig < 0.035 * uAwaken && lane > 0.45) {
+            gl_FragColor = vec4(zig < 0.018 ? uSparkGold * 4.5 : uColorInk, 1.0);
+            return;
+          }
+        }
+
+        float mask;
+        float thr;
+        if (st == 3) {
+          float lane = texture2D(uNoiseAtlas, vec2(u + stepT * 0.53, stepT * 0.29)).b;
+          mask = lane > 0.5 ? 1.0 - zig * 9.0 : 0.0;
+          thr = 0.62;
+        } else {
+          vec2 flow = st == 1
+            ? vec2(u * 1.0 + v * 0.45 + uTime * 0.35, v * 0.8 - uTime * 0.7)
+            : vec2(u * 1.0, v * 0.9 - uTime * 2.2);
+          float n = texture2D(uNoiseAtlas, flow).b;
+          mask = n * 1.15 - (st == 2 || st == 4 ? v * 0.38 : 0.0);
+          thr = 0.6 - uAwaken * 0.1;
+        }
+        if (mask < thr) discard;
+        float e = mask - thr;
+        col = uColorInk;
+        if (e > 0.035) col = (st == 1 ? uRimeBand1 : uColorBand1) * 1.7;
+        if (e > 0.12) col = uColorBand2 * (2.6 + uAwaken * 1.4);
+        if (st == 3 && e > 0.02) col = e > 0.07 ? uColorBand2 * 3.6 : uColorBand1 * 2.0;
+        if (ndv < 0.18) col = uColorInk;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  });
+}
+
+// Camera-facing hit splash: inked blot + starburst + crossing slash line.
+function createImpactSplashMaterial(noiseAtlas, sharedUniforms) {
+  const keys = ['none', 'rime', 'solar', 'tempest', 'eclipse'];
+  const arr = (k) => keys.map((s) => new THREE.Color(BREATHING_PALETTES[s][k]));
+  return new THREE.ShaderMaterial({
+    name: 'SwordVfxImpactSplashMaterial',
+    transparent: false,
+    depthWrite: true,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    uniforms: {
+      uNoiseAtlas: { value: noiseAtlas },
+      uTime: sharedUniforms.uTime,
+      uDeep: { value: arr('band0') },
+      uBody: { value: arr('band1') },
+      uCore: { value: arr('band2') },
+      uInk: { value: arr('ink') },
+    },
+    vertexShader: /* glsl */ `
+      attribute vec4 aImpA; // age01, style, seed, heavy
+      varying vec2 vP;
+      varying vec4 vA;
+      void main() {
+        vec3 c = instanceMatrix[3].xyz;
+        float s = length(instanceMatrix[0].xyz);
+        vec4 mv = viewMatrix * vec4(c, 1.0);
+        mv.xyz += normalize(-mv.xyz) * 0.7;
+        mv.xy += position.xy * s;
+        vP = position.xy;
+        vA = aImpA;
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uNoiseAtlas;
+      uniform vec3 uDeep[5];
+      uniform vec3 uBody[5];
+      uniform vec3 uCore[5];
+      uniform vec3 uInk[5];
+      varying vec2 vP;
+      varying vec4 vA;
+      void main() {
+        int st = int(vA.y + 0.5);
+        float age = vA.x;
+        float seed = vA.z;
+        float r = length(vP);
+        float ang = atan(vP.y, vP.x);
+        float grow = 1.0 - pow(1.0 - min(age * 5.0, 1.0), 3.0);
+        float fade = smoothstep(0.42, 1.0, age);
+        float er = texture2D(uNoiseAtlas, vP * 0.7 + vec2(seed * 0.13, seed * 0.29)).b;
+        if (er < fade * 1.1) discard;
+
+        float a0 = seed * 2.3;
+        vec2 sd = vec2(cos(a0), sin(a0));
+        float along = dot(vP, sd);
+        float across = abs(dot(vP, vec2(-sd.y, sd.x)));
+        float sl = 0.98 * grow;
+        float sw = 0.075 * (1.0 - abs(along) / max(sl, 0.01)) * (1.0 - age * 0.5);
+        if (abs(along) < sl && across < sw + 0.028) {
+          gl_FragColor = vec4(across < sw ? uCore[st] * 4.0 : uInk[st], 1.0);
+          return;
+        }
+        float s1 = pow(abs(cos(ang * 4.0 + seed)), 14.0);
+        float s2 = pow(abs(cos(ang * 7.0 + seed * 2.0)), 22.0) * 0.6;
+        float spikeR = (0.2 + 0.72 * max(s1, s2)) * grow * (1.0 - age * 0.35);
+        if (r < spikeR) {
+          vec3 col = uBody[st] * 2.0;
+          if (r < spikeR * 0.55) col = uCore[st] * 3.4;
+          if (r > spikeR - 0.03) col = uInk[st];
+          gl_FragColor = vec4(col, 1.0);
+          return;
+        }
+        float blot = texture2D(uNoiseAtlas, vec2(ang * 0.32 + seed, 0.41)).b;
+        float blotR = (0.36 + 0.28 * blot) * min(1.0, age * 7.0 + 0.2);
+        float drop = texture2D(uNoiseAtlas, vP * 2.4 + vec2(seed)).a;
+        if (r < blotR || (r > 0.5 && r < 0.95 * grow && drop > 0.87)) {
+          gl_FragColor = vec4(r > blotR - 0.06 && r < blotR ? uDeep[st] : uInk[st], 1.0);
+          return;
+        }
+        discard;
       }
     `,
   });
@@ -911,8 +1244,11 @@ function createDetonationDecalMaterial(noiseAtlas, sharedUniforms) {
 /* 3. Pooled, Deterministic SwordVfxSystem (<= 4 Draw Calls)                 */
 /* ------------------------------------------------------------------------- */
 
-const MAX_SHRAPNEL = 42;
+const MAX_SHRAPNEL = 48;
 const MAX_DETONATION_DECALS = 3;
+const MAX_IMPACTS = 6;
+const SWING_SPARKS = 8;
+const FINISHER_SPARKS = 14;
 const TRAIL_LIFETIME = 0.28;
 const SPARK_LIFETIME = 0.22;
 const SUB_SLICES_PER_STEP = 4;
@@ -929,6 +1265,8 @@ const _tangDir = new THREE.Vector3();
 const _arcNorm = new THREE.Vector3();
 const _pivot = new THREE.Vector3();
 const _radialVec = new THREE.Vector3();
+const _rootM = new THREE.Matrix4();
+const _invRoot = new THREE.Matrix4();
 
 export class SwordVfxSystem {
   constructor({ scene, getGroundHeight = () => 0 } = {}) {
@@ -943,6 +1281,10 @@ export class SwordVfxSystem {
       uSunDir: { value: new THREE.Vector3(0.45, 0.78, 0.42).normalize() },
       uDaylight: { value: 1.0 },
       uDualEclipse: { value: 0.0 },
+      uStyle: { value: STYLE_INDEX.solar },
+      uFinisher: { value: 0.0 },
+      uReach: { value: RIBBON_REACH },
+      uAwaken: { value: 0.0 },
       uSlashBand0: { value: new THREE.Color(defPal.band0) },
       uSlashBand1: { value: new THREE.Color(defPal.band1) },
       uSlashBand2: { value: new THREE.Color(defPal.band2) },
@@ -1010,6 +1352,25 @@ export class SwordVfxSystem {
     this._shakeOffset = new THREE.Vector3();
     this._hitstopScale = 1.0;
 
+    // Pooled trail slices (oldest -> newest in `trailSlices`) and Catmull-Rom control postures.
+    this._slicePool = [];
+    for (let i = 0; i < MAX_TRAIL_SLICES; i++) {
+      this._slicePool.push({ guard: new THREE.Vector3(), tip: new THREE.Vector3(), age: 0 });
+    }
+    this._ctrlPool = [];
+    for (let i = 0; i < 4; i++) {
+      this._ctrlPool.push({ guard: new THREE.Vector3(), tip: new THREE.Vector3(), age: 0 });
+    }
+    // Knight-root-local blade samples per swing clip, built once instead of re-posing every frame.
+    this._bladeCache = new Map();
+    this._ribbonReach = RIBBON_REACH;
+    this.awakenTimer = 0;
+    this.impacts = [];
+    for (let i = 0; i < MAX_IMPACTS; i++) {
+      this.impacts.push({ active: false, age: 0, delay: 0, life: 0.34, pos: new THREE.Vector3(), style: 0, seed: i, scale: 1 });
+    }
+    this.getBladeTipFn = (out) => this.getBladeTipWorld(out);
+
     this._buildMeshes();
     this._seedShrapnelPool();
   }
@@ -1023,6 +1384,14 @@ export class SwordVfxSystem {
     this.sheathMesh.userData.isVfx = true;
     this.sheathMesh.frustumCulled = false;
     this.sheathMesh.visible = false;
+
+    // 1b. Breathing aura shell (shares sheath geometry; rides the same sword node)
+    this.auraMat = createBladeAuraMaterial(this.noiseAtlas, this.sharedUniforms, this.sheathMat.uniforms);
+    this.auraMesh = new THREE.Mesh(sheathGeo, this.auraMat);
+    this.auraMesh.name = 'SwordVfx_BreathingAura';
+    this.auraMesh.userData.isVfx = true;
+    this.auraMesh.frustumCulled = false;
+    this.auraMesh.visible = false;
 
     // 2. True Live Bone-Tracked Sword Ribbon Mesh (aliased as `slashRibbonMesh`)
     const ribbonGeo = createLiveSwordRibbonGeometry();
@@ -1068,16 +1437,28 @@ export class SwordVfxSystem {
     this.detonationDecalMesh.frustumCulled = false;
     this.detonationDecalMesh.count = 0;
     this.group.add(this.detonationDecalMesh);
+
+    // 5. Hit-contact ink splash + slash billboards
+    const impGeo = new THREE.PlaneGeometry(2, 2, 1, 1);
+    this.impactMetaAttr = new THREE.InstancedBufferAttribute(new Float32Array(MAX_IMPACTS * 4), 4);
+    impGeo.setAttribute('aImpA', this.impactMetaAttr);
+    this.impactMat = createImpactSplashMaterial(this.noiseAtlas, this.sharedUniforms);
+    this.impactMesh = new THREE.InstancedMesh(impGeo, this.impactMat, MAX_IMPACTS);
+    this.impactMesh.name = 'SwordVfx_DC5_ImpactSplash';
+    this.impactMesh.frustumCulled = false;
+    this.impactMesh.count = 0;
+    this.group.add(this.impactMesh);
   }
 
   _seedShrapnelPool() {
-    // 8 Airborne Tangential Blade Sparks emitted off `tipWorld` during the forward cleave (ZERO floor spikes!)
+    // 8 airborne tangential sparks per swing; finishers (combo4/charged) throw all 14.
     this.tangentialSparkRecords = [];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < FINISHER_SPARKS; i++) {
       const s = 17.3 + i * 23.1;
       this.tangentialSparkRecords.push({
+        finisherOnly: i >= SWING_SPARKS,
         seed: hash11(s + 1.1) * 10.0,
-        emitFrac: 0.38 + (i / 7) * 0.54,
+        emitFrac: i < SWING_SPARKS ? 0.38 + (i / 7) * 0.54 : 0.2 + ((i - SWING_SPARKS) / 5) * 0.6,
         bladeFrac: 0.76 + 0.24 * hash11(s + 2.3),
         speed: 5.8 + 3.4 * hash11(s + 3.7),
         outwardSpeed: 1.2 + 1.5 * hash11(s + 4.9),
@@ -1119,6 +1500,7 @@ export class SwordVfxSystem {
     const isEclipse = norm === 'eclipse' || (isDetonationPalette && this.infusionStyle === 'eclipse');
     this.sharedUniforms.uDualEclipse.value = isEclipse ? 1.0 : 0.0;
     if (!isDetonationPalette) {
+      this.sharedUniforms.uStyle.value = STYLE_INDEX[norm] ?? 0;
       this.sharedUniforms.uSlashBand0.value.set(pal.band0);
       this.sharedUniforms.uSlashBand1.value.set(pal.band1);
       this.sharedUniforms.uSlashBand2.value.set(pal.band2);
@@ -1201,20 +1583,16 @@ export class SwordVfxSystem {
     ageAtEnd = 0.0,
     activeFracOverride = null
   ) {
-    const newCtrl = {
-      guard: guardW.clone(),
-      tip: tipW.clone(),
-      age: ageAtEnd,
-    };
-
     const ctrlCount = this.controlPostures.length;
+    // Reuse the oldest posture object once 4 are live (it is not one of p0..p2).
+    const newCtrl = ctrlCount >= 4 ? this.controlPostures[0] : this._ctrlPool[ctrlCount];
+    newCtrl.guard.copy(guardW);
+    newCtrl.tip.copy(tipW);
+    newCtrl.age = ageAtEnd;
+
     if (ctrlCount === 0) {
       this.controlPostures.push(newCtrl);
-      this.trailSlices.unshift({
-        guard: guardW.clone(),
-        tip: tipW.clone(),
-        age: ageAtEnd,
-      });
+      this._pushTrailSlice(guardW, tipW, ageAtEnd);
       return;
     }
 
@@ -1240,6 +1618,7 @@ export class SwordVfxSystem {
 
     for (let s = 0; s < this.tangentialSparkRecords.length; s++) {
       const sp = this.tangentialSparkRecords[s];
+      if (sp.finisherOnly && this.sharedUniforms.uFinisher.value < 0.5) continue;
       if (!sp.spawned && currActiveU >= sp.emitFrac) {
         _tangDir.subVectors(tipW, q1.tip);
         if (_tangDir.lengthSq() < 1e-5) {
@@ -1308,21 +1687,23 @@ export class SwordVfxSystem {
         }
       }
 
-      const subAge = ageAtEnd + (1.0 - t) * dtStep;
-      this.trailSlices.unshift({
-        guard: _interpGuard.clone(),
-        tip: _interpTip.clone(),
-        age: subAge,
-      });
+      this._pushTrailSlice(_interpGuard, _interpTip, ageAtEnd + (1.0 - t) * dtStep);
     }
 
     this.controlPostures.push(newCtrl);
     if (this.controlPostures.length > 4) {
       this.controlPostures.shift();
     }
-    if (this.trailSlices.length > MAX_TRAIL_SLICES) {
-      this.trailSlices.length = MAX_TRAIL_SLICES;
-    }
+  }
+
+  _pushTrailSlice(guardW, tipW, age) {
+    const n = this.trailSlices.length;
+    if (n >= MAX_TRAIL_SLICES) return;
+    const s = this._slicePool[n];
+    s.guard.copy(guardW);
+    s.tip.copy(tipW);
+    s.age = age;
+    this.trailSlices.push(s);
   }
 
   /**
@@ -1344,11 +1725,12 @@ export class SwordVfxSystem {
     if (sliceCount >= 2) {
       const cfg = SWING_CONFIGS[this.swingState.type] || SWING_CONFIGS.combo1;
       const isThrust = Boolean(cfg.isThrust);
-
+      // trailSlices is oldest -> newest; i = 0 is the live blade edge.
+      const last = sliceCount - 1;
       for (let i = 0; i < sliceCount; i++) {
-        const s = this.trailSlices[i];
-        const sPrev = this.trailSlices[Math.max(0, i - 1)];
-        const sNext = this.trailSlices[Math.min(sliceCount - 1, i + 1)];
+        const s = this.trailSlices[last - i];
+        const sPrev = this.trailSlices[last - Math.max(0, i - 1)];
+        const sNext = this.trailSlices[last - Math.min(last, i + 1)];
 
         const u = i / (sliceCount - 1);
         const age01 = clamp(s.age / Math.max(0.04, this.trailLifetime), 0.0, 1.0);
@@ -1402,9 +1784,10 @@ export class SwordVfxSystem {
           const v = r / (RADIAL_VERTS - 1);
           const offsetNorm = Math.sin(v * Math.PI) * twistSpan * (u > 0 ? 1.0 : 0.35);
           const thrustOffset = thrustSpan * (0.28 + 0.72 * Math.sin(v * Math.PI * 0.85));
-          const vx = lerp(s.guard.x, s.tip.x, v) + _arcNorm.x * offsetNorm + wingX * thrustOffset;
-          const vy = lerp(s.guard.y, s.tip.y, v) + _arcNorm.y * offsetNorm + wingY * thrustOffset;
-          const vz = lerp(s.guard.z, s.tip.z, v) + _arcNorm.z * offsetNorm + wingZ * thrustOffset;
+          const bladeT = lerp(RIBBON_V0, this._ribbonReach, v);
+          const vx = lerp(s.guard.x, s.tip.x, bladeT) + _arcNorm.x * offsetNorm + wingX * thrustOffset;
+          const vy = lerp(s.guard.y, s.tip.y, bladeT) + _arcNorm.y * offsetNorm + wingY * thrustOffset;
+          const vz = lerp(s.guard.z, s.tip.z, bladeT) + _arcNorm.z * offsetNorm + wingZ * thrustOffset;
 
           const vIdx = vertOffset + r;
           posArr[vIdx * 3 + 0] = vx;
@@ -1470,7 +1853,7 @@ export class SwordVfxSystem {
             normArr[vIdx * 3 + 1] = 0.65;
             normArr[vIdx * 3 + 2] = ca;
 
-            uvArr[vIdx * 2 + 0] = u;
+            uvArr[vIdx * 2 + 0] = u + 2.0; // ring flag for the shared ribbon shader
             uvArr[vIdx * 2 + 1] = v;
             ageArr[vIdx] = uDet * 0.85;
           }
@@ -1521,9 +1904,67 @@ export class SwordVfxSystem {
 
     if (rightSword && typeof rightSword.add === 'function') {
       rightSword.add(this.sheathMesh);
+      rightSword.add(this.auraMesh);
       this.sheathMesh.userData.isVfx = true;
       rightSword.updateMatrixWorld(true);
     }
+    this._bladeCache.clear();
+    return this;
+  }
+
+  _refreshAura() {
+    const style = this.infusionStyle;
+    const on = style !== 'none' || this.awakenTimer > 0;
+    this.auraMesh.visible = on;
+    this.auraMat.uniforms.uAuraStyle.value = STYLE_INDEX[style === 'none' ? 'tempest' : style] ?? 0;
+    if (this.awakenTimer > 0 && style === 'none') {
+      this.sheathMesh.visible = true;
+    }
+  }
+
+  /**
+   * Knight Q "awakened" blade: swollen aura threaded with gold lightning for `duration` s.
+   */
+  setAwakened(duration = 10) {
+    this.awakenTimer = Math.max(0, duration);
+    if (this.awakenTimer <= 0) {
+      this.sharedUniforms.uAwaken.value = 0;
+      if (this.infusionStyle === 'none') this.sheathMesh.visible = false;
+    }
+    this._refreshAura();
+    return this;
+  }
+
+  getBladeTipWorld(out) {
+    const sword = this._getRightSwordNode();
+    if (!sword) return false;
+    sword.updateWorldMatrix(true, false);
+    out.copy(LOCAL_BLADE_TIP).applyMatrix4(sword.matrixWorld);
+    return true;
+  }
+
+  /**
+   * Hit-contact ink splash + crossing slash at `pos` (enemy chest height is added).
+   */
+  triggerImpact(pos, style = null, { delay = 0.07, heavy = false } = {}) {
+    if (!pos) return this;
+    let rec = this.impacts[0];
+    for (const r of this.impacts) {
+      if (!r.active) {
+        rec = r;
+        break;
+      }
+      if (r.age > rec.age) rec = r;
+    }
+    const norm = normalizeStyleKey(style || this.infusionStyle);
+    rec.active = true;
+    rec.age = -delay;
+    rec.life = heavy ? 0.42 : 0.32;
+    rec.scale = heavy ? 1.45 : 0.95;
+    rec.style = STYLE_INDEX[norm] ?? 0;
+    rec.seed = (rec.seed * 1.618 + 0.37) % 7.0;
+    rec.pos.set(pos.x ?? pos[0] ?? 0, (pos.y ?? pos[1] ?? 0) + 1.05, pos.z ?? pos[2] ?? 0);
+    this.group.visible = true;
     return this;
   }
 
@@ -1542,6 +1983,7 @@ export class SwordVfxSystem {
     this.sheathMat.uniforms.uColorInk.value.set(pal.ink);
 
     this.sheathMesh.visible = norm !== 'none';
+    this._refreshAura();
     this._applyPaletteToUniforms(norm, false);
     return this;
   }
@@ -1594,6 +2036,13 @@ export class SwordVfxSystem {
     for (const sp of this.tangentialSparkRecords) {
       sp.spawned = false;
     }
+
+    // Finishers paint a wider, longer-lived signature arc.
+    const finisher = typeKey === 'combo4' || typeKey === 'charged';
+    this.sharedUniforms.uFinisher.value = finisher ? 1.0 : 0.0;
+    this._ribbonReach = finisher ? RIBBON_REACH_FINISHER : RIBBON_REACH;
+    this.sharedUniforms.uReach.value = this._ribbonReach;
+    this.trailLifetime = finisher ? TRAIL_LIFETIME * 1.4 : TRAIL_LIFETIME;
 
     this._applyPaletteToUniforms(style, false);
     this.group.visible = true;
@@ -1663,6 +2112,38 @@ export class SwordVfxSystem {
    * - In deterministic screenshot seeker mode (`preserveLiveAction === false`),
    *   samples `[tStart, tEnd]` via `poseAt()` for static frame capture.
    */
+  _bladeCacheKey(clipName, cfg) {
+    return `${clipName}|${cfg.startTime}|${cfg.timeScale}|${cfg.activeStart}|${cfg.activeEnd}`;
+  }
+
+  /**
+   * Bakes guard/tip in knight-root space across the clip's active window (one-off per clip).
+   */
+  _getBladeCache(clipName, cfg) {
+    const key = this._bladeCacheKey(clipName, cfg);
+    if (this._bladeCache.has(key)) return this._bladeCache.get(key);
+    const sword = this._getRightSwordNode();
+    if (!sword || !this.knightChar?.group || typeof this.knightChar.poseAt !== 'function') return null;
+    const arr = new Float32Array((BLADE_CACHE_SAMPLES + 1) * 6);
+    const group = this.knightChar.group;
+    try {
+      for (let i = 0; i <= BLADE_CACHE_SAMPLES; i++) {
+        const tSwing = lerp(cfg.activeStart, cfg.activeEnd, i / BLADE_CACHE_SAMPLES);
+        this.knightChar.poseAt(clipName, Math.max(0.01, cfg.startTime + tSwing * cfg.timeScale));
+        group.updateMatrixWorld(true);
+        _invRoot.copy(group.matrixWorld).invert();
+        _guardW.copy(LOCAL_BLADE_GUARD).applyMatrix4(sword.matrixWorld).applyMatrix4(_invRoot);
+        _tipW.copy(LOCAL_BLADE_TIP).applyMatrix4(sword.matrixWorld).applyMatrix4(_invRoot);
+        arr.set([_guardW.x, _guardW.y, _guardW.z, _tipW.x, _tipW.y, _tipW.z], i * 6);
+      }
+    } catch (err) {
+      this._bladeCache.set(key, null); // unknown clip: use the synthesized arc, don't retry
+      return null;
+    }
+    this._bladeCache.set(key, arr);
+    return arr;
+  }
+
   _reconstructBoneTrailForCurrentSwing({ preserveLiveAction = false, dt = 0.016 } = {}) {
     if (!this.swingState.active) return;
     const sw = this.swingState;
@@ -1716,7 +2197,7 @@ export class SwordVfxSystem {
       const clipStart = Math.max(cleaveStart, clipEnd - clipTrailSpan);
 
       if (clipEnd > clipStart + 0.002) {
-        const SUBSTEPS = 16;
+        const SUBSTEPS = 15; // 1 + 15 x SUB_SLICES_PER_STEP = 61 <= MAX_TRAIL_SLICES
         const dtSub = (clipEnd - clipStart) / curTimeScale / SUBSTEPS;
         const cleaveSpan = Math.max(0.04, cleaveEnd - cleaveStart);
 
@@ -1768,10 +2249,16 @@ export class SwordVfxSystem {
     const tStart = Math.max(cfg.activeStart, sw.age - this.trailLifetime);
 
     if (sw.age >= cfg.activeStart && tEnd > tStart + 0.002) {
-      const SUBSTEPS = 16;
+      const SUBSTEPS = 15; // 1 + 15 x SUB_SLICES_PER_STEP = 61 <= MAX_TRAIL_SLICES
       const dtSub = (tEnd - tStart) / SUBSTEPS;
       const activeSpan = Math.max(0.04, cfg.activeEnd - cfg.activeStart);
       const canPoseKnight = Boolean(this.knightChar && typeof this.knightChar.poseAt === 'function');
+      const hadCache = this._bladeCache.has(this._bladeCacheKey(clipName, cfg));
+      const cache = this._getBladeCache(clipName, cfg);
+      if (cache) {
+        this.knightChar.group.updateWorldMatrix(true, false);
+        _rootM.copy(this.knightChar.group.matrixWorld);
+      }
 
       for (let step = 0; step <= SUBSTEPS; step++) {
         const uStep = step / SUBSTEPS;
@@ -1780,10 +2267,18 @@ export class SwordVfxSystem {
         const tClipSample = Math.max(0.01, cfg.startTime + tSwing * cfg.timeScale);
         const activeFrac = saturate((tSwing - cfg.activeStart) / activeSpan);
 
-        if (canPoseKnight) {
-          this.knightChar.poseAt(clipName, tClipSample);
+        if (cache) {
+          const f = activeFrac * BLADE_CACHE_SAMPLES;
+          const i0 = Math.min(BLADE_CACHE_SAMPLES - 1, Math.floor(f));
+          const w = f - i0;
+          const a = i0 * 6;
+          const b = a + 6;
+          _guardW.set(lerp(cache[a], cache[b], w), lerp(cache[a + 1], cache[b + 1], w), lerp(cache[a + 2], cache[b + 2], w)).applyMatrix4(_rootM);
+          _tipW.set(lerp(cache[a + 3], cache[b + 3], w), lerp(cache[a + 4], cache[b + 4], w), lerp(cache[a + 5], cache[b + 5], w)).applyMatrix4(_rootM);
+        } else {
+          if (canPoseKnight) this.knightChar.poseAt(clipName, tClipSample);
+          this._sampleCurrentBladeSegment(_guardW, _tipW, activeFrac);
         }
-        this._sampleCurrentBladeSegment(_guardW, _tipW, activeFrac);
         this._pushControlPostureAndSubdivide(
           _guardW,
           _tipW,
@@ -1793,7 +2288,8 @@ export class SwordVfxSystem {
         );
       }
 
-      if (canPoseKnight) {
+      // Baking or per-step posing moved the rig: restore the pose at `targetClipTime`.
+      if (canPoseKnight && (!cache || !hadCache)) {
         this.knightChar.poseAt(clipName, Math.max(0.01, targetClipTime));
       }
     }
@@ -1808,6 +2304,17 @@ export class SwordVfxSystem {
     if (poseConfig) {
       if (poseConfig.infusion !== undefined) {
         this.setInfusion(poseConfig.infusion, 12);
+      }
+      if (poseConfig.awaken !== undefined) {
+        this.awakenTimer = poseConfig.awaken > 0 ? 10 : 0;
+        this.sharedUniforms.uAwaken.value = poseConfig.awaken;
+        this._refreshAura();
+      }
+      for (const imp of this.impacts) imp.active = false;
+      if (poseConfig.impact) {
+        const im = poseConfig.impact;
+        this.triggerImpact(im.pos, im.style || poseConfig.infusion, { delay: 0, heavy: Boolean(im.heavy) });
+        this.impacts.find((r) => r.active).age = im.age ?? 0.08;
       }
       if (poseConfig.swing) {
         const sw = poseConfig.swing;
@@ -1834,6 +2341,11 @@ export class SwordVfxSystem {
 
     if (this.swingState.active) {
       this._reconstructBoneTrailForCurrentSwing({ preserveLiveAction: false });
+      const sw = this.swingState;
+      const cfg = SWING_CONFIGS[sw.type] || SWING_CONFIGS.combo1;
+      if (this.knightChar?.poseAt && this._bladeCache.get(this._bladeCacheKey(sw.clip || cfg.clip, cfg))) {
+        this.knightChar.poseAt(sw.clip || cfg.clip, Math.max(0.01, sw.clipTime ?? cfg.startTime + sw.age * cfg.timeScale));
+      }
     }
 
     this._evaluateState(timeSeconds);
@@ -1992,6 +2504,29 @@ export class SwordVfxSystem {
       this._shakeOffset.set(0, 0, 0);
     }
 
+    // 3. Hit-contact ink splashes
+    let impSlot = 0;
+    for (const imp of this.impacts) {
+      if (!imp.active || imp.age < 0) continue;
+      const u = imp.age / imp.life;
+      if (u >= 1.0) {
+        imp.active = false;
+        continue;
+      }
+      _dummy.position.copy(imp.pos);
+      _dummy.quaternion.identity();
+      _dummy.scale.setScalar(imp.scale);
+      _dummy.updateMatrix();
+      this.impactMesh.setMatrixAt(impSlot, _dummy.matrix);
+      this.impactMetaAttr.setXYZW(impSlot, u, imp.style, imp.seed, imp.scale > 1.2 ? 1 : 0);
+      impSlot++;
+    }
+    this.impactMesh.count = impSlot;
+    this.impactMesh.instanceMatrix.needsUpdate = true;
+    this.impactMetaAttr.needsUpdate = true;
+    let impPending = impSlot > 0;
+    for (const imp of this.impacts) impPending = impPending || imp.active;
+
     // Rebuild dynamic vertex buffer of `liveRibbonMesh`
     this._rebuildLiveRibbonBuffer();
 
@@ -2003,12 +2538,24 @@ export class SwordVfxSystem {
     this.detonationDecalMesh.instanceMatrix.needsUpdate = true;
     this.decalMetaAttr.needsUpdate = true;
 
-    const anyWorldActive = this.liveRibbonMesh.visible || chipSlot > 0 || decalSlot > 0;
+    const anyWorldActive = this.liveRibbonMesh.visible || chipSlot > 0 || decalSlot > 0 || impPending;
     this.group.visible = anyWorldActive;
   }
 
   update(dt) {
     this.sharedUniforms.uTime.value += dt;
+
+    if (this.awakenTimer > 0) {
+      this.awakenTimer -= dt;
+      // swell in fast, hold, ease out over the last second
+      const target = this.awakenTimer > 0 ? Math.min(1, this.awakenTimer) : 0;
+      const cur = this.sharedUniforms.uAwaken.value;
+      this.sharedUniforms.uAwaken.value = cur < target ? Math.min(target, cur + dt * 4) : target;
+      if (this.awakenTimer <= 0) this.setAwakened(0);
+    }
+    for (const imp of this.impacts) {
+      if (imp.active) imp.age += dt;
+    }
 
     if (this.infusionStyle !== 'none' && this.infusionTimer > 0) {
       this.infusionTimer -= dt;
@@ -2039,10 +2586,12 @@ export class SwordVfxSystem {
   getStats() {
     let drawCalls = 0;
     if (this.sheathMesh.visible && this.sheathMesh.parent) drawCalls++;
+    if (this.auraMesh.visible && this.auraMesh.parent) drawCalls++;
     if (this.group.visible) {
       if (this.liveRibbonMesh.visible) drawCalls++;
       if (this.shrapnelMesh.count > 0) drawCalls++;
       if (this.detonationDecalMesh.count > 0) drawCalls++;
+      if (this.impactMesh.count > 0) drawCalls++;
     }
     return {
       active: drawCalls > 0,
@@ -2071,6 +2620,11 @@ export class SwordVfxSystem {
     this.liveRibbonMesh.geometry.setDrawRange(0, 0);
     this.shrapnelMesh.count = 0;
     this.detonationDecalMesh.count = 0;
+    this.awakenTimer = 0;
+    this.sharedUniforms.uAwaken.value = 0;
+    this.auraMesh.visible = false;
+    for (const imp of this.impacts) imp.active = false;
+    this.impactMesh.count = 0;
   }
 
   dispose() {
@@ -2078,8 +2632,12 @@ export class SwordVfxSystem {
     if (this.sheathMesh.parent) {
       this.sheathMesh.parent.remove(this.sheathMesh);
     }
+    this.auraMesh.parent?.remove(this.auraMesh);
     this.sheathMesh.geometry.dispose();
     this.sheathMat.dispose();
+    this.auraMat.dispose();
+    this.impactMesh.geometry.dispose();
+    this.impactMat.dispose();
     this.liveRibbonMesh.geometry.dispose();
     this.slashMat.dispose();
     this.shrapnelMesh.geometry.dispose();

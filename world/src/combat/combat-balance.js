@@ -102,11 +102,40 @@ export const Q_ENERGY_CONFIG = Object.freeze({
   perfectDodgeBonus: 12,
 });
 
+// Production balance levers (2026-11-09 refinement pass). Locked spec values
+// (E 13s/18s, Q 10s x2, shield 80% DR, Mage E 8.5s, 6s storm) are untouched;
+// these bound the stacking and free-defence exploits around them.
+export const KNIGHT_MAX_LEVEL = 5;
+export const KNIGHT_LEVEL_DMG_STEP = 0.12;
+export const ICE_DAMAGE_REDUCTION_CAP = 0.2;
+// Cap on the passive stack (infusion x empowered x perfect-dodge, max 2.28 uncapped). Knight Q's
+// locked x2 multiplies it, bounded by MORTAL_TOTAL_DMG_MULT_CAP (no frame-0 nukes); divine partner
+// multipliers apply after that, so the God's help stays a decisive swing.
+export const MORTAL_DMG_MULT_CAP = 1.7;
+export const MORTAL_TOTAL_DMG_MULT_CAP = 2.25;
+// Detonating a mark you primed yourself is weak: synergy should need both heroes.
+export const SELF_DETONATION_MULT = 0.35;
+export const KNIGHT_GUARD_MAX = 100;
+export const KNIGHT_GUARD_HOLD_DRAIN = 7; // per second while held
+export const KNIGHT_GUARD_HIT_COST = 0.6; // fraction of raw damage drained per blocked hit
+export const KNIGHT_GUARD_REGEN = 30; // per second once lowered
+export const KNIGHT_GUARD_REGEN_DELAY = 1.0;
+export const KNIGHT_GUARD_BREAK_STUN = 1.2;
+export const SHIELD_COVER_RADIUS = 6.0; // Mage must be this close to be covered
+export const SHIELD_ARC_COS = 0.5; // +-60 deg frontal block/cover arc
+export const DASH_COOLDOWN = 0.9;
+export const DASH_IFRAMES = 0.22;
+export const PERFECT_DODGE_ICD = 4.0;
+// Live enemy HP escalation per act (archetype base values stay as authored).
+export const ACT_HP_SCALE = { act1_arena: 1.0, act2_plaza: 1.2, act3_shrine: 1.35 };
+// Reference multiplier: the Hollow Sovereign is authored at its final HP (1400 x 1.6 ~= 2200).
+export const BOSS_HP_SCALE = 1.6;
+
 export function getKnightLevelStats(level = 1) {
-  const cleanLevel = Math.max(1, Math.floor(Number(level) || 1));
+  const cleanLevel = Math.min(KNIGHT_MAX_LEVEL, Math.max(1, Math.floor(Number(level) || 1)));
   return {
     level: cleanLevel,
-    dmgMult: Number((1.0 + 0.12 * (cleanLevel - 1)).toFixed(3)),
+    dmgMult: Number((1.0 + KNIGHT_LEVEL_DMG_STEP * (cleanLevel - 1)).toFixed(3)),
     iceSlowFactor: clamp(Number((0.15 + 0.025 * cleanLevel).toFixed(3)), 0.15, 0.25),
     iceSlowDuration: 3.0,
     fireStrikeBonus: 6 + 3 * cleanLevel,
@@ -362,6 +391,8 @@ export const ENEMY_ARCHETYPES = {
     attackCooldown: 0.95,
     telegraphRadius: 1.65,
     scale: 1.0,
+    attacks: ['minion_punch', 'minion_kick'],
+    reassembles: true,
   },
   skeleton_warrior: {
     id: 'skeleton_warrior',
@@ -378,6 +409,8 @@ export const ENEMY_ARCHETYPES = {
     telegraphRadius: 1.85,
     scale: 1.05,
     frontalBasicBoltDr: 0.50,
+    attacks: ['warrior_chop', 'warrior_slice'],
+    shieldWall: true,
   },
   skeleton_rogue: {
     id: 'skeleton_rogue',
@@ -394,6 +427,8 @@ export const ENEMY_ARCHETYPES = {
     telegraphRadius: 1.65,
     scale: 1.0,
     isFlanker: true,
+    attacks: ['rogue_stab', 'rogue_jump_chop'],
+    hunter: true,
   },
   skeleton_mage: {
     id: 'skeleton_mage',
@@ -411,6 +446,8 @@ export const ENEMY_ARCHETYPES = {
     scale: 1.02,
     isRanged: true,
     projectileSpeed: 14.5,
+    attacks: ['mage_bolt', 'mage_eruption'],
+    summons: true,
   },
   orc_raider: {
     id: 'orc_raider',
@@ -427,6 +464,7 @@ export const ENEMY_ARCHETYPES = {
     telegraphRadius: 1.9,
     scale: 1.12,
     isFlanker: true,
+    attacks: ['warrior_chop', 'warrior_slice'],
   },
   plant_warrior: {
     id: 'plant_warrior',
@@ -448,6 +486,7 @@ export const ENEMY_ARCHETYPES = {
     attackCooldown: 1.05,
     telegraphRadius: 1.9,
     scale: 1.08,
+    attacks: ['mage_bolt', 'mage_eruption', 'warrior_slice'],
   },
   werewolf: {
     id: 'werewolf',
@@ -465,6 +504,8 @@ export const ENEMY_ARCHETYPES = {
     scale: 1.15,
     isFlanker: true,
     isPounceHunter: true,
+    attacks: ['rogue_stab', 'rogue_jump_chop'],
+    hunter: true,
   },
   black_knight: {
     id: 'black_knight',
@@ -483,9 +524,12 @@ export const ENEMY_ARCHETYPES = {
     isElite: true,
     directionalShieldConeDeg: 70,
     directionalShieldDr: 0.80,
+    poise: 70,
+    attacks: ['warrior_chop', 'warrior_slice', 'captain_chop'],
+    shieldWall: true,
   },
-  necromancer: {
-    id: 'necromancer',
+  grove_necromancer: {
+    id: 'grove_necromancer',
     charId: 'Necromancer',
     poolRole: 'Necromancer',
     name: 'Grove Necromancer Sovereign',
@@ -506,6 +550,8 @@ export const ENEMY_ARCHETYPES = {
     summonArchetypes: ['skeleton_rogue', 'werewolf'],
     phaseThresholds: [0.70, 0.35],
     aegisLayersMax: 0,
+    poise: 90,
+    attacks: ['necro_bolt', 'mage_eruption'],
   },
   orc_brute: {
     id: 'orc_brute',
@@ -524,6 +570,8 @@ export const ENEMY_ARCHETYPES = {
     isBoss: true,
     phaseThresholds: [0.70, 0.35],
     aegisLayersMax: 0,
+    poise: 100,
+    attacks: ['boss_2h', 'boss_slam', 'captain_chop'],
   },
   frost_golem: {
     id: 'frost_golem',
@@ -542,6 +590,8 @@ export const ENEMY_ARCHETYPES = {
     isBoss: true,
     phaseThresholds: [0.70, 0.35],
     aegisLayersMax: 0,
+    poise: 140,
+    attacks: ['boss_2h', 'boss_combo', 'boss_slam', 'boss_smash'],
   },
   skeleton_golem: {
     id: 'skeleton_golem',
@@ -556,10 +606,12 @@ export const ENEMY_ARCHETYPES = {
     windupDuration: 0.58,
     attackCooldown: 1.30,
     telegraphRadius: 3.1,
-    scale: 1.38,
+    scale: 1.31,
     isBoss: true,
     phaseThresholds: [0.70, 0.35],
     aegisLayersMax: 0,
+    poise: 120,
+    attacks: ['boss_2h', 'boss_combo', 'boss_slam', 'boss_smash'],
   },
   captain: {
     id: 'captain',
@@ -576,6 +628,31 @@ export const ENEMY_ARCHETYPES = {
     telegraphRadius: 2.4,
     scale: 1.18,
     isElite: true,
+    poise: 70,
+    attacks: ['captain_spin', 'captain_chop', 'warrior_slice'],
+    rallies: true,
+  },
+  necromancer: {
+    id: 'necromancer',
+    charId: 'Necromancer',
+    poolRole: 'Necromancer',
+    name: 'Shrine Necromancer',
+    maxHp: 360,
+    dmg: 26,
+    speed: 4.6,
+    qEnergyReward: 40,
+    attackRange: 9.0,
+    windupDuration: ENEMY_WINDUP_SECONDS,
+    attackCooldown: 3.0,
+    telegraphRadius: 2.0,
+    scale: 1.0,
+    scale: 0.8,
+    isRanged: true,
+    isElite: true,
+    poise: 40,
+    attacks: ['necro_bolt'],
+    summons: true,
+    wards: true,
   },
   royal_guard: {
     id: 'royal_guard',
@@ -591,11 +668,14 @@ export const ENEMY_ARCHETYPES = {
     attackCooldown: 1.15,
     telegraphRadius: 2.0,
     scale: 1.08,
+    attacks: ['warrior_chop', 'warrior_slice'],
+    shieldWall: true,
   },
   boss_sovereign: {
     id: 'boss_sovereign',
-    charId: 'FrostGolem',
-    poolRole: 'Boss_Sovereign',
+    // Real Rig_Large Skeleton_Golem (GOLEM_TARGET_HEIGHT 2.8 m), not a scaled Warrior.
+    charId: 'Skeleton_Golem',
+    poolRole: 'Skeleton_Golem',
     name: 'The Hollow Sovereign',
     maxHp: 2200,
     dmg: 36,
@@ -605,9 +685,10 @@ export const ENEMY_ARCHETYPES = {
     windupDuration: 0.58,
     attackCooldown: 1.30,
     telegraphRadius: 3.3,
-    scale: 1.42,
+    scale: 1.0,
     isBoss: true,
-    hasBoneAegis: true,
+    poise: 140,
+    attacks: ['boss_2h', 'boss_combo', 'boss_slam'],
     phaseThresholds: [0.70, 0.35],
     aegisTriggerHpRatio: 0.5,
     aegisLayersMax: 2,
@@ -635,6 +716,8 @@ export const ENEMY_ARCHETYPES = {
     summonCooldown: 10.0,
     maxActiveSummons: 2,
     phaseThresholds: [0.70, 0.35],
+    poise: 80,
+    attacks: ['captain_spin'],
   },
   summoned_bat: {
     id: 'summoned_bat',
@@ -655,6 +738,7 @@ export const ENEMY_ARCHETYPES = {
     attackCooldown: 1.00,
     telegraphRadius: 1.55,
     scale: 0.72,
+    attacks: ['rogue_stab'],
   },
 };
 
@@ -672,7 +756,7 @@ ENEMY_ARCHETYPES.OrcRaider = ENEMY_ARCHETYPES.orc_raider;
 ENEMY_ARCHETYPES.PlantWarrior = ENEMY_ARCHETYPES.plant_warrior;
 ENEMY_ARCHETYPES.Werewolf_Wolf = ENEMY_ARCHETYPES.werewolf;
 ENEMY_ARCHETYPES.BlackKnight = ENEMY_ARCHETYPES.black_knight;
-ENEMY_ARCHETYPES.Necromancer = ENEMY_ARCHETYPES.necromancer;
+ENEMY_ARCHETYPES.Necromancer = ENEMY_ARCHETYPES.grove_necromancer;
 ENEMY_ARCHETYPES.OrcBrute = ENEMY_ARCHETYPES.orc_brute;
 ENEMY_ARCHETYPES.FrostGolem = ENEMY_ARCHETYPES.frost_golem;
 ENEMY_ARCHETYPES.Skeleton_Golem = ENEMY_ARCHETYPES.skeleton_golem;
@@ -713,11 +797,11 @@ export const STONE_STRONGHOLDS = Object.freeze({
     bannerSubtitle: 'Vanquish the Grove Necromancer Sovereign to Unseal the Floor Inscription',
     center: Object.freeze({ x: 44.0, z: 16.0, y: 0.0 }),
     triggerRadius: 22.0,
-    bossArchetype: 'necromancer',
+    bossArchetype: 'grove_necromancer',
     summonCooldown: 10.0,
     maxActiveSummons: 2,
     spawns: Object.freeze([
-      Object.freeze({ archetype: 'necromancer', x: 44.0, z: 16.0, isBoss: true }),
+      Object.freeze({ archetype: 'grove_necromancer', x: 44.0, z: 16.0, isBoss: true }),
       Object.freeze({ archetype: 'plant_warrior', x: 39.8, z: 18.8 }),
       Object.freeze({ archetype: 'plant_warrior', x: 48.2, z: 18.8 }),
       Object.freeze({ archetype: 'skeleton_rogue', x: 41.2, z: 13.2 }),
@@ -856,6 +940,293 @@ export function selectNearestSafeHavenWaypoint(xOrPos = 0, zArg = 18.5) {
   return best;
 }
 
+/* ------------------------------------------------------------------------- */
+/* 4b. Encounter design (2026-11-09 spec): three-beat contact-frame attacks,  */
+/*     parry, poise, crowd turn-taking, stride matching, boss phases.         */
+/* ------------------------------------------------------------------------- */
+
+// Clip time (s, at 1.0x) before the first contact where the slowed windup snaps back to full speed.
+export const WINDUP_LEAD = 0.12;
+export const PARRY_WINDOW = 0.15;
+export const WINDUP_STAGGER_WINDOW = 0.4;
+export const MAX_WINDUPS_PER_WINDOW = 2;
+export const MINION_REASSEMBLE_SECONDS = 6.0;
+export const BOSS_DOWN_WINDOW = 4.0;
+export const BOSS_P3_HP_RATIO = 0.33;
+export const BOSS_P3_SPEED = 1.25;
+export const STAGGER_SECONDS = { trash: 0.55, elite: 1.1, boss: 1.4, parry: 1.2 };
+export const POISE_REGEN_DELAY = 2.0;
+export const POISE_REGEN_PER_SEC = 0.3; // fraction of max per second
+export const SHIELD_BASH_AFTER_BLOCKS = 3;
+export const ROGUE_DODGE_COOLDOWN = 4.0;
+export const ROGUE_EXPOSED_DISTANCE = 6.0;
+export const MAGE_SUMMON_COOLDOWN = 14.0;
+export const NECRO_WARD_SECONDS = 3.0;
+export const CAPTAIN_RALLY_SECONDS = 6.0;
+export const CAPTAIN_RALLY_SPEED_MULT = 1.15;
+
+/**
+ * Per-attack data. `contacts` are clip fractions where damage resolves (multi-hit flurries list
+ * several). `area` attacks hit everyone within `radius` of a point `areaOffset` m ahead (or the
+ * locked target for `areaAtTarget`) and are the only attacks that get a ground decal.
+ * `interruptible: 'any'` means even elites lose the cast to one hit.
+ */
+export const ENEMY_ATTACKS = {
+  minion_punch: { clip: 'Melee_Unarmed_Attack_Punch_A', contacts: [0.38], windupSlow: 0.5, recovery: 0.35, range: 2.0, arcDeg: 80, dmg: 22, blockable: true, interruptible: true },
+  minion_kick: { clip: 'Melee_Unarmed_Attack_Kick', contacts: [0.42], windupSlow: 0.55, recovery: 0.4, range: 2.2, arcDeg: 70, dmg: 26, blockable: true, interruptible: true },
+  warrior_chop: { clip: 'Melee_1H_Attack_Chop', contacts: [0.45], windupSlow: 0.45, recovery: 0.45, range: 2.4, arcDeg: 70, dmg: 30, blockable: true, interruptible: true },
+  warrior_slice: { clip: 'Melee_1H_Attack_Slice_Diagonal', contacts: [0.42], windupSlow: 0.5, recovery: 0.4, range: 2.5, arcDeg: 110, dmg: 28, blockable: true, interruptible: true },
+  shield_bash: { clip: 'Melee_Block_Attack', contacts: [0.4], windupSlow: 0.85, recovery: 0.5, range: 2.3, arcDeg: 80, dmg: 24, blockable: true, interruptible: false, counter: true },
+  rogue_stab: { clip: 'Melee_Dualwield_Attack_Stab', contacts: [0.3, 0.52, 0.74], windupSlow: 0.55, recovery: 0.45, range: 2.2, arcDeg: 70, dmg: 14, blockable: true, interruptible: true },
+  rogue_jump_chop: { clip: 'Melee_1H_Attack_Jump_Chop', contacts: [0.55], windupSlow: 0.7, recovery: 0.55, range: 2.4, arcDeg: 80, dmg: 30, blockable: true, interruptible: false, lunge: 5.5, minDist: 3.6 },
+  mage_bolt: { clip: 'Ranged_Magic_Shoot', contacts: [0.5], windupSlow: 0.55, recovery: 0.4, range: 10.5, ranged: true, aimRadius: 1.3, dmg: 24, blockable: true, interruptible: true },
+  mage_eruption: { clip: 'Ranged_Magic_Spellcasting_Long', contacts: [0.78], windupSlow: 1.0, recovery: 0.5, range: 10.5, area: true, areaAtTarget: true, radius: 2.6, dmg: 38, blockable: true, interruptible: 'any', cooldown: 9.0 },
+  necro_bolt: { clip: 'Ranged_Magic_Shoot', contacts: [0.5], windupSlow: 0.6, recovery: 0.4, range: 10.0, ranged: true, aimRadius: 1.3, dmg: 26, blockable: true, interruptible: true },
+  captain_spin: { clip: 'Melee_2H_Attack_Spin', contacts: [0.36, 0.62], windupSlow: 0.55, recovery: 0.6, range: 2.9, area: true, areaOffset: 0, radius: 2.9, dmg: 26, blockable: true, interruptible: false, noDecal: true },
+  captain_chop: { clip: 'Melee_2H_Attack_Chop', contacts: [0.5], windupSlow: 0.32, recovery: 0.8, range: 3.0, arcDeg: 60, dmg: 48, blockable: false, interruptible: false, glint: 'crimson' },
+  boss_2h: { clip: 'Melee_2H_Attack', contacts: [0.45], windupSlow: 0.5, recovery: 0.6, range: 3.9, arcDeg: 110, dmg: 44, blockable: true, interruptible: false },
+  boss_combo: { clip: 'Melee_Dualwield_SlashCombo', contacts: [0.28, 0.5, 0.72], windupSlow: 0.55, recovery: 0.7, range: 3.7, arcDeg: 120, dmg: 24, blockable: true, interruptible: false },
+  boss_slam: { clip: 'Melee_2H_Slam', contacts: [0.45], windupSlow: 0.7, recovery: 1.0, range: 4.5, area: true, areaOffset: 2.2, radius: 3.4, dmg: 55, blockable: true, interruptible: false },
+  boss_smash: { clip: 'Melee_Unarmed_Smash', contacts: [0.55], windupSlow: 0.8, recovery: 1.2, range: 4.5, area: true, areaOffset: 1.6, radius: 4.6, dmg: 62, blockable: false, interruptible: false },
+};
+
+/** Real-time beats of an attack: slowed windup, contact moments, clip end, recovery end. */
+export function attackTimeline(atk, clipDuration, speedMult = 1.0) {
+  const dur = clipDuration > 1e-3 ? clipDuration : 1.0;
+  const sm = Math.max(0.05, speedMult);
+  const slow = clamp(atk.windupSlow ?? 1.0, 0.05, 1.0);
+  const firstContactClip = (atk.contacts?.[0] ?? 0.5) * dur;
+  const slowEndClip = Math.max(0, firstContactClip - WINDUP_LEAD);
+  const windupEnd = slowEndClip / (slow * sm);
+  const contactTimes = (atk.contacts || [0.5]).map((c) => windupEnd + (c * dur - slowEndClip) / sm);
+  const clipEnd = windupEnd + (dur - slowEndClip) / sm;
+  return { dur, slowEndClip, windupEnd, contactTimes, clipEnd, recoverEnd: clipEnd + (atk.recovery ?? 0.4) };
+}
+
+/**
+ * Advances the attack's clip clock by `dt` real seconds (exact across the slow/fast boundary).
+ * Returns the new clip time, the action timeScale to apply and contact indices crossed this step.
+ */
+export function advanceAttackClip(atk, clipDuration, clipT, dt, speedMult = 1.0) {
+  const dur = clipDuration > 1e-3 ? clipDuration : 1.0;
+  const sm = Math.max(0.05, speedMult);
+  const slow = clamp(atk.windupSlow ?? 1.0, 0.05, 1.0);
+  const slowEndClip = Math.max(0, (atk.contacts?.[0] ?? 0.5) * dur - WINDUP_LEAD);
+  const prev = clipT;
+  let t = clipT;
+  let remaining = Math.max(0, dt);
+  if (t < slowEndClip) {
+    const need = (slowEndClip - t) / (slow * sm);
+    if (remaining <= need) {
+      t += remaining * slow * sm;
+      remaining = 0;
+    } else {
+      t = slowEndClip;
+      remaining -= need;
+    }
+  }
+  t += remaining * sm;
+  const crossed = [];
+  (atk.contacts || [0.5]).forEach((c, i) => {
+    const ct = c * dur;
+    if (prev < ct && t >= ct) crossed.push(i);
+  });
+  return {
+    clipT: t,
+    timeScale: (t < slowEndClip ? slow : 1.0) * sm,
+    crossed,
+    finished: t >= dur,
+  };
+}
+
+/** Knight block raised within ±PARRY_WINDOW of an enemy contact frame. */
+export function isParryTiming(blockStartAt, contactAt, window = PARRY_WINDOW) {
+  if (!Number.isFinite(blockStartAt) || !Number.isFinite(contactAt)) return false;
+  return Math.abs(contactAt - blockStartAt) <= window + 1e-9;
+}
+
+/** Hero position inside a melee attack's range and frontal arc (yaw: +Z forward convention). */
+export function isInAttackArc(attacker, yaw, target, range, arcDeg = 90) {
+  const dx = target.x - attacker.x;
+  const dz = target.z - attacker.z;
+  const d = Math.hypot(dx, dz);
+  if (d > range) return false;
+  if (d < 0.6) return true;
+  const diff = Math.abs(shortestAngleDiff(Math.atan2(dx, dz), yaw));
+  return diff <= (arcDeg * Math.PI) / 360;
+}
+
+export function initPoise(e, poiseMax = 0) {
+  e.poiseMax = poiseMax;
+  e.poise = poiseMax;
+  e.poiseRegenDelay = 0;
+  return e;
+}
+
+/** Returns true when the hit breaks poise (and refills it for the next cycle). */
+export function applyPoiseDamage(e, amount) {
+  if (!e.poiseMax) return false;
+  e.poise -= Math.max(0, amount);
+  e.poiseRegenDelay = POISE_REGEN_DELAY;
+  if (e.poise <= 0) {
+    e.poise = e.poiseMax;
+    return true;
+  }
+  return false;
+}
+
+export function tickPoise(e, dt) {
+  if (!e.poiseMax) return;
+  if (e.poiseRegenDelay > 0) {
+    const used = Math.min(dt, e.poiseRegenDelay);
+    e.poiseRegenDelay -= used;
+    dt -= used;
+    if (dt <= 0) return;
+  }
+  e.poise = Math.min(e.poiseMax, e.poise + e.poiseMax * POISE_REGEN_PER_SEC * dt);
+}
+
+const HEAVY_KNIGHT_SOURCES = new Set(['charged', 'heavy']);
+const MAGE_PROJECTILE_SOURCES = new Set(['mage_attack1', 'mage_attack2', 'mage_attack3']);
+
+export function isPoiseHeavyHit(hit = {}) {
+  return HEAVY_KNIGHT_SOURCES.has(hit.source) || hit.source === 'combo4' || Boolean(hit.spellId);
+}
+
+/**
+ * Pre-damage reaction: 'dodge' (Rogue sidesteps a Mage bolt), 'blocked' (shield front arc),
+ * 'pierce' (Shatterlance through a shield), 'guardbreak' (Knight heavy vs shield), or 'hit'.
+ */
+export function resolvePreHit(e, hit = {}) {
+  const fromMageBolt = MAGE_PROJECTILE_SOURCES.has(hit.source) || hit.spellId === 'frost_lance';
+  if (
+    e.hunter &&
+    fromMageBolt &&
+    (e.dodgeCooldown || 0) <= 0 &&
+    e.aiState !== 'windup' &&
+    e.aiState !== 'recover' &&
+    e.aiState !== 'stagger'
+  ) {
+    return 'dodge';
+  }
+  if (e.shieldUp && hit.attackerPos) {
+    const inFront = isInAttackArc(e, e.yaw || 0, hit.attackerPos, 999, 140);
+    if (inFront) {
+      if (hit.spellId === 'shatterlance' || hit.source === 'shatterlance') return 'pierce';
+      if (HEAVY_KNIGHT_SOURCES.has(hit.source)) return 'guardbreak';
+      if (!hit.detonation) return 'blocked';
+    }
+  }
+  return 'hit';
+}
+
+/**
+ * Post-damage reaction. Trash: 'interrupt' if a light hit lands before an interruptible contact,
+ * else 'flinch'. Elites/boss: 'stagger' only when poise breaks; casts flagged
+ * interruptible:'any' break on one hit.
+ */
+export function resolvePostHit(e, hit = {}, damageDealt = 0) {
+  if (damageDealt <= 0) return 'none';
+  const atk = e.attack?.atk;
+  const preContact = e.aiState === 'windup' && e.attack && e.attack.contactIdx === 0;
+  if (preContact && atk?.interruptible === 'any') return 'interrupt';
+  if (e.isElite || e.isBoss) {
+    const poiseDmg = damageDealt * (isPoiseHeavyHit(hit) ? 1.8 : 1.0);
+    return applyPoiseDamage(e, poiseDmg) ? 'stagger' : 'none';
+  }
+  if (preContact) return atk?.interruptible ? 'interrupt' : 'none';
+  if (e.aiState === 'recover' || e.aiState === 'windup') return 'none';
+  return 'flinch';
+}
+
+/** Crowd limiter: no more than MAX_WINDUPS_PER_WINDOW windups on one hero within the window. */
+export function canStartWindup(log, heroId, now, window = WINDUP_STAGGER_WINDOW) {
+  let n = 0;
+  for (let i = 0; i < log.length; i++) {
+    if (log[i].heroId === heroId && now - log[i].t < window) n++;
+  }
+  return n < MAX_WINDUPS_PER_WINDOW;
+}
+
+export function recordWindup(log, heroId, now, window = WINDUP_STAGGER_WINDOW) {
+  for (let i = log.length - 1; i >= 0; i--) {
+    if (now - log[i].t >= window) log.splice(i, 1);
+  }
+  log.push({ heroId, t: now });
+  return log;
+}
+
+// Native ground speed (m/s at timeScale 1.0) of each locomotion clip for the rig's own height.
+export const NATIVE_STRIDE_SPEED = {
+  medium: {
+    Walking_A: 1.5,
+    Walking_B: 1.5,
+    Walking_C: 1.5,
+    Skeletons_Walking: 1.2,
+    Running_A: 4.2,
+    Running_B: 4.2,
+    Running_Strafe_Left: 3.6,
+    Running_Strafe_Right: 3.6,
+    Walking_Backwards: 1.3,
+  },
+  large: { Walking_A: 2.0, Running_A: 4.6 },
+};
+
+/** timeScale that makes the clip's feet match `groundSpeed` (scale = extra group scale). */
+export function strideTimeScale(clipName, groundSpeed, { rig = 'medium', scale = 1.0 } = {}) {
+  const native = NATIVE_STRIDE_SPEED[rig]?.[clipName];
+  if (!native) return 1.0;
+  return clamp(groundSpeed / (native * Math.max(0.2, scale)), 0.35, 2.2);
+}
+
+export function bossPhaseFor(hpRatio, aegisTriggered = false) {
+  if (hpRatio <= BOSS_P3_HP_RATIO) return 'p3';
+  if (aegisTriggered || hpRatio <= 0.5) return 'p2';
+  return 'p1';
+}
+
+export const BOSS_ATTACK_SETS = {
+  p1: ['boss_2h', 'boss_combo', 'boss_slam'],
+  p2: ['boss_2h', 'boss_combo', 'boss_slam'],
+  p3: ['boss_combo', 'boss_2h', 'boss_smash', 'boss_slam'],
+};
+
+/** Deterministic pick from the phase set (roll in [0,1)); never repeats the previous attack. */
+export function selectBossAttack(phase, roll = 0, lastId = null) {
+  const set = BOSS_ATTACK_SETS[phase] || BOSS_ATTACK_SETS.p1;
+  let idx = Math.floor(clamp(roll, 0, 0.9999) * set.length);
+  if (set[idx] === lastId) idx = (idx + 1) % set.length;
+  return set[idx];
+}
+
+/** Bone pile tick: returns 'reassemble' once the timer expires unless frozen or destroyed. */
+export function tickBonePile(pile, dt) {
+  if (pile.pileFrozen || pile.pileDestroyed) return 'held';
+  pile.pileTimer = Math.max(0, (pile.pileTimer ?? MINION_REASSEMBLE_SECONDS) - dt);
+  return pile.pileTimer <= 0 ? 'reassemble' : 'pile';
+}
+
+/** A bone pile is finished only by a detonation or a Mage spell/attack. */
+export function isPileFinisher(hit = {}, result = null) {
+  if (result?.detonation) return true;
+  if (hit.spellId) return true;
+  const s = hit.source || '';
+  return s.startsWith('mage_') || s === 'storm_cataclysm' || s === 'couples_ultimate' || s === 'cinder_fall' || s === 'shatterlance';
+}
+
+/** Rogue hunter: the Mage when she strays > ROGUE_EXPOSED_DISTANCE from the Knight, else nearest. */
+export function selectHuntTarget(e, knight, mage) {
+  const kOk = knight && !knight.downed;
+  const mOk = mage && !mage.downed;
+  if (kOk && mOk) {
+    if (Math.hypot(knight.x - mage.x, knight.z - mage.z) > ROGUE_EXPOSED_DISTANCE) return mage;
+    const dk = Math.hypot(e.x - knight.x, e.z - knight.z);
+    const dm = Math.hypot(e.x - mage.x, e.z - mage.z);
+    return dm < dk ? mage : knight;
+  }
+  return kOk ? knight : mOk ? mage : knight || mage || null;
+}
+
 export const SHRINE_OBSTACLES = [
   { id: 'shrine_pedestal', x: -5.8, z: -87.8, r: 1.6 },
   { id: 'shrine_planter_w', x: -10.6, z: -90.8, r: 2.6 },
@@ -889,24 +1260,25 @@ export const ACT_DEFINITIONS = {
     waves: [
       {
         id: 'wave1',
-        label: 'Wave 1 · Wisteria Scouts',
+        // Reassembling minions teach "finish the bone pile with a detonation or spell".
+        label: 'Wave 1 · Restless Bones',
         spawns: [
           { archetype: 'minion', x: 75.5, z: -7.5 },
           { archetype: 'minion', x: 75.5, z: -0.5 },
-          { archetype: 'warrior', x: 78.5, z: -5.8 },
-          { archetype: 'warrior', x: 78.5, z: -2.2 },
+          { archetype: 'minion', x: 77.5, z: -4.0 },
+          { archetype: 'minion', x: 73.5, z: -10.5 },
         ],
       },
       {
         id: 'wave2',
-        label: 'Wave 2 · Wisteria Warband',
+        label: 'Wave 2 · Shield Wall',
         spawns: [
-          { archetype: 'warrior', x: 75.2, z: -6.8 },
-          { archetype: 'warrior', x: 75.2, z: -1.2 },
-          { archetype: 'rogue', x: 71.5, z: -11.8 },
-          { archetype: 'rogue', x: 71.5, z: 3.8 },
-          { archetype: 'mage', x: 80.5, z: -6.2 },
-          { archetype: 'mage', x: 80.5, z: -1.8 },
+          { archetype: 'warrior', x: 78.5, z: -5.8 },
+          { archetype: 'warrior', x: 78.5, z: -2.2 },
+          { archetype: 'minion', x: 75.2, z: -6.8 },
+          { archetype: 'minion', x: 75.2, z: -1.2 },
+          { archetype: 'minion', x: 71.5, z: -11.8 },
+          { archetype: 'minion', x: 71.5, z: 3.8 },
         ],
       },
     ],
@@ -970,14 +1342,15 @@ export const ACT_DEFINITIONS = {
     waves: [
       {
         id: 'wave3',
-        label: 'Wave 3 · Twilight Vanguard',
+        label: 'Wave 3 · Dusk Hunters',
         spawns: [
-          { archetype: 'captain', x: 0.0, z: -10.8 },
-          { archetype: 'warrior', x: -8.2, z: -7.4 },
-          { archetype: 'warrior', x: 8.2, z: -7.4 },
+          // Skeleton Mage holds the well steps; Rogues hunt whichever hero strays.
+          { archetype: 'mage', x: 0.0, z: -3.1 },
+          { archetype: 'rogue', x: -8.2, z: -7.4 },
+          { archetype: 'rogue', x: 8.2, z: -7.4 },
           { archetype: 'warrior', x: -10.6, z: 1.8 },
-          { archetype: 'mage', x: 10.6, z: 1.8 },
-          { archetype: 'mage', x: 0.0, z: -11.8 },
+          { archetype: 'minion', x: 10.6, z: 1.8 },
+          { archetype: 'minion', x: 0.0, z: -11.8 },
         ],
       },
     ],
@@ -1010,12 +1383,30 @@ export const ACT_DEFINITIONS = {
     waves: [
       {
         id: 'wave4',
-        label: 'Wave 4 · The Hollow Sovereign',
+        label: 'Wave 4 · The Sleeping Court',
         spawns: [
-          { archetype: 'boss_sovereign', x: 0.0, z: -88.8 },
-          { archetype: 'royal_guard', x: -4.2, z: -83.2 },
-          { archetype: 'royal_guard', x: 4.2, z: -83.2 },
+          // Dormant ambush: Skeletons_Inactive_* poses until a hero comes within wakeRadius.
+          { archetype: 'minion', x: -4.5, z: -80.5, dormant: 'floor', rotY: 2.6 },
+          { archetype: 'minion', x: 4.0, z: -81.0, dormant: 'floor', rotY: -2.4 },
+          { archetype: 'warrior', x: -6.6, z: -84.0, dormant: 'standing', rotY: 1.9 },
+          { archetype: 'warrior', x: 6.6, z: -84.6, dormant: 'standing', rotY: -1.9 },
+          { archetype: 'rogue', x: 0.0, z: -83.0, dormant: 'floor', rotY: Math.PI },
         ],
+      },
+      {
+        id: 'wave5',
+        label: 'Wave 5 · Captain & Necromancer',
+        spawns: [
+          { archetype: 'captain', x: 0.0, z: -90.5 },
+          { archetype: 'necromancer', x: 3.6, z: -93.0 },
+          { archetype: 'minion', x: -4.0, z: -88.0 },
+          { archetype: 'minion', x: 4.0, z: -87.5 },
+        ],
+      },
+      {
+        id: 'wave6',
+        label: 'Wave 6 · The Hollow Sovereign',
+        spawns: [{ archetype: 'boss_sovereign', x: 0.0, z: -88.8 }],
       },
     ],
   },
@@ -1226,6 +1617,28 @@ export function selectEnemyTargetByThreat(enemy, heroes = {}, threatState = {}) 
   });
 }
 
+// Soft-lock targets must be fully present: not dead, dying (death clip) or still rising (spawn clip).
+export function isSoftLockable(e) {
+  if (!e || e.dead || e.hp <= 0 || e.active === false) return false;
+  if ((e.deathTimer || 0) > 0 || e.dying) return false;
+  if ((e.spawnAnimTimer || 0) > 0 || e.spawning) return false;
+  return true;
+}
+
+export const SOFT_LOCK_STICKY_RANGE_MULT = 1.15;
+export const SOFT_LOCK_STICKY_CONE_MULT = 1.4;
+export const SOFT_LOCK_SWITCH_MARGIN = 0.3;
+
+/**
+ * Cone soft-lock (75° cone by default) scored by closeness to the aim ray,
+ * distance, and threat. Options:
+ * - `stickyTarget` (or `origin.softLockTarget`): the current lock is kept while it
+ *   stays valid inside a widened range/cone unless a challenger out-scores it by
+ *   `switchMargin` (hysteresis — no per-frame target flipping).
+ * - `selfId` ('Mage'/'Knight'): bias toward enemies targeting / winding up on us.
+ * - `partnerTarget`: bias toward the partner's current target (focus fire).
+ * Falls back to the nearest threat to self/partner outside the cone.
+ */
 export function selectSoftLockTarget(
   origin,
   forwardYaw,
@@ -1235,36 +1648,65 @@ export function selectSoftLockTarget(
     coneHalfAngle = (75 * Math.PI) / 360,
     partnerPos = null,
     partnerThreatRadius = 8.0,
+    stickyTarget = undefined,
+    switchMargin = SOFT_LOCK_SWITCH_MARGIN,
+    selfId = null,
+    partnerTarget = null,
   } = {}
 ) {
   if (!origin || !Array.isArray(enemies) || enemies.length === 0) return null;
 
+  const sticky = stickyTarget === undefined ? origin.softLockTarget || null : stickyTarget;
+  const selfRole = selfId || origin.id || null;
+
   let bestInCone = null;
   let bestInConeScore = -Infinity;
+  let stickyScore = -Infinity;
 
   let bestThreatFallback = null;
   let bestThreatScore = -Infinity;
 
   for (let i = 0; i < enemies.length; i++) {
     const e = enemies[i];
-    if (!e || e.dead || e.hp <= 0 || e.active === false) continue;
+    if (!isSoftLockable(e)) continue;
 
     const ex = e.x ?? e.group?.position?.x ?? 0;
     const ez = e.z ?? e.group?.position?.z ?? 0;
     const dx = ex - origin.x;
     const dz = ez - origin.z;
     const dist = Math.hypot(dx, dz);
+    const isSticky = sticky !== null && (e === sticky || (e.id !== undefined && e.id === sticky.id));
+    const rangeLimit = isSticky ? maxRange * SOFT_LOCK_STICKY_RANGE_MULT : maxRange;
+    const coneLimit = isSticky ? coneHalfAngle * SOFT_LOCK_STICKY_CONE_MULT : coneHalfAngle;
 
-    if (dist <= maxRange) {
+    if (dist <= rangeLimit) {
       const angleToEnemy = Math.atan2(dx, dz);
       const absAngleDiff = Math.abs(shortestAngleDiff(angleToEnemy, forwardYaw));
-      if (absAngleDiff <= coneHalfAngle + 1e-4) {
-        const distScore = 1.0 - dist / maxRange;
-        const angleScore = 1.0 - absAngleDiff / Math.max(1e-4, coneHalfAngle);
+      if (absAngleDiff <= coneLimit + 1e-4) {
+        const distScore = Math.max(0, 1.0 - dist / maxRange);
+        const angleScore = Math.max(0, 1.0 - absAngleDiff / Math.max(1e-4, coneHalfAngle));
+        // Perpendicular offset from the aim ray: "the one I'm pointing at" wins close calls.
+        const rayOffset = dist * Math.sin(Math.min(absAngleDiff, Math.PI / 2));
+        const rayScore = Math.max(0, 1.0 - rayOffset / 4.0);
         const markBonus = e.mark ? 0.35 : 0.0;
         const bossBonus = e.isBoss ? 0.25 : e.isElite ? 0.12 : 0.0;
         const windupBonus = e.aiState === 'windup' ? 0.2 : 0.0;
-        const score = distScore * 0.58 + angleScore * 0.42 + markBonus + bossBonus + windupBonus;
+        const onSelf = selfRole && e.targetHeroId === selfRole;
+        const threatBonus = onSelf ? (e.aiState === 'windup' || e.hasAttackToken ? 0.25 : 0.08) : 0.0;
+        const focusBonus =
+          partnerTarget && (e === partnerTarget || (e.id !== undefined && e.id === partnerTarget.id))
+            ? 0.15
+            : 0.0;
+        const score =
+          distScore * 0.46 +
+          angleScore * 0.34 +
+          rayScore * 0.2 +
+          markBonus +
+          bossBonus +
+          windupBonus +
+          threatBonus +
+          focusBonus;
+        if (isSticky) stickyScore = score;
         if (score > bestInConeScore) {
           bestInConeScore = score;
           bestInCone = e;
@@ -1286,6 +1728,14 @@ export function selectSoftLockTarget(
     }
   }
 
+  // Hysteresis: keep the current lock unless the challenger is clearly better.
+  if (stickyScore > -Infinity && bestInCone !== sticky && bestInConeScore < stickyScore + switchMargin) {
+    const stickyEnemy = enemies.find(
+      (e) => e === sticky || (sticky && e && e.id !== undefined && e.id === sticky.id)
+    );
+    if (stickyEnemy) return stickyEnemy;
+  }
+
   return bestInCone || bestThreatFallback || null;
 }
 
@@ -1298,7 +1748,8 @@ export function allocateAttackTokens(enemies, maxTokens = MAX_ATTACK_TOKENS) {
     if (!e) continue;
     const isAlive = !e.dead && e.hp > 0 && e.active !== false;
     const isStunned = (e.stunTimer || 0) > 0 || (e.grounded === false && (e.y || 0) > 0.5);
-    if (!isAlive || isStunned) {
+    // Dormant ambushers, bone piles, staggered and downed enemies never hold a token.
+    if (!isAlive || isStunned || e.tokenIneligible) {
       e.hasAttackToken = false;
       if (e.aiState === 'windup') {
         e.aiState = 'orbit';
@@ -1464,11 +1915,14 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
       ? lvlStats.fireStrikeBonus
       : 0;
 
-  const totalMult = Math.min(
-    2.25,
-    infusedMult * empoweredMult * dodgeMult * communeMult * ultMult
-  );
-  let rawDirectDmg = Math.round((baseDmg * levelMult + fireBonus) * totalMult);
+  const mortalMult =
+    Math.min(
+      MORTAL_TOTAL_DMG_MULT_CAP,
+      Math.min(MORTAL_DMG_MULT_CAP, infusedMult * empoweredMult * dodgeMult) * ultMult
+    );
+  let rawDirectDmg = Math.round((baseDmg * levelMult + fireBonus) * mortalMult * communeMult);
+  // Only hits that name their hero can be penalised as self-primed detonations.
+  const attackerHero = hitSpec.heroId || null;
 
   // PlantWarrior 1.35x Fire (`solar` / `cinder_fall`) vulnerability
   const isFireAttack =
@@ -1544,6 +1998,9 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
   const activeMark =
     enemy.mark && (enemy.markTimer === undefined || enemy.markTimer > 0) ? enemy.mark : null;
 
+  const selfDetonation = Boolean(
+    activeMark && enemy.markOwner && enemy.markOwner === attackerHero
+  );
   let detonationSpec = null;
   if (activeMark) {
     // Tier 2: Cross-Element Detonation (60-70 AoE Dmg + 1.0-1.1s stun + +20 Q Energy to both)
@@ -1603,7 +2060,12 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     enemy.charId === 'BlackKnight' ||
     Number(enemy.directionalShieldConeDeg) > 0;
 
-  if (hasDirectionalShield && (enemy.stunTimer || 0) <= 0) {
+  if (
+    hasDirectionalShield &&
+    (enemy.stunTimer || 0) <= 0 &&
+    enemy.aiState !== 'stagger' &&
+    enemy.aiState !== 'down'
+  ) {
     const coneRad = ((Number(enemy.directionalShieldConeDeg) || 70) * Math.PI) / 180;
     const dxAttacker = attackerX - (enemy.x || 0);
     const dzAttacker = attackerZ - (enemy.z || 0);
@@ -1631,16 +2093,17 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
   let aegisBroken = false;
 
   if (enemy.isBoss && enemy.aegisActive && enemy.aegisLayers > 0) {
-    if (
-      source === 'couples_ultimate' ||
-      source === 'divine_miracle' ||
-      source === 'storm_cataclysm'
-    ) {
+    if (source === 'couples_ultimate' || source === 'divine_miracle') {
       enemy.aegisLayers = 0;
       enemy.aegisActive = false;
       aegisBroken = true;
       enemy.stunTimer = Math.max(enemy.stunTimer || 0, COUPLES_ULTIMATE.stun);
-    } else if (detonationSpec || source === 'divine_blessing' || source === 'knight_sky_lightning') {
+    } else if (
+      detonationSpec ||
+      source === 'divine_blessing' ||
+      source === 'knight_sky_lightning' ||
+      source === 'storm_cataclysm'
+    ) {
       enemy.aegisLayers = Math.max(0, enemy.aegisLayers - 1);
       aegisBroken = true;
       if (enemy.aegisLayers === 0) {
@@ -1663,8 +2126,11 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
 
   if (detonationSpec) {
     resonanceGain += detonationSpec.resonanceGain;
-    // Fixed bonusDmg (42 for Tier 1 Rime Shatter, 60-70 for Tier 2 Cross-Element Detonation; never scaled by ultMult/empoweredMult)
-    const bonusDmg = detonationSpec.bonusDmg;
+    // Fixed bonusDmg (42 for Tier 1 Rime Shatter, 60-70 for Tier 2 Cross-Element Detonation); only
+    // the self-primed penalty scales it, never ultMult/empoweredMult.
+    const bonusDmg = Math.round(
+      detonationSpec.bonusDmg * (selfDetonation ? SELF_DETONATION_MULT : 1.0)
+    );
     const affectedIds = [];
 
     const targets =
@@ -1738,6 +2204,7 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
       (isSwordHit && effectiveInfusion !== 'none' ? effectiveInfusion : null);
     if (nextMark && enemy.hp > 0) {
       enemy.mark = nextMark;
+      enemy.markOwner = attackerHero;
       enemy.markTimer = hitSpec.markDuration ?? 6.0;
     }
 
@@ -1773,7 +2240,7 @@ export function applyHitAndResolveDetonation(enemy, hitSpec = {}, allEnemies = [
     enemy.hp <= enemy.maxHp * (enemy.aegisTriggerHpRatio ?? 0.5)
   ) {
     enemy.aegisTriggered = true;
-    if (source === 'couples_ultimate' || source === 'storm_cataclysm') {
+    if (source === 'couples_ultimate') {
       enemy.aegisActive = false;
       enemy.aegisLayers = 0;
       aegisBroken = true;
@@ -1917,7 +2384,10 @@ export function createHeadlessCampaignSim() {
         : HERO_STATS.Knight.xpPerKill;
     heroes.Knight.kills += 1;
     heroes.Knight.xp += xpGain;
-    while (heroes.Knight.xp >= HERO_STATS.Knight.xpPerLevel) {
+    while (
+      heroes.Knight.xp >= HERO_STATS.Knight.xpPerLevel &&
+      heroes.Knight.level < KNIGHT_MAX_LEVEL
+    ) {
       heroes.Knight.xp -= HERO_STATS.Knight.xpPerLevel;
       heroes.Knight.level += 1;
       eventLog.push({ type: 'knight_level_up', level: heroes.Knight.level });
@@ -2631,14 +3101,11 @@ export function createHeadlessCampaignSim() {
 
     let effectiveAmount = Math.max(1, Math.round(amount));
 
+    // Shielding Knight intercepts hits on the Mage; DR is applied once, on the Knight's path.
     if (heroId === 'Mage' && heroes.Knight.shieldBlocking && !heroes.Knight.downed) {
-      const blockedDmg = Math.max(
-        1,
-        Math.round(effectiveAmount * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
-      );
-      const knightRes = applyDamageToHero('Knight', blockedDmg, null);
+      const knightRes = applyDamageToHero('Knight', effectiveAmount, null);
       return {
-        absorbed: effectiveAmount - blockedDmg + knightRes.absorbed,
+        absorbed: effectiveAmount - (knightRes.hpLost || 0),
         hpLost: 0,
         knightHpLost: knightRes.hpLost,
         downed: false,

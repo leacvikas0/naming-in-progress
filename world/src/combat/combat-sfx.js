@@ -321,6 +321,21 @@ export function createCombatSfx({ muted = false, masterVolume = 0.28 } = {}) {
     });
   }
 
+  // Enemy windup cues: a distinct read per attack family (spec: pose + glint + sound).
+  function playEnemyWindup(kind = 'melee') {
+    if (kind === 'heavy') {
+      // Unblockable / boss heavies: low rising growl + metallic ring.
+      playTone({ type: 'sawtooth', freqStart: 70, freqEnd: 140, duration: 0.42, gainPeak: 0.16 });
+      playTone({ type: 'sine', freqStart: 1568, freqEnd: 1480, duration: 0.3, gainPeak: 0.1, delay: 0.05 });
+    } else if (kind === 'area') {
+      playFilteredNoise({ filterType: 'lowpass', freqStart: 220, freqEnd: 900, duration: 0.5, gainPeak: 0.2 });
+    } else if (kind === 'cast') {
+      playTone({ type: 'triangle', freqStart: 330, freqEnd: 660, duration: 0.28, gainPeak: 0.1 });
+    } else {
+      playFilteredNoise({ filterType: 'bandpass', freqStart: 500, freqEnd: 1500, q: 3.0, duration: 0.14, gainPeak: 0.12 });
+    }
+  }
+
   function playPlayerHit() {
     playTone({ type: 'sawtooth', freqStart: 180, freqEnd: 65, duration: 0.16, gainPeak: 0.26 });
   }
@@ -371,6 +386,7 @@ export function createCombatSfx({ muted = false, masterVolume = 0.28 } = {}) {
     playSpellCast,
     playDetonation,
     playShieldChime,
+    playEnemyWindup,
     playPerfectDodge,
     playPlayerHit,
     playEnemyHit,

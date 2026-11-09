@@ -6,15 +6,17 @@
 // 100% Native Skeletal Animation Controller (`Rig_Medium` + `Rig_Large`).
 //
 // Rules enforced:
-// - Player heroes come ONLY from `library/kaykit-adventurers/`
+// - Player heroes come ONLY from `library/kaykit-v2/adventurers-2.0/`
 //   (`Knight.glb`, `Mage.glb`, `Barbarian.glb`, `Rogue.glb`, `Rogue_Hooded.glb`).
-// - Enemies come from `library/kaykit-skeletons/` and `library/enemy-candidates/`:
-//   * `Rig_Medium` enemies (`Skeleton_Minion`, `Skeleton_Warrior`, `Skeleton_Rogue`,
-//     `Skeleton_Mage`, `OrcRaider`, `PlantWarrior`, `Werewolf_Wolf`, `BlackKnight`,
-//     `Necromancer`) use the 95 native `Rig_Medium_*` clips.
-//   * `Rig_Large` bosses (`OrcBrute`, `FrostGolem`, `Skeleton_Golem`) use the
-//     native `Rig_Large_*` animation packs (`Rig_Large_General.glb`,
-//     `Rig_Large_MovementBasic.glb`, `Rig_Large_CombatMelee.glb`).
+// - Enemies come from `library/kaykit-v2/skeletons-1.1/` (`Skeleton_Warrior`,
+//   `Skeleton_Mage`, `Skeleton_Rogue`, `Skeleton_Minion`, `Necromancer`, `Skeleton_Golem`)
+//   plus the optional `library/enemy-candidates/` packs (`OrcRaider`, `PlantWarrior`,
+//   `Werewolf_Wolf`, `BlackKnight`, `OrcBrute`, `FrostGolem`). A missing candidate model
+//   falls back to a same-rig KayKit skeleton with a console warning.
+// - 100% Native Diverse Skeletal Animations via `THREE.AnimationMixer` from the
+//   KayKit Character Animations 1.1 `Rig_Medium_*` / `Rig_Large_*` packs (the v2
+//   character GLBs carry no clips). 1.0 clip names resolve via `LEGACY_CLIP_ALIASES`.
+//   Zero procedural bone-wiggling. Fetch assets with `npm run fetch:kaykit`.
 // - Unified SkinnedMesh + Bone-Weighted Accessory/Weapon Merger:
 //   Each character + accessories + socketed weapons + outlines is consolidated
 //   into 1 unified `SkinnedMesh` + 1 unified outline `SkinnedMesh` (2 draw calls
@@ -50,215 +52,187 @@ export {
   WEAPON_OUTLINE_THICKNESS,
 };
 
-export const ADVENTURERS_BASE =
-  '/library/kaykit-adventurers/KayKit-Character-Pack-Adventures-1.0-main/addons/kaykit_character_pack_adventures';
-export const SKELETONS_BASE =
-  '/library/kaykit-skeletons/KayKit-Character-Pack-Skeletons-1.0-main/addons/kaykit_character_pack_skeletons';
+// KayKit v2 library root (fetched by `npm run fetch:kaykit`, gitignored):
+// Adventurers 2.0, Skeletons 1.1 and the shared Character Animations 1.1 rigs.
+export const KAYKIT_V2_BASE = '/library/kaykit-v2';
+export const ADVENTURERS_BASE = `${KAYKIT_V2_BASE}/adventurers-2.0`;
+export const SKELETONS_BASE = `${KAYKIT_V2_BASE}/skeletons-1.1`;
+export const ANIMATIONS_BASE = `${KAYKIT_V2_BASE}/character-animations-1.1/Animations/gltf`;
+// Optional extra enemy models (not shipped in every checkout)
 export const ENEMY_CANDIDATES_BASE = '/library/enemy-candidates';
 
+const ADVENTURER_CHARACTERS_DIR = `${ADVENTURERS_BASE}/Characters/gltf`;
+const ADVENTURER_ASSETS_DIR = `${ADVENTURERS_BASE}/Assets/gltf`;
+const SKELETON_CHARACTERS_DIR = `${SKELETONS_BASE}/characters/gltf`;
+const SKELETON_ASSETS_DIR = `${SKELETONS_BASE}/assets/gltf`;
+
 export const TARGET_CHARACTER_HEIGHT = 1.9;
+export const GOLEM_TARGET_HEIGHT = 2.8;
+
+function animationPack(rig, category, clips) {
+  const rigDir = rig === 'large' ? 'Rig_Large' : 'Rig_Medium';
+  const id = `${rigDir}_${category}.glb`;
+  return { id, rig, category, url: `${ANIMATIONS_BASE}/${rigDir}/${id}`, clips };
+}
 
 /**
- * The 5 KayKit `Rig_Medium_*` animation packs (95 native clips) + 3 `Rig_Large_*`
- * animation packs (`Rig_Large_General.glb`, `Rig_Large_MovementBasic.glb`,
- * `Rig_Large_CombatMelee.glb`).
+ * KayKit Character Animations 1.1 packs. Character GLBs ship without clips, so
+ * every clip comes from these rig-shared packs. `rig` must match the character's
+ * skeleton (Rig_Medium: heroes + skeletons + Necromancer; Rig_Large: Golem).
  */
-export const ANIMATION_PACKS = {
-  'Rig_Medium_General.glb': {
-    id: 'Rig_Medium_General.glb',
-    rig: 'Rig_Medium',
-    category: 'General',
-    clips: [
-      'Idle',
-      'Idle_B',
-      'Unarmed_Idle',
-      'Cheer',
-      'Interact',
-      'Use_Item',
-      'PickUp',
-      'Throw',
-      'Taunt',
-      'Taunt_Longer',
-      'Hit_A',
-      'Hit_B',
-      'Death_A',
-      'Death_A_Pose',
-      'Death_B',
-      'Death_B_Pose',
-      'Spawn_Air',
-      'Spawn_Ground',
-      'Lie_Down',
-      'Lie_Idle',
-      'Lie_Pose',
-      'Lie_StandUp',
-    ],
-  },
-  'Rig_Medium_MovementBasic.glb': {
-    id: 'Rig_Medium_MovementBasic.glb',
-    rig: 'Rig_Medium',
-    category: 'MovementBasic',
-    clips: [
-      'Walking_A',
-      'Walking_B',
-      'Walking_C',
-      'Walking_Backwards',
-      'Running_A',
-      'Running_B',
-      'Running_C',
-      'Running_Strafe_Left',
-      'Running_Strafe_Right',
-      'Jump_Start',
-      'Jump_Idle',
-      'Jump_Land',
-      'Jump_Full_Short',
-      'Jump_Full_Long',
-      'Dodge_Forward',
-      'Dodge_Backward',
-      'Dodge_Left',
-      'Dodge_Right',
-    ],
-  },
-  'Rig_Medium_CombatMelee.glb': {
-    id: 'Rig_Medium_CombatMelee.glb',
-    rig: 'Rig_Medium',
-    category: 'CombatMelee',
-    clips: [
-      'Idle_Combat',
-      '2H_Melee_Idle',
-      '1H_Melee_Attack_Slice_Horizontal',
-      '1H_Melee_Attack_Slice_Diagonal',
-      '1H_Melee_Attack_Chop',
-      '1H_Melee_Attack_Stab',
-      '1H_Melee_Attack_Jump_Chop',
-      '2H_Melee_Attack_Chop',
-      '2H_Melee_Attack_Slice',
-      '2H_Melee_Attack_Stab',
-      '2H_Melee_Attack_Spin',
-      '2H_Melee_Attack_Spinning',
-      'Dualwield_Melee_Attack_Chop',
-      'Dualwield_Melee_Attack_Slice',
-      'Dualwield_Melee_Attack_Stab',
-      'Block',
-      'Blocking',
-      'Block_Attack',
-      'Block_Hit',
-      'Unarmed_Melee_Attack_Punch_A',
-      'Unarmed_Melee_Attack_Punch_B',
-      'Unarmed_Melee_Attack_Kick',
-    ],
-  },
-  'Rig_Medium_CombatRanged.glb': {
-    id: 'Rig_Medium_CombatRanged.glb',
-    rig: 'Rig_Medium',
-    category: 'CombatRanged',
-    clips: [
-      'Spellcast_Shoot',
-      'Spellcasting',
-      'Spellcast_Raise',
-      'Spellcast_Long',
-      'Spellcast_Summon',
-      '1H_Ranged_Aiming',
-      '1H_Ranged_Shoot',
-      '1H_Ranged_Shooting',
-      '1H_Ranged_Reload',
-      '2H_Ranged_Aiming',
-      '2H_Ranged_Shoot',
-      '2H_Ranged_Shooting',
-      '2H_Ranged_Reload',
-    ],
-  },
-  'Rig_Medium_Special.glb': {
-    id: 'Rig_Medium_Special.glb',
-    rig: 'Rig_Medium',
-    category: 'Special',
-    clips: [
-      'Spawn_Ground_Skeletons',
-      'Skeletons_Awaken_Floor',
-      'Skeletons_Awaken_Floor_Long',
-      'Skeletons_Awaken_Standing',
-      'Skeleton_Inactive_Standing_Pose',
-      'Skeletons_Inactive_Floor_Pose',
-      'Death_C_Skeletons',
-      'Death_C_Skeletons_Resurrect',
-      'Walking_D_Skeletons',
-      'Sit_Chair_Down',
-      'Sit_Chair_Idle',
-      'Sit_Chair_Pose',
-      'Sit_Chair_StandUp',
-      'Sit_Floor_Down',
-      'Sit_Floor_Idle',
-      'Sit_Floor_Pose',
-      'Sit_Floor_StandUp',
-    ],
-  },
-  'Rig_Large_General.glb': {
-    id: 'Rig_Large_General.glb',
-    rig: 'Rig_Large',
-    url: `${ENEMY_CANDIDATES_BASE}/Rig_Large_General.glb`,
-    category: 'General',
-    clips: ['Death_A', 'Death_A_Pose', 'Hit_A', 'Idle_A', 'Idle_B', 'T-Pose'],
-  },
-  'Rig_Large_MovementBasic.glb': {
-    id: 'Rig_Large_MovementBasic.glb',
-    rig: 'Rig_Large',
-    url: `${ENEMY_CANDIDATES_BASE}/Rig_Large_MovementBasic.glb`,
-    category: 'MovementBasic',
-    clips: ['Running_A', 'T-Pose', 'Walking_A'],
-  },
-  'Rig_Large_CombatMelee.glb': {
-    id: 'Rig_Large_CombatMelee.glb',
-    rig: 'Rig_Large',
-    url: `${ENEMY_CANDIDATES_BASE}/Rig_Large_CombatMelee.glb`,
-    category: 'CombatMelee',
-    clips: [
-      'Melee_1H_Slash',
-      'Melee_1H_Stab',
-      'Melee_2H_Attack',
-      'Melee_2H_Idle',
-      'Melee_2H_Slam',
-      'Melee_Block',
-      'Melee_Block_Attack',
-      'Melee_Block_Hit',
-      'Melee_Blocking',
-      'Melee_Dualwield_Slash',
-      'Melee_Dualwield_SlashCombo',
-      'Melee_Unarmed_Idle',
-      'Melee_Unarmed_Kick',
-      'Melee_Unarmed_Punch',
+export const ANIMATION_PACKS = Object.fromEntries(
+  [
+    animationPack('medium', 'General', [
+      'Death_A', 'Death_A_Pose', 'Death_B', 'Death_B_Pose', 'Hit_A', 'Hit_B', 'Idle_A', 'Idle_B',
+      'Interact', 'PickUp', 'Spawn_Air', 'Spawn_Ground', 'T-Pose', 'Throw', 'Use_Item',
+    ]),
+    animationPack('medium', 'MovementBasic', [
+      'Jump_Full_Long', 'Jump_Full_Short', 'Jump_Idle', 'Jump_Land', 'Jump_Start',
+      'Running_A', 'Running_B', 'Walking_A', 'Walking_B', 'Walking_C',
+    ]),
+    animationPack('medium', 'MovementAdvanced', [
+      'Crawling', 'Crouching', 'Dodge_Backward', 'Dodge_Forward', 'Dodge_Left', 'Dodge_Right',
+      'Running_HoldingBow', 'Running_HoldingRifle', 'Running_Strafe_Left', 'Running_Strafe_Right',
+      'Sneaking', 'Walking_Backwards',
+    ]),
+    animationPack('medium', 'CombatMelee', [
+      'Melee_1H_Attack_Chop', 'Melee_1H_Attack_Jump_Chop', 'Melee_1H_Attack_Slice_Diagonal',
+      'Melee_1H_Attack_Slice_Horizontal', 'Melee_1H_Attack_Stab', 'Melee_2H_Attack_Chop',
+      'Melee_2H_Attack_Slice', 'Melee_2H_Attack_Spin', 'Melee_2H_Attack_Spinning', 'Melee_2H_Attack_Stab',
+      'Melee_2H_Idle', 'Melee_Block', 'Melee_Block_Attack', 'Melee_Block_Hit', 'Melee_Blocking',
+      'Melee_Dualwield_Attack_Chop', 'Melee_Dualwield_Attack_Slice', 'Melee_Dualwield_Attack_Stab',
+      'Melee_Unarmed_Attack_Kick', 'Melee_Unarmed_Attack_Punch_A', 'Melee_Unarmed_Idle',
+    ]),
+    animationPack('medium', 'CombatRanged', [
+      'Ranged_1H_Aiming', 'Ranged_1H_Reload', 'Ranged_1H_Shoot', 'Ranged_1H_Shooting',
+      'Ranged_2H_Aiming', 'Ranged_2H_Reload', 'Ranged_2H_Shoot', 'Ranged_2H_Shooting',
+      'Ranged_Bow_Aiming_Idle', 'Ranged_Bow_Draw', 'Ranged_Bow_Draw_Up', 'Ranged_Bow_Idle',
+      'Ranged_Bow_Release', 'Ranged_Bow_Release_Up', 'Ranged_Magic_Raise', 'Ranged_Magic_Shoot',
+      'Ranged_Magic_Spellcasting', 'Ranged_Magic_Spellcasting_Long', 'Ranged_Magic_Summon',
+    ]),
+    animationPack('medium', 'Simulation', [
+      'Cheering', 'Lie_Down', 'Lie_Idle', 'Lie_StandUp', 'Push_Ups', 'Sit_Chair_Down', 'Sit_Chair_Idle',
+      'Sit_Chair_StandUp', 'Sit_Floor_Down', 'Sit_Floor_Idle', 'Sit_Floor_StandUp', 'Sit_Ups', 'Waving',
+    ]),
+    animationPack('medium', 'Special', [
+      'EXPERIMENTAL_Medium_Transform', 'Skeletons_Awaken_Floor', 'Skeletons_Awaken_Floor_Long',
+      'Skeletons_Awaken_Standing', 'Skeletons_Death', 'Skeletons_Death_Pose', 'Skeletons_Death_Resurrect',
+      'Skeletons_Idle', 'Skeletons_Inactive_Floor_Pose', 'Skeletons_Inactive_Standing_Pose',
+      'Skeletons_Spawn_Ground', 'Skeletons_Taunt', 'Skeletons_Taunt_Longer', 'Skeletons_Walking',
+    ]),
+    animationPack('medium', 'Tools', [
+      'Chop', 'Chopping', 'Dig', 'Digging', 'Fishing_Bite', 'Fishing_Cast', 'Fishing_Catch', 'Fishing_Idle',
+      'Fishing_Reeling', 'Fishing_Struggling', 'Fishing_Tug', 'Hammer', 'Hammering', 'Holding_A',
+      'Holding_B', 'Holding_C', 'Lockpick', 'Lockpicking', 'Pickaxe', 'Pickaxing', 'Saw', 'Sawing',
+      'Work_A', 'Work_B', 'Work_C', 'Working_A', 'Working_B', 'Working_C',
+    ]),
+    animationPack('large', 'General', ['Death_A', 'Death_A_Pose', 'Hit_A', 'Idle_A', 'Idle_B', 'T-Pose']),
+    animationPack('large', 'MovementBasic', ['Running_A', 'Walking_A']),
+    animationPack('large', 'MovementAdvanced', ['Dodge_Backwards', 'Dodge_Forward', 'Dodge_Left', 'Dodge_Right']),
+    animationPack('large', 'CombatMelee', [
+      'Melee_1H_Slash', 'Melee_1H_Stab', 'Melee_2H_Attack', 'Melee_2H_Idle', 'Melee_2H_Slam', 'Melee_Block',
+      'Melee_Block_Attack', 'Melee_Block_Hit', 'Melee_Blocking', 'Melee_Dualwield_Slash',
+      'Melee_Dualwield_SlashCombo', 'Melee_Unarmed_Idle', 'Melee_Unarmed_Kick', 'Melee_Unarmed_Punch',
       'Melee_Unarmed_Smash',
-    ],
-  },
+    ]),
+    animationPack('large', 'Simulation', ['Flexing']),
+    animationPack('large', 'Special', ['EXPERIMENTAL_Large_Transform']),
+  ].map((pack) => [pack.rig === 'large' ? `large:${pack.id}` : pack.id, pack])
+);
+
+/**
+ * KayKit 1.0 clip names (still used by shot presets, sword-vfx timing tables and
+ * enemy poses) -> ordered 1.1 candidates. The first candidate present in the
+ * character's rig bank wins; trailing entries are Rig_Large fallbacks.
+ * Entries marked `sub` have no exact 1.1 equivalent.
+ */
+export const LEGACY_CLIP_ALIASES = {
+  // General
+  Idle: ['Idle_A'],
+  Unarmed_Idle: ['Melee_Unarmed_Idle'],
+  Cheer: ['Cheering', 'Flexing'],
+  Taunt: ['Skeletons_Taunt', 'Flexing'], // sub: Special pack skeleton taunt
+  Taunt_Longer: ['Skeletons_Taunt_Longer', 'Flexing'], // sub
+  Hit_B: ['Hit_B', 'Hit_A'],
+  Death_B: ['Death_B', 'Death_A'],
+  Death_B_Pose: ['Death_B_Pose', 'Death_A_Pose'],
+  Lie_Pose: ['Lie_Idle'], // sub: 1.1 has no static lie pose
+  // Movement
+  Walking_B: ['Walking_B', 'Walking_A'],
+  Walking_C: ['Walking_C', 'Walking_A'],
+  Running_B: ['Running_B', 'Running_A'],
+  Running_C: ['Running_B', 'Running_A'], // sub: Running_C removed
+  Dodge_Backward: ['Dodge_Backward', 'Dodge_Backwards'],
+  // Melee
+  Idle_Combat: ['Melee_2H_Idle', 'Idle_A'], // sub: Idle_Combat removed; weapon-ready guard stance
+  '2H_Melee_Idle': ['Melee_2H_Idle'],
+  '1H_Melee_Attack_Slice_Horizontal': ['Melee_1H_Attack_Slice_Horizontal', 'Melee_1H_Slash'],
+  '1H_Melee_Attack_Slice_Diagonal': ['Melee_1H_Attack_Slice_Diagonal', 'Melee_1H_Slash'],
+  '1H_Melee_Attack_Chop': ['Melee_1H_Attack_Chop', 'Melee_2H_Attack'],
+  '1H_Melee_Attack_Stab': ['Melee_1H_Attack_Stab', 'Melee_1H_Stab'],
+  '1H_Melee_Attack_Jump_Chop': ['Melee_1H_Attack_Jump_Chop', 'Melee_2H_Slam'],
+  '2H_Melee_Attack_Chop': ['Melee_2H_Attack_Chop', 'Melee_2H_Attack'],
+  '2H_Melee_Attack_Slice': ['Melee_2H_Attack_Slice', 'Melee_2H_Attack'],
+  '2H_Melee_Attack_Stab': ['Melee_2H_Attack_Stab', 'Melee_1H_Stab'],
+  '2H_Melee_Attack_Spin': ['Melee_2H_Attack_Spin', 'Melee_Dualwield_SlashCombo'],
+  '2H_Melee_Attack_Spinning': ['Melee_2H_Attack_Spinning', 'Melee_Dualwield_SlashCombo'],
+  Dualwield_Melee_Attack_Chop: ['Melee_Dualwield_Attack_Chop', 'Melee_Dualwield_Slash'],
+  Dualwield_Melee_Attack_Slice: ['Melee_Dualwield_Attack_Slice', 'Melee_Dualwield_Slash'],
+  Dualwield_Melee_Attack_Stab: ['Melee_Dualwield_Attack_Stab', 'Melee_Dualwield_SlashCombo'],
+  Block: ['Melee_Block'],
+  Blocking: ['Melee_Blocking'],
+  Block_Attack: ['Melee_Block_Attack'],
+  Block_Hit: ['Melee_Block_Hit'],
+  Unarmed_Melee_Attack_Punch_A: ['Melee_Unarmed_Attack_Punch_A', 'Melee_Unarmed_Punch'],
+  Unarmed_Melee_Attack_Punch_B: ['Melee_Unarmed_Attack_Punch_A', 'Melee_Unarmed_Punch'], // sub: Punch_B removed
+  Unarmed_Melee_Attack_Kick: ['Melee_Unarmed_Attack_Kick', 'Melee_Unarmed_Kick'],
+  // Ranged / magic
+  Spellcast_Shoot: ['Ranged_Magic_Shoot', 'Melee_Unarmed_Punch'],
+  Spellcasting: ['Ranged_Magic_Spellcasting', 'Melee_Unarmed_Idle'],
+  Spellcast_Raise: ['Ranged_Magic_Raise', 'Flexing'],
+  Spellcast_Long: ['Ranged_Magic_Spellcasting_Long', 'Melee_Unarmed_Smash'],
+  Spellcast_Summon: ['Ranged_Magic_Summon', 'Melee_Unarmed_Smash'],
+  '1H_Ranged_Aiming': ['Ranged_1H_Aiming'],
+  '1H_Ranged_Shoot': ['Ranged_1H_Shoot'],
+  '1H_Ranged_Shooting': ['Ranged_1H_Shooting'],
+  '1H_Ranged_Reload': ['Ranged_1H_Reload'],
+  '2H_Ranged_Aiming': ['Ranged_2H_Aiming'],
+  '2H_Ranged_Shoot': ['Ranged_2H_Shoot'],
+  '2H_Ranged_Shooting': ['Ranged_2H_Shooting'],
+  '2H_Ranged_Reload': ['Ranged_2H_Reload'],
+  // Special
+  Spawn_Ground_Skeletons: ['Skeletons_Spawn_Ground'],
+  Skeleton_Inactive_Standing_Pose: ['Skeletons_Inactive_Standing_Pose'],
+  Death_C_Skeletons: ['Skeletons_Death', 'Death_A'],
+  Death_C_Skeletons_Resurrect: ['Skeletons_Death_Resurrect'],
+  Walking_D_Skeletons: ['Skeletons_Walking', 'Walking_A'],
+  Sit_Chair_Pose: ['Sit_Chair_Idle'], // sub: static pose removed
+  Sit_Floor_Pose: ['Sit_Floor_Idle'], // sub: static pose removed
 };
 
-export const RIG_LARGE_PACK_URLS = [
-  `${ENEMY_CANDIDATES_BASE}/Rig_Large_General.glb`,
-  `${ENEMY_CANDIDATES_BASE}/Rig_Large_MovementBasic.glb`,
-  `${ENEMY_CANDIDATES_BASE}/Rig_Large_CombatMelee.glb`,
-];
+export const RIG_LARGE_PACK_URLS = Object.values(ANIMATION_PACKS)
+  .filter((pack) => pack.rig === 'large')
+  .map((pack) => pack.url);
 
 /**
- * Semantic dictionary of 100% native skeletal animations mapped to real
- * `Rig_Medium` and `Rig_Large` clips (plus canonical aliases and weaponStyle overrides).
+ * Semantic dictionary of 100% native skeletal animations mapped to KayKit 1.1
+ * clips. Candidate lists may use 1.1 or legacy names (resolved through
+ * `LEGACY_CLIP_ALIASES`). Resolution order per character: `byRig[rig]`, then
+ * `byStyle[weaponStyle]`, then `candidates`. `byRig.large` supplies the Rig_Large
+ * (Golem/Brute) clip set, which has no ranged/jump/spawn clips.
  */
 export const SEMANTIC_ANIMATIONS = {
   // Locomotion
   idle: {
-    candidates: [
-      'Idle_Combat',
-      'Idle',
-      '2H_Melee_Idle',
-      'Melee_2H_Idle',
-      'Melee_Unarmed_Idle',
-      'Idle_A',
-      'Idle_B',
-    ],
+    candidates: ['Idle_Combat', 'Idle_A', 'Melee_2H_Idle', 'Idle_B'],
     byStyle: {
-      '2h': ['2H_Melee_Idle', 'Idle_Combat', 'Idle', 'Melee_2H_Idle', 'Idle_A'],
-      dual: ['Idle_Combat', 'Idle', 'Idle_A'],
-      '1h': ['Idle_Combat', 'Idle', 'Melee_2H_Idle', 'Idle_A'],
-      magic: ['Idle_Combat', 'Idle', 'Idle_A'],
-      unarmed: ['Unarmed_Idle', 'Idle_Combat', 'Melee_Unarmed_Idle', 'Idle_A'],
+      '2h': ['Melee_2H_Idle', 'Idle_Combat', 'Idle_A'],
+      dual: ['Idle_Combat', 'Idle_A'],
+      '1h': ['Idle_Combat', 'Idle_A'],
+      magic: ['Idle_A'], // Idle_Combat is a 2H guard stance in 1.1; casters stay relaxed
+      unarmed: ['Melee_Unarmed_Idle', 'Idle_A'],
     },
+    byRig: { large: ['Melee_2H_Idle', 'Idle_A'] },
     aliases: ['General_Idle', 'Idle_Combat'],
     loop: true,
   },
@@ -273,8 +247,22 @@ export const SEMANTIC_ANIMATIONS = {
     loop: true,
   },
   sprint: {
-    candidates: ['Running_C', 'Running_B', 'Running_A'],
+    candidates: ['Running_B', 'Running_A'],
     aliases: ['MovementBasic_Sprint'],
+    loop: true,
+  },
+  walk_back: {
+    candidates: ['Walking_Backwards', 'Walking_A'],
+    loop: true,
+  },
+  strafe_left: {
+    candidates: ['Running_Strafe_Left', 'Running_A'],
+    byRig: { large: ['Walking_A'] },
+    loop: true,
+  },
+  strafe_right: {
+    candidates: ['Running_Strafe_Right', 'Running_A'],
+    byRig: { large: ['Walking_A'] },
     loop: true,
   },
   dash: {
@@ -282,18 +270,25 @@ export const SEMANTIC_ANIMATIONS = {
     aliases: ['MovementBasic_Dash', 'Dodge_Forward'],
     loop: false,
   },
+  dodge_forward: { candidates: ['Dodge_Forward', 'Running_A'], loop: false },
+  dodge_back: { candidates: ['Dodge_Backward', 'Dodge_Backwards', 'Walking_Backwards'], loop: false },
+  dodge_left: { candidates: ['Dodge_Left', 'Dodge_Forward'], loop: false },
+  dodge_right: { candidates: ['Dodge_Right', 'Dodge_Forward'], loop: false },
   jump_start: {
     candidates: ['Jump_Start', 'Idle_A'],
+    byRig: { large: ['Dodge_Forward'] },
     aliases: ['MovementBasic_Jump_Start'],
     loop: false,
   },
   jump_idle: {
     candidates: ['Jump_Idle', 'Idle_A'],
+    byRig: { large: ['Idle_A'] },
     aliases: ['MovementBasic_Jump_Idle'],
     loop: true,
   },
   jump_land: {
     candidates: ['Jump_Land', 'Idle_A'],
+    byRig: { large: ['Hit_A'] },
     aliases: ['MovementBasic_Jump_Land'],
     loop: false,
   },
@@ -301,143 +296,159 @@ export const SEMANTIC_ANIMATIONS = {
   // Melee Combat
   combo1: {
     candidates: [
-      '1H_Melee_Attack_Slice_Horizontal',
+      'Melee_1H_Attack_Slice_Horizontal',
       'Melee_1H_Slash',
       'Melee_2H_Attack',
       'Melee_Unarmed_Punch',
     ],
     byStyle: {
-      '1h': ['1H_Melee_Attack_Slice_Horizontal', 'Melee_1H_Slash'],
-      '2h': ['2H_Melee_Attack_Slice', '1H_Melee_Attack_Slice_Horizontal', 'Melee_2H_Attack'],
-      unarmed: ['Unarmed_Melee_Attack_Punch_A', '1H_Melee_Attack_Slice_Horizontal', 'Melee_Unarmed_Punch'],
-      dual: ['Dualwield_Melee_Attack_Slice', '1H_Melee_Attack_Slice_Horizontal', 'Melee_Dualwield_Slash'],
+      '1h': ['Melee_1H_Attack_Slice_Horizontal', 'Melee_1H_Slash'],
+      '2h': ['Melee_2H_Attack_Slice', 'Melee_1H_Attack_Slice_Horizontal', 'Melee_2H_Attack'],
+      unarmed: ['Melee_Unarmed_Attack_Punch_A', 'Melee_1H_Attack_Slice_Horizontal', 'Melee_Unarmed_Punch'],
+      dual: ['Melee_Dualwield_Attack_Slice', 'Melee_1H_Attack_Slice_Horizontal', 'Melee_Dualwield_Slash'],
     },
+    byRig: { large: ['Melee_2H_Attack'] },
     aliases: ['Melee_1H_Attack_Slice_Horizontal'],
     loop: false,
   },
   combo2: {
     candidates: [
-      '1H_Melee_Attack_Slice_Diagonal',
+      'Melee_1H_Attack_Slice_Diagonal',
       'Melee_2H_Attack',
       'Melee_1H_Slash',
       'Melee_Unarmed_Smash',
     ],
     byStyle: {
-      '1h': ['1H_Melee_Attack_Slice_Diagonal', 'Melee_1H_Slash'],
-      '2h': ['2H_Melee_Attack_Chop', '1H_Melee_Attack_Slice_Diagonal', 'Melee_2H_Attack'],
-      unarmed: ['Unarmed_Melee_Attack_Punch_B', '1H_Melee_Attack_Slice_Diagonal', 'Melee_Unarmed_Smash'],
-      dual: ['Dualwield_Melee_Attack_Chop', '1H_Melee_Attack_Slice_Diagonal', 'Melee_Dualwield_SlashCombo'],
+      '1h': ['Melee_1H_Attack_Slice_Diagonal', 'Melee_1H_Slash'],
+      '2h': ['Melee_2H_Attack_Chop', 'Melee_1H_Attack_Slice_Diagonal', 'Melee_2H_Attack'],
+      unarmed: ['Melee_Unarmed_Attack_Kick', 'Melee_1H_Attack_Slice_Diagonal', 'Melee_Unarmed_Smash'],
+      dual: ['Melee_Dualwield_Attack_Chop', 'Melee_1H_Attack_Slice_Diagonal', 'Melee_Dualwield_SlashCombo'],
     },
+    byRig: { large: ['Melee_1H_Slash'] },
     aliases: ['Melee_1H_Attack_Slice_Diagonal'],
     loop: false,
   },
   combo3: {
-    candidates: ['1H_Melee_Attack_Chop', 'Melee_2H_Slam', 'Melee_Unarmed_Smash'],
+    candidates: ['Melee_1H_Attack_Chop', 'Melee_2H_Slam', 'Melee_Unarmed_Smash'],
+    byRig: { large: ['Melee_Dualwield_Slash'] },
     aliases: ['Melee_1H_Attack_Chop'],
     loop: false,
   },
   combo4: {
     candidates: [
-      '1H_Melee_Attack_Stab',
-      '1H_Melee_Attack_Chop',
-      '1H_Melee_Attack_Slice_Diagonal',
+      'Melee_1H_Attack_Stab',
+      'Melee_1H_Attack_Chop',
+      'Melee_1H_Attack_Slice_Diagonal',
       'Melee_2H_Slam',
       'Melee_Unarmed_Smash',
     ],
+    byRig: { large: ['Melee_2H_Slam'] },
     aliases: ['Melee_1H_Attack_Jump_Chop', 'Melee_1H_Attack_Stab_Finisher'],
     loop: false,
   },
   stab: {
-    candidates: ['1H_Melee_Attack_Stab', 'Melee_1H_Stab', 'Melee_Unarmed_Punch'],
+    candidates: ['Melee_1H_Attack_Stab', 'Melee_1H_Stab', 'Melee_Unarmed_Punch'],
+    byRig: { large: ['Melee_1H_Stab'] },
     aliases: ['Melee_1H_Attack_Stab'],
     loop: false,
   },
   pounce: {
-    candidates: ['1H_Melee_Attack_Jump_Chop', 'Unarmed_Melee_Attack_Kick', 'Melee_2H_Slam'],
+    candidates: ['Melee_1H_Attack_Jump_Chop', 'Melee_Unarmed_Attack_Kick', 'Melee_2H_Slam'],
     aliases: ['Jump_Chop'],
     loop: false,
   },
   charged: {
     candidates: [
-      '2H_Melee_Attack_Spinning',
-      '2H_Melee_Attack_Spin',
-      '2H_Melee_Attack_Chop',
+      'Melee_2H_Attack_Spinning',
+      'Melee_2H_Attack_Spin',
+      'Melee_2H_Attack_Chop',
       'Melee_2H_Slam',
       'Melee_Unarmed_Smash',
       'Melee_2H_Attack',
     ],
+    byRig: { large: ['Melee_2H_Slam'] },
     aliases: ['Melee_1H_Attack_Spin', 'Melee_2H_Attack_Spin'],
     loop: false,
   },
   shield_bash: {
-    candidates: ['Block_Attack', 'Melee_Block_Attack'],
+    candidates: ['Melee_Block_Attack'],
     aliases: ['Melee_Shield_Bash'],
     loop: false,
   },
   block: {
-    candidates: ['Blocking', 'Block', 'Melee_Blocking', 'Melee_Block'],
+    candidates: ['Melee_Blocking', 'Melee_Block'],
     aliases: ['Melee_Block', 'Blocking'],
     loop: true,
   },
   parry: {
-    candidates: ['Block_Attack', 'Block_Hit', 'Melee_Block_Attack', 'Melee_Block_Hit'],
+    candidates: ['Melee_Block_Attack', 'Melee_Block_Hit'],
     aliases: ['Melee_Parry'],
     loop: false,
   },
 
   // Ranged / Magic / Romantic Co-Op Invocations
   mage_attack1: {
-    candidates: ['Spellcast_Shoot', 'Melee_Unarmed_Punch'],
+    candidates: ['Ranged_Magic_Shoot', 'Melee_Unarmed_Punch'],
+    byRig: { large: ['Melee_Unarmed_Punch'] },
     aliases: ['Mage_Attack_1'],
     loop: false,
   },
   mage_attack2: {
-    candidates: ['1H_Ranged_Shoot', '2H_Ranged_Shoot', 'Melee_2H_Attack'],
+    candidates: ['Ranged_1H_Shoot', 'Ranged_2H_Shoot', 'Melee_2H_Attack'],
+    byRig: { large: ['Melee_Unarmed_Kick'] },
     aliases: ['Mage_Attack_2'],
     loop: false,
   },
   mage_attack3: {
-    candidates: ['Spellcast_Raise', 'Melee_2H_Slam'],
+    candidates: ['Ranged_Magic_Raise', 'Melee_2H_Slam'],
+    byRig: { large: ['Melee_Unarmed_Smash'] },
     aliases: ['Mage_Attack_3'],
     loop: false,
   },
   mage_heavy: {
-    candidates: ['Throw', 'Spellcast_Long', 'Melee_2H_Slam'],
+    candidates: ['Throw', 'Ranged_Magic_Spellcasting_Long', 'Melee_2H_Slam'],
+    byRig: { large: ['Melee_Unarmed_Smash'] },
     aliases: ['Mage_Heavy'],
     loop: false,
   },
   cast_shoot: {
-    candidates: ['Spellcast_Shoot', '2H_Ranged_Shoot', '1H_Ranged_Shoot', 'Melee_Unarmed_Smash', 'Melee_2H_Slam'],
+    candidates: ['Ranged_Magic_Shoot', 'Ranged_2H_Shoot', 'Ranged_1H_Shoot', 'Melee_Unarmed_Smash', 'Melee_2H_Slam'],
+    byRig: { large: ['Melee_Unarmed_Punch'] },
     aliases: ['Ranged_Magic_Shoot'],
     loop: false,
   },
   ranged_shoot: {
-    candidates: ['2H_Ranged_Shoot', '1H_Ranged_Shoot', 'Spellcast_Shoot', 'Melee_1H_Stab'],
+    candidates: ['Ranged_2H_Shoot', 'Ranged_1H_Shoot', 'Ranged_Magic_Shoot', 'Melee_1H_Stab'],
     aliases: ['2H_Ranged_Shoot', '1H_Ranged_Shoot'],
     loop: false,
   },
   cast_spell: {
-    candidates: ['Spellcasting', 'Spellcast_Long', 'Idle_B'],
+    candidates: ['Ranged_Magic_Spellcasting', 'Ranged_Magic_Spellcasting_Long', 'Idle_B'],
+    byRig: { large: ['Melee_Unarmed_Idle'] },
     aliases: ['Ranged_Magic_Spellcasting'],
     loop: true,
   },
   pray_channel: {
-    candidates: ['Spellcast_Raise', 'Interact', 'Idle_B'],
+    candidates: ['Ranged_Magic_Raise', 'Interact', 'Idle_B'],
+    byRig: { large: ['Flexing'] },
     aliases: ['Ranged_Magic_Raise', 'Special_Interact'],
     loop: false,
   },
   burst_aoe: {
-    candidates: ['Spellcast_Summon', 'Spellcast_Long', 'Melee_2H_Slam', 'Melee_Unarmed_Smash'],
+    candidates: ['Ranged_Magic_Summon', 'Ranged_Magic_Spellcasting_Long', 'Melee_2H_Slam', 'Melee_Unarmed_Smash'],
+    byRig: { large: ['Melee_Unarmed_Smash'] },
     aliases: ['Ranged_Magic_Summon', 'Spellcast_Summon'],
     loop: false,
   },
   cheer: {
-    candidates: ['Cheer', 'Idle_B'],
+    candidates: ['Cheering', 'Idle_B'],
+    byRig: { large: ['Flexing'] },
     aliases: ['General_Cheer'],
     loop: false,
   },
   wave: {
-    candidates: ['Interact', 'Cheer', 'Use_Item', 'Idle_B'],
+    candidates: ['Waving', 'Interact', 'Cheering', 'Use_Item', 'Idle_B'],
+    byRig: { large: ['Flexing'] },
     aliases: ['General_Wave'],
     loop: false,
   },
@@ -450,42 +461,43 @@ export const SEMANTIC_ANIMATIONS = {
   },
   hit_B: {
     candidates: ['Hit_B', 'Hit_A'],
-    aliases: ['General_Hit_B', 'hit_b', 'Hit_B'],
+    aliases: ['General_Hit_B', 'Hit_B'],
     loop: false,
   },
   hit_b: {
     candidates: ['Hit_B', 'Hit_A'],
-    aliases: ['General_Hit_B'],
     loop: false,
   },
   downed: {
-    candidates: ['Death_A', 'Death_B', 'Death_C_Skeletons'],
-    aliases: ['General_Death_A', 'death'],
-    loop: false,
-  },
-  death: {
-    candidates: ['Death_A', 'Death_B', 'Death_C_Skeletons'],
+    candidates: ['Death_A', 'Death_B', 'Skeletons_Death'],
     aliases: ['General_Death_A'],
     loop: false,
   },
+  death: {
+    candidates: ['Death_A', 'Death_B', 'Skeletons_Death'],
+    loop: false,
+  },
   revive: {
-    candidates: ['Spawn_Ground', 'Lie_StandUp', 'Cheer', 'Idle_A'],
+    candidates: ['Spawn_Ground', 'Lie_StandUp', 'Cheering', 'Idle_A'],
+    byRig: { large: ['Flexing'] },
     aliases: ['General_Spawn_Ground', 'General_StandUp'],
     loop: false,
   },
   spawn: {
     candidates: [
       'Spawn_Ground',
-      'Spawn_Ground_Skeletons',
+      'Skeletons_Spawn_Ground',
       'Skeletons_Awaken_Floor',
       'Idle_A',
       'Melee_2H_Idle',
     ],
+    byRig: { large: ['Melee_Unarmed_Smash'] },
     aliases: ['General_Spawn_Ground'],
     loop: false,
   },
   taunt: {
-    candidates: ['Taunt', 'Taunt_Longer', 'Melee_Unarmed_Smash', 'Idle_B'],
+    candidates: ['Skeletons_Taunt', 'Skeletons_Taunt_Longer', 'Melee_Unarmed_Smash', 'Idle_B'],
+    byRig: { large: ['Flexing'] },
     aliases: ['General_Taunt'],
     loop: false,
   },
@@ -498,7 +510,7 @@ export const SEMANTIC_ANIMATIONS = {
 export const WEAPON_SPECS = {
   'sword_1handed.gltf': {
     id: 'sword_1handed.gltf',
-    url: `${ADVENTURERS_BASE}/Assets/gltf/sword_1handed.gltf`,
+    url: `${ADVENTURER_ASSETS_DIR}/sword_1handed.gltf`,
     role: 'knight',
     slot: 'handSlot.r',
     position: [0, 0.04, 0],
@@ -507,7 +519,7 @@ export const WEAPON_SPECS = {
   },
   'shield_badge.gltf': {
     id: 'shield_badge.gltf',
-    url: `${ADVENTURERS_BASE}/Assets/gltf/shield_badge.gltf`,
+    url: `${ADVENTURER_ASSETS_DIR}/shield_badge.gltf`,
     role: 'knight',
     slot: 'handSlot.l',
     position: [0, 0.017, 0.16],
@@ -519,7 +531,7 @@ export const WEAPON_SPECS = {
   },
   'staff.gltf': {
     id: 'staff.gltf',
-    url: `${ADVENTURERS_BASE}/Assets/gltf/staff.gltf`,
+    url: `${ADVENTURER_ASSETS_DIR}/staff.gltf`,
     role: 'mage',
     slot: 'handSlot.r',
     position: [0, 0.06, 0],
@@ -528,7 +540,7 @@ export const WEAPON_SPECS = {
   },
   'spellbook_open.gltf': {
     id: 'spellbook_open.gltf',
-    url: `${ADVENTURERS_BASE}/Assets/gltf/spellbook_open.gltf`,
+    url: `${ADVENTURER_ASSETS_DIR}/spellbook_open.gltf`,
     role: 'mage',
     slot: 'handSlot.l',
     position: [0, 0.19, 0.05],
@@ -537,7 +549,7 @@ export const WEAPON_SPECS = {
   },
   'axe_2handed.gltf': {
     id: 'axe_2handed.gltf',
-    url: `${ADVENTURERS_BASE}/Assets/gltf/axe_2handed.gltf`,
+    url: `${ADVENTURER_ASSETS_DIR}/axe_2handed.gltf`,
     role: 'barbarian',
     slot: 'handSlot.r',
     position: [0, 0.04, 0],
@@ -546,7 +558,7 @@ export const WEAPON_SPECS = {
   },
   'dagger.gltf': {
     id: 'dagger.gltf',
-    url: `${ADVENTURERS_BASE}/Assets/gltf/dagger.gltf`,
+    url: `${ADVENTURER_ASSETS_DIR}/dagger.gltf`,
     role: 'rogue',
     slot: 'handSlot.r',
     position: [0, 0.065, 0],
@@ -557,7 +569,7 @@ export const WEAPON_SPECS = {
   },
   'Skeleton_Blade.gltf': {
     id: 'Skeleton_Blade.gltf',
-    url: `${SKELETONS_BASE}/Assets/gltf/Skeleton_Blade.gltf`,
+    url: `${SKELETON_ASSETS_DIR}/Skeleton_Blade.gltf`,
     role: 'skeleton',
     slot: 'handSlot.r',
     position: [0, 0.04, 0],
@@ -566,7 +578,7 @@ export const WEAPON_SPECS = {
   },
   'Skeleton_Shield_Large_A.gltf': {
     id: 'Skeleton_Shield_Large_A.gltf',
-    url: `${SKELETONS_BASE}/Assets/gltf/Skeleton_Shield_Large_A.gltf`,
+    url: `${SKELETON_ASSETS_DIR}/Skeleton_Shield_Large_A.gltf`,
     role: 'skeleton',
     slot: 'handSlot.l',
     position: [0, 0.017, 0.165],
@@ -575,7 +587,7 @@ export const WEAPON_SPECS = {
   },
   'Skeleton_Staff.gltf': {
     id: 'Skeleton_Staff.gltf',
-    url: `${SKELETONS_BASE}/Assets/gltf/Skeleton_Staff.gltf`,
+    url: `${SKELETON_ASSETS_DIR}/Skeleton_Staff.gltf`,
     role: 'skeleton',
     slot: 'handSlot.r',
     position: [0, 0.14, 0],
@@ -584,7 +596,7 @@ export const WEAPON_SPECS = {
   },
   'Skeleton_Dagger.gltf': {
     id: 'Skeleton_Dagger.gltf',
-    url: `${ADVENTURERS_BASE}/Assets/gltf/dagger.gltf`,
+    url: `${ADVENTURER_ASSETS_DIR}/dagger.gltf`,
     role: 'skeleton',
     slot: 'handSlot.r',
     position: [0, 0.065, 0],
@@ -600,7 +612,7 @@ export const WEAPON_SPECS = {
   },
   'Skeleton_Axe.gltf': {
     id: 'Skeleton_Axe.gltf',
-    url: `${SKELETONS_BASE}/Assets/gltf/Skeleton_Axe.gltf`,
+    url: `${SKELETON_ASSETS_DIR}/Skeleton_Axe.gltf`,
     role: 'skeleton',
     slot: 'handSlot.r',
     position: [0, 0.20, 0],
@@ -609,12 +621,22 @@ export const WEAPON_SPECS = {
   },
   'Skeleton_Crossbow.gltf': {
     id: 'Skeleton_Crossbow.gltf',
-    url: `${SKELETONS_BASE}/Assets/gltf/Skeleton_Crossbow.gltf`,
+    url: `${SKELETON_ASSETS_DIR}/Skeleton_Crossbow.gltf`,
     role: 'skeleton',
     slot: 'handSlot.r',
     position: [0, 0.05, 0.06],
     quaternion: [0, -1, 0, 0],
     scale: 0.92,
+  },
+  'Skeleton_Golem_Axe_Large.gltf': {
+    id: 'Skeleton_Golem_Axe_Large.gltf',
+    url: `${SKELETON_ASSETS_DIR}/Skeleton_Golem_Axe_Large.gltf`,
+    role: 'skeleton',
+    slot: 'handSlot.r',
+    // Authored for Rig_Large hands (2x the Medium Skeleton_Golem_Axe)
+    position: [0, 0.0, 0],
+    quaternion: [0, -1, 0, 0],
+    scale: 1.0,
   },
 };
 
@@ -627,16 +649,17 @@ WEAPON_SPECS.Skeleton_Axe = WEAPON_SPECS['Skeleton_Axe.gltf'];
 WEAPON_SPECS.Skeleton_Crossbow = WEAPON_SPECS['Skeleton_Crossbow.gltf'];
 
 /**
- * Complete Character Roster (5 Adventurer Heroes + 4 KayKit Skeletons + 8 Native Enemy/Boss Candidates).
+ * Complete Character Roster (5 Adventurer Heroes + 4 Skeleton Enemies + 6 external enemy
+ * candidates + 2 Skeleton elites).
  */
 export const CHARACTER_ROSTER = {
   Knight: {
     id: 'Knight',
     faction: 'adventurer',
     role: 'knight',
-    rig: 'Rig_Medium',
+    rig: 'medium',
     weaponStyle: '1h',
-    glb: `${ADVENTURERS_BASE}/Characters/gltf/Knight.glb`,
+    glb: `${ADVENTURER_CHARACTERS_DIR}/Knight.glb`,
     keepAccessories: ['Knight_Helmet', 'Knight_Cape'],
     weapons: {
       'handSlot.r': 'sword_1handed.gltf',
@@ -647,9 +670,9 @@ export const CHARACTER_ROSTER = {
     id: 'Mage',
     faction: 'adventurer',
     role: 'mage',
-    rig: 'Rig_Medium',
+    rig: 'medium',
     weaponStyle: 'magic',
-    glb: `${ADVENTURERS_BASE}/Characters/gltf/Mage.glb`,
+    glb: `${ADVENTURER_CHARACTERS_DIR}/Mage.glb`,
     keepAccessories: ['Mage_Hat', 'Mage_Cape'],
     weapons: {
       'handSlot.r': 'staff.gltf',
@@ -660,9 +683,9 @@ export const CHARACTER_ROSTER = {
     id: 'Barbarian',
     faction: 'adventurer',
     role: 'barbarian',
-    rig: 'Rig_Medium',
+    rig: 'medium',
     weaponStyle: '2h',
-    glb: `${ADVENTURERS_BASE}/Characters/gltf/Barbarian.glb`,
+    glb: `${ADVENTURER_CHARACTERS_DIR}/Barbarian.glb`,
     keepAccessories: ['Barbarian_Hat', 'Barbarian_Cape'],
     weapons: {
       'handSlot.r': 'axe_2handed.gltf',
@@ -673,9 +696,9 @@ export const CHARACTER_ROSTER = {
     id: 'Rogue',
     faction: 'adventurer',
     role: 'rogue',
-    rig: 'Rig_Medium',
+    rig: 'medium',
     weaponStyle: 'dual',
-    glb: `${ADVENTURERS_BASE}/Characters/gltf/Rogue.glb`,
+    glb: `${ADVENTURER_CHARACTERS_DIR}/Rogue.glb`,
     keepAccessories: ['Rogue_Cape'],
     weapons: {
       'handSlot.r': 'dagger.gltf',
@@ -686,9 +709,9 @@ export const CHARACTER_ROSTER = {
     id: 'Rogue_Hooded',
     faction: 'adventurer',
     role: 'rogue_hooded',
-    rig: 'Rig_Medium',
+    rig: 'medium',
     weaponStyle: 'dual',
-    glb: `${ADVENTURERS_BASE}/Characters/gltf/Rogue_Hooded.glb`,
+    glb: `${ADVENTURER_CHARACTERS_DIR}/Rogue_Hooded.glb`,
     keepAccessories: ['Rogue_Cape'],
     weapons: {
       'handSlot.r': 'dagger.gltf',
@@ -699,9 +722,9 @@ export const CHARACTER_ROSTER = {
     id: 'Skeleton_Warrior',
     faction: 'skeleton',
     role: 'skeleton',
-    rig: 'Rig_Medium',
+    rig: 'medium',
     weaponStyle: '1h',
-    glb: `${SKELETONS_BASE}/Characters/gltf/Skeleton_Warrior.glb`,
+    glb: `${SKELETON_CHARACTERS_DIR}/Skeleton_Warrior.glb`,
     keepAccessories: ['Skeleton_Warrior_Helmet'],
     weapons: {
       'handSlot.r': 'Skeleton_Axe.gltf',
@@ -713,9 +736,9 @@ export const CHARACTER_ROSTER = {
     id: 'Skeleton_Mage',
     faction: 'skeleton',
     role: 'skeleton',
-    rig: 'Rig_Medium',
+    rig: 'medium',
     weaponStyle: 'magic',
-    glb: `${SKELETONS_BASE}/Characters/gltf/Skeleton_Mage.glb`,
+    glb: `${SKELETON_CHARACTERS_DIR}/Skeleton_Mage.glb`,
     keepAccessories: ['Skeleton_Mage_Hat'],
     weapons: {
       'handSlot.r': 'Skeleton_Staff.gltf',
@@ -726,9 +749,9 @@ export const CHARACTER_ROSTER = {
     id: 'Skeleton_Rogue',
     faction: 'skeleton',
     role: 'skeleton',
-    rig: 'Rig_Medium',
+    rig: 'medium',
     weaponStyle: '1h',
-    glb: `${SKELETONS_BASE}/Characters/gltf/Skeleton_Rogue.glb`,
+    glb: `${SKELETON_CHARACTERS_DIR}/Skeleton_Rogue.glb`,
     keepAccessories: ['Skeleton_Rogue_Hood', 'Skeleton_Rogue_Cape'],
     weapons: {
       'handSlot.r': 'Skeleton_Crossbow.gltf',
@@ -740,9 +763,9 @@ export const CHARACTER_ROSTER = {
     id: 'Skeleton_Minion',
     faction: 'skeleton',
     role: 'skeleton',
-    rig: 'Rig_Medium',
+    rig: 'medium',
     weaponStyle: '1h',
-    glb: `${SKELETONS_BASE}/Characters/gltf/Skeleton_Minion.glb`,
+    glb: `${SKELETON_CHARACTERS_DIR}/Skeleton_Minion.glb`,
     keepAccessories: [],
     weapons: {
       'handSlot.r': 'Skeleton_Blade.gltf',
@@ -753,9 +776,10 @@ export const CHARACTER_ROSTER = {
     id: 'OrcRaider',
     faction: 'enemy',
     role: 'skeleton',
-    rig: 'Rig_Medium',
+    rig: 'medium',
     weaponStyle: '2h',
     glb: `${ENEMY_CANDIDATES_BASE}/OrcRaider.glb`,
+    fallbackId: 'Skeleton_Warrior',
     textureUrl: `${ENEMY_CANDIDATES_BASE}/orc_texture_A.png`,
     keepAccessories: ['Orc_Warpack'],
     weapons: {
@@ -767,9 +791,10 @@ export const CHARACTER_ROSTER = {
     id: 'PlantWarrior',
     faction: 'enemy',
     role: 'skeleton',
-    rig: 'Rig_Medium',
+    rig: 'medium',
     weaponStyle: '1h',
     glb: `${ENEMY_CANDIDATES_BASE}/PlantWarrior.glb`,
+    fallbackId: 'Skeleton_Rogue',
     keepAccessories: ['PlantWarrior_Cloak'],
     weapons: {
       'handSlot.r': 'Skeleton_Staff.gltf',
@@ -781,9 +806,10 @@ export const CHARACTER_ROSTER = {
     id: 'Werewolf_Wolf',
     faction: 'enemy',
     role: 'skeleton',
-    rig: 'Rig_Medium',
+    rig: 'medium',
     weaponStyle: 'unarmed',
     glb: `${ENEMY_CANDIDATES_BASE}/Werewolf_Wolf.glb`,
+    fallbackId: 'Skeleton_Minion',
     keepAccessories: [],
     weapons: {
       'handSlot.r': null,
@@ -794,9 +820,10 @@ export const CHARACTER_ROSTER = {
     id: 'BlackKnight',
     faction: 'enemy',
     role: 'skeleton',
-    rig: 'Rig_Medium',
+    rig: 'medium',
     weaponStyle: '1h',
     glb: `${ENEMY_CANDIDATES_BASE}/BlackKnight.glb`,
+    fallbackId: 'Skeleton_Warrior',
     keepAccessories: ['BlackKnight_Cape', 'BlackKnight_ShoulderLeft', 'BlackKnight_ShoulderRight'],
     weapons: {
       'handSlot.r': 'Skeleton_Blade.gltf',
@@ -807,10 +834,10 @@ export const CHARACTER_ROSTER = {
     id: 'Necromancer',
     faction: 'enemy',
     role: 'skeleton',
-    rig: 'Rig_Medium',
+    rig: 'medium',
     weaponStyle: 'magic',
     targetHeight: 2.35,
-    glb: `${ENEMY_CANDIDATES_BASE}/Necromancer.glb`,
+    glb: `${SKELETON_CHARACTERS_DIR}/Necromancer.glb`,
     keepAccessories: ['Necromancer_Crown'],
     weapons: {
       'handSlot.r': 'Skeleton_Staff.gltf',
@@ -821,10 +848,11 @@ export const CHARACTER_ROSTER = {
     id: 'OrcBrute',
     faction: 'enemy',
     role: 'skeleton',
-    rig: 'Rig_Large',
+    rig: 'large',
     weaponStyle: '2h',
     targetHeight: 2.55,
     glb: `${ENEMY_CANDIDATES_BASE}/OrcBrute.glb`,
+    fallbackId: 'Skeleton_Golem',
     keepAccessories: ['OrcBrute_Shoulderpad', 'OrcBrute_LegArmor'],
     weapons: {
       'handSlot.r': 'Skeleton_Axe.gltf',
@@ -835,10 +863,11 @@ export const CHARACTER_ROSTER = {
     id: 'FrostGolem',
     faction: 'enemy',
     role: 'skeleton',
-    rig: 'Rig_Large',
+    rig: 'large',
     weaponStyle: 'unarmed',
     targetHeight: 2.85,
     glb: `${ENEMY_CANDIDATES_BASE}/FrostGolem.glb`,
+    fallbackId: 'Skeleton_Golem',
     keepAccessories: [],
     weapons: {
       'handSlot.r': null,
@@ -849,13 +878,13 @@ export const CHARACTER_ROSTER = {
     id: 'Skeleton_Golem',
     faction: 'enemy',
     role: 'skeleton',
-    rig: 'Rig_Large',
-    weaponStyle: 'unarmed',
-    targetHeight: 2.65,
-    glb: `${ENEMY_CANDIDATES_BASE}/Skeleton_Golem.glb`,
+    rig: 'large',
+    weaponStyle: '2h',
+    targetHeight: GOLEM_TARGET_HEIGHT,
+    glb: `${SKELETON_CHARACTERS_DIR}/Skeleton_Golem.glb`,
     keepAccessories: ['Skeleton_Golem_Jaw', 'Skeleton_Golem_Eyes'],
     weapons: {
-      'handSlot.r': null,
+      'handSlot.r': 'Skeleton_Golem_Axe_Large.gltf',
       'handSlot.l': null,
     },
   },
@@ -865,6 +894,7 @@ export const CHARACTER_DEFS = CHARACTER_ROSTER;
 
 export const ADVENTURER_IDS = ['Knight', 'Mage', 'Barbarian', 'Rogue', 'Rogue_Hooded'];
 export const SKELETON_IDS = ['Skeleton_Warrior', 'Skeleton_Mage', 'Skeleton_Rogue', 'Skeleton_Minion'];
+export const ELITE_SKELETON_IDS = ['Necromancer', 'Skeleton_Golem'];
 export const ENEMY_ROSTER_IDS = [
   'Skeleton_Minion',
   'Skeleton_Warrior',
@@ -882,7 +912,12 @@ export const ENEMY_ROSTER_IDS = [
 
 const rawGltfPromises = new Map();
 const externalTexturePromises = new Map();
-let masterClipBankPromise = null;
+const missingModelUrls = new Set();
+const clipBankPromises = new Map();
+const loadedClipBanks = new Map();
+const adaptedClipBanks = new Map();
+
+const rigKeyOf = (rig) => (String(rig || '').toLowerCase().includes('large') ? 'large' : 'medium');
 
 function resolveCharacterSpec(idOrName) {
   if (!idOrName) return CHARACTER_ROSTER.Knight;
@@ -972,67 +1007,174 @@ function stabilizeCombatRootMotion(clip) {
 }
 
 /**
- * Loads the complete 95-clip `Rig_Medium` master animation library (spanning all
- * 5 `Rig_Medium_*` categories) AND the `Rig_Large` animation packs (`Rig_Large_General.glb`,
- * `Rig_Large_MovementBasic.glb`, `Rig_Large_CombatMelee.glb`) for large bosses.
+ * Loads a character GLB. Optional enemy-candidate models may be absent from a
+ * checkout; those specs name a same-rig `fallbackId` KayKit skeleton that is
+ * used instead (with one console warning) so the game never crashes on spawn.
  */
-export async function loadAnimationPacks(loader = new GLTFLoader()) {
-  if (!masterClipBankPromise) {
-    masterClipBankPromise = Promise.all([
-      loadRawGltf(loader, CHARACTER_ROSTER.Knight.glb),
-      loadRawGltf(loader, CHARACTER_ROSTER.Skeleton_Warrior.glb),
-      ...RIG_LARGE_PACK_URLS.map((url) => loadRawGltf(loader, url).catch(() => ({ animations: [] }))),
-    ]).then(([knightGltf, skelGltf, ...largeGltfs]) => {
-      const clipMap = new Map();
-      for (const clip of knightGltf.animations || []) {
-        if (clip && clip.name) {
-          clipMap.set(clip.name, stabilizeCombatRootMotion(clip));
-        }
-      }
-      for (const clip of skelGltf.animations || []) {
-        if (clip && clip.name && !clipMap.has(clip.name)) {
-          clipMap.set(clip.name, stabilizeCombatRootMotion(clip));
-        }
-      }
-
-      const largeClipMap = new Map();
-      for (const lGltf of largeGltfs) {
-        for (const clip of lGltf?.animations || []) {
-          if (clip && clip.name && clip.name !== 'T-Pose' && !largeClipMap.has(clip.name)) {
-            largeClipMap.set(clip.name, stabilizeCombatRootMotion(clip));
-          }
-        }
-      }
-      // Alias `Hit_B` to `Hit_A` on Rig_Large so `play('Hit_B')` works seamlessly on large bosses
-      if (largeClipMap.has('Hit_A') && !largeClipMap.has('Hit_B')) {
-        largeClipMap.set('Hit_B', largeClipMap.get('Hit_A'));
-      }
-      if (largeClipMap.has('Idle_A') && !largeClipMap.has('Idle_Combat')) {
-        largeClipMap.set(
-          'Idle_Combat',
-          largeClipMap.get('Melee_2H_Idle') || largeClipMap.get('Idle_A')
-        );
-      }
-
-      const largeBank = {
-        packs: ANIMATION_PACKS,
-        clipsByName: largeClipMap.size > 0 ? largeClipMap : clipMap,
-        allClips: Array.from((largeClipMap.size > 0 ? largeClipMap : clipMap).values()),
-      };
-
-      return {
-        packs: ANIMATION_PACKS,
-        clipsByName: clipMap,
-        allClips: Array.from(clipMap.values()),
-        largeClipsByName: largeClipMap,
-        largeAllClips: Array.from(largeClipMap.values()),
-        largeBank,
-      };
-    });
+async function loadCharacterModel(loader, spec) {
+  const fallback = spec.fallbackId ? CHARACTER_ROSTER[spec.fallbackId] : null;
+  if (!fallback || !missingModelUrls.has(spec.glb)) {
+    try {
+      return { gltf: await loadRawGltf(loader, spec.glb), spec };
+    } catch (err) {
+      if (!fallback) throw err;
+      missingModelUrls.add(spec.glb);
+      console.warn(
+        `[characters] ${spec.id} model unavailable (${spec.glb}); using ${fallback.id} model instead.`,
+        err?.message || err
+      );
+    }
   }
-  return masterClipBankPromise;
+  return {
+    gltf: await loadRawGltf(loader, fallback.glb),
+    spec: {
+      ...spec,
+      glb: fallback.glb,
+      textureUrl: null,
+      keepAccessories: fallback.keepAccessories,
+      fallbackFor: spec.id,
+    },
+  };
 }
 
+function trackBoneName(trackName) {
+  const dot = trackName.lastIndexOf('.');
+  return dot > 0 ? trackName.slice(0, dot) : trackName;
+}
+
+/**
+ * Finds a clip by exact 1.1 name, falling back to `LEGACY_CLIP_ALIASES` for 1.0 names.
+ */
+function findBankClip(clipsByName, name) {
+  if (!name) return null;
+  const direct = clipsByName.get(name);
+  if (direct) return direct;
+  for (const candidate of LEGACY_CLIP_ALIASES[name] || []) {
+    const clip = clipsByName.get(candidate);
+    if (clip) return clip;
+  }
+  return null;
+}
+
+/**
+ * Loads every KayKit 1.1 animation pack for one rig (`'medium'` default, or
+ * `'large'` for the Golem) into a shared clip bank. Duplicate names (T-Pose)
+ * keep the first pack's clip.
+ */
+export async function loadAnimationPacks(loader = new GLTFLoader(), rig = 'medium') {
+  const rigKey = rigKeyOf(rig);
+  if (!clipBankPromises.has(rigKey)) {
+    const packs = Object.values(ANIMATION_PACKS).filter((pack) => pack.rig === rigKey);
+    const promise = Promise.all(packs.map((pack) => loadRawGltf(loader, pack.url))).then((gltfs) => {
+      const clipsByName = new Map();
+      const clipPack = new Map();
+      gltfs.forEach((gltf, i) => {
+        for (const clip of gltf.animations || []) {
+          if (clip && clip.name && !clipsByName.has(clip.name)) {
+            clipsByName.set(clip.name, stabilizeCombatRootMotion(clip));
+            clipPack.set(clip.name, packs[i].id);
+          }
+        }
+      });
+      // Pack mannequin rest translations, used to re-base clips onto each character's own bone lengths
+      const restPositions = new Map();
+      gltfs[0]?.scene.traverse((obj) => {
+        if (obj.isBone && !restPositions.has(obj.name)) restPositions.set(obj.name, obj.position.clone());
+      });
+      const bank = {
+        rig: rigKey,
+        packs: Object.fromEntries(packs.map((pack) => [pack.id, pack])),
+        clipsByName,
+        clipPack,
+        allClips: Array.from(clipsByName.values()),
+        restPositions,
+      };
+      loadedClipBanks.set(rigKey, bank);
+      return bank;
+    });
+    promise.catch(() => clipBankPromises.delete(rigKey));
+    clipBankPromises.set(rigKey, promise);
+  }
+  return clipBankPromises.get(rigKey);
+}
+
+/**
+ * Lists the native clips of an already-loaded rig bank as `{ name, duration, pack, rig }`.
+ * Returns `[]` until `loadAnimationPacks` (or `createCharacter`) has resolved for that rig.
+ */
+export function listAvailableClips(rig = 'medium') {
+  const bank = loadedClipBanks.get(rigKeyOf(rig));
+  if (!bank) return [];
+  return bank.allClips.map((clip) => ({
+    name: clip.name,
+    duration: Number(clip.duration.toFixed(3)),
+    pack: bank.clipPack.get(clip.name),
+    rig: bank.rig,
+  }));
+}
+
+/**
+ * Resolves a semantic key, 1.0 legacy name or 1.1 clip name to the 1.1 clip name
+ * for a rig without instantiating a character (null if unknown or not loaded).
+ */
+export function resolveClipNameForRig(keyOrName, { rig = 'medium', weaponStyle = '1h' } = {}) {
+  const bank = loadedClipBanks.get(rigKeyOf(rig));
+  if (!bank || !keyOrName) return null;
+  const def = SEMANTIC_ANIMATIONS[keyOrName];
+  if (def) {
+    for (const name of semanticCandidates(def, bank.rig, weaponStyle)) {
+      const clip = findBankClip(bank.clipsByName, name);
+      if (clip) return clip.name;
+    }
+  }
+  return findBankClip(bank.clipsByName, keyOrName)?.name ?? null;
+}
+
+function semanticCandidates(def, rig, weaponStyle) {
+  return [...(def.byRig?.[rig] || []), ...(def.byStyle?.[weaponStyle] || []), ...(def.candidates || [])];
+}
+
+/**
+ * Shifts translation tracks by (character rest - pack rest) for bones whose
+ * rest offset differs (e.g. Skeleton_Golem head vs the Rig_Large mannequin),
+ * so shared clips keep each character's proportions. Cached per character.
+ */
+function adaptClipBankToRig(bank, modelRoot, cacheKey) {
+  const key = `${bank.rig}:${cacheKey}`;
+  if (adaptedClipBanks.has(key)) return adaptedClipBanks.get(key);
+
+  const deltas = new Map();
+  modelRoot.traverse((obj) => {
+    const packRest = obj.isBone && bank.restPositions.get(obj.name);
+    if (packRest && packRest.distanceToSquared(obj.position) > 1e-8) {
+      deltas.set(obj.name, obj.position.clone().sub(packRest));
+    }
+  });
+
+  let adapted = bank;
+  if (deltas.size) {
+    const clipsByName = new Map();
+    for (const [name, clip] of bank.clipsByName) {
+      let changed = false;
+      const tracks = clip.tracks.map((track) => {
+        const delta = track.name.endsWith('.position') && deltas.get(trackBoneName(track.name));
+        if (!delta) return track;
+        changed = true;
+        const shifted = track.clone();
+        for (let i = 0; i < shifted.values.length; i += 3) {
+          shifted.values[i] += delta.x;
+          shifted.values[i + 1] += delta.y;
+          shifted.values[i + 2] += delta.z;
+        }
+        return shifted;
+      });
+      clipsByName.set(name, changed ? new THREE.AnimationClip(clip.name, clip.duration, tracks) : clip);
+    }
+    adapted = { ...bank, clipsByName, allClips: Array.from(clipsByName.values()) };
+  }
+  adaptedClipBanks.set(key, adapted);
+  return adapted;
+}
 function stripEmbeddedHandSlotMeshes(root, keepAccessories = []) {
   const keepSet = new Set(keepAccessories);
   const toRemove = [];
@@ -1203,29 +1345,30 @@ export async function attachWeaponToSocket(
  */
 export function createCharacterAnimationController(instanceRoot, clipBank, options = {}) {
   const weaponStyle = options.weaponStyle || '1h';
-  const activeBank =
-    options.rig === 'Rig_Large' && clipBank?.largeBank ? clipBank.largeBank : clipBank;
+  const rig = rigKeyOf(options.rig || clipBank.rig);
   const mixer = new THREE.AnimationMixer(instanceRoot);
   const rawActions = new Map();
   const semanticActions = new Map();
   const semanticClips = new Map();
 
-  for (const clip of activeBank.allClips) {
+  for (const clip of clipBank.allClips) {
     if (!clip || !clip.name) continue;
     const action = mixer.clipAction(clip);
     rawActions.set(clip.name, action);
   }
 
+  // 1.0 clip names keep playing through their 1.1 substitutes
+  for (const legacyName of Object.keys(LEGACY_CLIP_ALIASES)) {
+    if (rawActions.has(legacyName)) continue;
+    const clip = findBankClip(clipBank.clipsByName, legacyName);
+    if (clip) rawActions.set(legacyName, rawActions.get(clip.name));
+  }
+
   for (const [semKey, def] of Object.entries(SEMANTIC_ANIMATIONS)) {
-    const styleCandidates = (def.byStyle && def.byStyle[weaponStyle]) || [];
-    const candidateList = [...styleCandidates, ...(def.candidates || [])];
     let matchedClip = null;
-    for (const candidateName of candidateList) {
-      const clip = activeBank.clipsByName.get(candidateName);
-      if (clip) {
-        matchedClip = clip;
-        break;
-      }
+    for (const candidateName of semanticCandidates(def, rig, weaponStyle)) {
+      matchedClip = findBankClip(clipBank.clipsByName, candidateName);
+      if (matchedClip) break;
     }
     if (!matchedClip) continue;
 
@@ -1234,6 +1377,8 @@ export function createCharacterAnimationController(instanceRoot, clipBank, optio
     semanticActions.set(semKey, action);
 
     for (const alias of def.aliases || []) {
+      // Never shadow a real 1.1 clip of the same name
+      if (clipBank.clipsByName.has(alias)) continue;
       semanticClips.set(alias, matchedClip);
       semanticActions.set(alias, action);
       if (!rawActions.has(alias)) {
@@ -1286,12 +1431,16 @@ export function createCharacterAnimationController(instanceRoot, clipBank, optio
     action.enabled = true;
     action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
     action.clampWhenFinished = clampWhenFinished;
+    // reset() first: a finished clamped LoopOnce action is paused, and setting the
+    // time scale while paused would pin _effectiveTimeScale at 0 (frozen replays).
+    action.reset();
     action.setEffectiveTimeScale(timeScale);
     action.setEffectiveWeight(1.0);
-    action.reset();
 
     if (playOptions.startTime !== undefined) {
       action.time = playOptions.startTime;
+    } else if (timeScale < 0) {
+      action.time = action.getClip().duration; // reverse playback starts at the clip end
     }
 
     if (fade > 0 && prev && prev !== action) {
@@ -1345,14 +1494,33 @@ export function createCharacterAnimationController(instanceRoot, clipBank, optio
     mixer.update(dt);
   }
 
+  /** 1.1 clip name a semantic key / legacy / 1.1 name plays on this rig, or null. */
+  function resolveClipName(keyOrClipName) {
+    return resolveAction(keyOrClipName)?.clip?.name ?? null;
+  }
+
+  /** Native clip length in seconds (before timeScale), or null if unknown. */
+  function getClipDuration(keyOrClipName) {
+    const clip = resolveAction(keyOrClipName)?.clip;
+    return clip ? clip.duration : null;
+  }
+
+  function listClips() {
+    return clipBank.allClips.map((clip) => ({ name: clip.name, duration: Number(clip.duration.toFixed(3)) }));
+  }
+
   return {
     mixer,
+    rig,
     rawActions,
     semanticActions,
     semanticClips,
     play,
     poseAt,
     update,
+    resolveClipName,
+    getClipDuration,
+    listClips,
     get currentKey() {
       return currentKey;
     },
@@ -1368,14 +1536,15 @@ export function createCharacterAnimationController(instanceRoot, clipBank, optio
  * with default socketed weapons and 100% native skeletal animation controller.
  */
 export async function createCharacter(idOrName, options = {}) {
-  const spec = resolveCharacterSpec(idOrName);
+  const baseSpec = resolveCharacterSpec(idOrName);
+  const rigKey = rigKeyOf(baseSpec.rig);
   const loader = options.loader || new GLTFLoader();
-
-  const [charGltf, clipBank, externalTex] = await Promise.all([
-    loadRawGltf(loader, spec.glb),
-    loadAnimationPacks(loader),
-    spec.textureUrl ? loadExternalTexture(spec.textureUrl) : Promise.resolve(null),
+  const [{ gltf: charGltf, spec }, rigClipBank] = await Promise.all([
+    loadCharacterModel(loader, baseSpec),
+    loadAnimationPacks(loader, rigKey),
   ]);
+  const clipBank = adaptClipBankToRig(rigClipBank, charGltf.scene, spec.glb);
+  const externalTex = spec.textureUrl ? await loadExternalTexture(spec.textureUrl) : null;
 
   const group = new THREE.Group();
   group.name = `character-${spec.id}`;
@@ -1393,10 +1562,7 @@ export async function createCharacter(idOrName, options = {}) {
   }
 
   stripEmbeddedHandSlotMeshes(modelRoot, spec.keepAccessories);
-  normalizeCharacterScale(
-    modelRoot,
-    options.targetHeight ?? spec.targetHeight ?? TARGET_CHARACTER_HEIGHT
-  );
+  normalizeCharacterScale(modelRoot, options.targetHeight ?? spec.targetHeight ?? TARGET_CHARACTER_HEIGHT);
 
   const sockets = ensureBoneSockets(modelRoot);
 
@@ -1447,7 +1613,7 @@ export async function createCharacter(idOrName, options = {}) {
   group.add(modelRoot);
 
   const anim = createCharacterAnimationController(modelRoot, clipBank, {
-    rig: spec.rig || 'Rig_Medium',
+    rig: rigKey,
     weaponStyle: options.weaponStyle || spec.weaponStyle || '1h',
   });
   const initialClip = options.initialClip || 'idle';
@@ -1471,7 +1637,7 @@ export async function createCharacter(idOrName, options = {}) {
     id: spec.id,
     faction: spec.faction,
     role: spec.role,
-    rig: spec.rig || 'Rig_Medium',
+    rig: rigKey,
     spec,
     group,
     modelRoot,
@@ -1483,6 +1649,8 @@ export async function createCharacter(idOrName, options = {}) {
     play: anim.play,
     poseAt: anim.poseAt,
     update: anim.update,
+    resolveClipName: anim.resolveClipName,
+    getClipDuration: anim.getClipDuration,
   };
 }
 
@@ -1497,10 +1665,14 @@ export function createCharactersKit(options = {}) {
     ADVENTURER_IDS,
     SKELETON_IDS,
     ENEMY_ROSTER_IDS,
+    ELITE_SKELETON_IDS,
     WEAPON_SPECS,
     ANIMATION_PACKS,
     SEMANTIC_ANIMATIONS,
-    loadAnimationPacks: () => loadAnimationPacks(loader),
+    LEGACY_CLIP_ALIASES,
+    loadAnimationPacks: (rig = 'medium') => loadAnimationPacks(loader, rig),
+    listAvailableClips,
+    resolveClipNameForRig,
     createCharacter: (id, opts = {}) => createCharacter(id, { loader, ...opts }),
   };
 }

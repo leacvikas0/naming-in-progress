@@ -2,14 +2,14 @@
 // world/src/post.js
 //
 // 4x Hardware MSAA HalfFloat HDR RenderTarget -> RenderPass ->
-// Restrained UnrealBloomPass (threshold = 0.88) ->
-// Screen-Space Crevice & Contact Cavity AO + AgX-Inspired Filmic GradeShader.
+// one GradeShader pass: depth-based atmosphere (aerial perspective, height fog,
+// sun/moon in-scatter) -> thresholded Orton highlight glow -> AgX-inspired filmic grade
+// (per-time-of-day keys). Cavity AO is opt-in. No multi-pass bloom (tablet/desktop budget).
 // ============================================================================
 
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 export const GradeShader = {
@@ -22,13 +22,31 @@ export const GradeShader = {
     uSaturation: { value: 1.04 },
     uContrast: { value: 1.07 },
     uLift: { value: 0.006 },
-    uCavityStrength: { value: 0.34 },
+    uCavityStrength: { value: 0.0 },
     uAoTaps: { value: 8.0 },
     uWarmHigh: { value: new THREE.Vector3(1.04, 1.00, 0.94) },
     uCoolShadow: { value: new THREE.Vector3(0.88, 0.94, 1.06) },
     uVignette: { value: 0.22 },
     uHaze: { value: 0.018 },
     uSmiteMonochrome: { value: 0.0 },
+    uGlowStrength: { value: 0.17 },
+    uGlowThreshold: { value: 0.95 },
+    // Depth-based atmosphere (aerial perspective + exponential height fog + sun in-scatter)
+    tDepth: { value: null },
+    uAtmosphere: { value: 0.0 },
+    uInvProj: { value: new THREE.Matrix4() },
+    uCamWorld: { value: new THREE.Matrix4() },
+    uCamPos: { value: new THREE.Vector3() },
+    uSunDirW: { value: new THREE.Vector3(0, 1, 0) },
+    uFogColor: { value: new THREE.Color(0.8, 0.88, 0.95) },
+    uScatterColor: { value: new THREE.Vector3(1, 0.9, 0.8) },
+    uFogTint: { value: new THREE.Vector3(1, 1, 1) },
+    uAerialDensity: { value: 0.0013 },
+    uHeightFogDensity: { value: 0.0016 },
+    uHeightFogFalloff: { value: 0.08 },
+    uHeightFogBase: { value: 0.0 },
+    uScatterStrength: { value: 0.5 },
+    uSkyCutoff: { value: 480.0 },
   },
 
   vertexShader: /* glsl */ `
@@ -56,8 +74,48 @@ export const GradeShader = {
     uniform float uVignette;
     uniform float uHaze;
     uniform float uSmiteMonochrome;
+    uniform float uGlowStrength;
+    uniform float uGlowThreshold;
+    uniform sampler2D tDepth;
+    uniform float uAtmosphere;
+    uniform mat4 uInvProj;
+    uniform mat4 uCamWorld;
+    uniform vec3 uCamPos;
+    uniform vec3 uSunDirW;
+    uniform vec3 uFogColor;
+    uniform vec3 uScatterColor;
+    uniform vec3 uFogTint;
+    uniform float uAerialDensity;
+    uniform float uHeightFogDensity;
+    uniform float uHeightFogFalloff;
+    uniform float uHeightFogBase;
+    uniform float uScatterStrength;
+    uniform float uSkyCutoff;
 
     varying vec2 vUv;
+
+    // One atmosphere for every material (toon, custom terrain/foliage, water, outlines, VFX):
+    // aerial perspective + analytic exponential height fog + forward sun/moon in-scattering.
+    vec3 applyAtmosphere(vec3 c, vec2 uv) {
+      float d = texture2D(tDepth, uv).x;
+      if (d >= 0.99999) return c;
+      vec4 vp = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+      vp /= vp.w;
+      vec3 wp = (uCamWorld * vec4(vp.xyz, 1.0)).xyz;
+      vec3 ray = wp - uCamPos;
+      float dist = length(ray);
+      // The sky dome paints its own horizon; fading it would double-fog the sky.
+      if (dist > uSkyCutoff) return c;
+      vec3 rd = ray / max(dist, 1e-4);
+      float fy = uHeightFogFalloff * rd.y * dist;
+      float h0 = uHeightFogDensity * exp(-uHeightFogFalloff * (uCamPos.y - uHeightFogBase));
+      float heightOD = h0 * dist * (abs(fy) > 1e-3 ? (1.0 - exp(-fy)) / fy : 1.0);
+      float T = exp(-(dist * uAerialDensity + max(heightOD, 0.0)));
+      float mie = pow(max(dot(rd, uSunDirW), 0.0), 8.0);
+      // Tinted haze away from the light, untinted horizon glow toward it (golden hour: mauve vs amber).
+      vec3 fogCol = mix(uFogColor * uFogTint, uFogColor * uScatterColor * (1.0 + uScatterStrength), clamp(mie * uScatterStrength, 0.0, 1.0));
+      return mix(fogCol, c, T);
+    }
 
     float lumaLin(vec3 c) {
       return dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -158,15 +216,20 @@ export const GradeShader = {
       c = all(equal(bounded, bounded)) ? bounded : vec3(0.0);
       vec3 linPreGrade = c;
 
-      // 1. Zero-Extra-Tap Screen-Space Crevice & Contact Ambient Occlusion in linear space
-      float linLuma = lumaLin(c);
-      vec3 aoTint = mix(vec3(1.0), vec3(0.58, 0.66, 0.84), cavityAO);
-      c *= aoTint * (1.0 - cavityAO * 0.58);
+      // Glow keys off the un-fogged colour so haze never blooms; sources still glow through it.
+      vec3 glowSrc = c;
+      if (uAtmosphere > 0.5) c = applyAtmosphere(c, vUv);
 
-      // 1B. Single-Pass Painterly Orton Highlight Halation & Luminous Anime Glow (replaces 10-pass UnrealBloom!)
-      float highlightMask = smoothstep(0.38, 1.10, linLuma);
-      vec3 ortonGlow = c * vec3(1.06, 1.02, 0.94) * highlightMask * 0.18;
-      c += ortonGlow;
+      // Off by default (uCavityStrength = 0): the luma cavity term drew dark halos around silhouettes.
+      if (uCavityStrength > 0.001) {
+        vec3 aoTint = mix(vec3(1.0), vec3(0.58, 0.66, 0.84), cavityAO);
+        c *= aoTint * (1.0 - cavityAO * 0.58);
+      }
+
+      // Single-pass painterly Orton glow (replaces multi-pass bloom): only pixels above the
+      // threshold (suns, lanterns, spell cores) glow.
+      float glowMask = smoothstep(uGlowThreshold, uGlowThreshold + 0.75, lumaLin(glowSrc));
+      c += glowSrc * vec3(1.06, 1.02, 0.94) * glowMask * uGlowStrength;
 
       // 2. Single-pass AgX-inspired filmic tone mapping & sRGB encoding
       if (uToneMap > 0.5) c = filmicAgX(c);
@@ -188,10 +251,6 @@ export const GradeShader = {
 
       // 6. Subtle shadow lift so deep crevices stay rich sapphire-slate rather than crushed black
       c += uLift * (1.0 - smoothstep(0.0, 0.34, l)) * vec3(0.82, 0.90, 1.08);
-
-      // 7. Gentle horizon & upper-sky spring atmospheric air perspective
-      float verticalAir = smoothstep(0.32, 0.82, vUv.y) * smoothstep(0.12, 0.62, l) * (1.0 - smoothstep(0.75, 1.0, l));
-      c = mix(c, vec3(0.86, 0.94, 1.0), verticalAir * uHaze);
 
       // 7B. Frame 41 Divine Smite Selective-Crimson Stark B&W Monochrome Grade
       // Runs AFTER split-toning, shadow lift, and haze so B&W is never tinted blue,
@@ -229,112 +288,99 @@ export const GradeShader = {
   `,
 };
 
+// Grade + atmosphere keys, aligned to the sky-tod keys (0 midnight, .20 dawn,
+// .34 day, .54 midday, .76 evening, .96 night). Bloom thresholds sit near 1.0 in
+// linear HDR so only emissives, sun and VFX bloom, not every lit wall. Night lifts
+// exposure and keeps highlights warm so lanterns/windows read against moonlight.
+const NIGHT_KEY = {
+  bloomStrength: 0.42,
+  bloomRadius: 0.6,
+  bloomThreshold: 0.72,
+  exposure: 1.0,
+  saturation: 0.95,
+  contrast: 1.06,
+  lift: 0.012,
+  warmHigh: [1.07, 0.98, 0.86],
+  coolShadow: [0.8, 0.9, 1.16],
+  vignette: 0.3,
+  aerial: 0.002,
+  heightFog: 0.0045,
+  heightFalloff: 0.1,
+  scatter: 0.35,
+  scatterColor: [0.55, 0.68, 1.0],
+  fogTint: [1.0, 1.0, 1.0],
+};
+const DAY_KEY = {
+  bloomStrength: 0.28,
+  bloomRadius: 0.55,
+  bloomThreshold: 0.95,
+  exposure: 1.0,
+  saturation: 1.07,
+  contrast: 1.06,
+  lift: 0.004,
+  warmHigh: [1.04, 1.01, 0.95],
+  coolShadow: [0.92, 0.97, 1.06],
+  vignette: 0.16,
+  aerial: 0.0013,
+  heightFog: 0.0016,
+  heightFalloff: 0.08,
+  scatter: 0.55,
+  scatterColor: [1.0, 0.93, 0.8],
+  fogTint: [1.0, 1.0, 1.0],
+};
+
 const GRADE_KEYS = [
+  { t: 0.0, ...NIGHT_KEY },
   {
-    t: 0.00,
-    bloomStrength: 0.30,
+    // Dawn: low valley mist catching warm side light
+    t: 0.2,
+    bloomStrength: 0.34,
     bloomRadius: 0.62,
-    bloomThreshold: 0.68,
-    exposure: 0.99,
-    saturation: 1.07,
-    contrast: 1.09,
-    lift: 0.014,
-    warmHigh: [1.04, 1.01, 0.96],
-    coolShadow: [0.84, 0.92, 1.12],
-    vignette: 0.24,
-    haze: 0.016,
+    bloomThreshold: 0.85,
+    exposure: 1.06,
+    saturation: 1.04,
+    contrast: 1.05,
+    lift: 0.01,
+    warmHigh: [1.08, 0.99, 0.92],
+    coolShadow: [0.88, 0.88, 1.08],
+    vignette: 0.22,
+    aerial: 0.0018,
+    heightFog: 0.0075,
+    heightFalloff: 0.12,
+    scatter: 0.8,
+    scatterColor: [1.0, 0.72, 0.55],
+    fogTint: [0.8, 0.9, 1.15],
   },
+  { t: 0.34, ...DAY_KEY },
+  { t: 0.54, ...DAY_KEY, scatter: 0.45 },
   {
-    t: 0.22,
-    bloomStrength: 0.24,
-    bloomRadius: 0.64,
-    bloomThreshold: 0.62,
-    exposure: 1.00,
-    saturation: 1.08,
+    // Golden hour: amber in-scattering toward the sun, violet shadows
+    t: 0.76,
+    bloomStrength: 0.36,
+    bloomRadius: 0.62,
+    bloomThreshold: 0.85,
+    exposure: 1.03,
+    saturation: 1.1,
     contrast: 1.08,
     lift: 0.008,
-    warmHigh: [1.05, 1.00, 0.93],
-    coolShadow: [0.88, 0.94, 1.08],
-    vignette: 0.20,
-    haze: 0.020,
-  },
-  {
-    // Day (t = 0.34) — Option 4 Crystal Ethereal Sanctuary + Option 2 Pearlescent Mist
-    t: 0.34,
-    bloomStrength: 0.22,
-    bloomRadius: 0.64,
-    bloomThreshold: 0.60,
-    exposure: 1.01,
-    saturation: 1.08,
-    contrast: 1.09,
-    lift: 0.006,
-    warmHigh: [1.05, 1.01, 0.94],
-    coolShadow: [0.85, 0.93, 1.09],
-    vignette: 0.18,
-    haze: 0.022,
-  },
-  {
-    t: 0.55,
-    bloomStrength: 0.22,
-    bloomRadius: 0.64,
-    bloomThreshold: 0.60,
-    exposure: 1.01,
-    saturation: 1.08,
-    contrast: 1.09,
-    lift: 0.006,
-    warmHigh: [1.05, 1.01, 0.94],
-    coolShadow: [0.85, 0.93, 1.09],
-    vignette: 0.18,
-    haze: 0.022,
-  },
-  {
-    // Evening (t = 0.76) — Option 3 Golden-Hour Pastoral Romance
-    t: 0.76,
-    bloomStrength: 0.26,
-    bloomRadius: 0.65,
-    bloomThreshold: 0.58,
-    exposure: 1.00,
-    saturation: 1.09,
-    contrast: 1.10,
-    lift: 0.010,
-    warmHigh: [1.08, 0.98, 0.90],
-    coolShadow: [0.86, 0.89, 1.10],
+    warmHigh: [1.1, 0.98, 0.86],
+    coolShadow: [0.9, 0.84, 1.08],
     vignette: 0.22,
-    haze: 0.024,
+    aerial: 0.0011,
+    heightFog: 0.003,
+    heightFalloff: 0.1,
+    scatter: 0.75,
+    scatterColor: [1.0, 0.62, 0.36],
+    fogTint: [0.45, 0.62, 1.55],
   },
-  {
-    // Night (t = 0.96)
-    t: 0.96,
-    bloomStrength: 0.30,
-    bloomRadius: 0.62,
-    bloomThreshold: 0.68,
-    exposure: 0.99,
-    saturation: 1.07,
-    contrast: 1.09,
-    lift: 0.014,
-    warmHigh: [1.04, 1.01, 0.96],
-    coolShadow: [0.84, 0.92, 1.12],
-    vignette: 0.24,
-    haze: 0.016,
-  },
-  {
-    t: 1.00,
-    bloomStrength: 0.30,
-    bloomRadius: 0.62,
-    bloomThreshold: 0.68,
-    exposure: 0.99,
-    saturation: 1.07,
-    contrast: 1.09,
-    lift: 0.014,
-    warmHigh: [1.04, 1.01, 0.96],
-    coolShadow: [0.84, 0.92, 1.12],
-    vignette: 0.24,
-    haze: 0.016,
-  },
+  { t: 0.96, ...NIGHT_KEY },
+  { t: 1.0, ...NIGHT_KEY },
 ].map((k) => ({
   ...k,
   warmHigh: new THREE.Vector3(...k.warmHigh),
   coolShadow: new THREE.Vector3(...k.coolShadow),
+  scatterColor: new THREE.Vector3(...k.scatterColor),
+  fogTint: new THREE.Vector3(...k.fogTint),
 }));
 
 export function createWorldPost({
@@ -390,10 +436,15 @@ export function createWorldPost({
     }
   );
   renderTarget.texture.name = 'worldPostHdrTarget';
+  // Resolved scene depth for the grade pass atmosphere (MSAA depth is blitted on resolve).
+  renderTarget.depthTexture = new THREE.DepthTexture(
+    Math.max(1, Math.round(w * pixelRatio)),
+    Math.max(1, Math.round(h * pixelRatio))
+  );
+  renderTarget.depthTexture.type = THREE.UnsignedIntType;
 
   let composer = null;
   let renderPass = null;
-  let bloomPass = null;
   let gradePass = null;
 
   try {
@@ -403,15 +454,6 @@ export function createWorldPost({
 
     renderPass = new RenderPass(scene, camera);
 
-    bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(w, h),
-      bloomStrength,
-      bloomRadius,
-      bloomThreshold
-    );
-    // Bypass 10-pass HalfFloat bloom ping-ponging for 144 FPS; GradeShader computes single-pass Orton highlight halation
-    bloomPass.enabled = false;
-
     gradePass = new ShaderPass(GradeShader);
     gradePass.material.toneMapped = false;
     gradePass.uniforms.uToneMap.value = toneMapInput ? 1.0 : 0.0;
@@ -419,7 +461,6 @@ export function createWorldPost({
     gradePass.uniforms.uAoTaps.value = aaCount <= 2 ? 4.0 : 8.0;
 
     composer.addPass(renderPass);
-    composer.addPass(bloomPass);
     composer.addPass(gradePass);
 
     applyIntegerTargetSizes();
@@ -448,6 +489,17 @@ export function createWorldPost({
     }
   }
 
+  let glowStrength = bloomStrength;
+  let glowRadius = bloomRadius;
+  let glowThreshold = bloomThreshold;
+
+  // The Orton glow is a single add in the grade shader; keyed bloom strengths map at ~0.6x.
+  function applyGlow() {
+    if (!gradePass) return;
+    gradePass.uniforms.uGlowStrength.value = glowStrength * 0.6;
+    gradePass.uniforms.uGlowThreshold.value = glowThreshold;
+  }
+
   function setTimeOfDayGrade(modeOrT) {
     let tt = 0.34;
     if (modeOrT === 'day') tt = 0.34;
@@ -461,15 +513,10 @@ export function createWorldPost({
     const b = GRADE_KEYS[idx + 1];
     const k = THREE.MathUtils.clamp((tt - a.t) / Math.max(1e-6, b.t - a.t), 0, 1);
 
-    const bStrength = THREE.MathUtils.lerp(a.bloomStrength, b.bloomStrength, k);
-    const bRadius = THREE.MathUtils.lerp(a.bloomRadius, b.bloomRadius, k);
-    const bThreshold = THREE.MathUtils.lerp(a.bloomThreshold, b.bloomThreshold, k);
-
-    if (bloomPass) {
-      bloomPass.strength = bStrength;
-      bloomPass.radius = bRadius;
-      bloomPass.threshold = bThreshold;
-    }
+    glowStrength = THREE.MathUtils.lerp(a.bloomStrength, b.bloomStrength, k);
+    glowRadius = THREE.MathUtils.lerp(a.bloomRadius, b.bloomRadius, k);
+    glowThreshold = THREE.MathUtils.lerp(a.bloomThreshold, b.bloomThreshold, k);
+    applyGlow();
 
     if (gradePass) {
       const u = gradePass.uniforms;
@@ -480,8 +527,34 @@ export function createWorldPost({
       u.uWarmHigh.value.copy(a.warmHigh).lerp(b.warmHigh, k);
       u.uCoolShadow.value.copy(a.coolShadow).lerp(b.coolShadow, k);
       u.uVignette.value = THREE.MathUtils.lerp(a.vignette, b.vignette, k);
-      u.uHaze.value = THREE.MathUtils.lerp(a.haze, b.haze, k);
+      u.uHaze.value = 0.0;
+      u.uAerialDensity.value = THREE.MathUtils.lerp(a.aerial, b.aerial, k);
+      u.uHeightFogDensity.value = THREE.MathUtils.lerp(a.heightFog, b.heightFog, k);
+      u.uHeightFogFalloff.value = THREE.MathUtils.lerp(a.heightFalloff, b.heightFalloff, k);
+      u.uScatterStrength.value = THREE.MathUtils.lerp(a.scatter, b.scatter, k);
+      u.uScatterColor.value.copy(a.scatterColor).lerp(b.scatterColor, k);
+      u.uFogTint.value.copy(a.fogTint).lerp(b.fogTint, k);
     }
+  }
+
+  // Fog colour and light direction come from the sky so the haze always matches the horizon.
+  let atmosphereEnabled = true;
+  function setAtmosphere({ fogColor, lightDir, enabled: atmoOn = true } = {}) {
+    if (!gradePass) return;
+    const u = gradePass.uniforms;
+    if (fogColor) u.uFogColor.value.copy(fogColor);
+    if (lightDir) u.uSunDirW.value.copy(lightDir).normalize();
+    atmosphereEnabled = atmoOn !== false;
+  }
+
+  function syncCameraUniforms() {
+    if (!gradePass) return;
+    const u = gradePass.uniforms;
+    u.tDepth.value = composer?.readBuffer?.depthTexture || renderTarget.depthTexture || null;
+    u.uAtmosphere.value = atmosphereEnabled && u.tDepth.value ? 1.0 : 0.0;
+    u.uInvProj.value.copy(camera.projectionMatrixInverse);
+    u.uCamWorld.value.copy(camera.matrixWorld);
+    camera.getWorldPosition(u.uCamPos.value);
   }
 
   setTimeOfDayGrade('day');
@@ -494,6 +567,7 @@ export function createWorldPost({
     if (contextLost) return;
 
     try {
+      syncCameraUniforms();
       composer.render(dt);
     } catch (error) {
       degraded = true;
@@ -524,10 +598,10 @@ export function createWorldPost({
   }
 
   function setBloom(strength, radius, threshold) {
-    if (!bloomPass) return;
-    if (Number.isFinite(strength)) bloomPass.strength = strength;
-    if (Number.isFinite(radius)) bloomPass.radius = radius;
-    if (Number.isFinite(threshold)) bloomPass.threshold = threshold;
+    if (Number.isFinite(strength)) glowStrength = strength;
+    if (Number.isFinite(radius)) glowRadius = radius;
+    if (Number.isFinite(threshold)) glowThreshold = threshold;
+    applyGlow();
   }
 
   function setQuality({ aaSamples: nextAa } = {}) {
@@ -549,7 +623,6 @@ export function createWorldPost({
 
   function dispose() {
     if (renderPass && typeof renderPass.dispose === 'function') renderPass.dispose();
-    if (bloomPass && typeof bloomPass.dispose === 'function') bloomPass.dispose();
     if (gradePass && typeof gradePass.dispose === 'function') gradePass.dispose();
     if (composer) composer.dispose();
     else if (renderTarget) renderTarget.dispose();
@@ -563,17 +636,18 @@ export function createWorldPost({
     setBloom,
     setQuality,
     setTimeOfDayGrade,
+    setAtmosphere,
     setSmiteMonochrome,
     dispose,
     params: {
       get bloomStrength() {
-        return bloomPass ? bloomPass.strength : bloomStrength;
+        return glowStrength;
       },
       get bloomRadius() {
-        return bloomPass ? bloomPass.radius : bloomRadius;
+        return glowRadius;
       },
       get bloomThreshold() {
-        return bloomPass ? bloomPass.threshold : bloomThreshold;
+        return glowThreshold;
       },
       aaCount,
       grade: gradePass ? gradePass.uniforms : GradeShader.uniforms,

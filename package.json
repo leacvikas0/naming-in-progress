@@ -7,9 +7,11 @@
   "scripts": {
     "start": "node world/tools/serve.mjs",
     "dev": "node world/tools/serve.mjs --open",
-    "test": "node world/tools/test-combat-sim.mjs && node world/tools/test-coop-room.mjs",
+    "test": "node world/tools/test-combat-sim.mjs && node world/tools/test-coop-room.mjs && node world/tools/test-enemy-encounters.mjs && node world/tools/test-mage-aim.mjs",
     "test:combat": "node world/tools/test-combat-sim.mjs",
     "test:coop": "node world/tools/test-coop-room.mjs",
+    "test:enemies": "node world/tools/test-enemy-encounters.mjs",
+    "test:aim": "node world/tools/test-mage-aim.mjs",
     "fetch:kaykit": "node scripts/fetch-kaykit.mjs"
   },
   "dependencies": {

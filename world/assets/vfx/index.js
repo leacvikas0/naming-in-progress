@@ -69,6 +69,11 @@ import {
   createAimArrowGeometry,
   AIM_ARROW_DEFAULTS,
 } from './aim-arrow.js';
+import {
+  UltimateVfxSystem,
+  createUltimateVfxSystem,
+  ULTIMATE_PALETTES,
+} from './ultimate-vfx.js';
 
 export {
   createNoiseAtlas,
@@ -112,6 +117,9 @@ export {
   createAimArrowSystem,
   createAimArrowGeometry,
   AIM_ARROW_DEFAULTS,
+  UltimateVfxSystem,
+  createUltimateVfxSystem,
+  ULTIMATE_PALETTES,
 };
 
 /**
@@ -174,6 +182,10 @@ export function createVfxKit({
     getGroundHeight,
     config: aimArrowConfig,
   });
+  const ultimateVfx = createUltimateVfxSystem({
+    scene,
+    getGroundHeight,
+  });
 
   const allSystems = [
     frostLance,
@@ -184,6 +196,7 @@ export function createVfxKit({
     mageBolt,
     artoriousVfx,
     aimArrow,
+    ultimateVfx,
   ];
   const _tmpShake = new THREE.Vector3();
 
@@ -197,6 +210,7 @@ export function createVfxKit({
     mageBolt,
     artoriousVfx,
     aimArrow,
+    ultimateVfx,
     showAimArrow: (options = {}) => aimArrow.show(options),
     updateAimArrow: (dt, options = null) => aimArrow.update(dt, options),
     hideAimArrow: () => aimArrow.hide(),
@@ -259,6 +273,7 @@ export function createVfxKit({
       mageBolt: mageBolt.getStats(),
       artoriousVfx: artoriousVfx.getStats(),
       aimArrow: aimArrow.getStats(),
+      ultimateVfx: ultimateVfx.getStats(),
     }),
     clear: () => {
       for (const sys of allSystems) sys.clear();

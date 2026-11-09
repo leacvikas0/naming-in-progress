@@ -61,6 +61,25 @@ export const TOD_PRESETS = {
 };
 
 /* ------------------------------------------------------------------------- */
+/* Divine Verdict curtain fronts (shared by dome + clouds)                    */
+/* ------------------------------------------------------------------------- */
+
+// Scalloped billow-bottom edges that descend from the zenith (front 0 -> 1).
+// Returns signed elevation distance: > 0 means the direction is above that front.
+const VERDICT_CURTAIN_GLSL = /* glsl */ `
+  float verdictScallop(vec3 d, float phase) {
+    float az = atan(d.z, d.x);
+    return abs(sin(az * 7.0 + 1.3 + phase)) * 0.55
+         + abs(sin(az * 17.0 + 0.4 - phase * 1.7)) * 0.30
+         + abs(sin(az * 3.0 + 2.1)) * 0.15;
+  }
+  float verdictFrontEdge(vec3 d, float front, float lobe, float phase) {
+    float y = max(d.y, -0.02);
+    return y - (mix(1.12, -0.12, front) - verdictScallop(d, phase) * lobe);
+  }
+`;
+
+/* ------------------------------------------------------------------------- */
 /* Sky Dome Shader (Zero Glare Wash · Crisp Cel Sun · Lunar Mare Moon · Stars)*/
 /* ------------------------------------------------------------------------- */
 
@@ -96,8 +115,23 @@ const SKY_FRAG = /* glsl */ `
   uniform float uTime;
   uniform float uEclipseWeight;
   uniform vec3 uEclipseDir;
+  uniform float uVerdictFront;  // eclipse curtain descent (1 = covers the sky)
+  uniform float uVerdictClear;  // clear veil descent that lifts the eclipse
+  uniform float uEclipseScale;
+  uniform float uCoronaGold;
+  uniform float uDiamond;
+  uniform float uWrath;
+  uniform float uSkyBolt;
+  uniform float uBoltSeed;
+  uniform vec3 uVerdictFlash;
+  uniform float uVerdictDim;
+  uniform float uBlessGold;
+  uniform float uShafts;
+  uniform float uShaftReach;
 
   varying vec3 vWorldPos;
+
+  ${VERDICT_CURTAIN_GLSL}
 
   float hash31(vec3 p) {
     p = fract(p * vec3(0.1031, 0.1030, 0.0973));
@@ -139,7 +173,13 @@ const SKY_FRAG = /* glsl */ `
 
   void main() {
     vec3 d = normalize(vWorldPos - cameraPosition);
-    float ecW = clamp(uEclipseWeight, 0.0, 1.0);
+    // Verdict curtains: eclipse covers sky above the descending dark front and below the descending clear front
+    float curtainPhase = uTime * 0.05;
+    float darkEdge = verdictFrontEdge(d, uVerdictFront, 0.07, curtainPhase);
+    float clearEdge = verdictFrontEdge(d, uVerdictClear, -0.06, curtainPhase + 0.9);
+    float darkMask = smoothstep(-0.0025, 0.0025, darkEdge);
+    float clearMask = smoothstep(-0.0025, 0.0025, clearEdge);
+    float ecW = clamp(uEclipseWeight, 0.0, 1.0) * darkMask * (1.0 - clearMask);
     float sunVisEff = uSunVis * (1.0 - ecW);
     float moonVisEff = uMoonVis * (1.0 - ecW);
 
@@ -180,6 +220,59 @@ const SKY_FRAG = /* glsl */ `
       vec3 s2 = evalStarLayer(d + vec3(0.37, 0.19, -0.23), 128.0, 0.87, uTime * 0.8);
       vec3 stars = (s1 * 1.15 + s2 * 0.72) * starFade * uStarAlpha * (1.0 - ecW);
       col += stars;
+    }
+
+    // 2B. Night nebula band + ringed gas giant (painted, opaque, cel-banded). Both ride the
+    // star visibility so they bloom in at dusk and vanish by day; the eclipse overrides them.
+    float nightVis = clamp(uStarAlpha, 0.0, 1.0) * (1.0 - ecW);
+    if (nightVis > 0.005 && d.y > -0.02) {
+      vec3 bandN = normalize(vec3(0.38, 0.52, 0.76));
+      float bandDist = dot(d, bandN);
+      vec3 bandU = normalize(cross(bandN, vec3(0.0, 1.0, 0.0)));
+      vec2 bp = vec2(dot(d, bandU), bandDist) * vec2(3.2, 9.0);
+      float neb = vnoise2(bp * 1.3 + 4.1) * 0.6 + vnoise2(bp * 3.1 - 1.7) * 0.4;
+      float bandMask = exp(-bandDist * bandDist / 0.028) * smoothstep(0.0, 0.18, d.y);
+      float dust = smoothstep(0.55, 0.75, vnoise2(bp * 2.2 + vec2(7.0, 3.0)));
+      vec3 nebCol = mix(vec3(0.20, 0.10, 0.34), vec3(0.06, 0.26, 0.36), smoothstep(0.35, 0.7, neb));
+      col += nebCol * bandMask * smoothstep(0.3, 0.8, neb) * (1.0 - dust * 0.7) * 0.85 * nightVis;
+      col += vec3(0.9, 0.92, 1.0) * evalStarLayer(d + vec3(0.11, -0.07, 0.05), 210.0, 0.80, uTime) * bandMask * 0.9 * nightVis;
+
+      vec3 pd = normalize(vec3(-0.66, 0.30, -0.69));
+      float pR = 0.088;
+      vec3 pRight = normalize(cross(vec3(0.0, 1.0, 0.0), pd));
+      vec3 pUp = cross(pd, pRight);
+      vec2 mp = vec2(dot(d, pRight), dot(d, pUp)) / pR;
+      if (dot(d, pd) > 0.0 && dot(mp, mp) < 7.0) {
+        float r = length(mp);
+        float disc = 1.0 - smoothstep(0.97, 1.0, r);
+        // Ring ellipse, tilted; the back half hides behind the disc.
+        float ca = cos(0.38);
+        float sa = sin(0.38);
+        vec2 rq = vec2(ca * mp.x - sa * mp.y, sa * mp.x + ca * mp.y);
+        vec2 q = vec2(rq.x, rq.y / 0.24);
+        float rr = length(q);
+        float ring = smoothstep(1.32, 1.38, rr) * (1.0 - smoothstep(2.05, 2.12, rr));
+        ring *= 0.55 + 0.45 * step(0.5, fract(rr * 5.3));
+        float ringFront = step(0.0, -rq.y);
+        vec3 ringCol = vec3(0.62, 0.55, 0.5);
+
+        float zS = sqrt(max(0.0, 1.0 - min(1.0, r * r)));
+        // Lit from behind-right by the set sun: a thin crescent, dim like the rest of the night.
+        float ndl = dot(normalize(vec3(mp.x, mp.y, zS)), normalize(vec3(0.78, -0.42, 0.22)));
+        float lit = smoothstep(-0.12, 0.08, ndl);
+        float lat = mp.y + vnoise2(mp * 3.0) * 0.12;
+        float bands = 0.5 + 0.5 * sin(lat * 11.0);
+        vec3 gas = mix(vec3(0.30, 0.52, 0.62), vec3(0.62, 0.40, 0.66), bands);
+        vec3 planetCol = mix(gas * 0.06 + col * 0.35, gas * 0.5, lit);
+        planetCol += vec3(0.45, 0.62, 0.9) * smoothstep(0.82, 1.0, r) * lit * 0.35;
+        // Atmospheric veil: a distant presence, never brighter than the moonlit scene.
+        planetCol = mix(planetCol, col, 0.4);
+        ringCol = mix(ringCol * 0.6, col, 0.35);
+
+        col = mix(col, ringCol * 0.55, ring * (1.0 - ringFront) * (1.0 - disc) * nightVis);
+        col = mix(col, planetCol, disc * nightVis);
+        col = mix(col, ringCol * mix(0.35, 0.75, lit), ring * ringFront * nightVis);
+      }
     }
 
     // 3. Crisp Stylized Anime Sun Disc + Smooth Golden Mie Halo (Option 4 + Option 2)
@@ -241,6 +334,9 @@ const SKY_FRAG = /* glsl */ `
       }
     }
 
+    // Hush: the day sky darkens a little before the curtain arrives
+    col *= 1.0 - uVerdictDim * 0.35;
+
     // 5. Divine Verdict World-Fixed Black-Crimson-Gold Eclipse Disc, Swirling Cel Filaments & Storm-Cloud Amphitheater
     if (ecW > 0.001) {
       // Blend sky gradient toward deep abyssal indigo-crimson (#050710 zenith, #14091a mid, #2d0c18 horizon)
@@ -256,8 +352,12 @@ const SKY_FRAG = /* glsl */ `
       vec2 ecLocal = vec2(dot(d, ecRight), dot(d, ecUp));
 
       float angEclipse = acos(clamp(dot(d, ecDir), -1.0, 1.0));
-      float ecRadius = 0.315;
+      float ecRadius = 0.315 * max(uEclipseScale, 0.05);
       float polarAng = atan(ecLocal.y, ecLocal.x);
+      float coronaDim = 1.0 - uVerdictDim * 0.6;
+      // Blessing: corona turns ivory-gold from the top of the ring downward
+      float goldSweep = smoothstep(-1.1, -0.7, (ecLocal.y / ecRadius) - (1.0 - uCoronaGold * 2.4));
+      float coronaGoldMix = clamp(uCoronaGold * 1.4, 0.0, 1.0) * goldSweep;
 
       // Swirling Nebula Marbling across the upper sky vault around the Eclipse
       float nebRadial = max(0.0, angEclipse - ecRadius * 0.85);
@@ -288,7 +388,8 @@ const SKY_FRAG = /* glsl */ `
       vec3 coronaCol = mix(crimsonDeep, crimsonVivid, clamp(coronaGlow + filamentStep1 * 0.45, 0.0, 1.0));
       coronaCol = mix(coronaCol, solarAmber, filamentStep2 * 0.78);
       coronaCol = mix(coronaCol, solarGold, filamentStep3 * 0.85);
-      ecSky += coronaCol * (coronaGlow + filamentStep1 * 0.38 + filamentStep2 * 0.34);
+      coronaCol = mix(coronaCol, mix(vec3(0.42, 0.22, 0.05), vec3(1.35, 0.92, 0.38), clamp(coronaGlow, 0.0, 1.0)), coronaGoldMix);
+      ecSky += coronaCol * (coronaGlow + filamentStep1 * 0.38 + filamentStep2 * 0.34) * coronaDim;
 
       // Multi-layered Billowing Storm-Cloud Amphitheater compressed beneath & around the Eclipse Disc
       if (d.y > 0.02 && d.y < 0.78) {
@@ -326,7 +427,19 @@ const SKY_FRAG = /* glsl */ `
         }
       }
 
-      // Colossal Black Eclipse Void (radius 0.315 rad, pure obsidian interior #020103)
+      // Smite wrath: a blood-crimson front sweeps down over the abyssal sky and storm bellies
+      // (cel-banded, hard lip); max() keeps the brighter corona/cloud crowns on top
+      if (uWrath > 0.001) {
+        float wrathEdge = verdictFrontEdge(d, uWrath, 0.06, curtainPhase + 2.3);
+        float wrathMask = smoothstep(-0.0025, 0.0025, wrathEdge);
+        vec3 wrathSky = mix(vec3(0.34, 0.004, 0.024), vec3(0.16, 0.002, 0.014), smoothstep(0.05, 0.55, h));
+        wrathSky = mix(wrathSky, vec3(0.5, 0.006, 0.034), step(wrathEdge, 0.035) * wrathMask);
+        ecSky = mix(ecSky, max(ecSky, wrathSky), wrathMask);
+        float wrathLip = smoothstep(-0.014, -0.010, wrathEdge) * (1.0 - smoothstep(-0.0025, 0.0, wrathEdge));
+        ecSky = mix(ecSky, vec3(1.6, 0.02, 0.08), wrathLip * (1.0 - step(0.999, uWrath)));
+      }
+
+      // Colossal Black Eclipse Void (scaled radius, pure obsidian interior #020103)
       float voidMask = 1.0 - smoothstep(ecRadius - 0.005, ecRadius + 0.003, angEclipse);
       float innerEdgeGlow = smoothstep(ecRadius - 0.055, ecRadius - 0.002, angEclipse) * voidMask;
       vec3 voidInterior = vec3(0.0006, 0.0003, 0.0010) + crimsonDeep * (innerEdgeGlow * 0.28);
@@ -337,9 +450,88 @@ const SKY_FRAG = /* glsl */ `
                        * smoothstep(ecRadius - 0.018, ecRadius - 0.001, angEclipse);
       float rimFlare = smoothstep(0.42, 0.68, filN1);
       vec3 rimCol = mix(vec3(1.12, 0.018, 0.048), solarGold, rimFlare * 0.58);
-      ecSky += rimCol * (coronalRim * 1.35);
+      rimCol = mix(rimCol, vec3(2.2, 1.6, 0.7), coronaGoldMix);
+      ecSky += rimCol * (coronalRim * 1.35 * coronaDim);
+
+      // Diamond ring: a white-gold bead + hard 4-point flare at third contact (blessing crescendo)
+      if (uDiamond > 0.001) {
+        vec2 bead = vec2(-0.78, -0.62) * ecRadius;
+        vec2 bd = ecLocal - bead;
+        float beadCore = 1.0 - smoothstep(0.012, 0.016, length(bd) / max(uDiamond, 0.05));
+        float spikeLen = 0.30 * uDiamond;
+        float spikes = (1.0 - smoothstep(0.0012, 0.0024, abs(bd.y))) * (1.0 - smoothstep(0.0, spikeLen, abs(bd.x)))
+                     + (1.0 - smoothstep(0.0012, 0.0024, abs(bd.x))) * (1.0 - smoothstep(0.0, spikeLen * 0.7, abs(bd.y)));
+        ecSky += vec3(5.0, 3.9, 2.2) * beadCore * uDiamond + vec3(2.6, 2.0, 1.1) * clamp(spikes, 0.0, 1.0) * uDiamond;
+      }
+
+      // Smite sky lightning: two jagged forks crack from the disc's lower rim to the horizon
+      if (uSkyBolt > 0.001) {
+        for (int bi = 0; bi < 2; bi++) {
+          float side = bi == 0 ? -1.0 : 1.0;
+          vec2 b0 = vec2(side * ecRadius * 0.80, -ecRadius * 0.60);
+          vec2 b1 = vec2(side * (ecRadius + 0.46), -0.27);
+          vec2 seg = b1 - b0;
+          float segLen = length(seg);
+          vec2 segDir = seg / segLen;
+          vec2 segN = vec2(-segDir.y, segDir.x);
+          vec2 rel = ecLocal - b0;
+          float s = dot(rel, segDir) / segLen;
+          float sk = s * 9.0 + uBoltSeed * 13.0 + float(bi) * 5.0;
+          float jag = mix(hash21(vec2(floor(sk), uBoltSeed)), hash21(vec2(floor(sk) + 1.0, uBoltSeed)), fract(sk)) - 0.5;
+          float fine = hash21(vec2(floor(sk * 3.0), uBoltSeed + 7.0)) - 0.5;
+          float off = (jag * 0.08 + fine * 0.012) * sin(3.14159 * clamp(s, 0.0, 1.0));
+          float inSpan = step(0.0, s) * step(s, 1.0);
+          float bdist = abs(dot(rel, segN) - off);
+          float width = mix(0.0055, 0.0025, s);
+          float core = 1.0 - smoothstep(width * 0.6, width, bdist);
+          float sheath = 1.0 - smoothstep(width * 2.4, width * 2.8, bdist);
+          ecSky = mix(ecSky, vec3(1.9, 0.05, 0.12), sheath * inSpan * uSkyBolt);
+          ecSky = mix(ecSky, vec3(4.0, 3.6, 3.8), core * inSpan * uSkyBolt);
+        }
+      }
+
+      // Curtain cel bands: crimson-tinted belly on the dark front, gold crest on the clear veil
+      float darkBelly = step(darkEdge, 0.04) * (1.0 - step(0.999, uVerdictFront));
+      ecSky = mix(ecSky, vec3(0.09, 0.004, 0.018), darkBelly * 0.85);
+      float clearLip = smoothstep(-0.022, -0.017, clearEdge) * (1.0 - smoothstep(-0.0025, 0.0, clearEdge));
+      float clearBand = smoothstep(-0.075, -0.07, clearEdge) * (1.0 - clearLip);
+      // Gold crest for the blessing, cool silver for the smite's release
+      float blessTone = step(0.001, uCoronaGold);
+      ecSky = mix(ecSky, mix(vec3(0.3, 0.29, 0.34), vec3(0.62, 0.30, 0.07), blessTone), clearBand * step(0.001, uVerdictClear) * 0.8);
+      ecSky = mix(ecSky, mix(vec3(1.7, 1.66, 1.8), vec3(2.6, 1.9, 0.85), blessTone), clearLip);
+
+      ecSky += uVerdictFlash * (0.35 + 0.65 * h) * (1.0 - voidMask);
 
       col = mix(col, ecSky, ecW);
+    }
+
+    // Searing crimson lip just beneath the descending dark curtain (outside the eclipse mask)
+    float darkLip = smoothstep(-0.016, -0.012, darkEdge) * (1.0 - smoothstep(-0.0025, 0.0, darkEdge));
+    col = mix(col, vec3(1.3, 0.03, 0.09), darkLip * clamp(uEclipseWeight, 0.0, 1.0) * (1.0 - clearMask));
+
+    // Blessing afterglow: warm gold veil + hard-edged descending light shafts in the cleared heaven
+    if (uBlessGold > 0.001 || uShafts > 0.001) {
+      float horizonGlow = 1.0 - smoothstep(0.0, 0.32, h);
+      vec3 goldSky = mix(vec3(1.32, 0.9, 0.46), vec3(1.05, 0.62, 0.42), smoothstep(0.0, 0.32, h));
+      col = mix(col, goldSky, uBlessGold * clearMask * horizonGlow * 0.78);
+      col *= mix(vec3(1.0), vec3(1.06, 0.97, 0.9), uBlessGold * clearMask * (1.0 - horizonGlow));
+      float veilBand = step(clearEdge, 0.026) * clearMask * step(0.001, uVerdictClear) * (1.0 - step(0.999, uVerdictClear));
+      col = mix(col, vec3(1.45, 1.02, 0.5), veilBand * uBlessGold);
+
+      float az = atan(d.z, d.x);
+      float ra = az * 26.0 / 6.28318;
+      float cell = floor(ra);
+      float rh = hash21(vec2(cell, 3.7));
+      float onRay = step(0.42, rh);
+      float halfW = mix(0.05, 0.22, hash21(vec2(cell, 9.1))) * uShafts;
+      float rayEnd = mix(1.12, -0.05, uShaftReach * mix(0.55, 1.0, rh)) + (1.0 - uShaftReach) * 0.2;
+      float tip = clamp((d.y - rayEnd) / 0.12, 0.0, 1.0);
+      float across = abs(fract(ra) - 0.5);
+      float shaft = onRay * (1.0 - smoothstep(halfW * tip - 0.01, halfW * tip, across)) * step(rayEnd, d.y);
+      float shaftCore = onRay * (1.0 - smoothstep(halfW * tip * 0.35 - 0.01, halfW * tip * 0.35, across)) * step(rayEnd, d.y);
+      vec3 shaftCol = mix(vec3(1.5, 1.08, 0.48), vec3(1.15, 0.95, 0.7), clearMask * 0.5);
+      col = mix(col, shaftCol, shaft * 0.85);
+      col = mix(col, vec3(2.4, 2.0, 1.3), shaftCore * 0.9);
     }
 
     // Below horizon fade to fog
@@ -438,6 +630,7 @@ const CLOUD_VERT = /* glsl */ `
   attribute vec3 aCloudMeta;
   uniform float uTime;
   uniform float uEclipseCompression;
+  uniform float uVerdictPart;
 
   varying vec3 vCloudMeta;
   varying vec3 vNormalW;
@@ -451,6 +644,10 @@ const CLOUD_VERT = /* glsl */ `
     vec4 worldPos = modelMatrix * vec4(pos, 1.0);
     // Gently press horizon cumulus puffs downward during Eclipse without flattening their 3D volume
     worldPos.y -= uEclipseCompression * 6.5;
+    // Blessing: the cloud ring parts outward and sinks to open the heavens
+    vec2 away = worldPos.xz - cameraPosition.xz;
+    worldPos.xz += away / max(length(away), 1.0) * uVerdictPart * 45.0;
+    worldPos.y -= uVerdictPart * 14.0;
     vWorldPos = worldPos.xyz;
     vNormalW = normalize(mat3(modelMatrix) * normal);
 
@@ -468,8 +665,13 @@ const CLOUD_FRAG = /* glsl */ `
   uniform float uTime;
   uniform float uEclipseWeight;
   uniform vec3 uEclipseDir;
+  uniform float uVerdictFront;
+  uniform float uVerdictClear;
+  uniform float uBlessGold;
 
   varying vec3 vCloudMeta;
+
+  ${VERDICT_CURTAIN_GLSL}
   varying vec3 vNormalW;
   varying vec3 vWorldPos;
 
@@ -507,14 +709,22 @@ const CLOUD_FRAG = /* glsl */ `
     col = mix(col, uHaze, haze * 0.34);
 
     // Divine Verdict Horizon Cumulus Grade: cool slate-grey anime cloud puffs (matching the flank clouds in Frame 37 & 57)
-    if (uEclipseWeight > 0.001) {
+    // Graded per fragment by the same descending curtains as the dome (hard cel switch)
+    vec3 cd = normalize(vWorldPos - cameraPosition);
+    float cPhase = uTime * 0.05;
+    float cDark = step(0.0, verdictFrontEdge(cd, uVerdictFront, 0.07, cPhase));
+    float cClear = step(0.0, verdictFrontEdge(cd, uVerdictClear, -0.06, cPhase + 0.9));
+    float cloudEcW = clamp(uEclipseWeight, 0.0, 1.0) * cDark * (1.0 - cClear);
+    if (cloudEcW > 0.001) {
       vec3 slateUnderside = vec3(0.11, 0.12, 0.15);
       vec3 slateMid       = vec3(0.26, 0.28, 0.33);
       vec3 slateCrown     = vec3(0.46, 0.48, 0.54);
       vec3 ecCloud = mix(slateUnderside, slateMid, band1);
       ecCloud = mix(ecCloud, slateCrown, band2) * facetVar;
-      col = mix(col, ecCloud, clamp(uEclipseWeight, 0.0, 1.0));
+      col = mix(col, ecCloud, cloudEcW);
     }
+    // Blessing: gold-gilded crowns as the clear veil passes
+    col = mix(col, col * vec3(1.18, 0.98, 0.72) + vec3(0.16, 0.1, 0.02) * band2, uBlessGold * cClear);
 
     gl_FragColor = vec4(max(col, vec3(0.0)), 1.0);
   }
@@ -859,6 +1069,19 @@ export function createTimeOfDaySky({
     uTime: { value: 0.0 },
     uEclipseWeight: { value: 0.0 },
     uEclipseDir: { value: eclipseDir.clone() },
+    uVerdictFront: { value: 1.0 },
+    uVerdictClear: { value: 0.0 },
+    uEclipseScale: { value: 1.0 },
+    uCoronaGold: { value: 0.0 },
+    uDiamond: { value: 0.0 },
+    uWrath: { value: 0.0 },
+    uSkyBolt: { value: 0.0 },
+    uBoltSeed: { value: 0.37 },
+    uVerdictFlash: { value: new THREE.Vector3() },
+    uVerdictDim: { value: 0.0 },
+    uBlessGold: { value: 0.0 },
+    uShafts: { value: 0.0 },
+    uShaftReach: { value: 0.0 },
   };
 
   const skyMat = new THREE.ShaderMaterial({
@@ -894,6 +1117,10 @@ export function createTimeOfDaySky({
     uEclipseWeight: { value: 0.0 },
     uEclipseCompression: { value: 0.0 },
     uEclipseDir: { value: eclipseDir.clone() },
+    uVerdictFront: skyUniforms.uVerdictFront,
+    uVerdictClear: skyUniforms.uVerdictClear,
+    uBlessGold: skyUniforms.uBlessGold,
+    uVerdictPart: { value: 0.0 },
   };
 
   const cloudMat = new THREE.ShaderMaterial({
@@ -1495,7 +1722,36 @@ export function createTimeOfDaySky({
     cloudUniforms.uEclipseWeight.value = state.eclipseWeight;
     cloudUniforms.uEclipseCompression.value = state.eclipseCompression;
     cloudUniforms.uEclipseDir.value.copy(state.eclipseDir);
-    livingAirUniforms.uEclipsePetalWeight.value = state.eclipseWeight;
+    // Crimson air-petals follow the curtain's actual sky coverage
+    const v = skyUniforms;
+    livingAirUniforms.uEclipsePetalWeight.value =
+      state.eclipseWeight * v.uVerdictFront.value * (1 - v.uVerdictClear.value);
+  }
+
+  const _flashStrike = new THREE.Vector3(0.8, 0.74, 0.82);
+  const _flashGold = new THREE.Vector3(1.6, 1.15, 0.55);
+
+  // Verdict choreography uniforms (see verdict-sky-choreo.js); null restores the static full-eclipse look.
+  function setVerdictSky(p = null) {
+    const v = skyUniforms;
+    const n = (x, d) => (Number.isFinite(x) ? x : d);
+    v.uVerdictFront.value = clamp01(n(p?.front, 1));
+    v.uVerdictClear.value = clamp01(n(p?.clear, 0));
+    v.uEclipseScale.value = Math.max(0.05, n(p?.discScale, 1));
+    v.uCoronaGold.value = clamp01(n(p?.coronaGold, 0));
+    v.uDiamond.value = clamp01(n(p?.diamond, 0));
+    v.uWrath.value = clamp01(n(p?.wrath, 0));
+    v.uSkyBolt.value = clamp01(n(p?.skyBolt, 0));
+    if (Number.isFinite(p?.boltSeed)) v.uBoltSeed.value = p.boltSeed;
+    v.uVerdictFlash.value
+      .copy(n(p?.flashGold, 0) > 0.5 ? _flashGold : _flashStrike)
+      .multiplyScalar(Math.max(0, n(p?.flash, 0)));
+    v.uVerdictDim.value = clamp01(n(p?.dim, 0));
+    v.uBlessGold.value = clamp01(n(p?.gold, 0));
+    v.uShafts.value = clamp01(n(p?.shafts, 0));
+    v.uShaftReach.value = clamp01(n(p?.shaftReach, 0));
+    cloudUniforms.uVerdictPart.value = clamp01(n(p?.part, 0));
+    syncEclipseUniforms();
   }
 
   function stepEclipseRamp(dtSec) {
@@ -1685,7 +1941,7 @@ export function createTimeOfDaySky({
     if (state.mode === 'night') {
       mistCushionUniforms.uMistCool.value.setHex(0x1b2d52);
       mistCushionUniforms.uMistWarm.value.setHex(0x324d80);
-      mistCushionUniforms.uMistOpacity.value = 0.52;
+      mistCushionUniforms.uMistOpacity.value = 0.4; // depth atmosphere in post.js now carries most of the haze
       livingAirUniforms.uWindTint.value.setRGB(0.78, 0.92, 1.15); // Luminous silver-cyan night wind!
     } else if (state.mode === 'twilight') {
       mistCushionUniforms.uMistCool.value.setHex(0x483868);
@@ -1695,12 +1951,12 @@ export function createTimeOfDaySky({
     } else if (state.mode === 'evening') {
       mistCushionUniforms.uMistCool.value.setHex(0x986888);
       mistCushionUniforms.uMistWarm.value.setHex(0xffb278);
-      mistCushionUniforms.uMistOpacity.value = 0.72;
+      mistCushionUniforms.uMistOpacity.value = 0.35;
       livingAirUniforms.uWindTint.value.setRGB(1.08, 0.88, 0.82); // Warm rose-gold sunset wind!
     } else {
       mistCushionUniforms.uMistCool.value.copy(skyUniforms.uFog.value).lerp(linearColor(0xdcf2ff), 0.35);
       mistCushionUniforms.uMistWarm.value.copy(sun.color).lerp(linearColor(0xfff6e0), 0.45);
-      mistCushionUniforms.uMistOpacity.value = 1.0;
+      mistCushionUniforms.uMistOpacity.value = 0.7;
       livingAirUniforms.uWindTint.value.setRGB(0.92, 0.98, 1.06); // Pearlescent cyan-ivory day wind!
     }
     livingAirUniforms.uDaylight.value = state.daylight;
@@ -1752,6 +2008,7 @@ export function createTimeOfDaySky({
     state,
     setTimeOfDay,
     setEclipseState,
+    setVerdictSky,
     getWindTimeScale,
     update,
   };

@@ -32,6 +32,15 @@ import {
   buildGrassTuft,
 } from '../assets/flowers/index.js';
 import { createTimeOfDaySky, TOD_PRESETS } from './sky-tod.js';
+import {
+  evalVerdictSky,
+  evalChannelSky,
+  evalChannelReleaseSky,
+  evalSmiteSky,
+  evalBlessingSky,
+  idleVerdictSky,
+  VERDICT_SKY_TAILS,
+} from './verdict-sky-choreo.js';
 import { createWorldPost } from './post.js';
 import {
   createCoopPlayerSystem,
@@ -732,6 +741,15 @@ function updateCoopPill(roomState) {
       activeElement: roomState.progression.activeElement,
     });
   }
+  if (roomState.progression) {
+    // May run during createCoopPlayerSystem (coopSystem still in TDZ); the
+    // post-construction updateCoopPill call below re-applies it.
+    try {
+      coopSystem.setUnlockedStage(Number(roomState.progression.unlockedStage || 0));
+    } catch {
+      /* not constructed yet */
+    }
+  }
 }
 
 function playDivineVerdictVoice(judgment) {
@@ -1334,6 +1352,15 @@ const stoneDecals = createSacredStoneCalligraphyDecals(scene, terrainHeightAt);
 /* 7. Stage 3–5 Co-Op Player System & Xiaomi Pad 7 Touch HUD                 */
 /* ------------------------------------------------------------------------- */
 
+const post = createWorldPost({
+  renderer,
+  scene,
+  camera,
+  width: window.innerWidth,
+  height: window.innerHeight,
+  enabled: true,
+  aaSamples: PROFILES[activeProfile].aaSamples,
+});
 let coopSystem = null;
 
 // Render the initial 3D valley & mount the pixelated dither title screen at 0ms BEFORE awaiting character GLBs
@@ -1361,7 +1388,7 @@ let coopSystem = null;
   );
   village.update(0.016);
   meadow.update(0, camState.vistaTarget, camera);
-  renderer.render(scene, camera);
+  post.render(0.016);
 }
 
 appFlow = createAppFlow({
@@ -2036,7 +2063,7 @@ sculptedHud = createSculptedHud({
       });
     }
   },
-  onAimRelease: () => {
+  onAimRelease: ({ touch } = {}) => {
     if (coopSystem.player.activeHeroId === 'Mage') {
       coopSystem.releaseSkillAim({
         distance: eAimDragDistance,
@@ -2335,15 +2362,6 @@ updateCoopPill(coopSystem.coopClient.getState());
 /* 8. Post-Processing Pipeline (4x MSAA + Bloom + Time-of-Day Grade)         */
 /* ------------------------------------------------------------------------- */
 
-const post = createWorldPost({
-  renderer,
-  scene,
-  camera,
-  width: window.innerWidth,
-  height: window.innerHeight,
-  enabled: true,
-  aaSamples: PROFILES[activeProfile].aaSamples,
-});
 
 /* ------------------------------------------------------------------------- */
 /* 9. Full World Time-of-Day Material Synchronization                        */
@@ -2388,6 +2406,7 @@ export function applyTimeOfDay(modeOrT) {
 
   // 1. Sync Post-Processing Grade & Restrained Bloom
   post.setTimeOfDayGrade(currentTodT);
+  post.setAtmosphere({ fogColor: skyState.fogColor, lightDir: skyState.activeLightDir });
 
   // 2. Sync Scene Fog & Background
   scene.fog.color.copy(skyState.fogColor);
@@ -2676,11 +2695,60 @@ export const WORLD_SHOTS = {
   },
 };
 
-function syncPrayerEclipseAndMonochrome() {
+// Verdict sky clock: drives verdict-sky-choreo.js from the prayer channel / verdictSequence and
+// keeps running through the post-unlock release so the sky never pops back to day.
+const verdictSkyClock = {
+  phase: 'idle',
+  t: 0,
+  entryFront: 0,
+  boltSeed: 0.37,
+  snap: null,
+  out: idleVerdictSky(),
+  preview: null,
+};
+const _eclipseAtmoFog = new THREE.Color(0.03, 0.006, 0.012);
+const _atmoFogMix = new THREE.Color();
+
+function resetVerdictSky() {
+  verdictSkyClock.phase = 'idle';
+  verdictSkyClock.t = 0;
+  verdictSkyClock.out = idleVerdictSky();
+  verdictSkyClock.preview = null;
+  sky.setVerdictSky?.(null);
+}
+
+function applyVerdictSky(out) {
+  sky.setEclipseState?.({
+    weight: out.weight,
+    compression: out.compression,
+    windTimeScale: out.windTimeScale,
+    camera,
+  });
+  sky.setVerdictSky?.(out);
+  post.setSmiteMonochrome?.(out.monochrome);
+  // Depth atmosphere sinks into the eclipse instead of keeping the daytime haze
+  const fogU = post.params?.grade?.uFogColor?.value;
+  if (fogU && sky.state?.fogColor) {
+    // Switch as the curtains cross the horizon band, where distant terrain sits
+    const s01 = (a, b, x) => Math.min(1, Math.max(0, (x - a) / (b - a)));
+    const cover = out.weight * s01(0.72, 0.92, out.front) * (1 - s01(0.8, 0.95, out.clear));
+    fogU.copy(_atmoFogMix.copy(sky.state.fogColor).lerp(_eclipseAtmoFog, cover));
+  }
+}
+
+function syncPrayerEclipseAndMonochrome(dt = 0) {
   if (coopSystem?.sanctuarySteleMesh) {
     coopSystem.sanctuarySteleMesh.visible = false;
   }
   if (activeGameplayShotSpec) {
+    syncEnvironmentPolarity();
+    return;
+  }
+  const c = verdictSkyClock;
+  if (c.preview) {
+    const out = evalVerdictSky(c.preview.kind, c.preview.t, c.preview.kind === 'channel' ? 0 : 1);
+    out.boltSeed = c.boltSeed;
+    applyVerdictSky(out);
     syncEnvironmentPolarity();
     return;
   }
@@ -2701,50 +2769,51 @@ function syncPrayerEclipseAndMonochrome() {
   );
   const isAwakeningEclipse = Boolean((cLoop?.awakeningEclipseTimer || 0) > 0);
 
-  if (vSeq?.active && vSeq.kind === 'smite') {
-    sky.setEclipseState?.({
-      weight: 1.0,
-      compression: 1.0,
-      windTimeScale: 0.0,
-      camera,
-    });
-    post.setSmiteMonochrome?.(1.0);
-  } else if (vSeq?.active && vSeq.kind === 'blessing') {
-    if (vSeq.elapsed < 4.25) {
-      sky.setEclipseState?.({
-        weight: 1.0,
-        compression: 1.0,
-        windTimeScale: 0.35,
-        camera,
-      });
-    } else {
-      const clearU = clamp((vSeq.elapsed - 4.25) / 0.55, 0, 1);
-      sky.setEclipseState?.({
-        weight: 1.0 - clearU,
-        compression: 1.0 - clearU,
-        windTimeScale: 0.35 + 0.65 * clearU,
-        camera,
-      });
+  const cur = c.out;
+  const coverage = cur.weight > 0 ? cur.front * (1 - cur.clear) : 0;
+  if (vSeq?.active && (vSeq.kind === 'smite' || vSeq.kind === 'blessing')) {
+    if (c.phase !== vSeq.kind) {
+      c.phase = vSeq.kind;
+      c.entryFront = coverage;
+      c.boltSeed = Math.random();
     }
-    post.setSmiteMonochrome?.(0.0);
+    c.t = vSeq.elapsed || 0;
   } else if (isModeBMiracleChannel || isAwakeningEclipse) {
-    sky.setEclipseState?.({
-      weight: 1.0,
-      compression: 1.0,
-      windTimeScale: 0.35,
-      camera,
-    });
-    post.setSmiteMonochrome?.(0.0);
-  } else {
-    sky.setEclipseState?.({
-      weight: 0.0,
-      compression: 0.0,
-      windTimeScale: 1.0,
-      camera,
-    });
-    post.setSmiteMonochrome?.(0.0);
+    if (c.phase !== 'channel') {
+      c.phase = 'channel';
+      c.t = 0;
+      c.entryFront = coverage;
+    } else {
+      c.t += dt;
+    }
+  } else if (c.phase === 'channel') {
+    c.phase = 'channelRelease';
+    c.t = 0;
+    c.snap = { ...cur };
+  } else if (c.phase !== 'idle') {
+    c.t += dt;
+    if (c.t >= VERDICT_SKY_TAILS[c.phase]) {
+      c.phase = 'idle';
+      c.t = 0;
+    }
   }
+
+  let out;
+  if (c.phase === 'channel') out = evalChannelSky(c.t, c.entryFront);
+  else if (c.phase === 'channelRelease') out = evalChannelReleaseSky(c.t, c.snap);
+  else if (c.phase === 'smite') out = evalSmiteSky(c.t, c.entryFront);
+  else if (c.phase === 'blessing') out = evalBlessingSky(c.t, c.entryFront);
+  else out = idleVerdictSky();
+  out.boltSeed = c.boltSeed;
+  c.out = out;
+  applyVerdictSky(out);
   syncEnvironmentPolarity();
+}
+
+// Deterministic verdict-sky preview for captures: { kind: 'channel'|'smite'|'blessing', t } or null
+function setVerdictSkyPreview(spec = null) {
+  verdictSkyClock.preview = spec && spec.kind ? { kind: String(spec.kind), t: Number(spec.t) || 0 } : null;
+  syncPrayerEclipseAndMonochrome(0);
 }
 
 function syncCharacterGroundShadows() {
@@ -2940,6 +3009,7 @@ export function setView(id) {
   activeViewId = v.id;
   activeGameplayShotSpec = null;
   coopSystem?.resetCameraImpact?.();
+  resetVerdictSky();
   sky.setEclipseState?.({ weight: 0.0, compression: 0.0, windTimeScale: 1.0, camera });
   post.setSmiteMonochrome?.(0.0);
   if (v.mode === 'player') {
@@ -2979,6 +3049,7 @@ export function setShot(shotId) {
   closeAltarSteleModal();
   if (steleInteractPrompt) steleInteractPrompt.classList.remove('visible');
   applyTimeOfDay(s.tod);
+  resetVerdictSky();
   sky.setEclipseState?.({ weight: 0.0, compression: 0.0, windTimeScale: 1.0, camera });
   post.setSmiteMonochrome?.(0.0);
 
@@ -3040,6 +3111,7 @@ export function setGameplayShot(gameplayShotId) {
   coopSystem.resetCameraImpact?.();
   updateCamera();
 
+  resetVerdictSky();
   if (spec.eclipseState) {
     sky.setEclipseState?.({ ...spec.eclipseState, camera });
   } else {
@@ -3380,8 +3452,12 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Alt + 1..8 switches camera presets
+  const devKeys =
+    debugDevPill?.classList.contains('visible') || new URLSearchParams(location.search).has('debug');
+
+  // Alt + 1..8 camera presets are debug-only (F3 dev panel or ?debug)
   if (e.altKey) {
+    if (!devKeys) return;
     if (k === '1') setView('entry');
     else if (k === '2') setView('plaza');
     else if (k === '3') setView('mill');
@@ -3393,7 +3469,11 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  if (!wasPressed && k === 'e') {
+  if (devKeys && k === '5') setView('shrine');
+  else if (devKeys && k === '6') setView('shrineLookback');
+  else if (devKeys && k === '7') setView('aerial');
+  else if (devKeys && k === '8') setView('topdown');
+  else if (!wasPressed && k === 'e') {
     if (!eSkillReady) return;
     activeGameplayShotSpec = null;
     if (camState.mode === 'vista') camState.mode = 'player';
@@ -3425,12 +3505,12 @@ window.addEventListener('keydown', (e) => {
       lmbHoldTimer = null;
     }
     coopSystem.triggerAction('dash');
-  } else if (k === 't') {
+  } else if (devKeys && k === 't') {
     autoCycleTod = false;
     const order = ['day', 'evening', 'twilight', 'night'];
     const nextIdx = (order.indexOf(sky.state.mode) + 1) % order.length;
     applyTimeOfDay(order[nextIdx]);
-  } else if (k === 'p') {
+  } else if (devKeys && k === 'p') {
     autoCycleTod = !autoCycleTod;
     syncTodHudControls();
   } else if (!wasPressed && k === 'h') {
@@ -4038,7 +4118,7 @@ function animate() {
     }
   }
 
-  syncPrayerEclipseAndMonochrome();
+  syncPrayerEclipseAndMonochrome(dt);
 
   const windScale = sky.getWindTimeScale ? sky.getWindTimeScale() : 1.0;
   windElapsed += dt * windScale;
@@ -4125,6 +4205,7 @@ window.__WORLD__ = {
   setCameraOrbit,
   setShot,
   setGameplayShot,
+  setVerdictSkyPreview,
   setTimeOfDay: applyTimeOfDay,
   setProfile,
   toggleHud,
