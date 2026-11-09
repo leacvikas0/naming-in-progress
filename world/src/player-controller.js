@@ -1898,11 +1898,23 @@ export async function createCoopPlayerSystem({
     campaignLoop.setIndicatorsHiddenForShot(false, heroStates);
   }
 
+  // Stone-progression gate shared by desktop keys and touch. Defaults to fully
+  // unlocked so offline/dev sessions without room progression stay playable.
+  let unlockedStage = 3;
+  const STAGE_FOR_ABILITY = { skillE: 1, spell: 1, tabToggle: 2, ultimateQ: 3 };
+  function setUnlockedStage(stage) {
+    unlockedStage = Math.max(0, Math.min(3, Math.floor(Number(stage) || 0)));
+  }
+  function isAbilityUnlocked(kind) {
+    return unlockedStage >= (STAGE_FOR_ABILITY[kind] ?? 0);
+  }
+
   function triggerSpell(slotOrId, options = {}) {
     ensureCombatUnfrozen();
     if (isPlayerControlLocked()) {
       return { blockedByControlLock: true };
     }
+    if (!isAbilityUnlocked('spell')) return { locked: true };
     const spell =
       typeof slotOrId === 'number'
         ? SPELL_BY_SLOT[slotOrId]
@@ -1976,11 +1988,13 @@ export async function createCoopPlayerSystem({
 
   function toggleElement(heroId = activeHeroId) {
     if (isPlayerControlLocked()) return { blockedByControlLock: true };
+    if (!isAbilityUnlocked('tabToggle')) return { locked: true };
     return actionAim.toggleElement(heroId);
   }
 
   function startSkillAim(opts = {}) {
     if (isPlayerControlLocked()) return { blockedByControlLock: true };
+    if (!isAbilityUnlocked('skillE')) return { locked: true };
     const mageState = heroStates.Mage;
     return actionAim.startSkillAim({
       origin: opts.origin || { x: mageState.x, y: mageState.y, z: mageState.z },
@@ -2026,6 +2040,8 @@ export async function createCoopPlayerSystem({
     if (actionType === 'toggleElement' || actionType === 'toggle_element' || actionType === 'tab') {
       return toggleElement(actionOptions.heroId || activeHeroId);
     }
+    if (actionType === 'skill' && !isAbilityUnlocked('skillE')) return { locked: true };
+    if (actionType === 'ultimate' && !isAbilityUnlocked('ultimateQ')) return { locked: true };
 
     if (actionType === 'skillAimStart' || actionType === 'skill_aim_start') {
       if (activeHeroId === 'Mage') {
@@ -3080,6 +3096,8 @@ export async function createCoopPlayerSystem({
     heroStates,
     player,
     triggerAction,
+    setUnlockedStage,
+    isAbilityUnlocked,
     setPraying,
     getHeroDistance,
     getNearestInscriptionStone,

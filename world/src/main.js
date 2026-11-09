@@ -641,6 +641,15 @@ function updateCoopPill(roomState) {
       stonesSolved: Number(roomState.progression.stonesSolved || 0),
     });
   }
+  if (roomState.progression) {
+    // May run during createCoopPlayerSystem (coopSystem still in TDZ); the
+    // post-construction updateCoopPill call below re-applies it.
+    try {
+      coopSystem.setUnlockedStage(Number(roomState.progression.unlockedStage || 0));
+    } catch {
+      /* not constructed yet */
+    }
+  }
 }
 
 function playDivineVerdictVoice(judgment) {
@@ -2025,10 +2034,12 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  if (k === '5') setView('shrine');
-  else if (k === '6') setView('shrineLookback');
-  else if (k === '7') setView('aerial');
-  else if (k === '8') setView('topdown');
+  const devKeys =
+    debugDevPill?.classList.contains('visible') || new URLSearchParams(location.search).has('debug');
+  if (devKeys && k === '5') setView('shrine');
+  else if (devKeys && k === '6') setView('shrineLookback');
+  else if (devKeys && k === '7') setView('aerial');
+  else if (devKeys && k === '8') setView('topdown');
   else if (!wasPressed && k === 'e') {
     activeGameplayShotSpec = null;
     if (camState.mode === 'vista') camState.mode = 'player';
@@ -2049,12 +2060,12 @@ window.addEventListener('keydown', (e) => {
     activeGameplayShotSpec = null;
     if (camState.mode === 'vista') camState.mode = 'player';
     coopSystem.triggerAction('dash');
-  } else if (k === 't') {
+  } else if (devKeys && k === 't') {
     autoCycleTod = false;
     const order = ['day', 'evening', 'night'];
     const nextIdx = (order.indexOf(sky.state.mode) + 1) % order.length;
     applyTimeOfDay(order[nextIdx]);
-  } else if (k === 'p') {
+  } else if (devKeys && k === 'p') {
     autoCycleTod = !autoCycleTod;
     syncTodHudControls();
   } else if (!wasPressed && k === 'h') {

@@ -303,6 +303,9 @@ export function createCampaignLoop({
   let wingmanBoltIdx = 0;
   let bothDownedTimer = 0;
   let lastHeroStates = null;
+  const PARTNER_REVIVE_RADIUS = 2.5;
+  const PARTNER_REVIVE_SECONDS = 2.5;
+  const PARTNER_REVIVE_HP = 0.35;
   let communeChannelActive = false;
   let indicatorsHiddenForShot = false;
   let divineBlessingActive = false;
@@ -670,11 +673,12 @@ export function createCampaignLoop({
   }
 
   function reviveAllInstant() {
+    // Wave clear lifts a fallen partner only to a fragile 30%.
     for (const h of Object.values(combatHeroes)) {
       if (h.downed) {
         h.downed = false;
         h.reviveProgress = 0;
-        h.hp = Math.max(h.hp, Math.round(h.maxHp * 0.65));
+        h.hp = Math.max(h.hp, Math.round(h.maxHp * 0.3));
       }
     }
   }
@@ -850,6 +854,8 @@ export function createCampaignLoop({
     }
 
     h.hp = Math.max(0, h.hp - rem);
+    const partnerOfHit = combatHeroes[heroId === 'Knight' ? 'Mage' : 'Knight'];
+    if (rem > 0 && partnerOfHit?.downed) partnerOfHit.reviveProgress *= 0.5;
     if (combatSfx?.playPlayerHit) {
       combatSfx.playPlayerHit();
     }
@@ -862,7 +868,7 @@ export function createCampaignLoop({
       }
       emitBanner(
         `${heroId.toUpperCase()} HAS FALLEN!`,
-        'Channel Commune to Resurrect Your Beloved!',
+        'Stand beside your beloved to lift them back up, or pray.',
         'warning'
       );
     }
@@ -2250,12 +2256,17 @@ export function createCampaignLoop({
           mage.z = nearest.z + 0.4;
           mage.y = walkableHeightAt(mage.x, mage.z);
 
+          // Full wipe restarts the current act: enemies and wave progress reset,
+          // heroes regroup at the nearest sanctuary. Losing costs the act, not 4 seconds.
+          if (enemyManager) enemyManager.clearAllEnemies();
+          waveIndex = -1;
+          actTriggered = false;
           for (const [id, ch] of Object.entries(combatHeroes)) {
             ch.downed = false;
             ch.reviveProgress = 0;
-            ch.hp = Math.round(ch.maxHp * 0.6);
-            ch.shield = 30;
-            ch.shieldTimer = 5.0;
+            ch.hp = ch.maxHp;
+            ch.shield = 0;
+            ch.shieldTimer = 0;
             const st = id === 'Knight' ? knight : mage;
             st.actionState = null;
             st.actionTimer = 0;
@@ -2263,15 +2274,35 @@ export function createCampaignLoop({
           }
           combatSfx?.playShieldChime?.();
           emitBanner(
-            'SANCTUARY REBIRTH',
-            'Both Lovers Restored to 60% HP at the Nearest Sanctuary Stone',
-            'blessing'
+            'THE VALLEY FALLS SILENT',
+            'You regroup at the sanctuary stone. The battle begins anew when you return.',
+            'warning'
           );
         }
       } else {
         bothDownedTimer = 0;
-        for (const ch of Object.values(combatHeroes)) {
-          ch.reviveProgress = ch.downed ? 0.58 + 0.32 * Math.sin(elapsed * 4.5) : 0;
+        // Partner revive: stand beside your fallen partner; taking damage sets it back.
+        for (const [id, ch] of Object.entries(combatHeroes)) {
+          if (!ch.downed) {
+            ch.reviveProgress = 0;
+            continue;
+          }
+          const downedSt = id === 'Knight' ? knight : mage;
+          const reviverSt = id === 'Knight' ? mage : knight;
+          const near =
+            Math.hypot(downedSt.x - reviverSt.x, downedSt.z - reviverSt.z) <= PARTNER_REVIVE_RADIUS;
+          // Clamp so a long sim/tab-out step can't complete a revive instantly.
+          const step = Math.min(dt, 0.1) / PARTNER_REVIVE_SECONDS;
+          ch.reviveProgress = clamp(ch.reviveProgress + (near ? step : -step * 0.5), 0, 1);
+          if (ch.reviveProgress >= 1) {
+            ch.downed = false;
+            ch.reviveProgress = 0;
+            ch.hp = Math.round(ch.maxHp * PARTNER_REVIVE_HP);
+            ch.iframeTimer = Math.max(ch.iframeTimer, 1.0);
+            downedSt.char?.play?.('revive', { loop: false, fade: 0.1, force: true });
+            combatSfx?.playShieldChime?.();
+            emitBanner(`${id.toUpperCase()} RISES AGAIN`, 'Carried back by love alone.', 'blessing');
+          }
         }
       }
     }

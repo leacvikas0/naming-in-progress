@@ -668,6 +668,25 @@ await check('11. Refinement pass: single shield DR on intercept, level cap, pass
   assert.ok(partnerRes.damageDealt > selfRes.damageDealt * 2, 'Partner-primed detonations must hit much harder');
 });
 
+await check('12. Refinement pass: partner revive by proximity, full wipe restarts the act at full HP without free shield', () => {
+  const loop = createCampaignLoop({ scene: new THREE.Scene(), walkableHeightAt: () => 0, combatSfx: createCombatSfx() });
+  const heroStates = { Knight: { x: 0, y: 0, z: 0, yaw: 0 }, Mage: { x: 1, y: 0, z: 0, yaw: 0 } };
+  loop.combatHeroes.Mage.hp = 0;
+  loop.combatHeroes.Mage.downed = true;
+  for (let i = 0; i < 60; i++) loop.update(0.05, { heroStates, soloWingmanActive: false });
+  assert.equal(loop.combatHeroes.Mage.downed, false, 'Standing beside a downed partner for 2.5s revives them');
+  assert.equal(loop.combatHeroes.Mage.hp, Math.round(HERO_STATS.Mage.maxHp * 0.35));
+
+  loop.combatHeroes.Knight.downed = true;
+  loop.combatHeroes.Knight.hp = 0;
+  loop.combatHeroes.Mage.downed = true;
+  loop.combatHeroes.Mage.hp = 0;
+  for (let i = 0; i < 40; i++) loop.update(0.1, { heroStates, soloWingmanActive: false });
+  assert.equal(loop.combatHeroes.Knight.downed, false);
+  assert.equal(loop.combatHeroes.Knight.hp, HERO_STATS.Knight.maxHp);
+  assert.equal(loop.combatHeroes.Knight.shield, 0, 'No free rebirth shield after a wipe');
+});
+
 const failedCount = process.exitCode ? 'SOME' : 0;
 if (failedCount) {
   console.error(`\n${passed} PASSED, SOME WAVE 2B COMBAT & CAMPAIGN TESTS FAILED (see FAIL above)\n`);
