@@ -67,7 +67,7 @@ const MAX_CREST_AND_TETHER_INSTANCES = 56;
 /* ------------------------------------------------------------------------- */
 
 function createGroundIndicatorInstancedMesh() {
-  const geo = new THREE.PlaneGeometry(2.0, 2.0, 1, 1);
+  const geo = new THREE.PlaneGeometry(2.0, 2.0, 32, 32);
   geo.rotateX(-Math.PI * 0.5);
 
   const metaArray = new Float32Array(MAX_GROUND_INDICATORS * 4);
@@ -78,39 +78,69 @@ function createGroundIndicatorInstancedMesh() {
   const mat = new THREE.ShaderMaterial({
     name: 'CombatGroundIndicatorCelMaterial',
     transparent: false,
-    depthWrite: true,
+    depthWrite: false,
     depthTest: true,
+    polygonOffset: true,
+    polygonOffsetFactor: -6,
+    polygonOffsetUnits: -6,
     side: THREE.DoubleSide,
     uniforms: {
       uTime: { value: 0 },
-      uInkColor: { value: new THREE.Color('#1a1218') },
-      uHotCoreColor: { value: new THREE.Color('#fff5d6') },
+      uTerrainSlope: { value: new THREE.Vector4(0, 0, 0, 0.48) },
+      uGoldEdgeColor: { value: new THREE.Color('#ff9a24') },
+      uHotCoreColor: { value: new THREE.Color('#fff8db') },
     },
     vertexShader: /* glsl */ `
-      attribute vec4 aIndicatorMeta;
+      attribute vec4 aIndicatorMeta; // x: halfExtentM, y: outerRadiusM, z: innerSafeRadiusM, w: alpha01
+      uniform vec4 uTerrainSlope; // x: dh/dx, y: dh/dz, z: curvature, w: baseY
       varying vec2 vLocalXZ;
-      varying vec3 vColor;
       varying vec4 vMeta;
 
       void main() {
         vLocalXZ = position.xz;
-        vColor = instanceColor;
         vMeta = aIndicatorMeta;
         vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+        float wx = vLocalXZ.x * max(1.0, aIndicatorMeta.x);
+        float wz = vLocalXZ.y * max(1.0, aIndicatorMeta.x);
+        worldPos.y = uTerrainSlope.w + wx * uTerrainSlope.x + wz * uTerrainSlope.y + (wx * wx + wz * wz) * uTerrainSlope.z;
         gl_Position = projectionMatrix * viewMatrix * worldPos;
       }
     `,
     fragmentShader: /* glsl */ `
       uniform float uTime;
-      uniform vec3 uInkColor;
+      uniform vec3 uGoldEdgeColor;
       uniform vec3 uHotCoreColor;
 
       varying vec2 vLocalXZ;
-      varying vec3 vColor;
       varying vec4 vMeta;
 
       void main() {
-        gl_FragColor = vec4(vColor, 1.0);
+        float halfExtent = max(1.0, vMeta.x);
+        float outerR = vMeta.y;
+        float innerR = vMeta.z;
+        float activeFlag = vMeta.w;
+        if (activeFlag <= 0.01) discard;
+
+        float distM = length(vLocalXZ) * halfExtent;
+        float ang = atan(vLocalXZ.y, vLocalXZ.x);
+
+        // 4 subtle cardinal diamond ticks (N, S, E, W) on the outer bombardment ring
+        float cardinal = pow(abs(cos(ang * 2.0)), 28.0);
+        float dOuter = abs(distM - outerR) - cardinal * 0.22;
+        float outerLine = 1.0 - smoothstep(0.08, 0.17, dOuter);
+        float outerCore = 1.0 - smoothstep(0.0, 0.075, dOuter);
+
+        // Inner safe sanctuary circle right around the stationary Mage's feet
+        float dInner = abs(distM - innerR);
+        float innerLine = 1.0 - smoothstep(0.055, 0.12, dInner);
+        float innerCore = 1.0 - smoothstep(0.0, 0.052, dInner);
+
+        float ringMask = max(outerLine, innerLine);
+        if (ringMask < 0.22) discard;
+
+        float coreFactor = max(outerCore, innerCore);
+        vec3 col = mix(uGoldEdgeColor * 1.15, uHotCoreColor * 1.28, coreFactor);
+        gl_FragColor = vec4(col, 1.0);
       }
     `,
   });
@@ -120,6 +150,7 @@ function createGroundIndicatorInstancedMesh() {
   mesh.frustumCulled = false;
   mesh.castShadow = false;
   mesh.receiveShadow = false;
+  mesh.renderOrder = 16;
   mesh.count = 0;
   mesh.visible = false;
 
@@ -2130,71 +2161,72 @@ export function createCampaignLoop({
     };
   }
 
-  function fireSkyMeteorStrike(magePos, meteorIndex = 0) {
-    // Re-center the bombardment dynamically toward the nearest living enemy if within 15m so moving packs can't walk out of the barrage!
-    const enemies = enemyManager ? enemyManager.activeEnemies : [];
-    const fallbackCenter = combatHeroes.Mage.stormCataclysmCenter || magePos || { x: 0, y: 0, z: 0 };
-    const liveTarget = selectSoftLockTarget(
-      magePos || fallbackCenter,
-      magePos?.yaw || 0,
-      enemies,
-      { maxRange: 15.0 }
-    );
-    if (liveTarget && combatHeroes.Mage.stormCataclysmCenter) {
-      combatHeroes.Mage.stormCataclysmCenter.x += (liveTarget.x - combatHeroes.Mage.stormCataclysmCenter.x) * 0.35;
-      combatHeroes.Mage.stormCataclysmCenter.z += (liveTarget.z - combatHeroes.Mage.stormCataclysmCenter.z) * 0.35;
-    }
+  const _indDummy = new THREE.Object3D();
 
-    const center = combatHeroes.Mage.stormCataclysmCenter || fallbackCenter;
-    const zoneRadius = HERO_STATS.Mage.stormCataclysmRadius || 8.5;
+  function fireSkyMeteorStrike(magePos, meteorIndex = 0, liveHeroStates = null) {
+    // Keep the bombardment circle fixed at the ground position where Mage cast Q!
+    const center = combatHeroes.Mage.stormCataclysmCenter || magePos || { x: 0, y: 0, z: 0 };
+    const zoneRadius = HERO_STATS.Mage.stormCataclysmRadius || 8.4;
+    const innerSafeRadius = 1.68;
     const meteorDmg = HERO_STATS.Mage.meteorDmg || 38;
     const maxHitsPerTarget = HERO_STATS.Mage.maxMeteorHitsPerTarget || 3;
     const hitCounts = combatHeroes.Mage.stormCataclysmHitCounts;
 
-    // Distribute meteors across the 8.5m zone in a tight Golden-Angle spiral
+    // Distribute meteors strictly inside the annular ring around the Mage (2.65m .. 7.85m)
+    // in the visible forward & lateral hemisphere so meteors NEVER fly close to the camera lens behind the Mage!
     const angle = meteorIndex * 2.39996;
-    const radialFrac = meteorIndex === 0 ? 0 : Math.min(0.82, Math.sqrt((meteorIndex % 12) / 12) * 0.76);
-    const strikeX = center.x + Math.cos(angle) * zoneRadius * radialFrac;
-    const strikeZ = center.z + Math.sin(angle) * zoneRadius * radialFrac;
+    const ringU = (meteorIndex * 0.6180339887) % 1.0;
+    const strikeR = 2.65 + ringU * (zoneRadius - 0.55 - 2.65);
+    const rawDx = Math.cos(angle) * strikeR;
+    let rawDz = Math.sin(angle) * strikeR;
+    if (rawDz > -0.8) {
+      rawDz = -1.2 - Math.abs(rawDz) * 0.78;
+    }
+    const strikeX = center.x + rawDx;
+    const strikeZ = center.z + rawDz;
     const strikeY = walkableHeightAt(strikeX, strikeZ);
     const strikePos = { x: strikeX, y: strikeY, z: strikeZ };
 
     if (vfxKit?.cinderFall?.cast) {
-      // Primary meteor streaking diagonally across the sky (~42 deg entry angle)
-      const dirAng = (meteorIndex % 2 === 0 ? 1.12 : -1.12) + Math.sin(meteorIndex * 1.7) * 0.16;
-      const dirX = Math.sin(dirAng);
-      const dirZ = Math.cos(dirAng);
+      // Primary meteor streaking diagonally across the sky plane (~38 deg lateral sweep)
+      const dirX = meteorIndex % 3 === 0 ? -0.74 : 0.74;
+      const dirZ = -0.22;
       vfxKit.cinderFall.cast(
-        { x: strikeX - dirX * 11.2, y: strikeY, z: strikeZ - dirZ * 11.2 },
+        { x: strikeX - dirX * 9.5, y: strikeY, z: strikeZ - dirZ * 9.5 },
         { x: dirX, y: 0, z: dirZ },
         {
           fromSky: true,
-          skyHeight: 13.5,
-          range: 11.2,
-          distance: 11.2,
+          skyHeight: 13.0,
+          range: 9.5,
+          distance: 9.5,
           targetPos: strikePos,
           initialAge: 0.0,
           seed: 1.0 + meteorIndex * 0.73,
         }
       );
 
-      // Staggered chaser meteor (offset by +2.4rad and -0.09s flight delay) so meteors rain down breathlessly one right after another!
-      const chaserAng = angle + 2.4;
-      const chaserRad = Math.min(0.85, radialFrac * 0.65 + 0.22);
-      const chaserX = center.x + Math.cos(chaserAng) * zoneRadius * chaserRad;
-      const chaserZ = center.z + Math.sin(chaserAng) * zoneRadius * chaserRad;
+      // Staggered chaser meteor inside the annulus (2.75m .. 7.85m), offset laterally so meteors never overlap on screen!
+      const chaserAng = angle + 2.2;
+      const chaserU = (ringU + 0.47) % 1.0;
+      const chaserR = 2.75 + chaserU * (zoneRadius - 0.55 - 2.75);
+      const chDx = Math.cos(chaserAng) * chaserR;
+      let chDz = Math.sin(chaserAng) * chaserR;
+      if (chDz > -0.8) {
+        chDz = -1.4 - Math.abs(chDz) * 0.78;
+      }
+      const chaserX = center.x + chDx;
+      const chaserZ = center.z + chDz;
       const chaserY = walkableHeightAt(chaserX, chaserZ);
-      const chaserDirAng = -dirAng * 0.85 + 0.18;
-      const chaserDirX = Math.sin(chaserDirAng);
-      const chaserDirZ = Math.cos(chaserDirAng);
+      const chaserDirX = dirX * 0.92;
+      const chaserDirZ = -0.26;
       vfxKit.cinderFall.cast(
-        { x: chaserX - chaserDirX * 10.8, y: chaserY, z: chaserZ - chaserDirZ * 10.8 },
+        { x: chaserX - chaserDirX * 9.2, y: chaserY, z: chaserZ - chaserDirZ * 9.2 },
         { x: chaserDirX, y: 0, z: chaserDirZ },
         {
           fromSky: true,
-          skyHeight: 14.2,
-          range: 10.8,
-          distance: 10.8,
+          skyHeight: 13.6,
+          range: 9.2,
+          distance: 9.2,
           targetPos: { x: chaserX, y: chaserY, z: chaserZ },
           initialAge: -0.09,
           seed: 2.3 + meteorIndex * 1.19,
@@ -2206,6 +2238,36 @@ export function createCampaignLoop({
         { x: 0, y: 0, z: 1 },
         { range: zoneRadius }
       );
+    }
+
+    // Realistic Friendly-Fire Bombardment Hazard (every 3rd meteor wave = 0.54s after initial 0.54s grace):
+    // - If the Mage moves out of her 1.68m inner safe circle into the bombardment ring (1.75m < d <= 8.4m), she gets hit!
+    // - If the Knight does not run outside the 8.4m outer circle (d <= 8.4m), he gets hit and can die!
+    if (liveHeroStates && meteorIndex >= 3 && meteorIndex % 3 === 0) {
+      const mEntity = liveHeroStates.Mage;
+      if (mEntity && !combatHeroes.Mage.downed && typeof mEntity.x === 'number') {
+        const dMage = Math.hypot(mEntity.x - center.x, mEntity.z - center.z);
+        if (dMage > innerSafeRadius + 0.12 && dMage <= zoneRadius) {
+          handlePlayerHit(mEntity, null, meteorDmg);
+          emitBanner(
+            'METEOR HAZARD · STAY IN THE EYE!',
+            'Moving outside the inner circle exposes the Mage to falling meteors!',
+            'warning'
+          );
+        }
+      }
+      const kEntity = liveHeroStates.Knight;
+      if (kEntity && !combatHeroes.Knight.downed && typeof kEntity.x === 'number') {
+        const dKnight = Math.hypot(kEntity.x - center.x, kEntity.z - center.z);
+        if (dKnight > innerSafeRadius && dKnight <= zoneRadius) {
+          handlePlayerHit(kEntity, null, meteorDmg, { alreadyReduced: true });
+          emitBanner(
+            'METEOR BOMBARDMENT · EVACUATE THE CIRCLE!',
+            'Knight must run outside the 8.4m golden circle or be crushed by meteors!',
+            'warning'
+          );
+        }
+      }
     }
 
     if (!enemyManager) return [];
@@ -2260,10 +2322,10 @@ export function createCampaignLoop({
   }
 
   /**
-   * Mage `Q` (`ultimate` — 6.0s Sky Meteor Shower, Cost 160 Q Energy, Mobile After 0.8s Cast):
-   * Plays a `0.8s` staff-raise cast pose (`burst_aoe`), after which Mage moves and dodges
-   * freely while `10` fiery sky meteors rain down over `6.0s` (`1` every `0.60s`) across an
-   * `8.5m` zone ahead of her (`38 Dmg` + `1.0s` stagger + `Solar` burn per meteor, capped at `3` hits per single boss/enemy).
+   * Mage `Q` (`ultimate` — 6.0s Sky Meteor Shower Centered Around the Mage):
+   * Draws a simple, subtle golden bombardment circle (`8.4m` outer ring + `1.68m` inner safe eye)
+   * centered directly on the Mage. Meteors bombard the ring around her (never falling on her center spot).
+   * If she moves out of the inner circle she can get hit, and the Knight must run outside the `8.4m` circle!
    */
   function performMageStormCataclysm(heroStates, options = {}) {
     if (combatHeroes.Mage.downed) return null;
@@ -2283,23 +2345,14 @@ export function createCampaignLoop({
       : MAGE_STORM_CATACLYSM_COOLDOWN;
 
     const mPos = heroStates?.Mage || { x: 0, y: 0, z: 0, yaw: 0 };
-    const kPos = heroStates?.Knight || null;
-    const dirX = Math.sin(mPos.yaw || 0);
-    const dirZ = Math.cos(mPos.yaw || 0);
-
-    const enemies = enemyManager ? enemyManager.activeEnemies : [];
-    const softTarget = selectSoftLockTarget(mPos, mPos.yaw || 0, enemies, {
-      maxRange: 14.0,
-      partnerPos: kPos,
-    });
-    const centerX = softTarget ? softTarget.x : mPos.x + dirX * 4.5;
-    const centerZ = softTarget ? softTarget.z : mPos.z + dirZ * 4.5;
+    const centerX = mPos.x ?? 0;
+    const centerZ = mPos.z ?? 0;
 
     combatHeroes.Mage.qEnergy = 0;
     combatHeroes.Mage.qEnergyPct = 0;
     combatHeroes.Mage.stormCataclysmActive = true;
     combatHeroes.Mage.stormCataclysmTimer = MAGE_STORM_CATACLYSM_DURATION; // 6.0s
-    combatHeroes.Mage.stormCataclysmCastTimer = 0.8; // 0.8s cast pose, then freely mobile!
+    combatHeroes.Mage.stormCataclysmCastTimer = 0.8; // 0.8s cast pose
     combatHeroes.Mage.stormCataclysmWaveTimer = 0;
     combatHeroes.Mage.stormCataclysmMeteorsFired = 1;
     combatHeroes.Mage.stormCataclysmCenter = {
@@ -2311,11 +2364,12 @@ export function createCampaignLoop({
     combatHeroes.Mage.ultCd = effectiveCataclysmCd; // 24.0s (8.0s during Blessing)
 
     combatSfx?.playCouplesUltimate?.();
-    const hits = fireSkyMeteorStrike(mPos, 0);
+    const hits = fireSkyMeteorStrike(mPos, 0, heroStates);
+    updateIndicatorsInstancedMeshes();
 
     emitBanner(
-      'SKY METEOR SHOWER · 10 CELESTIAL METEORS!',
-      '6.0s Autonomous Starfall Across 8.5m Zone (38 DMG · Solar Burn · 1.0s Stagger)',
+      'SKY METEOR SHOWER · STAND IN THE EYE!',
+      'Meteors Bombard the 8.4m Ring Around the Mage — Knight Must Run Outside the Circle!',
       'ultimate'
     );
 
@@ -2492,15 +2546,51 @@ export function createCampaignLoop({
   }
 
   /**
-   * Permanently hides floating tether beads, spinning overhead enemy diamonds,
-   * and red under-enemy circles (`crestAndTetherMesh.visible = false`,
-   * `groundIndicatorMesh.visible = false`).
+   * Renders the simple, elegant golden Storm Cataclysm circle around the Mage when active
+   * (`groundInd.mesh`), while keeping enemy/tether prototype clutter hidden.
    */
   function updateIndicatorsInstancedMeshes() {
-    groundInd.mesh.count = 0;
-    groundInd.mesh.visible = false;
     crestInd.mesh.count = 0;
     crestInd.mesh.visible = false;
+
+    const catCenter = combatHeroes.Mage.stormCataclysmCenter;
+    if (
+      !indicatorsHiddenForShot &&
+      combatHeroes.Mage.stormCataclysmActive &&
+      combatHeroes.Mage.stormCataclysmTimer > 0 &&
+      catCenter
+    ) {
+      const halfExtent = 9.0;
+      const outerR = HERO_STATS.Mage.stormCataclysmRadius || 8.4;
+      const innerR = 1.68;
+      const cx = catCenter.x;
+      const cz = catCenter.z;
+      const groundY = walkableHeightAt(cx, cz);
+      const hX1 = walkableHeightAt(cx + 5.0, cz);
+      const hX0 = walkableHeightAt(cx - 5.0, cz);
+      const hZ1 = walkableHeightAt(cx, cz + 5.0);
+      const hZ0 = walkableHeightAt(cx, cz - 5.0);
+      const sx = (hX1 - hX0) / 10.0;
+      const sz = (hZ1 - hZ0) / 10.0;
+      const curv = ((hX1 + hX0 + hZ1 + hZ0) * 0.25 - groundY) / 25.0;
+      if (groundInd.mesh.material?.uniforms?.uTerrainSlope) {
+        groundInd.mesh.material.uniforms.uTerrainSlope.value.set(sx, sz, curv, groundY + 0.56);
+      }
+
+      _indDummy.position.set(cx, groundY + 0.56, cz);
+      _indDummy.rotation.set(0, 0, 0);
+      _indDummy.scale.set(halfExtent, 1.0, halfExtent);
+      _indDummy.updateMatrix();
+      groundInd.mesh.setMatrixAt(0, _indDummy.matrix);
+      groundInd.metaAttr.setXYZW(0, halfExtent, outerR, innerR, 1.0);
+      groundInd.mesh.instanceMatrix.needsUpdate = true;
+      groundInd.metaAttr.needsUpdate = true;
+      groundInd.mesh.count = 1;
+      groundInd.mesh.visible = true;
+    } else {
+      groundInd.mesh.count = 0;
+      groundInd.mesh.visible = false;
+    }
   }
 
   const STRONGHOLD_BITS = {
@@ -2934,7 +3024,7 @@ export function createCampaignLoop({
       ) {
         combatHeroes.Mage.stormCataclysmWaveTimer -= meteorInterval;
         const mPos = mage || { x: 0, y: 0, z: 0, yaw: 0 };
-        fireSkyMeteorStrike(mPos, combatHeroes.Mage.stormCataclysmMeteorsFired);
+        fireSkyMeteorStrike(mPos, combatHeroes.Mage.stormCataclysmMeteorsFired, heroStates);
         combatHeroes.Mage.stormCataclysmMeteorsFired += 1;
       }
       if (combatHeroes.Mage.stormCataclysmTimer <= 0) {
@@ -3262,7 +3352,20 @@ export function createCampaignLoop({
 
       if (activeHeroId === 'Mage') {
         // Human is playing Mage -> AI Wingman is Knight!
-        if (knight && !combatHeroes.Knight.downed && !knight.actionState) {
+        const catCenter = combatHeroes.Mage.stormCataclysmCenter;
+        const knightInMeteorDanger = Boolean(
+          combatHeroes.Mage.stormCataclysmActive &&
+            catCenter &&
+            knight &&
+            Math.hypot(knight.x - catCenter.x, knight.z - catCenter.z) <=
+              (HERO_STATS.Mage.stormCataclysmRadius || 8.4)
+        );
+        if (
+          knight &&
+          !combatHeroes.Knight.downed &&
+          !knight.actionState &&
+          !knightInMeteorDanger
+        ) {
           if (
             stage1Unlocked &&
             !combatHeroes.Knight.powerSwordActive &&

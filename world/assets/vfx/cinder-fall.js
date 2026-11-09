@@ -406,34 +406,42 @@ function createBasaltMagmaMaterial(noiseAtlas, sharedUniforms, config) {
         rockCol = mix(rockCol, uColorRockMid, step(0.50, rockScore));
         rockCol = mix(rockCol, uColorRockLit, step(0.74, rockScore));
 
-        // 5. Tectonic Magma Fissures (cools down to 0 first so orange veins turn into dark charcoal stone!)
-        //    When in-flight (heat > 1.35), keep ~55% craggy dark volcanic basalt plates in high contrast
-        //    against blazing white-hot/solar-orange magma fissures and a super-heated leading edge!
+        // 5. Tectonic Magma Fissures & 3-Band Cel-Shaded Front-Face Bow-Shock Fire:
+        //    When in-flight (heat > 1.35), local -Y points forward along the velocity vector.
+        //    3-band cel-shaded flame tongues (crimson -> solar-orange -> white-gold nose tip) climb up
+        //    from the front leading face (vLocalPos.y < 0), while the upper/trailing rock shows dark basalt & magma veins!
         float inFlightFire = smoothstep(1.30, 1.75, heat);
-        float ramGlow = smoothstep(0.05, 0.75, -vLocalPos.y);
+        vec2 bowUv = vec2(atan(vLocalPos.z, vLocalPos.x) * 1.15 + seed * 0.31, vLocalPos.y * 0.85 - uTime * 3.8);
+        vec4 nBow0 = texture2D(uNoiseAtlas, bowUv);
+        vec4 nBow1 = texture2D(uNoiseAtlas, bowUv * 2.1 + vec2(0.27, -uTime * 2.5));
+        float bowFlameWave = nBow0.b * 0.62 + nBow1.g * 0.38;
+        float frontFlameCoord = (-vLocalPos.y - 0.12) + (bowFlameWave - 0.48) * 0.68 + (1.0 - ndv) * 0.34;
+        float frontBowMask = inFlightFire * step(0.02, frontFlameCoord);
+
+        vec3 bowFireCol = uColorCrackDeep;
+        bowFireCol = mix(bowFireCol, uColorCrack * 1.16, step(0.22, frontFlameCoord));
+        bowFireCol = mix(bowFireCol, uColorHot * 1.24, step(0.52, frontFlameCoord));
+
         float basalGlow = isSlab * smoothstep(0.42, -0.15, vLocalPos.y);
-        float tectonicGate = smoothstep(0.38, 0.74, nMacro.b + vCavity * 0.75 + basalGlow * 0.75 + inFlightFire * 0.22);
-        float seamLine = smoothstep(0.56 - inFlightFire * 0.14, 0.86, nFault.r) * tectonicGate;
-        float cavityMagma = smoothstep(0.40 - inFlightFire * 0.12, 0.82, vCavity) * smoothstep(0.28, 0.75, nFault.b);
-        float bowShock = inFlightFire * ramGlow * smoothstep(0.32, 0.68, nMacro.b + vCavity * 0.5);
-        float magmaMask = clamp(
-          (seamLine * 0.95 + cavityMagma * 0.85 + basalGlow * 0.68 + bowShock * 0.85) * clamp(heat, 0.0, 1.45),
-          0.0,
-          1.0
-        );
+        float tectonicGate = smoothstep(0.36, 0.72, nMacro.b + vCavity * 0.78 + basalGlow * 0.75 + inFlightFire * 0.18);
+        float seamLine = smoothstep(0.54 - inFlightFire * 0.12, 0.84, nFault.r) * tectonicGate;
+        float cavityMagma = smoothstep(0.38 - inFlightFire * 0.10, 0.80, vCavity) * smoothstep(0.26, 0.74, nFault.b);
+        float rockVeins = clamp((seamLine * 0.95 + cavityMagma * 0.85 + basalGlow * 0.68) * clamp(heat, 0.0, 1.45), 0.0, 1.0);
 
-        vec3 magmaCol = mix(uColorCrackDeep, uColorCrack * 1.15, smoothstep(0.18, 0.52, magmaMask));
-        magmaCol = mix(magmaCol, uColorHot * 1.30, smoothstep(0.58, 0.88, magmaMask));
+        vec3 veinCol = mix(uColorCrackDeep, uColorCrack * 1.15, smoothstep(0.18, 0.52, rockVeins));
+        veinCol = mix(veinCol, uColorHot * 1.22, smoothstep(0.62, 0.90, rockVeins));
 
-        vec3 finalColor = mix(rockCol * mix(0.86, 1.0, uDaylight), magmaCol, smoothstep(0.22, 0.48, magmaMask));
+        vec3 finalColor = mix(rockCol * mix(0.86, 1.0, uDaylight), veinCol, smoothstep(0.20, 0.46, rockVeins));
+        finalColor = mix(finalColor, bowFireCol, frontBowMask);
 
         // 6. Glowing Ember Orange Ash Edge (0.06-wide border right next to dissolveProgress)
         float ashEdge = step(0.001, dissolveProgress) * (1.0 - smoothstep(dissolveProgress, dissolveProgress + 0.06, crumbleVal));
         finalColor = mix(finalColor, uColorCrack * 1.35, ashEdge);
 
-        // 7. Crisp Dark Charred Ink Silhouette Rim so the jagged rock facets pop against the sky and fire
+        // 7. Silhouette Rim: blazing solar-orange/gold rim on the front/sides when in-flight, dark charred ink after impact
         float inkRim = 1.0 - smoothstep(0.14, 0.24, ndv);
-        finalColor = mix(finalColor, uColorInk, inkRim * (1.0 - max(magmaMask * 0.55, ashEdge)));
+        vec3 rimCol = mix(uColorInk, mix(uColorCrack * 1.20, uColorHot * 1.25, step(0.35, frontFlameCoord)), inFlightFire);
+        finalColor = mix(finalColor, rimCol, inkRim * (1.0 - max(rockVeins * 0.45 * (1.0 - inFlightFire), ashEdge)));
 
         gl_FragColor = vec4(finalColor, 1.0);
       }
@@ -510,29 +518,38 @@ function createFireWakeCutoutMaterial(noiseAtlas, sharedUniforms, config) {
 
         float isCometWake = smoothstep(1.35, 1.65, heat);
 
-        // Longitudinal high-speed flame streaks scrolling from the rock head (vUv.y = 0) to the tail tip (vUv.y = 1)
+        // Longitudinal high-speed flame ribbons streaming from the front bow-shock (vUv.y = 0) to the tail tip (vUv.y = 1)
         vec2 scrollUv = vec2(
-          vUv.x * (1.15 + isCometWake * 1.10) + seed * 0.37,
-          vUv.y * (0.95 - isCometWake * 0.25) - uTime * (2.4 + isCometWake * 2.2) + seed * 0.71
+          vUv.x * (1.15 + isCometWake * 1.45) + seed * 0.37,
+          vUv.y * (0.95 - isCometWake * 0.22) - uTime * (2.4 + isCometWake * 2.8) + seed * 0.71
         );
         vec4 n0 = texture2D(uNoiseAtlas, scrollUv);
-        vec4 n1 = texture2D(uNoiseAtlas, scrollUv * 1.85 + vec2(0.29, -uTime * (1.5 + isCometWake * 1.6)));
+        vec4 n1 = texture2D(uNoiseAtlas, scrollUv * 1.95 + vec2(0.29, -uTime * (1.5 + isCometWake * 1.9)));
 
         float tongueWave = n0.b * 0.62 + n1.g * 0.38;
-        float tipErode = smoothstep(1.0, 0.12, vUv.y) * 0.80 + 0.22;
-        float erodedMask = (tongueWave * 0.68 + max(ndv, isCometWake * 0.62) * 0.48) * tipErode * (1.0 - age * 0.35) * intensity;
+
+        // Erode the bottom cap (vUv.y < 0.10) with noise so the front bow-shock edge has organic flame licks
+        float baseCapErode = mix(1.0, smoothstep(0.02, 0.12, vUv.y + (tongueWave - 0.42) * 0.10), isCometWake);
+        float tipErode = smoothstep(1.0, 0.14, vUv.y) * 0.78 + 0.24;
+
+        // Open a central window over the upper-center rock body (0.14 < vUv.y < 0.46, ndv > 0.48) so the dark magma-veined rock core
+        // is visible inside the fire cradle while roaring flames wrap continuously around its front nose and left/right cheeks!
+        float rockBodyWindow = isCometWake * smoothstep(0.12, 0.20, vUv.y) * smoothstep(0.48, 0.32, vUv.y) * smoothstep(0.46, 0.68, ndv);
+
+        float baseDensity = mix(tongueWave * 0.64 + ndv * 0.52, tongueWave * 0.62 + 0.54, isCometWake);
+        float erodedMask = baseDensity * baseCapErode * tipErode * (1.0 - age * 0.28) * intensity - rockBodyWindow * 0.62;
 
         if (erodedMask < 0.45) discard;
 
-        // Continuous temperature gradient along the comet tail: white-gold at rock base (vUv.y = 0) -> orange -> crimson tip (vUv.y = 1)
-        float fireBand = (erodedMask - 0.45) / 0.55 + heat * 0.22 * pow(1.0 - vUv.y, 1.25);
+        // White-gold at the front face & side cheeks -> vibrant solar-orange flame body -> crimson tail tips
+        float fireBand = (erodedMask - 0.45) / 0.55 + heat * 0.25 * pow(1.0 - vUv.y, 1.25);
         vec3 col = uColorFlameEdge;
-        col = mix(col, uColorFlameMid, step(0.24, fireBand));
-        col = mix(col, uColorFlameCore * 1.22, step(0.58, fireBand));
+        col = mix(col, uColorFlameMid, step(0.18, fireBand));
+        col = mix(col, uColorFlameCore * 1.24, step(0.52, fireBand));
 
         float inkBorder = 1.0 - smoothstep(0.45, 0.52, erodedMask);
         float silhouetteInk = 1.0 - smoothstep(0.14, 0.24, ndv);
-        float smokeEdge = max(inkBorder, silhouetteInk * 0.85) * mix(1.0, smoothstep(0.25, 0.85, vUv.y) * 0.55, isCometWake);
+        float smokeEdge = max(inkBorder, silhouetteInk * 0.85) * mix(1.0, smoothstep(0.45, 0.92, vUv.y) * 0.40, isCometWake);
         col = mix(col, uColorFlameSmoke, smokeEdge);
 
         gl_FragColor = vec4(col, 1.0);
@@ -1020,14 +1037,21 @@ export class CinderFallSystem {
 
       const popIn = smoothstep(0.0, 0.08, flightU);
 
-      // 1. Asteroid Core in flight (molten fireball heat = 1.85) OR 3 shattered boulders on impact
+      // 1. Asteroid Core in flight (oriented along flight vector so local -Y is the front leading face!) OR 3 shattered boulders on impact
       if (impactElapsed < 0) {
+        evalBarragePos(flightU, _pos);
+        evalBarragePos(Math.max(0.0, flightU - 0.08), _nextPos);
+        _tangent.subVectors(_nextPos, _pos);
+        if (_tangent.lengthSq() < 1e-5) _tangent.set(-m.dirX, 0.72, -m.dirZ);
+        _tangent.normalize();
+        _quat.setFromUnitVectors(UP, _tangent);
+
         if (astSlot < MAX_ASTEROID_CORES) {
-          evalBarragePos(flightU, _pos);
           _dummy.position.copy(_pos);
-          _euler.set(timeSeconds * c.spin, timeSeconds * c.spin * 0.78, timeSeconds * c.spin * 0.52);
+          _euler.set(0, timeSeconds * c.spin * 1.35 + m.seed, 0);
           _dummy.quaternion.setFromEuler(_euler);
-          _dummy.scale.setScalar(c.radius * 0.88 * popIn);
+          _dummy.quaternion.premultiply(_quat);
+          _dummy.scale.set(c.radius * 0.72 * popIn, c.radius * 0.88 * popIn, c.radius * 0.72 * popIn);
           _dummy.updateMatrix();
           this.asteroidMesh.setMatrixAt(astSlot, _dummy.matrix);
           this.asteroidMetaAttr.setXYZW(astSlot, m.seed, 1.85, 0.0, 0.0);
@@ -1070,7 +1094,7 @@ export class CinderFallSystem {
         }
       }
 
-      // 2. Coaxial Full-Length Comet Plumes (in flight ONLY, rooted behind the exposed rock head) & Crater Eruption Plumes (post-impact)
+      // 2. Front-Face Bow-Shock Fire Cradle & Coaxial Comet Plumes (in flight ONLY, wrapping the rock nose & cheeks!)
       if (impactElapsed < 0) {
         evalBarragePos(flightU, _pos);
         evalBarragePos(Math.max(0.0, flightU - 0.08), _nextPos);
@@ -1081,26 +1105,26 @@ export class CinderFallSystem {
 
         for (let i = 0; i < 5 && wakeSlot < MAX_FIRE_TONGUES; i++) {
           const rec = this.fireTongueRecords[i];
-          const isCorePlume = i === 0;
-          const behindDist = (isCorePlume ? 0.14 : 0.22 + (i - 1) * 0.14) * popIn;
+          const isFrontSheath = i === 0;
+          const behindDist = (isFrontSheath ? -0.34 : -0.22 + (i - 1) * 0.12) * popIn;
           const wx = _pos.x + _tangent.x * behindDist;
           const wy = _pos.y + _tangent.y * behindDist;
           const wz = _pos.z + _tangent.z * behindDist;
 
           _dummy.position.set(wx, wy, wz);
-          _euler.set(0, i * (Math.PI * 0.5) + timeSeconds * 3.2 + m.seed, 0);
+          _euler.set(0, i * (Math.PI * 0.5) + timeSeconds * 3.6 + m.seed, 0);
           _dummy.quaternion.setFromEuler(_euler);
           _dummy.quaternion.premultiply(_quat);
 
-          const widthScale = (isCorePlume ? 1.05 : 1.22 - (i - 1) * 0.08) * popIn;
-          const lenScale = (isCorePlume ? 3.25 : 4.35 + (i - 1) * 0.35) * popIn;
+          const widthScale = (isFrontSheath ? 1.56 : 1.48 - (i - 1) * 0.06) * popIn;
+          const lenScale = (isFrontSheath ? 3.25 : 4.05 + (i - 1) * 0.35) * popIn;
           _dummy.scale.set(widthScale, lenScale, widthScale);
           _dummy.updateMatrix();
           this.fireWakeMesh.setMatrixAt(wakeSlot, _dummy.matrix);
           this.wakeMetaAttr.setXYZW(
             wakeSlot,
-            isCorePlume ? 0.04 : 0.16 + (i - 1) * 0.06,
-            isCorePlume ? 1.95 : 1.68,
+            isFrontSheath ? 0.02 : 0.14 + (i - 1) * 0.06,
+            isFrontSheath ? 1.98 : 1.72,
             rec.seed + m.seed,
             1.0
           );
@@ -1293,10 +1317,17 @@ export class CinderFallSystem {
     const popIn = smoothstep(0.0, 0.08, flightU);
     if (impactElapsed < 0) {
       this._trajectoryAt(flightU, _pos);
+      this._trajectoryAt(Math.max(0.0, flightU - 0.08), _nextPos);
+      _tangent.subVectors(_nextPos, _pos);
+      if (_tangent.lengthSq() < 1e-5) _tangent.set(-this.direction.x, 0.45, -this.direction.z);
+      _tangent.normalize();
+      _quat.setFromUnitVectors(UP, _tangent);
+
       _dummy.position.copy(_pos);
-      _euler.set(timeSeconds * c.spin, timeSeconds * c.spin * 0.78, timeSeconds * c.spin * 0.52);
+      _euler.set(0, timeSeconds * c.spin * 1.35, 0);
       _dummy.quaternion.setFromEuler(_euler);
-      _dummy.scale.setScalar(c.radius * popIn);
+      _dummy.quaternion.premultiply(_quat);
+      _dummy.scale.set(c.radius * 0.90 * popIn, c.radius * 1.05 * popIn, c.radius * 0.90 * popIn);
       _dummy.updateMatrix();
       this.asteroidMesh.setMatrixAt(astSlot, _dummy.matrix);
       this.asteroidMetaAttr.setXYZW(astSlot, 1.7, 1.85, 0.0, 0.0);
@@ -1347,7 +1378,7 @@ export class CinderFallSystem {
     this.asteroidMesh.instanceMatrix.needsUpdate = true;
     this.asteroidMetaAttr.needsUpdate = true;
 
-    // 2. Evaluate Coaxial Full-Length Comet Fireball Plume (In-Flight) & Crater Eruption Plumes (Post-Impact) (DC 2)
+    // 2. Evaluate Front-Face Bow-Shock Fire Cradle & Coaxial Comet Plumes (In-Flight) & Crater Eruption Plumes (Post-Impact) (DC 2)
     let wakeSlot = 0;
 
     for (let i = 0; i < 34; i++) {
@@ -1362,26 +1393,26 @@ export class CinderFallSystem {
         _tangent.normalize();
         _quat.setFromUnitVectors(UP, _tangent);
 
-        const isCorePlume = i === 0;
-        const behindDist = (isCorePlume ? 0.14 : 0.22 + (i - 1) * 0.14) * popIn;
+        const isFrontSheath = i === 0;
+        const behindDist = (isFrontSheath ? -0.18 : -0.06 + (i - 1) * 0.12) * popIn;
         _pos.x += _tangent.x * behindDist;
         _pos.y += _tangent.y * behindDist;
         _pos.z += _tangent.z * behindDist;
 
         _dummy.position.copy(_pos);
-        _euler.set(0, i * (Math.PI * 0.5) + timeSeconds * 3.2, 0);
+        _euler.set(0, i * (Math.PI * 0.5) + timeSeconds * 3.6, 0);
         _dummy.quaternion.setFromEuler(_euler);
         _dummy.quaternion.premultiply(_quat);
 
-        const widthScale = (isCorePlume ? 1.08 : 1.25 - (i - 1) * 0.08) * popIn;
-        const lenScale = (isCorePlume ? 3.35 : 4.45 + (i - 1) * 0.35) * popIn;
+        const widthScale = (isFrontSheath ? 1.10 : 1.20 - (i - 1) * 0.06) * popIn;
+        const lenScale = (isFrontSheath ? 3.05 : 3.85 + (i - 1) * 0.35) * popIn;
         _dummy.scale.set(widthScale, lenScale, widthScale);
         _dummy.updateMatrix();
         this.fireWakeMesh.setMatrixAt(wakeSlot, _dummy.matrix);
         this.wakeMetaAttr.setXYZW(
           wakeSlot,
-          isCorePlume ? 0.04 : 0.16 + (i - 1) * 0.06,
-          isCorePlume ? 1.95 : 1.68,
+          isFrontSheath ? 0.02 : 0.14 + (i - 1) * 0.06,
+          isFrontSheath ? 1.98 : 1.72,
           rec.seed,
           1.0
         );

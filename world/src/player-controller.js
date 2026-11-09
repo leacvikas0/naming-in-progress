@@ -2779,15 +2779,28 @@ export async function createCoopPlayerSystem({
         partner.yaw += shortestAngleDiff(remotePartnerTarget.yaw, partner.yaw) * Math.min(1, 12 * dt);
       }
     } else if (!controlLocked && !campaignLoop.combatHeroes[partner.id]?.downed) {
-      const wingOffsetAngle = leader.yaw - 2.1;
-      const wingOffsetDist = blessingActive ? 1.45 : 2.15;
-      const targetWingX = leader.x + Math.sin(wingOffsetAngle) * wingOffsetDist;
-      const targetWingZ = leader.z + Math.cos(wingOffsetAngle) * wingOffsetDist;
+      const catActive = Boolean(
+        partner.id === 'Knight' &&
+          campaignLoop.combatHeroes.Mage?.stormCataclysmActive &&
+          campaignLoop.combatHeroes.Mage?.stormCataclysmCenter
+      );
+      const catCenter = campaignLoop.combatHeroes.Mage?.stormCataclysmCenter;
+      const wingOffsetAngle = catActive ? leader.yaw - 1.32 : leader.yaw - 2.1;
+      const wingOffsetDist = catActive ? 9.15 : blessingActive ? 1.45 : 2.15;
+      const refX = catActive ? catCenter.x : leader.x;
+      const refZ = catActive ? catCenter.z : leader.z;
+      const targetWingX = refX + Math.sin(wingOffsetAngle) * wingOffsetDist;
+      const targetWingZ = refZ + Math.cos(wingOffsetAngle) * wingOffsetDist;
       const dxW = targetWingX - partner.x;
       const dzW = targetWingZ - partner.z;
       const distW = Math.hypot(dxW, dzW);
 
-      if (didWrap || distW > 18.0 || (blessingActive && distW > 3.6)) {
+      if (catActive && partner.actionState && distW > 1.2) {
+        partner.actionState = null;
+        partner.actionTimer = 0;
+      }
+
+      if (!catActive && (didWrap || distW > 18.0 || (blessingActive && distW > 3.6))) {
         partner.x = targetWingX;
         partner.z = targetWingZ;
         partner.y = walkableHeightAt(partner.x, partner.z);
@@ -2796,13 +2809,14 @@ export async function createCoopPlayerSystem({
       } else if (distW > (blessingActive ? 0.45 : 0.65) && !partner.actionState && !leader.praying) {
         const dirX = dxW / distW;
         const dirZ = dzW / distW;
-        const partnerSpd = blessingActive
-          ? player.speed * player.sprintMult * 1.25
-          : distW > 4.2
-            ? player.speed * player.sprintMult
-            : distW > 1.75
-              ? player.speed * 1.02
-              : player.speed * 0.56;
+        const partnerSpd =
+          catActive || blessingActive
+            ? player.speed * player.sprintMult * 1.25
+            : distW > 4.2
+              ? player.speed * player.sprintMult
+              : distW > 1.75
+                ? player.speed * 1.02
+                : player.speed * 0.56;
         const step = Math.min(distW - (blessingActive ? 0.25 : 0.45), partnerSpd * dt);
         const nextP = resolveCollisions(
           partner.x + dirX * step,
@@ -2816,7 +2830,7 @@ export async function createCoopPlayerSystem({
         const pTargetYaw = Math.atan2(dirX, dirZ);
         partner.yaw += shortestAngleDiff(pTargetYaw, partner.yaw) * Math.min(1, 14 * dt);
 
-        if (distW > 4.2 || (isSprinting && moveMag > 0.2)) {
+        if (catActive || distW > 4.2 || (isSprinting && moveMag > 0.2)) {
           playHeroLocomotionClip(partner, 'sprint');
         } else if (distW > 1.75 || moveMag > 0.55) {
           playHeroLocomotionClip(partner, 'run');
