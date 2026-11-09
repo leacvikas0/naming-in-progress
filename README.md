@@ -1,96 +1,52 @@
-# kilo-3d-kit
+# Amarante — *The Unfading Bloom*
 
-Project folder for **Kilo Code**. Human-made CC0 3D assets, local search, and a small viewer.
+A romantic, role-symmetric 2-player co-op 3D action RPG built in Three.js (`r170`) and Cloudflare Workers (`CoopRoomDO`), designed for **Desktop PC** (`AMD RX 6700`, `144 FPS`) and **Tablet** (`Xiaomi Pad 7`, `120–144 FPS` with native touch HUD).
 
-Style bible: Kenney castle/furniture (static props) + KayKit Adventurers (already rigged, 75 clips).
+---
 
-## The game
-
-**Naming In Progress** — an endless wave brawler built entirely from this library
-(KayKit Dungeon Remastered + KayKit Adventurers/Skeletons, all rigged clips played as-is).
+## Quick Start
 
 ```powershell
-cd C:\Users\silen\projects\kilo-3d-kit
-npm run view
+# 1. Start the local game & co-op server (http://127.0.0.1:4173/world/index.html)
+npm start
+
+# 2. Run the automated combat, AI, progression & co-op room test suites
+npm test
 ```
 
-Then open http://localhost:4173/game/
+Open **`http://127.0.0.1:4173/world/index.html`** in your browser.
 
-- Pick Knight / Barbarian / Rogue / Mage, then survive escalating skeleton waves.
-- WASD move · mouse aim · LMB attack · Space dodge (i-frames) · Shift sprint · R restart.
-- Every 3rd wave offers a card upgrade (18 total, common/rare/epic).
-- Coins burst from kills, magnet to you, and feed the score.
+---
 
-### How it's built
+## Controls & Role-Symmetric Co-Op Kit
 
-| File | Role |
-|---|---|
-| `game/index.html` | shell + HUD + overlays |
-| `game/style.css` | torch-lit parchment/iron identity |
-| `game/src/balance.js` | all tuning: heroes, enemies, waves, upgrades |
-| `game/src/events.js` | pub/sub bus between modules |
-| `game/src/world.js` | arena build, torches, colliders, spawns |
-| `game/src/player.js` | movement, combos, dodge, mage blast, hp |
-| `game/src/enemies.js` | skeleton AI, waves, projectiles |
-| `game/src/fx.js` | hitstop, shake, damage numbers, particles, coins |
-| `game/src/hud.js` | DOM HUD, hero select, upgrade cards, death screen |
-| `game/src/audio.js` | synthesized WebAudio SFX (no audio files) |
-| `game/src/main.js` | bootstrap, camera, input, run state |
-| `game/src/CONTRACT.md` | frozen module interfaces + measured asset facts |
-
-Assets are never re-rigged: KayKit characters ship with skeletons and clips; the code
-strips bundled equipment variants per hero (each GLB ships every weapon) and plays the
-clips. Kenney/KayKit props stay static.
-
-Tests:
-
-```powershell
-npm test          # balance + controls suites
-```
-
-## Test it (viewer)
-
-```powershell
-npm run view
-```
-
-Then open http://localhost:4173
-
-Pick a KayKit character and the **clip deck** opens on the right: every clip the GLB ships,
-grouped by family (Locomotion, 1H Melee, Spellcasting, Awaken/spawn, Sit, Lie...). Click a
-clip to play it, or use the transport.
-
-| Control | Key |
-|---|---|
-| Next / previous clip | `Right` / `Left` |
-| Play / pause | `Space` |
-| Loop clip | `L` |
-| Skeleton overlay | `B` |
-| Speed down / up | `,` / `.` |
-
-Also on the deck: a clip filter, scrub bar, 0.25x-2x speed, and **Tour** to auto-play every
-listed clip in order. Kenney props have no skeleton and close the deck (that is correct).
-
-The footer prints the exact on-disk path (`library/<pack>/<relPath>`) — click it to copy.
-
-## What was pulled
-
-| Pack | License | Role |
+| Input (PC / Touch) | **Knight** (*Bulwark & Breathing Blade*) | **Mage** (*Artillery & Starfall Weaver*) |
 |---|---|---|
-| [Kenney Castle Kit](https://kenney.nl/assets/castle-kit) | CC0, human | world tiles |
-| [Kenney Furniture Kit](https://kenney.nl/assets/furniture-kit) | CC0, human | interior props |
-| [KayKit Adventurers](https://kaylousberg.itch.io/kaykit-adventurers) | CC0, human, no gen AI | rigged characters |
+| **Move / Strafe** | `WASD` / Left Floating Joystick | `WASD` / Left Floating Joystick (`0.55×` strafe while aiming) |
+| **Tap Attack (`LMB`)** | 4-Hit Sword Combo (`combo1..4`, `0ms` response) | 3-Hit Homing Arcane Bolt Volley (`0ms` response) |
+| **Hold Attack (`Hold LMB`)** | **Frontal Shield Block** (`80%` DR + intercepts hits aimed at nearby Mage) | **Aimed Shatterlance** (`0.8m..18.0m` dashed 3D trajectory arc + over-the-shoulder camera) |
+| **Element Toggle (`Tab`)** | Queues next sword element (`Ice` $\leftrightarrow$ `Fire`; active sword stays locked until next `E`) | Toggles `E` spell (`Frost Lance` $\leftrightarrow$ `Cinder Fall`) |
+| **Skill (`E` / `Hold E`)** | **Power Sword** (`13.0s` active / `18.0s` CD): ignites blade with `Glacial Tide` (`25%` slow) or `Hinokami Sunfire` (Burn DoT) | **Hold `E` to Aim / Release `E` to Cast** (`8.5s` CD): `Frost Lance` (`2.5..14.5m` glacier line) or `Cinder Fall` (`3.0..16.0m` volcanic meteor) |
+| **Ultimate (`Q`)** | **Twin-Element Eclipse Awakening** (`100` Q Energy, `12.0s`): `2.0×` damage + applies both Fire Burn and Ice Slow | **Sky Meteor Shower** (`160` Q Energy, `6.0s`): draws an `8.4m` golden circle + `1.68m` inner safe eye around the Mage and bombards the annulus (`68` front-fire meteors; Knight must evacuate outside the `8.4m` circle!) |
+| **Dodge (`Shift` / `RMB`)** | Directional Dash (`0.30s` i-frames; Perfect Dodge slows attacker to `0.30×` & grants `+12` Q Energy) | Directional Dash (`0.30s` i-frames; Perfect Dodge slows attacker to `0.30×` & grants `+12` Q Energy) |
+| **Jump (`Space`)** | Grounded Jump | Grounded Jump |
+| **Inspect Stone (`G`)** | Close-up inspection of the 3 carved Sacred Stones (`Village Well`, `Whispering Grove`, `Secluded Wall`) | Close-up inspection of the 3 carved Sacred Stones |
+| **Commune (`Hold R`)** | **Two-Tier Voice Prayer** (`<= 6.0m` from partner): Mode A Field Heal (`30%` HP) or Mode B Desperate Combat Miracle (`4.8s` Eclipse Resurrection + `25s` Proximity Blessing) | **Two-Tier Voice Prayer** (`<= 6.0m` from partner) |
 
-Re-fetch:
+---
 
-```powershell
-npm run setup
-```
+## Architecture & Directory Layout
 
-## Rigging stance
-
-Do not auto-rig Kenney crates. KayKit ships a humanoid skeleton + clips. `scripts/inspect-rig.mjs` only reports bones/skins/animations. The viewer plays those clips.
-
-## Agent
-
-Open this folder in Kilo Code. It will pick up `AGENTS.md` and `.kilocode/rules/3d-assets.md`.
+| Path | Description |
+|---|---|
+| [`SOUL.md`](file:///C:/Users/silen/projects/kilo-3d-kit/SOUL.md) | Game vision, hardware targets, voice-judged romantic mechanics, and 5-stage build order |
+| [`METHODOLOGY.md`](file:///C:/Users/silen/projects/kilo-3d-kit/METHODOLOGY.md) | Blockout-first protocol, blind `/10` critic rules, and Mandatory Live Video Gameplay QA |
+| [`GIT-DISCIPLINE.md`](file:///C:/Users/silen/projects/kilo-3d-kit/GIT-DISCIPLINE.md) | Clean workspace rules, worktree isolation, and atomic commit checkpoints |
+| [`AGENTS.md`](file:///C:/Users/silen/projects/kilo-3d-kit/AGENTS.md) | Mandatory operating contract for all agents and subagents |
+| [`world/index.html`](file:///C:/Users/silen/projects/kilo-3d-kit/world/index.html) & [`world/src/main.js`](file:///C:/Users/silen/projects/kilo-3d-kit/world/src/main.js) | Assembled 3D world, camera/input loop, post-processing, and HUD wiring |
+| [`world/src/player-controller.js`](file:///C:/Users/silen/projects/kilo-3d-kit/world/src/player-controller.js) | Hero locomotion, melee/ranged combat dispatch, aiming camera, and Solo Wingman AI |
+| [`world/src/combat/`](file:///C:/Users/silen/projects/kilo-3d-kit/world/src/combat) | `combat-balance.js`, `combat-action-aim.js`, `enemy-manager.js` (`8` concurrent enemies, `4` attack tokens), `campaign-loop.js`, `commune-client.js` |
+| [`world/src/ui/`](file:///C:/Users/silen/projects/kilo-3d-kit/world/src/ui) | `sculpted-hud.js` (dark-frosted translucent HUD), `damage-numbers.js` (Option 2 consolidated pill badges), `app-flow.js`, `title-domain-lobby.js` |
+| [`world/assets/`](file:///C:/Users/silen/projects/kilo-3d-kit/world/assets) | Opaque cel-shaded 3D modules: `terrain/`, `houses/`, `flowers/`, `characters/`, `vfx/` (`aim-arrow.js`, `frost-lance.js`, `shatterlance.js`, `cinder-fall.js`, `sword-vfx.js`, `artorious-verdict-vfx.js`) |
+| [`worker/`](file:///C:/Users/silen/projects/kilo-3d-kit/worker) | Cloudflare Worker + `CoopRoomDO` WebSocket relay and multimodal Gemini voice judge |
+| [`docs/superpowers/plans/`](file:///C:/Users/silen/projects/kilo-3d-kit/docs/superpowers/plans) | Master design & engineering specifications and verbatim prompt archives |

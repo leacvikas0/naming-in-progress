@@ -1,7 +1,7 @@
 # Amarante — Forensic Audit Receipts & Combat, Aiming, Enemy AI & Balance Overhaul Plan
 
-**Date:** 2026-11-08  
-**Status:** Audited & Upgraded by Independent Plan Critic-Fixer — Ready for User Sign-Off & Implementation
+**Date:** 2026-11-08 (Updated & Verified 2026-11-09)  
+**Status:** Implemented, Video-Verified & Committed on `master` (`391509d` .. `86e8c39`) — Includes Dashed 3D Aiming Arc, 8-Enemy Pack AI, Option 2 Consolidated Damage Pills & Front-Face Meteor Annular Bombardment Circle
 
 ---
 
