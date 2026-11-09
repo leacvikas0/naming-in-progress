@@ -1135,61 +1135,9 @@
         background-color: var(--surface-control-hover);
       }
     }
-    #haru-boot-splash {
-      position: fixed;
-      inset: 0;
-      z-index: 37;
-      pointer-events: none;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      padding-top: min(12vh, 96px);
-      font-family: "Plus Jakarta Sans", "Outfit", system-ui, -apple-system, sans-serif;
-      text-align: center;
-    }
-    #haru-boot-splash h1 {
-      font-size: clamp(4.1rem, 7.8vw, 6.1rem);
-      font-weight: 800;
-      line-height: 0.96;
-      letter-spacing: -0.035em;
-      color: #ffffff;
-      text-shadow: 0 2px 12px rgba(15, 23, 42, 0.34), 0 1px 3px rgba(15, 23, 42, 0.28);
-      margin: 26px 0 6px 0;
-    }
-    #haru-boot-splash p {
-      font-size: clamp(1.08rem, 1.6vw, 1.32rem);
-      font-weight: 600;
-      color: #ffffff;
-      text-shadow: 0 2px 12px rgba(15, 23, 42, 0.34);
-      margin: 0 0 28px 0;
-    }
-    #haru-boot-splash .boot-pill {
-      width: 212px;
-      height: 48px;
-      padding: 0 18px;
-      border-radius: 999px;
-      background: rgba(252, 249, 242, 0.95);
-      border: 1.5px solid #c8b79a;
-      box-shadow: 0 8px 22px rgba(24, 20, 14, 0.16);
-      color: #1f1c18;
-      font-size: 0.92rem;
-      font-weight: 600;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
   </style>
 </head>
 <body>
-  <div id="haru-boot-splash" aria-hidden="true">
-    <h1>Amarante</h1>
-    <p>The Unfading Bloom · A Valley for Two</p>
-    <div class="boot-pill">
-      <span>Shaping the valley</span>
-    </div>
-  </div>
   <canvas id="world-canvas"></canvas>
 
   <div id="hud">
