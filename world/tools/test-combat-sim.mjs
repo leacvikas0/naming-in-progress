@@ -169,7 +169,7 @@ await check('2. HERO_STATS (incl. 120 HP Mage & 12s Knight Q), SPELLS & DETONATI
   assert.equal(DETONATIONS.thunderchain.pullStrength, 5.0);
 
   assert.equal(MAX_CONCURRENT_ENEMIES, 8);
-  assert.equal(MAX_ATTACK_TOKENS, 4);
+  assert.equal(MAX_ATTACK_TOKENS, 3);
   assert.equal(ENEMY_ARCHETYPES.skeleton_minion.maxHp, 140);
   assert.equal(ENEMY_ARCHETYPES.skeleton_minion.speed, 7.2);
   assert.equal(ENEMY_ARCHETYPES.skeleton_rogue.maxHp, 185);
@@ -518,7 +518,7 @@ await check('8. Partner Commune (<= 6.0m) & Blessing Tether (<= 6.0m) distances 
 /* 7. Soft-Lock, 4-Token Cap, Two-Tier Detonations & Full 3-Act Campaign Sim */
 /* ------------------------------------------------------------------------- */
 
-await check('9. selectSoftLockTarget, allocateAttackTokens (4 tokens), Two-Tier Detonations & Boss Bone Aegis work deterministically', () => {
+await check('9. selectSoftLockTarget, allocateAttackTokens (3 tokens), Two-Tier Detonations & Boss Bone Aegis work deterministically', () => {
   const origin = { x: 0, z: 0 };
   const enemies = [
     { id: 'behind', x: 0, z: -12, hp: 100, dead: false, active: true },
@@ -533,7 +533,7 @@ await check('9. selectSoftLockTarget, allocateAttackTokens (4 tokens), Two-Tier 
     { id: 'e4', hp: 100, dead: false, active: true, distToTarget: 5.0, targetHeroId: 'Mage' },
     { id: 'e5', hp: 100, dead: false, active: true, distToTarget: 6.0, targetHeroId: 'Knight' },
   ];
-  assert.equal(allocateAttackTokens(tokenPool, MAX_ATTACK_TOKENS).length, 4);
+  assert.equal(allocateAttackTokens(tokenPool, MAX_ATTACK_TOKENS).length, 3);
 
   const boss = {
     id: 'sovereign',

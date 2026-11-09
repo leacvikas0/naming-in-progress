@@ -373,7 +373,7 @@ export const COUPLES_ULTIMATE = {
 
 export const MAX_POOL_SIZE = 19;
 export const MAX_CONCURRENT_ENEMIES = 8;
-export const MAX_ATTACK_TOKENS = 4;
+export const MAX_ATTACK_TOKENS = 3;
 export const ENEMY_WINDUP_SECONDS = 0.50;
 
 export const ENEMY_ARCHETYPES = {
@@ -465,6 +465,8 @@ export const ENEMY_ARCHETYPES = {
     scale: 1.12,
     isFlanker: true,
     attacks: ['warrior_chop', 'warrior_slice'],
+    hunter: true,
+    dodges: false,
   },
   plant_warrior: {
     id: 'plant_warrior',
@@ -631,6 +633,7 @@ export const ENEMY_ARCHETYPES = {
     poise: 70,
     attacks: ['captain_spin', 'captain_chop', 'warrior_slice'],
     rallies: true,
+    counterAttack: 'captain_spin',
   },
   necromancer: {
     id: 'necromancer',
@@ -958,6 +961,14 @@ export const STAGGER_SECONDS = { trash: 0.55, elite: 1.1, boss: 1.4, parry: 1.2 
 export const POISE_REGEN_DELAY = 2.0;
 export const POISE_REGEN_PER_SEC = 0.3; // fraction of max per second
 export const SHIELD_BASH_AFTER_BLOCKS = 3;
+export const MASH_WINDOW = 2.2; // hits into a guard (or an elite) must land this close together to count as mashing
+export const MASH_ELITE_EXTRA_HITS = 1; // unguarded elites need one more hit than shield walls
+export const MASH_COUNTER_EXPIRY = 2.5;
+export const CONTACT_OVERLAP_WINDOW = 0.25;
+export const MAX_OVERLAPPING_CONTACTS = 2;
+export const CONTACT_BEAT_GAP = 0.16; // two attackers never land on one hero closer together than this
+export const PARRY_POISE_FRACTION = 0.4;
+export const DODGE_OPENING_SECONDS = 0.75;
 export const ROGUE_DODGE_COOLDOWN = 4.0;
 export const ROGUE_EXPOSED_DISTANCE = 6.0;
 export const MAGE_SUMMON_COOLDOWN = 14.0;
@@ -976,17 +987,20 @@ export const ENEMY_ATTACKS = {
   minion_kick: { clip: 'Melee_Unarmed_Attack_Kick', contacts: [0.42], windupSlow: 0.55, recovery: 0.4, range: 2.2, arcDeg: 70, dmg: 26, blockable: true, interruptible: true },
   warrior_chop: { clip: 'Melee_1H_Attack_Chop', contacts: [0.45], windupSlow: 0.45, recovery: 0.45, range: 2.4, arcDeg: 70, dmg: 30, blockable: true, interruptible: true },
   warrior_slice: { clip: 'Melee_1H_Attack_Slice_Diagonal', contacts: [0.42], windupSlow: 0.5, recovery: 0.4, range: 2.5, arcDeg: 110, dmg: 28, blockable: true, interruptible: true },
-  shield_bash: { clip: 'Melee_Block_Attack', contacts: [0.4], windupSlow: 0.85, recovery: 0.5, range: 2.3, arcDeg: 80, dmg: 24, blockable: true, interruptible: false, counter: true },
+  // Mash punisher: hyper-armoured, slow readable wind-up, drains guard on top of the damage.
+  shield_bash: { clip: 'Melee_Block_Attack', contacts: [0.4], windupSlow: 0.6, recovery: 0.6, range: 2.3, arcDeg: 90, dmg: 28, blockable: true, interruptible: false, counter: true, hyperArmor: true, guardDmg: 40, glint: 'crimson' },
   rogue_stab: { clip: 'Melee_Dualwield_Attack_Stab', contacts: [0.3, 0.52, 0.74], windupSlow: 0.55, recovery: 0.45, range: 2.2, arcDeg: 70, dmg: 14, blockable: true, interruptible: true },
   rogue_jump_chop: { clip: 'Melee_1H_Attack_Jump_Chop', contacts: [0.55], windupSlow: 0.7, recovery: 0.55, range: 2.4, arcDeg: 80, dmg: 30, blockable: true, interruptible: false, lunge: 5.5, minDist: 3.6 },
   mage_bolt: { clip: 'Ranged_Magic_Shoot', contacts: [0.5], windupSlow: 0.55, recovery: 0.4, range: 10.5, ranged: true, aimRadius: 1.3, dmg: 24, blockable: true, interruptible: true },
   mage_eruption: { clip: 'Ranged_Magic_Spellcasting_Long', contacts: [0.78], windupSlow: 1.0, recovery: 0.5, range: 10.5, area: true, areaAtTarget: true, radius: 2.6, dmg: 38, blockable: true, interruptible: 'any', cooldown: 9.0 },
   necro_bolt: { clip: 'Ranged_Magic_Shoot', contacts: [0.5], windupSlow: 0.6, recovery: 0.4, range: 10.0, ranged: true, aimRadius: 1.3, dmg: 26, blockable: true, interruptible: true },
-  captain_spin: { clip: 'Melee_2H_Attack_Spin', contacts: [0.36, 0.62], windupSlow: 0.55, recovery: 0.6, range: 2.9, area: true, areaOffset: 0, radius: 2.9, dmg: 26, blockable: true, interruptible: false, noDecal: true },
+  captain_spin: { clip: 'Melee_2H_Attack_Spin', contacts: [0.36, 0.62], windupSlow: 0.55, recovery: 0.6, range: 2.9, area: true, areaOffset: 0, radius: 2.9, dmg: 26, blockable: true, interruptible: false, noDecal: true, hyperArmor: true, guardDmg: 20 },
   captain_chop: { clip: 'Melee_2H_Attack_Chop', contacts: [0.5], windupSlow: 0.32, recovery: 0.8, range: 3.0, arcDeg: 60, dmg: 48, blockable: false, interruptible: false, glint: 'crimson' },
   boss_2h: { clip: 'Melee_2H_Attack', contacts: [0.45], windupSlow: 0.5, recovery: 0.6, range: 3.9, arcDeg: 110, dmg: 44, blockable: true, interruptible: false },
   boss_combo: { clip: 'Melee_Dualwield_SlashCombo', contacts: [0.28, 0.5, 0.72], windupSlow: 0.55, recovery: 0.7, range: 3.7, arcDeg: 120, dmg: 24, blockable: true, interruptible: false },
   boss_slam: { clip: 'Melee_2H_Slam', contacts: [0.45], windupSlow: 0.7, recovery: 1.0, range: 4.5, area: true, areaOffset: 2.2, radius: 3.4, dmg: 55, blockable: true, interruptible: false },
+  // Gap-closing leap: slides ~8 m during the windup and lands the slam on the locked target.
+  boss_leap_slam: { clip: 'Melee_2H_Slam', contacts: [0.45], windupSlow: 0.6, recovery: 1.1, range: 4.5, area: true, areaAtTarget: true, radius: 3.2, dmg: 50, blockable: true, interruptible: false, lunge: 9.0, minDist: 5.5, lungeSpeed: 19, leap: true },
   boss_smash: { clip: 'Melee_Unarmed_Smash', contacts: [0.55], windupSlow: 0.8, recovery: 1.2, range: 4.5, area: true, areaOffset: 1.6, radius: 4.6, dmg: 62, blockable: false, interruptible: false },
 };
 
@@ -1100,7 +1114,7 @@ export function isPoiseHeavyHit(hit = {}) {
 export function resolvePreHit(e, hit = {}) {
   const fromMageBolt = MAGE_PROJECTILE_SOURCES.has(hit.source) || hit.spellId === 'frost_lance';
   if (
-    e.hunter &&
+    (e.dodges ?? e.hunter) &&
     fromMageBolt &&
     (e.dodgeCooldown || 0) <= 0 &&
     e.aiState !== 'windup' &&
@@ -1214,12 +1228,34 @@ export function isPileFinisher(hit = {}, result = null) {
   return s.startsWith('mage_') || s === 'storm_cataclysm' || s === 'couples_ultimate' || s === 'cinder_fall' || s === 'shatterlance';
 }
 
-/** Rogue hunter: the Mage when she strays > ROGUE_EXPOSED_DISTANCE from the Knight, else nearest. */
+/** True when `pos` sits inside the Knight's frontal shield arc (+-60 deg). */
+export function inKnightFrontArc(knight, pos) {
+  if (!knight || !pos || !Number.isFinite(knight.yaw)) return true;
+  const dx = pos.x - knight.x;
+  const dz = pos.z - knight.z;
+  const len = Math.hypot(dx, dz);
+  if (len < 0.5) return true;
+  return (dx * Math.sin(knight.yaw) + dz * Math.cos(knight.yaw)) / len >= SHIELD_ARC_COS;
+}
+
+/** The raised shield covers the Mage from `attackerPos` only within SHIELD_COVER_RADIUS and the front arc. */
+export function knightShieldCovers(knight, mage, attackerPos) {
+  if (!knight || !mage || knight.downed || !knight.shieldBlocking) return false;
+  if (Math.hypot(knight.x - mage.x, knight.z - mage.z) > SHIELD_COVER_RADIUS) return false;
+  return inKnightFrontArc(knight, attackerPos);
+}
+
+/**
+ * Hunter (Rogue / Werewolf / Orc Raider): the Mage when she strays > ROGUE_EXPOSED_DISTANCE from the
+ * Knight, or whenever his shield is up (the AI then probes for an angle outside the front arc);
+ * otherwise whichever hero is nearest.
+ */
 export function selectHuntTarget(e, knight, mage) {
   const kOk = knight && !knight.downed;
   const mOk = mage && !mage.downed;
   if (kOk && mOk) {
     if (Math.hypot(knight.x - mage.x, knight.z - mage.z) > ROGUE_EXPOSED_DISTANCE) return mage;
+    if (knight.shieldBlocking) return mage;
     const dk = Math.hypot(e.x - knight.x, e.z - knight.z);
     const dm = Math.hypot(e.x - mage.x, e.z - mage.z);
     return dm < dk ? mage : knight;
@@ -1260,25 +1296,38 @@ export const ACT_DEFINITIONS = {
     waves: [
       {
         id: 'wave1',
-        // Reassembling minions teach "finish the bone pile with a detonation or spell".
+        // Fodder teaches reassembly; the lone Warrior's raised shield teaches flanks and heavy hits.
         label: 'Wave 1 · Restless Bones',
         spawns: [
           { archetype: 'minion', x: 75.5, z: -7.5 },
           { archetype: 'minion', x: 75.5, z: -0.5 },
-          { archetype: 'minion', x: 77.5, z: -4.0 },
           { archetype: 'minion', x: 73.5, z: -10.5 },
+          { archetype: 'warrior', x: 78.5, z: -4.0 },
         ],
       },
       {
         id: 'wave2',
-        label: 'Wave 2 · Shield Wall',
+        // Shield wall pins the Knight while a Rogue hunts the Mage.
+        label: 'Wave 2 · Shield Wall & Fangs',
         spawns: [
           { archetype: 'warrior', x: 78.5, z: -5.8 },
           { archetype: 'warrior', x: 78.5, z: -2.2 },
+          { archetype: 'rogue', x: 71.5, z: -11.8 },
           { archetype: 'minion', x: 75.2, z: -6.8 },
           { archetype: 'minion', x: 75.2, z: -1.2 },
-          { archetype: 'minion', x: 71.5, z: -11.8 },
           { archetype: 'minion', x: 71.5, z: 3.8 },
+        ],
+      },
+      {
+        id: 'wave2b',
+        // Pincer finale: hunters arrive from both flanks behind a shield wall.
+        label: 'Wave 3 · The Pincer',
+        spawns: [
+          { archetype: 'warrior', x: 79.0, z: -4.0 },
+          { archetype: 'rogue', x: 62.0, z: -13.5 },
+          { archetype: 'orc_raider', x: 61.0, z: 5.5 },
+          { archetype: 'minion', x: 74.5, z: -12.5 },
+          { archetype: 'minion', x: 74.5, z: 4.5 },
         ],
       },
     ],
@@ -1342,7 +1391,7 @@ export const ACT_DEFINITIONS = {
     waves: [
       {
         id: 'wave3',
-        label: 'Wave 3 · Dusk Hunters',
+        label: 'Wave 4 · Dusk Hunters',
         spawns: [
           // Skeleton Mage holds the well steps; Rogues hunt whichever hero strays.
           { archetype: 'mage', x: 0.0, z: -3.1 },
@@ -1351,6 +1400,19 @@ export const ACT_DEFINITIONS = {
           { archetype: 'warrior', x: -10.6, z: 1.8 },
           { archetype: 'minion', x: 10.6, z: 1.8 },
           { archetype: 'minion', x: 0.0, z: -11.8 },
+        ],
+      },
+      {
+        id: 'wave3b',
+        // Two casters behind a shield wall: pinned heroes eat eruptions, summoners refill the fodder.
+        label: 'Wave 5 · Twilight Choir',
+        spawns: [
+          { archetype: 'mage', x: -6.5, z: -9.8 },
+          { archetype: 'mage', x: 6.8, z: -9.6 },
+          { archetype: 'warrior', x: -11.2, z: -2.4 },
+          { archetype: 'warrior', x: 11.2, z: -2.0 },
+          { archetype: 'orc_raider', x: 0.0, z: -12.0 },
+          { archetype: 'rogue', x: 9.0, z: 7.0 },
         ],
       },
     ],
@@ -1383,7 +1445,7 @@ export const ACT_DEFINITIONS = {
     waves: [
       {
         id: 'wave4',
-        label: 'Wave 4 · The Sleeping Court',
+        label: 'Wave 6 · The Sleeping Court',
         spawns: [
           // Dormant ambush: Skeletons_Inactive_* poses until a hero comes within wakeRadius.
           { archetype: 'minion', x: -4.5, z: -80.5, dormant: 'floor', rotY: 2.6 },
@@ -1395,17 +1457,18 @@ export const ACT_DEFINITIONS = {
       },
       {
         id: 'wave5',
-        label: 'Wave 5 · Captain & Necromancer',
+        label: 'Wave 7 · Captain & Necromancer',
         spawns: [
           { archetype: 'captain', x: 0.0, z: -90.5 },
           { archetype: 'necromancer', x: 3.6, z: -93.0 },
+          { archetype: 'orc_raider', x: -7.0, z: -90.0 },
           { archetype: 'minion', x: -4.0, z: -88.0 },
           { archetype: 'minion', x: 4.0, z: -87.5 },
         ],
       },
       {
         id: 'wave6',
-        label: 'Wave 6 · The Hollow Sovereign',
+        label: 'Wave 8 · The Hollow Sovereign',
         spawns: [{ archetype: 'boss_sovereign', x: 0.0, z: -88.8 }],
       },
     ],
@@ -1739,7 +1802,13 @@ export function selectSoftLockTarget(
   return bestInCone || bestThreatFallback || null;
 }
 
-export function allocateAttackTokens(enemies, maxTokens = MAX_ATTACK_TOKENS) {
+/**
+ * Crowd director. At most `maxTokens` attackers hold a token, chosen to build pressure on both
+ * lovers: committed windups keep theirs, then one token goes to a Mage-hunter, one to the Knight's
+ * front, one to a Knight flanker (behind/beside the shield arc), one to a caster; leftovers fill
+ * by priority. `ctx.knight` (x, z, yaw) enables the front/flank split.
+ */
+export function allocateAttackTokens(enemies, maxTokens = MAX_ATTACK_TOKENS, ctx = null) {
   if (!Array.isArray(enemies)) return [];
 
   const eligible = [];
@@ -1758,6 +1827,7 @@ export function allocateAttackTokens(enemies, maxTokens = MAX_ATTACK_TOKENS) {
       }
       continue;
     }
+    e.hasAttackToken = false;
     eligible.push(e);
   }
 
@@ -1775,53 +1845,128 @@ export function allocateAttackTokens(enemies, maxTokens = MAX_ATTACK_TOKENS) {
     return aDist - bDist;
   });
 
-  // Enforce Shared Encounter Director fairness guarantee: up to 2 simultaneous melee windups
-  // + 1 ranged commitment per target hero (maxTokens = 4 across both heroes).
+  const knight = ctx?.knight || null;
   const holders = [];
-  const overflow = [];
-  const meleeCountByHero = { Knight: 0, Mage: 0 };
-  const rangedCountByHero = { Knight: 0, Mage: 0 };
+  const melee = { Knight: 0, Mage: 0 };
+  const ranged = { Knight: 0, Mage: 0 };
+  const heroOf = (e) => (e.targetHeroId === 'Mage' ? 'Mage' : 'Knight');
+  const isRangedNow = (e) => Boolean(e.isRanged || e.usingRangedMode);
+  const isFlankSide = (e) => heroOf(e) === 'Knight' && knight && !inKnightFrontArc(knight, e);
+  const capOk = (e) => (isRangedNow(e) ? ranged[heroOf(e)] < 1 : melee[heroOf(e)] < 2);
+  const take = (e) => {
+    e.hasAttackToken = true;
+    holders.push(e);
+    if (isRangedNow(e)) ranged[heroOf(e)]++;
+    else melee[heroOf(e)]++;
+  };
+  const pass = (pred) => {
+    for (let i = 0; i < eligible.length && holders.length < maxTokens; i++) {
+      const e = eligible[i];
+      if (e.hasAttackToken || !capOk(e) || !pred(e)) continue;
+      take(e);
+      return true;
+    }
+    return false;
+  };
+
+  // 0. Committed windups keep their token.
+  for (let i = 0; i < eligible.length && holders.length < maxTokens; i++) {
+    const e = eligible[i];
+    if (e.aiState === 'windup' && capOk(e)) take(e);
+  }
+  // 1. Pressure the Mage if any hunter is on her.
+  if (!holders.some((e) => heroOf(e) === 'Mage')) pass((e) => heroOf(e) === 'Mage' && !isRangedNow(e));
+  // 2. Knight front, then a pincer partner on his flank.
+  if (!holders.some((e) => heroOf(e) === 'Knight' && !isRangedNow(e) && !isFlankSide(e))) {
+    pass((e) => heroOf(e) === 'Knight' && !isRangedNow(e) && !isFlankSide(e));
+  }
+  if (!holders.some((e) => heroOf(e) === 'Knight' && !isRangedNow(e) && isFlankSide(e))) {
+    pass((e) => heroOf(e) === 'Knight' && !isRangedNow(e) && isFlankSide(e));
+  }
+  // 3. One caster keeps a standing ranged token.
+  if (!holders.some(isRangedNow)) pass(isRangedNow);
+  // 4. Leftovers by priority.
+  while (holders.length < maxTokens && pass(() => true)) {
+    /* fill */
+  }
+
+  // 5. Single-front fights (everyone on one hero) never leave tokens unused.
+  for (let i = 0; i < eligible.length && holders.length < maxTokens; i++) {
+    const e = eligible[i];
+    if (e.hasAttackToken) continue;
+    const other = heroOf(e) === 'Mage' ? 'Knight' : 'Mage';
+    if (melee[other] + ranged[other] === 0) take(e);
+  }
 
   for (let i = 0; i < eligible.length; i++) {
     const e = eligible[i];
-    const targetHeroId = e.targetHeroId === 'Mage' ? 'Mage' : 'Knight';
-    const isRangedNow = Boolean(e.isRanged || e.usingRangedMode);
-    const heroCapOk = isRangedNow
-      ? rangedCountByHero[targetHeroId] < 1
-      : meleeCountByHero[targetHeroId] < 2;
-
-    if (holders.length < maxTokens && heroCapOk) {
-      e.hasAttackToken = true;
-      holders.push(e);
-      if (isRangedNow) rangedCountByHero[targetHeroId]++;
-      else meleeCountByHero[targetHeroId]++;
-    } else {
-      overflow.push(e);
+    if (!e.hasAttackToken && e.aiState === 'windup') {
+      e.aiState = 'orbit';
+      e.windupTimer = 0;
+      e.telegraphProgress = 0;
     }
   }
-
-  // If all enemies are targeting one hero (e.g. wave start or single-target unit test),
-  // fill remaining token slots up to maxTokens so tokens never go unused.
-  for (let i = 0; i < overflow.length; i++) {
-    const e = overflow[i];
-    const targetHeroId = e.targetHeroId === 'Mage' ? 'Mage' : 'Knight';
-    const otherHeroId = targetHeroId === 'Mage' ? 'Knight' : 'Mage';
-    const otherHeroTargeted =
-      meleeCountByHero[otherHeroId] + rangedCountByHero[otherHeroId] > 0;
-    if (holders.length < maxTokens && !otherHeroTargeted) {
-      e.hasAttackToken = true;
-      holders.push(e);
-    } else {
-      e.hasAttackToken = false;
-      if (e.aiState === 'windup') {
-        e.aiState = 'orbit';
-        e.windupTimer = 0;
-        e.telegraphProgress = 0;
-      }
-    }
-  }
-
   return holders;
+}
+
+/* --- Contact-frame fairness: staggered beats, never a pile-on ---------------------------------- */
+
+/** Real-time contact moments (seconds from attack start) for an attack, ranged ones include bolt travel. */
+export function contactMoments(tl, travel = 0) {
+  return tl.contactTimes.map((t) => t + travel);
+}
+
+/**
+ * May an attack whose contacts land at absolute `times` start against `heroId`? Rejects more than
+ * MAX_OVERLAPPING_CONTACTS inside CONTACT_OVERLAP_WINDOW, and any contact landing within
+ * CONTACT_BEAT_GAP of another attacker's contact so the player always hears a rhythm.
+ */
+export function canScheduleContacts(log, heroId, ownerId, times) {
+  const others = [];
+  for (let i = 0; i < log.length; i++) {
+    if (log[i].heroId === heroId && log[i].owner !== ownerId) others.push(log[i].t);
+  }
+  if (!others.length) return true;
+  for (let i = 0; i < times.length; i++) {
+    for (let j = 0; j < others.length; j++) {
+      if (Math.abs(times[i] - others[j]) < CONTACT_BEAT_GAP) return false;
+    }
+  }
+  const all = others.concat(times).sort((a, b) => a - b);
+  for (let i = 0; i < all.length; i++) {
+    let n = 0;
+    for (let j = i; j < all.length && all[j] - all[i] < CONTACT_OVERLAP_WINDOW; j++) n++;
+    if (n > MAX_OVERLAPPING_CONTACTS) return false;
+  }
+  return true;
+}
+
+export function scheduleContacts(log, heroId, ownerId, times, now) {
+  for (let i = log.length - 1; i >= 0; i--) {
+    if (log[i].t < now - 0.05 || log[i].owner === ownerId) log.splice(i, 1);
+  }
+  for (let i = 0; i < times.length; i++) log.push({ heroId, owner: ownerId, t: times[i] });
+  return log;
+}
+
+export function unscheduleContacts(log, ownerId) {
+  for (let i = log.length - 1; i >= 0; i--) {
+    if (log[i].owner === ownerId) log.splice(i, 1);
+  }
+}
+
+/**
+ * Mash punisher: counts consecutive hits that land within MASH_WINDOW of each other (guarded hits
+ * for shield walls; any hit for unguarded elites). Returns true once the counter should fire.
+ */
+export function registerMashHit(e, now) {
+  if (now - (e.mashLastAt ?? -99) > MASH_WINDOW) e.mashHits = 0;
+  e.mashLastAt = now;
+  e.mashHits = (e.mashHits || 0) + 1;
+  const need = SHIELD_BASH_AFTER_BLOCKS + (e.shieldWall ? 0 : MASH_ELITE_EXTRA_HITS);
+  if (e.mashHits < need) return false;
+  e.mashHits = 0;
+  return true;
 }
 
 // Divine Verdict & Co-Op Tether Locked Constants (Master Plan Section 4.2 & 6.2)

@@ -889,7 +889,7 @@ export function createCampaignLoop({
   enemyManager?.setOnParry?.(handleEnemyParried);
   enemyManager?.setOnWindup?.((enemy, attackId, atk) => {
     const kind =
-      atk?.blockable === false || enemy?.isBoss ? 'heavy' : atk?.area ? 'area' : atk?.ranged ? 'cast' : 'melee';
+      atk?.blockable === false || atk?.hyperArmor || enemy?.isBoss ? 'heavy' : atk?.area ? 'area' : atk?.ranged ? 'cast' : 'melee';
     combatSfx?.playEnemyWindup?.(kind);
   });
 
@@ -1068,7 +1068,7 @@ export function createCampaignLoop({
         1,
         Math.round(rawDmg * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
       );
-      drainKnightGuard(rawDmg * KNIGHT_GUARD_HIT_COST);
+      drainKnightGuard(rawDmg * KNIGHT_GUARD_HIT_COST + (enemy?.currentHit?.guardDmg || 0));
     }
 
     let rem = effectiveDmg;

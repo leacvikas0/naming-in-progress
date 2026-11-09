@@ -1,6 +1,8 @@
 // Pure-logic tests for the 2026-11-09 combat encounter design (contact frames, parry, poise,
 // crowd limiter, stride matching, boss phases, minion reassembly). Run: node world/tools/test-enemy-encounters.mjs
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import { createEnemyManager } from '../src/combat/enemy-manager.js';
 import {
   ENEMY_ATTACKS,
   ENEMY_ARCHETYPES,
@@ -26,6 +28,19 @@ import {
   tickBonePile,
   isPileFinisher,
   selectHuntTarget,
+  inKnightFrontArc,
+  canScheduleContacts,
+  scheduleContacts,
+  registerMashHit,
+  SHIELD_BASH_AFTER_BLOCKS,
+  MAX_ATTACK_TOKENS,
+  MASH_WINDOW,
+  MASH_ELITE_EXTRA_HITS,
+  CONTACT_OVERLAP_WINDOW,
+  CONTACT_BEAT_GAP,
+  MAX_OVERLAPPING_CONTACTS,
+  PARRY_POISE_FRACTION,
+  knightShieldCovers,
 } from '../src/combat/combat-balance.js';
 
 let passed = 0;
@@ -206,7 +221,7 @@ check('11. Rogue hunts the exposed Mage (>6 m from Knight), else nearest; melee 
 
 check('12. Act layouts follow the spec (Act 1 minions -> shield wall, Act 2 hunters + Mage, Act 3 ambush -> elites -> Golem)', () => {
   const a1 = ACT_DEFINITIONS.act1_arena.waves;
-  assert.ok(a1[0].spawns.every((s) => s.archetype === 'minion'));
+  assert.ok(a1[0].spawns.some((s) => s.archetype === 'minion') && a1[0].spawns.some((s) => s.archetype === 'warrior'));
   assert.equal(a1[1].spawns.filter((s) => s.archetype === 'warrior').length, 2);
   const a2 = ACT_DEFINITIONS.act2_plaza.waves[0].spawns;
   assert.ok(a2.filter((s) => s.archetype === 'rogue').length >= 2 && a2.some((s) => s.archetype === 'mage'));
@@ -217,6 +232,190 @@ check('12. Act layouts follow the spec (Act 1 minions -> shield wall, Act 2 hunt
   for (const id of Object.keys(ENEMY_ARCHETYPES)) {
     for (const atkId of ENEMY_ARCHETYPES[id].attacks || []) assert.ok(ENEMY_ATTACKS[atkId], `${id}:${atkId}`);
   }
+});
+
+// --- Phase 3: pincer, mash counter, hunter, contact fairness, manager parry ------------------------
+const knightFacingEast = { id: 'Knight', x: 0, z: 0, yaw: Math.PI / 2, shieldBlocking: true };
+const foe = (id, x, z, extra = {}) => ({ id, x, z, hp: 50, active: true, aiState: 'orbit', targetHeroId: 'Knight', distToTarget: Math.hypot(x, z), ...extra });
+
+check('13. Pincer: Knight blocking one front enemy -> <=3 tokens and one goes outside his front arc', () => {
+  const front = [foe('f1', 2, 0), foe('f2', 2.2, 1.0)];
+  const flank = [foe('b1', -2.5, 0.3), foe('b2', 0.2, -2.5)];
+  const all = [...front, ...flank];
+  const holders = allocateAttackTokens(all, MAX_ATTACK_TOKENS, { knight: knightFacingEast });
+  assert.ok(holders.length >= 1 && holders.length <= MAX_ATTACK_TOKENS, `holders=${holders.length}`);
+  assert.equal(all.filter((e) => e.hasAttackToken).length, holders.length);
+  assert.ok(front.every((e) => inKnightFrontArc(knightFacingEast, e)));
+  assert.ok(flank.every((e) => !inKnightFrontArc(knightFacingEast, e)));
+  assert.ok(holders.some((e) => inKnightFrontArc(knightFacingEast, e)), 'a front attacker holds a token');
+  assert.ok(holders.some((e) => !inKnightFrontArc(knightFacingEast, e)), 'a flanker holds a token');
+  // Even when the flanker is farther than every front enemy, the pincer partner still gets a token.
+  const far = [foe('f1', 2, 0), foe('f2', 2.2, 1), foe('b1', -6, 0.3)];
+  const h2 = allocateAttackTokens(far, MAX_ATTACK_TOKENS, { knight: knightFacingEast });
+  assert.ok(h2.length <= MAX_ATTACK_TOKENS && h2.some((e) => e.id === 'b1'));
+});
+
+check('14. Mash counter: rapid guarded hits within MASH_WINDOW arm it; spaced hits never do', () => {
+  const wall = { shieldWall: true };
+  assert.equal(registerMashHit(wall, 10.0), false);
+  assert.equal(registerMashHit(wall, 10.0 + MASH_WINDOW * 0.3), false);
+  assert.equal(registerMashHit(wall, 10.0 + MASH_WINDOW * 0.6), true, `${SHIELD_BASH_AFTER_BLOCKS} rapid hits arm the counter`);
+  assert.equal(wall.mashHits, 0, 'counter resets after firing');
+  const slow = { shieldWall: true };
+  for (let i = 0; i < 6; i++) assert.equal(registerMashHit(slow, i * (MASH_WINDOW + 0.3)), false, `spaced hit ${i}`);
+  // Unguarded elites need MASH_ELITE_EXTRA_HITS more.
+  const elite = {};
+  const lastIdx = SHIELD_BASH_AFTER_BLOCKS + MASH_ELITE_EXTRA_HITS - 1;
+  for (let i = 0; i < lastIdx; i++) assert.equal(registerMashHit(elite, i * 0.4), false);
+  assert.equal(registerMashHit(elite, lastIdx * 0.4), true);
+});
+
+check('15. Hunter retargets the Mage when exposed (>6 m); shield covers her only inside radius and front arc', () => {
+  const rogue = { x: 4, z: 0 };
+  const knight = { ...knightFacingEast, shieldBlocking: false };
+  const mageNear = { id: 'Mage', x: -1.5, z: 0 };
+  const mageFar = { id: 'Mage', x: -8, z: 0 };
+  assert.equal(selectHuntTarget(rogue, knight, mageFar), mageFar, 'exposed Mage is hunted');
+  assert.equal(selectHuntTarget(rogue, knight, mageNear), knight, 'sheltered Mage: nearest hero is the Knight');
+  assert.equal(knightShieldCovers(knight, { id: 'Mage', x: -2, z: 0 }, rogue), false, 'shield down covers nobody');
+  const up = { ...knight, shieldBlocking: true };
+  const mageBehind = { id: 'Mage', x: -2, z: 0 };
+  assert.equal(knightShieldCovers(up, mageBehind, rogue), true, 'front attacker is blocked');
+  assert.equal(knightShieldCovers(up, mageBehind, { x: -3, z: 3 }), false, 'flanker slips past the arc');
+  assert.equal(knightShieldCovers(up, mageFar, rogue), false, 'out of cover radius');
+});
+
+check('16. Contact fairness: third contact inside CONTACT_OVERLAP_WINDOW and any within CONTACT_BEAT_GAP are rejected', () => {
+  assert.equal(MAX_OVERLAPPING_CONTACTS, 2);
+  const log = [];
+  scheduleContacts(log, 'Knight', 'a', [5.0], 4.0);
+  assert.equal(canScheduleContacts(log, 'Knight', 'b', [5.0 + CONTACT_BEAT_GAP * 0.5]), false, 'closer than the beat gap');
+  assert.equal(canScheduleContacts(log, 'Knight', 'b', [5.0 - CONTACT_BEAT_GAP * 0.9]), false);
+  assert.equal(canScheduleContacts(log, 'Knight', 'b', [5.0 + CONTACT_BEAT_GAP + 0.01]), true, 'second contact on a beat is fine');
+  scheduleContacts(log, 'Knight', 'b', [5.0 + CONTACT_BEAT_GAP + 0.01], 4.0);
+  // Beat gap and overlap cap work together: a third contact can never squeeze in beside the pair.
+  const third = 5.0 + CONTACT_BEAT_GAP + 0.01 + CONTACT_BEAT_GAP * 0.5;
+  assert.equal(canScheduleContacts(log, 'Knight', 'c', [third]), false, 'third contact crowding the pair');
+  assert.equal(canScheduleContacts(log, 'Knight', 'c', [5.0 + 2 * CONTACT_BEAT_GAP + 0.05]), true, 'a full beat after the pair');
+  assert.equal(canScheduleContacts(log, 'Mage', 'c', [5.0]), true, 'other hero is independent');
+  assert.equal(canScheduleContacts(log, 'Knight', 'a', [5.0]), true, 'owner may reschedule itself');
+});
+
+const mockKit = {
+  async loadAnimationPacks() {},
+  async createCharacter(charId) {
+    const group = new THREE.Group();
+    const modelRoot = new THREE.Group();
+    group.add(modelRoot);
+    let currentKey = 'idle';
+    return {
+      id: charId,
+      group,
+      modelRoot,
+      mixer: { timeScale: 1.0 },
+      anim: {
+        get currentKey() {
+          return currentKey;
+        },
+      },
+      play(key) {
+        currentKey = key;
+      },
+      poseAt(key) {
+        currentKey = key;
+      },
+      update() {},
+    };
+  },
+};
+async function makeManager() {
+  const hits = [];
+  const em = await createEnemyManager({
+    scene: new THREE.Scene(),
+    kit: mockKit,
+    walkableHeightAt: () => 0.6,
+    resolveCollisions: (x, z) => ({ x, z, wrapped: false }),
+    onPlayerHit: (h, e, dmg) => hits.push({ hero: h.id, dmg }),
+  });
+  return { em, hits };
+}
+const heroPair = (blocking, mageX = -3) => ({
+  Knight: { id: 'Knight', x: 0, y: 0.6, z: 0, yaw: Math.PI / 2, shieldBlocking: blocking },
+  Mage: { id: 'Mage', x: mageX, y: 0.6, z: 0, yaw: 0 },
+});
+
+// One warrior swings at the Knight; he raises his shield `blockLead` s before the contact frame.
+async function parryScenario(blockLead) {
+  const { em, hits } = await makeManager();
+  em.spawnWave({ id: 'parry', spawns: [{ archetype: 'warrior', x: 2, z: 0 }] }, 'act1_arena');
+  const e = em.activeEnemies[0];
+  initPoise(e, 100);
+  let parried = 0;
+  em.setOnParry(() => parried++);
+  let blocked = false;
+  let resolved = false;
+  for (let i = 0; i < 1200 && !resolved; i++) {
+    const a = e.attack;
+    if (a && !blocked && a.tl.contactTimes[0] - a.t <= blockLead) {
+      em.notifyKnightBlock(true);
+      blocked = true;
+    }
+    em.update(1 / 60, heroPair(blocked));
+    resolved = blocked && (e.aiState === 'stagger' || e.aiState === 'recover' || (e.attack && e.attack.contactIdx > 0));
+  }
+  assert.ok(resolved, 'attack resolved');
+  return { e, hits, parried };
+}
+
+const parryOn = await parryScenario(0.1);
+check('17. Parry: Knight block 0.1 s before contact staggers the attacker, removes poise, deals no damage', () => {
+  assert.equal(parryOn.parried, 1);
+  assert.equal(parryOn.e.aiState, 'stagger');
+  near(parryOn.e.poise, 100 * (1 - PARRY_POISE_FRACTION), 1e-6, 'poise');
+  assert.equal(parryOn.hits.length, 0, 'parried contact deals no damage');
+});
+
+const parryEarly = await parryScenario(0.3);
+check('18. Parry: a block raised 0.3 s early is outside the +-0.15 s window (no stagger, hit resolves)', () => {
+  assert.equal(parryEarly.parried, 0);
+  assert.notEqual(parryEarly.e.aiState, 'stagger');
+  assert.equal(parryEarly.e.poise, 100);
+  assert.ok(parryEarly.hits.some((h) => h.hero === 'Knight'), 'the swing connects with the Knight');
+});
+
+check('19. Act 1 wave 2 mixes a shield-wall archetype with a hunter archetype', () => {
+  const spawns = ACT_DEFINITIONS.act1_arena.waves[1].spawns;
+  const defOf = (s) => ENEMY_ARCHETYPES[s.archetype] || ENEMY_ARCHETYPES[`skeleton_${s.archetype}`];
+  assert.ok(spawns.some((s) => defOf(s)?.shieldWall), 'shield wall present');
+  assert.ok(spawns.some((s) => defOf(s)?.hunter), 'hunter present');
+});
+
+async function hunterRun(mageX) {
+  const { em } = await makeManager();
+  em.spawnWave({ id: 'hunt', spawns: [{ archetype: 'rogue', x: 5, z: 0 }] }, 'act1_arena');
+  const e = em.activeEnemies[0];
+  const targets = new Set();
+  let everShielded = false;
+  let attackedWhileShielded = false;
+  for (let i = 0; i < 240; i++) {
+    em.update(1 / 60, heroPair(true, mageX));
+    targets.add(e.targetHeroId);
+    if (e.mageShielded) {
+      everShielded = true;
+      if (e.attack && e.attack.targetHeroId === 'Mage') attackedWhileShielded = true;
+    }
+  }
+  return { e, targets, everShielded, attackedWhileShielded };
+}
+const hunterCovered = await hunterRun(-2);
+const hunterExposed = await hunterRun(-9);
+check('20. Manager hunter: shield-covered Mage is probed around the arc, exposed Mage (>6 m) is targeted directly', () => {
+  assert.equal(hunterCovered.everShielded, true, 'Knight shield covers the Mage from the front');
+  assert.ok(hunterCovered.e.huntFlankSign, 'covered: hunter circles for an angle instead of charging');
+  assert.equal(hunterCovered.attackedWhileShielded, false, 'no attack committed into the shield');
+  assert.equal(hunterExposed.everShielded, false, 'exposed Mage is never covered');
+  assert.ok(hunterExposed.targets.has('Mage') && hunterExposed.e.targetHeroId === 'Mage', 'exposed Mage becomes the target');
+  assert.ok(!hunterExposed.e.huntFlankSign, 'no probe needed');
 });
 
 console.log(`\n${passed} PASSED, ${failed} FAILED (enemy encounter logic)`);

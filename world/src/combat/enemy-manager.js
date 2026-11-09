@@ -74,6 +74,18 @@ import {
   tickBonePile,
   isPileFinisher,
   selectHuntTarget,
+  applyPoiseDamage,
+  registerMashHit,
+  canScheduleContacts,
+  scheduleContacts,
+  unscheduleContacts,
+  contactMoments,
+  inKnightFrontArc,
+  knightShieldCovers,
+  MASH_COUNTER_EXPIRY,
+  MASH_WINDOW,
+  PARRY_POISE_FRACTION,
+  DODGE_OPENING_SECONDS,
 } from './combat-balance.js';
 
 // Native clip lengths (KayKit 1.1) used when a rig/mocked kit cannot report durations.
@@ -711,6 +723,19 @@ export async function createEnemyManager({
       reassembles: Boolean(arch.reassembles),
       shieldWall: Boolean(arch.shieldWall),
       hunter: Boolean(arch.hunter),
+      dodges: arch.dodges ?? Boolean(arch.hunter),
+      counterAtk: arch.counterAttack || (arch.shieldWall ? 'shield_bash' : null),
+      counterTimer: 0,
+      mashHits: 0,
+      mashLastAt: -99,
+      guardCycle: 1.2,
+      guarding: true,
+      huntFlankSign: 0,
+      eruptionHold: 0,
+      leapCooldown: 3.0,
+      forceLeap: false,
+      leapLift: 0,
+      flankBias: false,
       summons: Boolean(arch.summons),
       wards: Boolean(arch.wards),
       rallies: Boolean(arch.rallies),
@@ -955,10 +980,9 @@ export async function createEnemyManager({
       return noDamageResult({ dodged: true });
     }
     if (pre === 'blocked') {
-      enemy.blockedHits++;
-      if (enemy.blockedHits >= SHIELD_BASH_AFTER_BLOCKS) {
-        enemy.blockedHits = 0;
-        enemy.counterReady = true;
+      if (!isMagicHit) {
+        enemy.blockedHits++;
+        if (enemy.counterAtk && registerMashHit(enemy, simTime)) armCounter(enemy);
       }
       enemy.hitstopTimer = Math.max(enemy.hitstopTimer, 0.03);
       enemy.attackAnimTimer = 0.3;
@@ -969,6 +993,8 @@ export async function createEnemyManager({
     if (pre === 'pierce' || pre === 'guardbreak') {
       enemy.shieldUp = false;
       enemy.shieldDownTimer = 3.0;
+      enemy.counterReady = false;
+      enemy.mashHits = 0;
     }
 
     const hpBefore = enemy.hp;
@@ -1034,6 +1060,18 @@ export async function createEnemyManager({
           enemy.telegraphProgress = 0;
         }
       }
+    }
+
+    // Greedy strings against an unguarded elite draw its hyper-armoured counter too.
+    if (
+      result.damageDealt > 0 &&
+      !isMagicHit &&
+      enemy.isElite &&
+      enemy.counterAtk &&
+      (enemy.aiState === 'orbit' || enemy.aiState === 'windup') &&
+      registerMashHit(enemy, simTime)
+    ) {
+      armCounter(enemy);
     }
 
     // Fire Boss Phase Threshold callbacks (70% and 35% HP -> +35 Q Energy to both heroes)
@@ -1212,8 +1250,19 @@ export async function createEnemyManager({
         e.windupTimer = 0;
         e.telegraphProgress = 0;
         e.cooldownTimer = e.attackCooldown * 0.85;
+        // The whiffed swing leaves an opening: fodder stumbles, elites drop guard and lose poise.
+        if (e.isBoss) {
+          e.shieldDownTimer = Math.max(e.shieldDownTimer, DODGE_OPENING_SECONDS);
+        } else if (e.isElite) {
+          applyPoiseDamage(e, (e.poiseMax || 0) * 0.25);
+          e.shieldDownTimer = Math.max(e.shieldDownTimer, DODGE_OPENING_SECONDS);
+        } else {
+          enterStagger(e, DODGE_OPENING_SECONDS, 'Hit_A');
+          e.shieldDownTimer = Math.max(e.shieldDownTimer, DODGE_OPENING_SECONDS);
+        }
         return {
           triggered: true,
+          opening: true,
           enemy: e,
           resonanceGain: 20,
           qEnergyGain: 12,
@@ -1231,6 +1280,9 @@ export async function createEnemyManager({
   let simTime = 0;
   let rngState = 0x2f6b1d;
   const windupLog = [];
+  const contactLog = [];
+  const heroSnap = { knight: null, mage: null };
+  const pinned = { Knight: false, Mage: false };
   const knightBlock = { active: false, startAt: -99 };
   let onParryHandler = null;
   let onWindupHandler = null;
@@ -1265,6 +1317,8 @@ export async function createEnemyManager({
 
   function cancelAttack(e) {
     if (e.attack?.decal) releaseDecal(e.attack.decal);
+    if (e.attack) unscheduleContacts(contactLog, e.instanceId);
+    e.leapLift = 0;
     e.attack = null;
     e.windupTimer = 0;
     e.telegraphProgress = 0;
@@ -1354,8 +1408,19 @@ export async function createEnemyManager({
     safePlay(e.char, clip, { loop: false, fade: 0.04, force: true }, 'dodge');
   }
 
+  function armCounter(e) {
+    e.counterReady = true;
+    e.counterTimer = MASH_COUNTER_EXPIRY;
+  }
+
   function parryEnemy(e) {
-    enterStagger(e, e.isBoss ? STAGGER_SECONDS.boss : STAGGER_SECONDS.parry, 'Hit_B');
+    // A clean parry also chips poise; breaking an elite's poise this way leaves it open longer.
+    const broke = applyPoiseDamage(e, (e.poiseMax || 0) * PARRY_POISE_FRACTION);
+    const secs = e.isBoss ? STAGGER_SECONDS.boss : broke ? STAGGER_SECONDS.parry * 1.5 : STAGGER_SECONDS.parry;
+    enterStagger(e, secs, 'Hit_B');
+    e.shieldDownTimer = Math.max(e.shieldDownTimer, secs);
+    e.counterReady = false;
+    e.mashHits = 0;
     e.hitstopTimer = Math.max(e.hitstopTimer, 0.09);
     e.char.mixer.timeScale = 0.05;
     e.lastContact = null;
@@ -1475,6 +1540,10 @@ export async function createEnemyManager({
     e.telegraphRadius = atk.radius || atk.range;
     e.shieldUp = false;
     e.lastAttackId = atkId;
+    if (atk.cooldown) {
+      e.eruptionCooldown = atk.cooldown;
+      e.eruptionHold = 0;
+    }
     e.attackAnimTimer = 0;
     e.attack.action = safePlay(
       e.char,
@@ -1485,8 +1554,29 @@ export async function createEnemyManager({
     updateAttackAim(e, target);
     if (atk.area && !atk.noDecal) e.attack.decal = acquireDecal(e.attack.areaX, e.attack.areaZ, atk.radius);
     recordWindup(windupLog, e.attack.targetHeroId, simTime);
+    scheduleContacts(contactLog, e.attack.targetHeroId, e.instanceId, absoluteContacts(e, atk, tl, target), simTime);
     onWindupHandler?.(e, atkId, atk);
     return true;
+  }
+
+  function absoluteContacts(e, atk, tl, target) {
+    const travel = atk.ranged ? Math.hypot(target.x - e.x, target.z - e.z) / (e.projectileSpeed || 14.5) : 0;
+    return contactMoments(tl, travel).map((t) => simTime + t);
+  }
+
+  /** Windup limiter + contact-frame fairness gate; on refusal the enemy retries a beat later. */
+  function tryStartAttack(e, atkId, target) {
+    const atk = ENEMY_ATTACKS[atkId];
+    if (!atk) return false;
+    const heroId = target.id || e.targetHeroId || 'Knight';
+    if (!canStartWindup(windupLog, heroId, simTime)) return false;
+    const speed = e.isBoss && e.phase === 'p3' ? BOSS_P3_SPEED : 1.0;
+    const tl = attackTimeline(atk, clipSeconds(e.char, atk.clip), speed);
+    if (!canScheduleContacts(contactLog, heroId, e.instanceId, absoluteContacts(e, atk, tl, target))) {
+      e.cooldownTimer = Math.max(e.cooldownTimer, 0.12);
+      return false;
+    }
+    return startAttack(e, atkId, target);
   }
 
   function resolveContact(e, idx, knight, mage) {
@@ -1539,7 +1629,7 @@ export async function createEnemyManager({
       if (onPlayerHit) {
         const dmg = Math.max(1, Math.round(atk.dmg * e.attackDmgScale));
         // Read by campaign-loop handlePlayerHit (unblockable Captain chop etc.).
-        e.currentHit = { attackId: a.id, contactIdx: idx, unblockable: !blockable, area: Boolean(atk.area) };
+        e.currentHit = { attackId: a.id, contactIdx: idx, unblockable: !blockable, area: Boolean(atk.area), guardDmg: atk.guardDmg || 0 };
         onPlayerHit(h, e, dmg);
         e.currentHit = null;
       }
@@ -1569,14 +1659,20 @@ export async function createEnemyManager({
     if (a.atk.lunge && a.contactIdx === 0 && target && a.clipT >= a.tl.slowEndClip - 0.25) {
       const d = Math.hypot(target.x - e.x, target.z - e.z);
       if (d > 1.3) {
-        const step = Math.min(d - 1.2, 7.5 * dt * m);
+        const step = Math.min(d - 1.2, (a.atk.lungeSpeed || 7.5) * dt * m);
         const np = applyEnemySpatialConstraints(e.x + ((target.x - e.x) / d) * step, e.z + ((target.z - e.z) / d) * step, e.radius);
         e.x = np.x;
         e.z = np.z;
       }
+      if (a.atk.leap) {
+        const start = a.tl.slowEndClip - 0.25;
+        const end = a.atk.contacts[0] * a.dur;
+        e.leapLift = 1.7 * Math.sin(Math.PI * clamp((a.clipT - start) / Math.max(0.05, end - start), 0, 1));
+      }
     }
     for (let i = 0; i < r.crossed.length; i++) {
       if (!e.attack) return; // parried
+      e.leapLift = 0;
       resolveContact(e, r.crossed[i], knight, mage);
       if (e.attack) e.attack.contactIdx = r.crossed[i] + 1;
     }
@@ -1586,9 +1682,15 @@ export async function createEnemyManager({
     }
   }
 
-  function chooseAttack(e, dist) {
+  function chooseAttack(e, dist, heroId = 'Knight') {
     const sc = e.group.scale.x || 1;
     if (e.archetype === 'boss_sovereign') {
+      const leap = ENEMY_ATTACKS.boss_leap_slam;
+      if (e.forceLeap || (e.phase !== 'p1' && e.leapCooldown <= 0 && dist >= leap.minDist && dist <= 13)) {
+        e.forceLeap = false;
+        e.leapCooldown = 7.0;
+        return 'boss_leap_slam';
+      }
       const id = selectBossAttack(e.phase, rand(), e.lastAttackId);
       if (dist <= ENEMY_ATTACKS[id].range * 0.9) return id;
       return dist <= ENEMY_ATTACKS.boss_2h.range * 0.9 ? 'boss_2h' : null;
@@ -1597,7 +1699,8 @@ export async function createEnemyManager({
       const atk = ENEMY_ATTACKS[id];
       if (!atk) return false;
       if (e.isHybridRangedMelee && Boolean(atk.ranged) !== e.usingRangedMode) return false;
-      if (atk.cooldown && e.eruptionCooldown > 0) return false;
+      // Casters time eruptions for pinned heroes (or after holding the cast for 4 s).
+      if (atk.cooldown && (e.eruptionCooldown > 0 || !(pinned[heroId] || e.eruptionHold >= 4))) return false;
       if (atk.lunge) return dist >= atk.minDist && dist <= atk.lunge + atk.range;
       const reach = atk.area && !atk.areaAtTarget ? atk.radius : atk.range;
       return dist <= reach * sc * 0.92;
@@ -1608,7 +1711,6 @@ export async function createEnemyManager({
       const pool = ok.length > 1 ? ok.filter((x) => x !== e.lastAttackId) : ok;
       id = pool[Math.floor(rand() * pool.length)];
     }
-    if (ENEMY_ATTACKS[id].cooldown) e.eruptionCooldown = ENEMY_ATTACKS[id].cooldown;
     return id;
   }
 
@@ -1657,7 +1759,15 @@ export async function createEnemyManager({
   }
 
   function standoff(e, dt, target, dist, dirX, dirZ, mv) {
-    e.shieldUp = e.shieldWall && e.shieldDownTimer <= 0;
+    if (e.shieldWall && e.shieldDownTimer <= 0) {
+      // Shield walls alternate guarding and sidestepping (shield down) so none just stands in the clump.
+      e.guardCycle -= dt;
+      if (e.guardCycle <= 0) {
+        e.guarding = !e.guarding;
+        e.guardCycle = e.guarding ? 1.4 + rand() * 0.8 : 1.0 + rand() * 0.7;
+      }
+    }
+    e.shieldUp = e.shieldWall && e.shieldDownTimer <= 0 && e.guarding;
     if ((e.isRanged || (e.isHybridRangedMelee && e.usingRangedMode)) && dist < 5.0) {
       const moved = moveBy(e, -dirX * 1.4 * mv, -dirZ * 1.4 * mv, dt);
       playEnemyLocomotion(e, 'Walking_Backwards', moved);
@@ -1676,7 +1786,10 @@ export async function createEnemyManager({
     e.behaviourTimer -= dt;
     if (e.behaviourTimer <= 0) {
       e.behaviourIdx = (e.behaviourIdx || 0) + 1;
-      e.behaviour = STANDOFF_BEHAVIOURS[(e.behaviourIdx + e.slotIndex) % STANDOFF_BEHAVIOURS.length];
+      e.behaviour =
+        e.flankBias && !e.isRanged && rand() < 0.75
+          ? 'flank'
+          : STANDOFF_BEHAVIOURS[(e.behaviourIdx + e.slotIndex) % STANDOFF_BEHAVIOURS.length];
       e.behaviourTimer = 1.2 + rand() * 1.4;
       if (e.behaviour === 'strafe' && rand() < 0.35) e.orbitSpeed = -e.orbitSpeed;
     }
@@ -1692,10 +1805,9 @@ export async function createEnemyManager({
       if (dist < e.standoffDist + 1.5) {
         const moved = moveBy(e, -dirX * 1.3 * mv, -dirZ * 1.3 * mv, dt);
         playEnemyLocomotion(e, 'Walking_Backwards', moved);
-      } else {
-        playEnemyLocomotion(e, 'idle');
+        return;
       }
-      return;
+      e.behaviour = 'strafe'; // already clear of the fight: keep circling instead of standing
     }
     let sign = e.orbitSpeed >= 0 ? 1 : -1;
     if (e.behaviour === 'flank' && Number.isFinite(target.yaw)) {
@@ -1705,7 +1817,7 @@ export async function createEnemyManager({
       sign = -dirZ * bx + dirX * bz >= 0 ? 1 : -1;
     }
     const radial = clamp((dist - e.standoffDist) * 1.5, -1.5, 1.5);
-    const tang = (e.behaviour === 'flank' ? 3.0 : 2.3) * mv;
+    const tang = (e.behaviour === 'flank' ? 3.6 : 2.3) * mv;
     const vx = dirX * radial * mv + -dirZ * sign * tang;
     const vz = dirZ * radial * mv + dirX * sign * tang;
     const moved = moveBy(e, vx, vz, dt);
@@ -1714,6 +1826,29 @@ export async function createEnemyManager({
       return;
     }
     // Character-right for a +Z-facing rig is -X rotated by yaw.
+    const rightDot = vx * -Math.cos(e.yaw) + vz * Math.sin(e.yaw);
+    playEnemyLocomotion(e, rightDot >= 0 ? 'Running_Strafe_Right' : 'Running_Strafe_Left', moved);
+  }
+
+  /** Mage sheltered by the shield: circle the Knight at ~5 m toward the side that leaves his front arc. */
+  function huntProbe(e, dt, mv) {
+    const k = heroSnap.knight;
+    const dx = e.x - k.x;
+    const dz = e.z - k.z;
+    const dist = Math.hypot(dx, dz) || 1;
+    const nx = dx / dist;
+    const nz = dz / dist;
+    if (!e.huntFlankSign || e.behaviourTimer <= 0) {
+      const cross = Math.sin(k.yaw || 0) * dz - Math.cos(k.yaw || 0) * dx;
+      e.huntFlankSign = cross >= 0 ? 1 : -1;
+      e.behaviourTimer = 1.5;
+    }
+    e.behaviourTimer -= dt;
+    const radial = clamp((5.2 - dist) * 1.4, -2.2, 2.2);
+    const tang = e.speed * 0.55 * mv;
+    const vx = nx * radial * mv - nz * e.huntFlankSign * tang;
+    const vz = nz * radial * mv + nx * e.huntFlankSign * tang;
+    const moved = moveBy(e, vx, vz, dt);
     const rightDot = vx * -Math.cos(e.yaw) + vz * Math.sin(e.yaw);
     playEnemyLocomotion(e, rightDot >= 0 ? 'Running_Strafe_Right' : 'Running_Strafe_Left', moved);
   }
@@ -1733,21 +1868,20 @@ export async function createEnemyManager({
     }
 
     if (e.isStationary) {
-      if (e.cooldownTimer <= 0 && canStartWindup(windupLog, heroId, simTime)) {
-        const atkId = chooseAttack(e, dist);
-        if (atkId) {
-          startAttack(e, atkId, target);
-          return;
-        }
+      if (e.cooldownTimer <= 0) {
+        const atkId = chooseAttack(e, dist, heroId);
+        if (atkId && tryStartAttack(e, atkId, target)) return;
       }
       playEnemyLocomotion(e, 'idle');
       return;
     }
 
-    if (e.counterReady && dist <= ENEMY_ATTACKS.shield_bash.range + 0.6) {
-      e.counterReady = false;
-      startAttack(e, 'shield_bash', target);
-      return;
+    if (e.counterReady && e.counterAtk) {
+      const cAtk = ENEMY_ATTACKS[e.counterAtk];
+      if (cAtk && dist <= cAtk.range * (e.group.scale.x || 1) + 0.6 && tryStartAttack(e, e.counterAtk, target)) {
+        e.counterReady = false;
+        return;
+      }
     }
     if (e.wards && e.dodgeCooldown <= 0 && dist < 3.2) {
       enemyDodge(e, target, 'back');
@@ -1788,21 +1922,18 @@ export async function createEnemyManager({
     }
 
     // Hunters give up on a Mage who is sheltering behind the Knight's raised shield.
-    const huntBlocked = e.hunter && heroId === 'Mage' && e.mageShielded;
+    const huntBlocked = e.hunter && heroId === 'Mage' && e.mageShielded && heroSnap.knight;
     if (e.hasAttackToken && !huntBlocked) {
       if (e.cooldownTimer <= 0) {
-        const atkId = chooseAttack(e, dist);
-        if (atkId && canStartWindup(windupLog, heroId, simTime)) {
-          startAttack(e, atkId, target);
-          return;
-        }
+        const atkId = chooseAttack(e, dist, heroId);
+        if (atkId && tryStartAttack(e, atkId, target)) return;
       }
       approach(e, dt, dist, dirX, dirZ, mv);
       return;
     }
     if (huntBlocked) {
-      e.behaviour = 'backoff';
-      e.behaviourTimer = Math.max(e.behaviourTimer, 0.4);
+      huntProbe(e, dt, mv);
+      return;
     }
     standoff(e, dt, target, dist, dirX, dirZ, mv);
   }
@@ -1842,6 +1973,7 @@ export async function createEnemyManager({
         if (e.downTimer <= 0) {
           e.aiState = 'orbit';
           e.cooldownTimer = 0.8;
+          e.forceLeap = true; // the first move after standing back up is a leaping slam
         }
         return;
       case 'cast':
@@ -1873,6 +2005,51 @@ export async function createEnemyManager({
     }
     if (turnRate > 0) {
       e.yaw += shortestAngleDiff(Math.atan2(dx, dz), e.yaw) * Math.min(1, turnRate * dt * slowMult);
+    }
+  }
+
+  /** A hero is pinned while melee attackers are on him and he is guarding, outnumbered, or facing a shield wall. */
+  function updatePinned(knight, mage) {
+    heroSnap.knight = knight || null;
+    heroSnap.mage = mage || null;
+    for (const [id, hero] of [['Knight', knight], ['Mage', mage]]) {
+      let engaged = 0;
+      let wall = false;
+      if (hero && !hero.downed) {
+        for (let i = 0; i < activeEnemies.length; i++) {
+          const o = activeEnemies[i];
+          if (o.dead || !o.active || o.isRanged || o.isPile || o.aiState === 'dormant') continue;
+          if (Math.hypot(o.x - hero.x, o.z - hero.z) > 3.4) continue;
+          engaged++;
+          if (o.shieldWall) wall = true;
+        }
+      }
+      pinned[id] = engaged >= 2 || (engaged >= 1 && (wall || Boolean(hero?.shieldBlocking)));
+    }
+  }
+
+  /** Enemies crowding the Knight's front while an ally already holds it swing round to his flanks. */
+  function markFlankers(knight) {
+    let frontHeld = false;
+    if (knight) {
+      for (let i = 0; i < activeEnemies.length; i++) {
+        const o = activeEnemies[i];
+        if (o.hasAttackToken && !o.dead && o.targetHeroId !== 'Mage' && !o.isRanged && inKnightFrontArc(knight, o)) {
+          frontHeld = true;
+          break;
+        }
+      }
+    }
+    for (let i = 0; i < activeEnemies.length; i++) {
+      const o = activeEnemies[i];
+      o.flankBias = Boolean(
+        frontHeld &&
+          !o.hasAttackToken &&
+          !o.isBoss &&
+          !o.isRanged &&
+          o.targetHeroId !== 'Mage' &&
+          inKnightFrontArc(knight, o)
+      );
     }
   }
 
@@ -2118,6 +2295,10 @@ export async function createEnemyManager({
       e.invulnTimer = Math.max(0, e.invulnTimer - dt);
       e.tauntCooldown = Math.max(0, e.tauntCooldown - dt);
       e.shieldDownTimer = Math.max(0, e.shieldDownTimer - dt);
+      e.leapCooldown = Math.max(0, e.leapCooldown - dt);
+      if (e.counterReady && (e.counterTimer -= dt) <= 0) e.counterReady = false;
+      if (e.mashHits > 0 && simTime - e.mashLastAt > MASH_WINDOW) e.mashHits = 0;
+      if (e.attacks.includes('mage_eruption') && e.eruptionCooldown <= 0 && !e.attack) e.eruptionHold += dt;
       tickPoise(e, dt);
       e.tokenIneligible = TOKENLESS_STATES.has(e.aiState);
 
@@ -2259,7 +2440,9 @@ export async function createEnemyManager({
       releaseSlot(toRelease[i]);
     }
 
-    allocateAttackTokens(activeEnemies, MAX_ATTACK_TOKENS);
+    updatePinned(knight, mage);
+    allocateAttackTokens(activeEnemies, MAX_ATTACK_TOKENS, { knight });
+    markFlankers(knight);
 
     for (let i = 0; i < activeEnemies.length; i++) {
       const e = activeEnemies[i];
@@ -2276,13 +2459,7 @@ export async function createEnemyManager({
       const slowMult = baseSlowMult * globalEnemyTimeScale;
 
       if (e.stunTimer <= 0 && e.knockdownTimer <= 0 && e.hitstopTimer <= 0 && e.grounded && targetHero) {
-        e.mageShielded = Boolean(
-          knight &&
-            mage &&
-            !knight.downed &&
-            knight.shieldBlocking &&
-            Math.hypot(knight.x - mage.x, knight.z - mage.z) <= SHIELD_COVER_RADIUS
-        );
+        e.mageShielded = knightShieldCovers(knight, mage, e);
         thinkEnemy(e, dt, targetHero, slowMult, knight, mage);
         if (e.directionalShieldConeDeg > 0) {
           e.shieldGuarding = e.stunTimer <= 0 && (e.aiState === 'orbit' || e.aiState === 'cast');
@@ -2322,7 +2499,7 @@ export async function createEnemyManager({
           const inSwoopWindow = e.aiState === 'windup' || e.attackAnimTimer > 0;
           e.y = baseGroundY + (inSwoopWindow ? (e.swoopHeight ?? 1.2) : (e.hoverHeight ?? 2.35));
         } else {
-          e.y = baseGroundY;
+          e.y = baseGroundY + (e.leapLift || 0);
         }
         e.group.rotation.set(0, e.yaw, 0, 'YXZ');
       } else if (e.prayerAirborneSlowMo) {
