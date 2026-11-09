@@ -176,6 +176,59 @@ const SKY_FRAG = /* glsl */ `
       col += stars;
     }
 
+    // 2B. Night nebula band + ringed gas giant (painted, opaque, cel-banded). Both ride the
+    // star visibility so they bloom in at dusk and vanish by day; the eclipse overrides them.
+    float nightVis = clamp(uStarAlpha, 0.0, 1.0) * (1.0 - ecW);
+    if (nightVis > 0.005 && d.y > -0.02) {
+      vec3 bandN = normalize(vec3(0.38, 0.52, 0.76));
+      float bandDist = dot(d, bandN);
+      vec3 bandU = normalize(cross(bandN, vec3(0.0, 1.0, 0.0)));
+      vec2 bp = vec2(dot(d, bandU), bandDist) * vec2(3.2, 9.0);
+      float neb = vnoise2(bp * 1.3 + 4.1) * 0.6 + vnoise2(bp * 3.1 - 1.7) * 0.4;
+      float bandMask = exp(-bandDist * bandDist / 0.028) * smoothstep(0.0, 0.18, d.y);
+      float dust = smoothstep(0.55, 0.75, vnoise2(bp * 2.2 + vec2(7.0, 3.0)));
+      vec3 nebCol = mix(vec3(0.20, 0.10, 0.34), vec3(0.06, 0.26, 0.36), smoothstep(0.35, 0.7, neb));
+      col += nebCol * bandMask * smoothstep(0.3, 0.8, neb) * (1.0 - dust * 0.7) * 0.85 * nightVis;
+      col += vec3(0.9, 0.92, 1.0) * evalStarLayer(d + vec3(0.11, -0.07, 0.05), 210.0, 0.80, uTime) * bandMask * 0.9 * nightVis;
+
+      vec3 pd = normalize(vec3(-0.66, 0.30, -0.69));
+      float pR = 0.088;
+      vec3 pRight = normalize(cross(vec3(0.0, 1.0, 0.0), pd));
+      vec3 pUp = cross(pd, pRight);
+      vec2 mp = vec2(dot(d, pRight), dot(d, pUp)) / pR;
+      if (dot(d, pd) > 0.0 && dot(mp, mp) < 7.0) {
+        float r = length(mp);
+        float disc = 1.0 - smoothstep(0.97, 1.0, r);
+        // Ring ellipse, tilted; the back half hides behind the disc.
+        float ca = cos(0.38);
+        float sa = sin(0.38);
+        vec2 rq = vec2(ca * mp.x - sa * mp.y, sa * mp.x + ca * mp.y);
+        vec2 q = vec2(rq.x, rq.y / 0.24);
+        float rr = length(q);
+        float ring = smoothstep(1.32, 1.38, rr) * (1.0 - smoothstep(2.05, 2.12, rr));
+        ring *= 0.55 + 0.45 * step(0.5, fract(rr * 5.3));
+        float ringFront = step(0.0, -rq.y);
+        vec3 ringCol = vec3(0.62, 0.55, 0.5);
+
+        float zS = sqrt(max(0.0, 1.0 - min(1.0, r * r)));
+        // Lit from behind-right by the set sun: a thin crescent, dim like the rest of the night.
+        float ndl = dot(normalize(vec3(mp.x, mp.y, zS)), normalize(vec3(0.78, -0.42, 0.22)));
+        float lit = smoothstep(-0.12, 0.08, ndl);
+        float lat = mp.y + vnoise2(mp * 3.0) * 0.12;
+        float bands = 0.5 + 0.5 * sin(lat * 11.0);
+        vec3 gas = mix(vec3(0.30, 0.52, 0.62), vec3(0.62, 0.40, 0.66), bands);
+        vec3 planetCol = mix(gas * 0.06 + col * 0.35, gas * 0.5, lit);
+        planetCol += vec3(0.45, 0.62, 0.9) * smoothstep(0.82, 1.0, r) * lit * 0.35;
+        // Atmospheric veil: a distant presence, never brighter than the moonlit scene.
+        planetCol = mix(planetCol, col, 0.4);
+        ringCol = mix(ringCol * 0.6, col, 0.35);
+
+        col = mix(col, ringCol * 0.55, ring * (1.0 - ringFront) * (1.0 - disc) * nightVis);
+        col = mix(col, planetCol, disc * nightVis);
+        col = mix(col, ringCol * mix(0.35, 0.75, lit), ring * ringFront * nightVis);
+      }
+    }
+
     // 3. Crisp Stylized Anime Sun Disc + Smooth Golden Mie Halo (Option 4 + Option 2)
     if (sunVisEff > 0.005) {
       float angSun = acos(clamp(dot(d, sd), -1.0, 1.0));
