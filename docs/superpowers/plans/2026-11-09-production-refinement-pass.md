@@ -133,3 +133,41 @@ duo needs the God to finish the boss.
 - `node world/tools/test-combat-sim.mjs`, `test-coop-room.mjs`, divine/eclipse sims.
 - Fresh SwiftShader renders: day plaza, dusk vista, night plaza/shrine, before vs after.
 - Report what is verified, what is source-only, and GPU perf as **unmeasured** (no GPU in sandbox).
+
+---
+
+## Execution status (2026-11-09)
+
+| Phase | Commit | Status |
+|---|---|---|
+| Plan | `16ea4d9` | done |
+| 1 Combat | `005130e` | done, with deviations below |
+| 2 Campaign | `5a8d2bb` | done (pause/replay items deferred) |
+| 3 Enemies | `2324efc` | partial: Aegis phase, death clips, act HP scaling, shadows |
+| 4 Post/atmosphere | `d68d897` | done |
+| 5 Environment | `e3e0fc1` | partial: night nebula + ringed planet |
+
+### Deviations from the plan above (and why)
+- **Spec-locked numbers kept**: shield 80% DR, Knight E 13s/18s, Q x2 for 10s, Mage E 8.5s,
+  6s storm, boss archetype 1400 HP. `test-combat-sim` asserts them. Balance comes from the guard
+  meter, the front arc, dash cooldown, caps, mark ownership and act scaling instead.
+- **Damage cap**: caps only the passive stack (infusion x empowered x perfect-dodge) at 1.7x.
+  Knight Q's locked x2 and the divine multipliers apply on top, so Q always doubles.
+- **Tether/Commune distances untouched**: `POWERUP_TETHER_DISTANCE = 5` and `COMMUNE_MAX_DISTANCE = 4`
+  sit in the Divine Verdict locked block, and `test-divine-verdict-sim` asserts them.
+  `test-combat-sim` check 8 still expects `Infinity` (it failed before this pass too).
+  **Owner decision needed:** pick one rule and update the other test.
+- **Cataclysm and Knight Q cooldowns unchanged** (24s): both are spec/test-locked.
+- **Telegraph rings stay hidden**: the locked plan removes red target circles, and test 10 asserts it.
+
+### Follow-ups not done in this pass
+1. Enemy foot sliding: set locomotion `timeScale` from measured clip stride. Needs `library/`
+   GLBs, which are not in this checkout.
+2. Damage on the attack clip's contact frame, plus per-archetype windups, poise/stagger and hit-react clips.
+3. Pool slots sized to wave composition; distinct Captain/Royal Guard/Boss models.
+4. Solo-vs-duo enemy scaling.
+5. Real pause (freeze the simulation) and a replay that resets `stonesSolved`.
+6. Shrine trees and floor ignore night lighting (landmark materials). Water shoreline depth fade.
+7. Beige mid-distance plain at dusk (outer terrain), fireflies/pollen, rock arches/spires,
+   clouds behind ridgelines, fewer/fainter wind ribbons.
+8. Tablet budget: half-res bloom and a DPR of about 1.25. Measure on the Pad 7 first; there is no GPU here.
