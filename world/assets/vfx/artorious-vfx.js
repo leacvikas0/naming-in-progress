@@ -1066,7 +1066,7 @@ function createSmiteBoltMaterial() {
         if (strand < 0.5) {
           p = zig(t, 0.0, 14.0, len * 0.09, uBoltStart, uBoltEnd);
           pNext = zig(min(t + 0.01, 1.0), 0.0, 14.0, len * 0.09, uBoltStart, uBoltEnd);
-          radius = mix(0.34, 0.12, t);
+          radius = mix(0.6, 0.24, t);
           vAlong = t;
         } else {
           float at = strand < 1.5 ? 0.38 : 0.62;
@@ -1077,7 +1077,7 @@ function createSmiteBoltMaterial() {
           vec3 tip = root + ax * len * 0.22 + side * sideSign * len * 0.16;
           p = zig(t, strand * 17.0, 7.0, len * 0.05, root, tip);
           pNext = zig(min(t + 0.01, 1.0), strand * 17.0, 7.0, len * 0.05, root, tip);
-          radius = mix(0.16, 0.04, t);
+          radius = mix(0.26, 0.06, t);
           vAlong = at + t * 0.25;
         }
         vec3 axis = normalize(pNext - p + vec3(0.0, -1e-4, 0.0));
@@ -1100,7 +1100,7 @@ function createSmiteBoltMaterial() {
         vec3 v = normalize(cameraPosition - vWorldPos);
         float facing = abs(dot(normalize(vNormalW), v));
         // Two-band cel bolt: white-hot core, blood-crimson sheath (HDR so bloom catches)
-        vec3 col = facing > 0.42 ? vec3(5.2, 4.6, 4.9) : vec3(2.6, 0.06, 0.16);
+        vec3 col = facing > 0.66 ? vec3(5.2, 4.6, 4.9) : vec3(2.6, 0.06, 0.16);
         gl_FragColor = vec4(col, 1.0);
       }
     `,

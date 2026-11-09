@@ -679,10 +679,11 @@ export class UltimateVfxSystem {
     const pal = palIndex(style);
     const gy = this._ground(pos.x, pos.z);
     _a.set(pos.x, gy, pos.z);
-    const halo = this.spawnHalo(_a, { life: 1.75, height: 8.6, r0: 8.0, r1: 3.4, pal, formDur: 0.5 });
+    // Halo sits low (5.6 m) so it stays inside a third-person gameplay frustum.
+    const halo = this.spawnHalo(_a, { life: 1.75, height: 5.6, r0: 9.0, r1: 4.6, pal, formDur: 0.5 });
     halo.flashAt = 0.48;
-    this.spawnDisc(_a, { life: 1.7, radius: 2.6, mode: 0, pal, revealDur: 0.42, spin: 0.7 });
-    _b.set(pos.x, gy + 8.6, pos.z);
+    this.spawnDisc(_a, { life: 1.7, radius: 2.8, mode: 0, pal, revealDur: 0.42, spin: 0.7 });
+    _b.set(pos.x, gy + 6.0, pos.z);
     this._tipFallback.set(pos.x, gy + 2.3, pos.z);
     const track = typeof getBladeTip === 'function' ? getBladeTip : null;
     this.spawnBolt(_b, this._tipFallback, { delay: 0.30, life: 0.2, width: 0.05, jag: 0.4, pal, revealDur: 0.14, track });
@@ -690,15 +691,11 @@ export class UltimateVfxSystem {
     this.spawnBolt(_b, this._tipFallback, { delay: 0.50, life: 0.42, width: 0.11, jag: 0.75, pal, revealDur: 0.05, track });
     for (let i = 0; i < 3; i++) {
       const ang = i * 2.1 + 0.4;
-      _c.set(pos.x + Math.cos(ang) * 3.3, gy + 8.4 + i * 0.2, pos.z + Math.sin(ang) * 3.3);
+      _c.set(pos.x + Math.cos(ang) * 4.2, gy + 5.5 + i * 0.2, pos.z + Math.sin(ang) * 4.2);
       this.spawnBolt(_b, _c, { delay: 0.47 + i * 0.03, life: 0.34, width: 0.07, jag: 0.5, pal, revealDur: 0.06 });
     }
     this.spawnSparks(this._tipFallback, { delay: 0.5, life: 0.55, count: 14, speed: 6.5, pal });
-    this._sparkTrack = track;
     this._impact(_a, pal, 1.0, releaseDelay);
-    this._shakeAt = releaseDelay;
-    this._shakeAge = 0;
-    this._shakeAmp = 0.12;
     this.group.visible = true;
   }
 
@@ -720,14 +717,14 @@ export class UltimateVfxSystem {
     }
     const gy = this._ground(impactPos.x, impactPos.z);
     _a.set(impactPos.x, gy, impactPos.z);
-    const halo = this.spawnHalo(_a, { life: 1.65, height: 9.0, r0: 8.5, r1: 4.2, pal: P.couples.idx, formDur: strikeDelay });
+    const halo = this.spawnHalo(_a, { life: 1.65, height: 6.2, r0: 10.0, r1: 5.6, pal: P.couples.idx, formDur: strikeDelay });
     halo.flashAt = strikeDelay;
     this.spawnDisc(_a, { life: 1.6, radius: 4.4, mode: 0, pal: P.couples.idx, revealDur: strikeDelay * 0.9, spin: 0.5 });
-    _b.set(impactPos.x, gy + 9.0, impactPos.z);
+    _b.set(impactPos.x, gy + 6.7, impactPos.z);
     this.spawnBolt(_b, _a, { delay: strikeDelay, life: 0.7, width: 0.55, jag: 0.28, pal: P.couples.idx, revealDur: 0.06 });
     for (let i = 0; i < 2; i++) {
       const off = i === 0 ? 0.55 : -0.55;
-      _c.set(impactPos.x + off, gy + 9.0, impactPos.z - off * 0.4);
+      _c.set(impactPos.x + off, gy + 6.7, impactPos.z - off * 0.4);
       _d.set(impactPos.x - off * 0.4, gy, impactPos.z + off * 0.4);
       this.spawnBolt(_c, _d, { delay: strikeDelay - 0.02, life: 0.6, width: 0.14, jag: 0.65, pal: i === 0 ? P.rose.idx : P.ivory.idx, revealDur: 0.07 });
     }
@@ -744,12 +741,12 @@ export class UltimateVfxSystem {
     const gy = this._ground(pos.x, pos.z);
     _a.set(pos.x, gy, pos.z);
     this.cataclysm.pos.copy(_a);
-    const halo = this.spawnHalo(_a, { life: duration + 0.8, height: 8.2, r0: 9.5, r1: 5.4, pal, formDur: 0.6 });
+    const halo = this.spawnHalo(_a, { life: duration + 0.8, height: 6.0, r0: 11.0, r1: 6.4, pal, formDur: 0.6 });
     halo.flashAt = 0.3;
     this.cataclysm.halo = halo;
     this.cataclysm.sigil = this.spawnDisc(_a, { life: duration + 0.4, radius: 3.3, mode: 0, pal, revealDur: 0.5, spin: 0.45 });
     this.cataclysm.active = true;
-    _b.set(pos.x, gy + 8.2, pos.z);
+    _b.set(pos.x, gy + 6.5, pos.z);
     _c.set(pos.x, gy + 2.2, pos.z);
     this.spawnBolt(_b, _c, { delay: 0.3, life: 0.45, width: 0.2, jag: 0.35, pal, revealDur: 0.06 });
     this.spawnSparks(_c, { delay: 0.32, count: 10, speed: 5, pal });
@@ -766,7 +763,7 @@ export class UltimateVfxSystem {
       const gy = this._ground(x, z);
       _a.set(x, gy, z);
       const ang = hash11(this.uTime.value * 3.1 + i) * TAU;
-      _b.set(c.pos.x + Math.cos(ang) * 5.0, c.pos.y + 8.0, c.pos.z + Math.sin(ang) * 5.0);
+      _b.set(c.pos.x + Math.cos(ang) * 5.4, c.pos.y + 5.9, c.pos.z + Math.sin(ang) * 5.4);
       this.spawnBolt(_b, _a, { delay: i * 0.07, life: 0.42, width: 0.24, jag: 0.6, pal, revealDur: 0.06 });
       this.spawnDisc(_a, { delay: i * 0.07, life: 0.6, radius: 2.6, mode: 1, pal });
       this.spawnCrest(_a, { delay: i * 0.07, life: 0.45, radius: 2.0, height: 0.7, pal });
@@ -815,7 +812,6 @@ export class UltimateVfxSystem {
         if (r.age - r.delay > r.life) r.active = false;
       }
     }
-    if (this._shakeAt !== undefined) this._shakeAge += dt;
   }
 
   _evaluate() {
@@ -941,8 +937,8 @@ export class UltimateVfxSystem {
       for (let i = 0; i < 12 && npt < MAX_PETALS; i++) {
         const outer = i >= 6;
         const yaw = (i / 6) * TAU + (outer ? Math.PI / 6 : 0);
-        const tilt = lerp(outer ? 0.35 : 0.12, outer ? 1.45 : 1.15, open);
-        const sc = (outer ? 2.1 : 1.6) * rise * (1 + 0.25 * open);
+        const tilt = lerp(outer ? 0.35 : 0.12, outer ? 1.2 : 0.8, open);
+        const sc = (outer ? 2.6 : 2.0) * rise * (1 + 0.2 * open);
         _e.set(tilt, yaw, 0, 'YXZ');
         _q.setFromEuler(_e);
         _p.copy(bl.pos);
@@ -966,7 +962,7 @@ export class UltimateVfxSystem {
           _p.set(bl.pos.x + Math.cos(ang) * r, bl.pos.y + 0.4 + (3.5 + 3 * hs) * drag - 1.1 * ft * ft, bl.pos.z + Math.sin(ang) * r);
           _e.set(ft * (4 + hs * 6), ang, ft * 5 * hs2);
           _q.setFromEuler(_e);
-          const sc = 0.32 + 0.22 * hs;
+          const sc = 0.5 + 0.3 * hs;
           _s.set(sc, sc, sc);
           _m.compose(_p, _q, _s);
           this.petalMesh.setMatrixAt(npt, _m);
@@ -1028,13 +1024,7 @@ export class UltimateVfxSystem {
     return false;
   }
 
-  getCameraShakeOffset(target = new THREE.Vector3()) {
-    if (this._shakeAt === undefined) return target.set(0, 0, 0);
-    const t = this._shakeAge - this._shakeAt;
-    if (t < 0 || t > 0.4) return target.set(0, 0, 0);
-    const env = Math.exp(-t * 9.0) * this._shakeAmp;
-    return target.set(Math.sin(t * 61) * env, Math.abs(Math.cos(t * 67)) * env, Math.cos(t * 53) * env);
-  }
+  setLighting() {}
 
   /** Deterministic preview: replays a scenario from t = 0 to `timeSeconds`. */
   seek(timeSeconds, scenario = null) {
@@ -1074,7 +1064,6 @@ export class UltimateVfxSystem {
     this.cataclysm.active = false;
     this.cataclysm.halo = null;
     this.cataclysm.sigil = null;
-    this._shakeAt = undefined;
     for (const m of [this.boltMesh, this.discMesh, this.crestMesh, this.cloudMesh, this.petalMesh, this.sparkMesh]) m.count = 0;
     this.group.visible = false;
   }

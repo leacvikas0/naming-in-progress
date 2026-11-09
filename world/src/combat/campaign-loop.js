@@ -1516,6 +1516,9 @@ export function createCampaignLoop({
     };
   }
 
+  // Knight Q visual beats (VFX-only; damage/buff numbers are applied up front).
+  const knightUltCine = { active: false, age: 0, awakened: false, slamFired: false, style: 'rime' };
+
   /**
    * Knight `Q` (`ultimate` — Sky-Lightning Awakening):
    * Plays native sword-raise pose (`pray_channel` / `burst_aoe`), calls down
@@ -1544,16 +1547,19 @@ export function createCampaignLoop({
     );
 
     const kPos = heroStates?.Knight || { x: 0, y: 0, z: 0, yaw: 0 };
-    const dirX = Math.sin(kPos.yaw || 0);
-    const dirZ = Math.cos(kPos.yaw || 0);
 
+    // Beats: storm halo descends + sigil (0-0.48s, sword raised) -> column strikes the
+    // blade (0.48s) -> combo4 slam at 0.68s lands the crack shockwave (~0.93s).
     if (vfxKit) {
-      vfxKit.stormLance?.cast?.(
+      vfxKit.ultimateVfx?.playKnightAwakening?.(
         { x: kPos.x, y: walkableHeightAt(kPos.x, kPos.z), z: kPos.z },
-        { x: dirX, y: 0, z: dirZ },
-        { range: 8.5 }
+        { style: styleId, getBladeTip: vfxKit.swordVfx?.getBladeTipFn }
       );
-      vfxKit.swordVfx?.triggerSwing?.('charged', kPos, kPos.yaw || 0, styleId);
+      knightUltCine.active = true;
+      knightUltCine.age = 0;
+      knightUltCine.awakened = false;
+      knightUltCine.slamFired = false;
+      knightUltCine.style = styleId;
     }
     combatSfx?.playCouplesUltimate?.();
 

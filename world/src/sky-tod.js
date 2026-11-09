@@ -464,10 +464,12 @@ const SKY_FRAG = /* glsl */ `
       ecSky = mix(ecSky, vec3(0.09, 0.004, 0.018), darkBelly * 0.85);
       float clearLip = smoothstep(-0.022, -0.017, clearEdge) * (1.0 - smoothstep(-0.0025, 0.0, clearEdge));
       float clearBand = smoothstep(-0.075, -0.07, clearEdge) * (1.0 - clearLip);
-      ecSky = mix(ecSky, vec3(0.62, 0.30, 0.07), clearBand * step(0.001, uVerdictClear) * 0.8);
-      ecSky = mix(ecSky, vec3(2.6, 1.9, 0.85), clearLip);
+      // Gold crest for the blessing, cool silver for the smite's release
+      float blessTone = step(0.001, uCoronaGold);
+      ecSky = mix(ecSky, mix(vec3(0.3, 0.29, 0.34), vec3(0.62, 0.30, 0.07), blessTone), clearBand * step(0.001, uVerdictClear) * 0.8);
+      ecSky = mix(ecSky, mix(vec3(1.7, 1.66, 1.8), vec3(2.6, 1.9, 0.85), blessTone), clearLip);
 
-      ecSky += uVerdictFlash * (0.35 + 0.65 * h);
+      ecSky += uVerdictFlash * (0.35 + 0.65 * h) * (1.0 - voidMask);
 
       col = mix(col, ecSky, ecW);
     }
@@ -482,8 +484,8 @@ const SKY_FRAG = /* glsl */ `
       vec3 goldSky = mix(vec3(1.32, 0.9, 0.46), vec3(1.05, 0.62, 0.42), smoothstep(0.0, 0.32, h));
       col = mix(col, goldSky, uBlessGold * clearMask * horizonGlow * 0.78);
       col *= mix(vec3(1.0), vec3(1.06, 0.97, 0.9), uBlessGold * clearMask * (1.0 - horizonGlow));
-      float veilBand = step(clearEdge, 0.045) * clearMask * step(0.001, uVerdictClear) * (1.0 - step(0.999, uVerdictClear));
-      col = mix(col, vec3(1.5, 1.2, 0.72), veilBand * uBlessGold);
+      float veilBand = step(clearEdge, 0.026) * clearMask * step(0.001, uVerdictClear) * (1.0 - step(0.999, uVerdictClear));
+      col = mix(col, vec3(1.45, 1.02, 0.5), veilBand * uBlessGold);
 
       float az = atan(d.z, d.x);
       float ra = az * 26.0 / 6.28318;
