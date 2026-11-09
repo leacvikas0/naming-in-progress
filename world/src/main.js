@@ -1361,7 +1361,7 @@ let coopSystem = null;
   );
   village.update(0.016);
   meadow.update(0, camState.vistaTarget, camera);
-  post.render(0.016);
+  renderer.render(scene, camera);
 }
 
 appFlow = createAppFlow({
@@ -2179,7 +2179,13 @@ function applyOpeningFlowCameraAndPoses(step) {
     coopSystem.heroStates.Knight.yaw = kP.yaw;
     coopSystem.knight.group.position.set(kP.x, kP.y, kP.z);
     coopSystem.knight.group.rotation.y = kP.yaw;
-    coopSystem.knight.play('wave', { loop: true, fade: 0.15 });
+    coopSystem.knight.play('wave', {
+      loop: false,
+      clampWhenFinished: true,
+      fade: 0,
+      startTime: 0,
+      force: true,
+    });
 
     coopSystem.heroStates.Mage.x = mP.x;
     coopSystem.heroStates.Mage.z = mP.z;
@@ -2187,7 +2193,13 @@ function applyOpeningFlowCameraAndPoses(step) {
     coopSystem.heroStates.Mage.yaw = mP.yaw;
     coopSystem.mage.group.position.set(mP.x, mP.y, mP.z);
     coopSystem.mage.group.rotation.y = mP.yaw;
-    coopSystem.mage.play('cheer', { loop: true, fade: 0.15 });
+    coopSystem.mage.play('cheer', {
+      loop: false,
+      clampWhenFinished: true,
+      fade: 0,
+      startTime: 0,
+      force: true,
+    });
   }
   updateCamera();
   if (step === FLOW_STEPS.FLOWER_LOBBY) {
