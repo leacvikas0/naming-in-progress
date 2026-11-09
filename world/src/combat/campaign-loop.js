@@ -63,13 +63,16 @@ import {
 
 const MAX_GROUND_INDICATORS = 36;
 const MAX_CREST_AND_TETHER_INSTANCES = 56;
+const STORM_CATACLYSM_INNER_SAFE_RADIUS = 1.68;
+const STORM_CATACLYSM_FRIENDLY_FIRE_DMG = 38;
+const _indDummy = new THREE.Object3D();
 
 /* ------------------------------------------------------------------------- */
 /* 1. Shared 2-InstancedMesh Opaque Cel-Shaded Indicator Builders            */
 /* ------------------------------------------------------------------------- */
 
 function createGroundIndicatorInstancedMesh() {
-  const geo = new THREE.PlaneGeometry(2.0, 2.0, 1, 1);
+  const geo = new THREE.PlaneGeometry(2.0, 2.0, 24, 24);
   geo.rotateX(-Math.PI * 0.5);
 
   const metaArray = new Float32Array(MAX_GROUND_INDICATORS * 4);
@@ -80,39 +83,58 @@ function createGroundIndicatorInstancedMesh() {
   const mat = new THREE.ShaderMaterial({
     name: 'CombatGroundIndicatorCelMaterial',
     transparent: false,
-    depthWrite: true,
+    depthWrite: false,
     depthTest: true,
+    polygonOffset: true,
+    polygonOffsetFactor: -6,
+    polygonOffsetUnits: -6,
     side: THREE.DoubleSide,
     uniforms: {
       uTime: { value: 0 },
-      uInkColor: { value: new THREE.Color('#1a1218') },
-      uHotCoreColor: { value: new THREE.Color('#fff5d6') },
+      uTerrainSlope: { value: new THREE.Vector4(0, 0, 0, 0.48) },
+      uGoldEdgeColor: { value: new THREE.Color('#ff9a24') },
+      uHotCoreColor: { value: new THREE.Color('#fff8db') },
     },
     vertexShader: /* glsl */ `
-      attribute vec4 aIndicatorMeta;
+      attribute vec4 aIndicatorMeta; // x: halfExtentM, y: outerRadiusM, z: innerSafeRadiusM, w: active
+      uniform vec4 uTerrainSlope; // x: dh/dx, y: dh/dz, z: curvature, w: baseY
       varying vec2 vLocalXZ;
-      varying vec3 vColor;
       varying vec4 vMeta;
 
       void main() {
         vLocalXZ = position.xz;
-        vColor = instanceColor;
         vMeta = aIndicatorMeta;
         vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+        float wx = vLocalXZ.x * max(1.0, aIndicatorMeta.x);
+        float wz = vLocalXZ.y * max(1.0, aIndicatorMeta.x);
+        worldPos.y = uTerrainSlope.w + wx * uTerrainSlope.x + wz * uTerrainSlope.y + (wx * wx + wz * wz) * uTerrainSlope.z;
         gl_Position = projectionMatrix * viewMatrix * worldPos;
       }
     `,
     fragmentShader: /* glsl */ `
       uniform float uTime;
-      uniform vec3 uInkColor;
+      uniform vec3 uGoldEdgeColor;
       uniform vec3 uHotCoreColor;
 
       varying vec2 vLocalXZ;
-      varying vec3 vColor;
       varying vec4 vMeta;
 
       void main() {
-        gl_FragColor = vec4(vColor, 1.0);
+        float halfExtent = max(1.0, vMeta.x);
+        if (vMeta.w <= 0.01) discard;
+        float distM = length(vLocalXZ) * halfExtent;
+        float ang = atan(vLocalXZ.y, vLocalXZ.x);
+        // Outer bombardment ring with 4 cardinal ticks; inner safe circle at the Mage's feet
+        float cardinal = pow(abs(cos(ang * 2.0)), 28.0);
+        float dOuter = abs(distM - vMeta.y) - cardinal * 0.22;
+        float outerLine = 1.0 - smoothstep(0.08, 0.17, dOuter);
+        float outerCore = 1.0 - smoothstep(0.0, 0.075, dOuter);
+        float dInner = abs(distM - vMeta.z);
+        float innerLine = 1.0 - smoothstep(0.055, 0.12, dInner);
+        float innerCore = 1.0 - smoothstep(0.0, 0.052, dInner);
+        if (max(outerLine, innerLine) < 0.22) discard;
+        float coreFactor = max(outerCore, innerCore);
+        gl_FragColor = vec4(mix(uGoldEdgeColor * 1.15, uHotCoreColor * 1.28, coreFactor), 1.0);
       }
     `,
   });
@@ -120,6 +142,7 @@ function createGroundIndicatorInstancedMesh() {
   const mesh = new THREE.InstancedMesh(geo, mat, MAX_GROUND_INDICATORS);
   mesh.name = 'combatGroundIndicatorInstancedMesh';
   mesh.frustumCulled = false;
+  mesh.renderOrder = 16;
   mesh.castShadow = false;
   mesh.receiveShadow = false;
   mesh.count = 0;
@@ -263,6 +286,8 @@ export function createCampaignLoop({
       stormCataclysmActive: false,
       stormCataclysmTimer: 0,
       stormCataclysmWaveTimer: 0,
+      stormCataclysmWaveIndex: 0,
+      stormCataclysmCenter: null,
       ultCd: 0,
       empoweredBreathing: false,
       ascendedMagicFlow: false,
@@ -1621,9 +1646,11 @@ export function createCampaignLoop({
     combatHeroes.Mage.stormCataclysmActive = true;
     combatHeroes.Mage.stormCataclysmTimer = MAGE_STORM_CATACLYSM_DURATION; // 6.0s
     combatHeroes.Mage.stormCataclysmWaveTimer = 0;
+    combatHeroes.Mage.stormCataclysmWaveIndex = 0;
     combatHeroes.Mage.ultCd = effectiveCataclysmCd; // 24.0s (8.0s during Blessing)
 
     const mPos = heroStates?.Mage || { x: 0, y: 0, z: 0, yaw: 0 };
+    combatHeroes.Mage.stormCataclysmCenter = { x: mPos.x, z: mPos.z };
     const dirX = Math.sin(mPos.yaw || 0);
     const dirZ = Math.cos(mPos.yaw || 0);
 
@@ -1836,15 +1863,55 @@ export function createCampaignLoop({
   }
 
   /**
-   * Permanently hides floating tether beads, spinning overhead enemy diamonds,
-   * and red under-enemy circles (`crestAndTetherMesh.visible = false`,
-   * `groundIndicatorMesh.visible = false`).
+   * Renders the golden Storm Cataclysm bombardment ring (outer radius + inner safe circle)
+   * while the Mage channels; enemy/tether prototype clutter stays hidden.
    */
   function updateIndicatorsInstancedMeshes() {
-    groundInd.mesh.count = 0;
-    groundInd.mesh.visible = false;
     crestInd.mesh.count = 0;
     crestInd.mesh.visible = false;
+
+    const catCenter = combatHeroes.Mage.stormCataclysmCenter;
+    if (
+      !indicatorsHiddenForShot &&
+      combatHeroes.Mage.stormCataclysmActive &&
+      combatHeroes.Mage.stormCataclysmTimer > 0 &&
+      catCenter
+    ) {
+      const halfExtent = 9.0;
+      const cx = catCenter.x;
+      const cz = catCenter.z;
+      const groundY = walkableHeightAt(cx, cz);
+      const hX1 = walkableHeightAt(cx + 5.0, cz);
+      const hX0 = walkableHeightAt(cx - 5.0, cz);
+      const hZ1 = walkableHeightAt(cx, cz + 5.0);
+      const hZ0 = walkableHeightAt(cx, cz - 5.0);
+      const curv = ((hX1 + hX0 + hZ1 + hZ0) * 0.25 - groundY) / 25.0;
+      groundInd.mesh.material.uniforms.uTerrainSlope.value.set(
+        (hX1 - hX0) / 10.0,
+        (hZ1 - hZ0) / 10.0,
+        curv,
+        groundY + 0.56
+      );
+      _indDummy.position.set(cx, groundY + 0.56, cz);
+      _indDummy.rotation.set(0, 0, 0);
+      _indDummy.scale.set(halfExtent, 1.0, halfExtent);
+      _indDummy.updateMatrix();
+      groundInd.mesh.setMatrixAt(0, _indDummy.matrix);
+      groundInd.metaAttr.setXYZW(
+        0,
+        halfExtent,
+        HERO_STATS.Mage.stormCataclysmRadius,
+        STORM_CATACLYSM_INNER_SAFE_RADIUS,
+        1.0
+      );
+      groundInd.mesh.instanceMatrix.needsUpdate = true;
+      groundInd.metaAttr.needsUpdate = true;
+      groundInd.mesh.count = 1;
+      groundInd.mesh.visible = true;
+    } else {
+      groundInd.mesh.count = 0;
+      groundInd.mesh.visible = false;
+    }
   }
 
   function update(dt, { heroStates, soloWingmanActive = true, camera = null } = {}) {
@@ -2111,7 +2178,29 @@ export function createCampaignLoop({
       combatHeroes.Mage.stormCataclysmWaveTimer += dt;
       if (combatHeroes.Mage.stormCataclysmWaveTimer >= 1.0) {
         combatHeroes.Mage.stormCataclysmWaveTimer -= 1.0;
+        combatHeroes.Mage.stormCataclysmWaveIndex += 1;
         const mPos = mage || { x: 0, y: 0, z: 0, yaw: 0 };
+        // Friendly-fire hazard on every 3rd wave: a Knight inside the golden ring
+        // (but outside the Mage's inner safe circle) gets struck — evacuate the circle.
+        const catCenter = combatHeroes.Mage.stormCataclysmCenter;
+        const kEntity = heroStates?.Knight;
+        if (
+          catCenter &&
+          combatHeroes.Mage.stormCataclysmWaveIndex % 3 === 0 &&
+          kEntity &&
+          !combatHeroes.Knight.downed &&
+          typeof kEntity.x === 'number'
+        ) {
+          const dK = Math.hypot(kEntity.x - catCenter.x, kEntity.z - catCenter.z);
+          if (dK > STORM_CATACLYSM_INNER_SAFE_RADIUS && dK <= HERO_STATS.Mage.stormCataclysmRadius) {
+            handlePlayerHit(kEntity, null, STORM_CATACLYSM_FRIENDLY_FIRE_DMG);
+            emitBanner(
+              'STORM BOMBARDMENT · EVACUATE THE CIRCLE!',
+              'Knight must leave the golden circle or be struck by the storm!',
+              'warning'
+            );
+          }
+        }
         if (vfxKit?.stormLance?.cast) {
           vfxKit.stormLance.cast(
             { x: mPos.x, y: walkableHeightAt(mPos.x, mPos.z), z: mPos.z },
