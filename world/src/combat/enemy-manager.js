@@ -31,6 +31,8 @@ import {
   allocateAttackTokens,
   applyHitAndResolveDetonation,
   ICE_DAMAGE_REDUCTION_CAP,
+  ACT_HP_SCALE,
+  BOSS_HP_SCALE,
 } from './combat-balance.js';
 
 export const BOSS_SOVEREIGN_CELL_OVERRIDES = {
@@ -305,8 +307,8 @@ export async function createEnemyManager({
       slot,
       char: slot.char,
       group: slot.char.group,
-      hp: arch.maxHp,
-      maxHp: arch.maxHp,
+      hp: Math.round(arch.maxHp * actHpScale(arch)),
+      maxHp: Math.round(arch.maxHp * actHpScale(arch)),
       dmg: arch.dmg,
       speed: arch.speed,
       attackRange: arch.attackRange,
@@ -320,9 +322,10 @@ export async function createEnemyManager({
       aegisTriggerHpRatio: arch.aegisTriggerHpRatio ?? 0.5,
       aegisLayersMax: arch.aegisLayersMax ?? 2,
       aegisDmgReduction: arch.aegisDmgReduction ?? 0.85,
-      aegisTriggered: Boolean(arch.isBoss),
-      aegisActive: Boolean(arch.isBoss),
-      aegisLayers: arch.isBoss ? (arch.aegisLayersMax ?? 2) : 0,
+      // Aegis is a phase: it rises at aegisTriggerHpRatio, not at spawn.
+      aegisTriggered: false,
+      aegisActive: false,
+      aegisLayers: 0,
       x: clampedPos.x,
       y: groundY,
       z: clampedPos.z,
@@ -426,15 +429,22 @@ export async function createEnemyManager({
     });
   }
 
+  function actHpScale(arch) {
+    if (arch.isBoss) return BOSS_HP_SCALE;
+    return ACT_HP_SCALE[currentActId] ?? 1.0;
+  }
+
   function markEnemyDeadAndNotify(e, result = {}) {
     if (e.deathTimer > 0) return;
     e.dead = true;
-    e.deathTimer = 0.58;
     e.hasAttackToken = false;
     e.aiState = 'dead';
     e.windupTimer = 0;
     e.telegraphProgress = 0;
-    e.char.play('downed', { loop: false, fade: 0.08, force: true });
+    const deathAction = e.char.play('downed', { loop: false, fade: 0.08, force: true });
+    // Hold the slot until the native death clip has played out.
+    const clipDur = deathAction?.getClip?.()?.duration || 0;
+    e.deathTimer = clamp(clipDur + 0.2, 0.58, 2.4);
     if (onEnemyKilled && !e.xpAwarded) {
       e.xpAwarded = true;
       onEnemyKilled(e, result);

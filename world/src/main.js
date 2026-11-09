@@ -1610,12 +1610,12 @@ function syncCharacterGroundShadows() {
     setSlot(1, 9999.0, 9999.0, 0.74, 0.0);
   }
 
-  const pool = coopSystem?.enemyManager?.pool || [];
+  const pool = coopSystem?.enemyManager?.poolSlots || [];
   for (let i = 0; i < 6; i++) {
     const slot = pool[i];
     const eGrp = slot?.char?.group;
     if (eGrp && eGrp.visible) {
-      const r = slot.isBoss ? 1.12 : 0.70;
+      const r = slot.isBossSlot || slot.enemy?.isBoss ? 1.12 : 0.70;
       setSlot(2 + i, eGrp.position.x, eGrp.position.z, r, 1.0);
     } else {
       setSlot(2 + i, 9999.0, 9999.0, 0.70, 0.0);

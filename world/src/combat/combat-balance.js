@@ -105,6 +105,9 @@ export const SHIELD_ARC_COS = 0.5; // +-60 deg frontal block/cover arc
 export const DASH_COOLDOWN = 0.9;
 export const DASH_IFRAMES = 0.22;
 export const PERFECT_DODGE_ICD = 4.0;
+// Live enemy HP escalation per act (archetype base values stay as authored).
+export const ACT_HP_SCALE = { act1_arena: 1.0, act2_plaza: 1.2, act3_shrine: 1.35 };
+export const BOSS_HP_SCALE = 1.6; // 1400 -> 2240 with Aegis phase at 50%
 
 export function getKnightLevelStats(level = 1) {
   const cleanLevel = Math.min(KNIGHT_MAX_LEVEL, Math.max(1, Math.floor(Number(level) || 1)));
