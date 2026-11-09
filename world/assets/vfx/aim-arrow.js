@@ -253,6 +253,11 @@ function createAimArrowMaterial(noiseAtlas, config) {
       uTime: { value: 0.0 },
       uLength: { value: config.frostLanceLength },
       uMode: { value: 0.0 }, // 0.0 = frost_lance ('ice'), 1.0 = cinder_fall ('fire')
+      // Smoothed 0..1 state weights: snapped to an enemy, cancel armed, on cooldown, released.
+      uLock: { value: 0.0 },
+      uCancel: { value: 0.0 },
+      uBlocked: { value: 0.0 },
+      uCommit: { value: 0.0 },
       uSunDir: { value: new THREE.Vector3(0.45, 0.78, 0.42).normalize() },
       uDaylight: { value: 1.0 },
       uIceCore: { value: new THREE.Color(config.colorIceCore) },
@@ -286,6 +291,10 @@ function createAimArrowMaterial(noiseAtlas, config) {
       uniform float uTime;
       uniform float uLength;
       uniform float uMode;
+      uniform float uLock;
+      uniform float uCancel;
+      uniform float uBlocked;
+      uniform float uCommit;
       uniform vec3 uSunDir;
       uniform float uDaylight;
 
@@ -323,7 +332,9 @@ function createAimArrowMaterial(noiseAtlas, config) {
           uNoiseAtlas,
           vec2(alongM * 0.28 - uTime * 0.65, latM * 0.45 + 0.37)
         );
-        float scrollWave = fract(alongM * 0.52 - abs(latM) * 0.85 - uTime * 1.65);
+        // Flow speeds up when locked, stalls when cancel-armed or on cooldown.
+        float flowRate = 1.65 * (1.0 + 0.6 * uLock) * (1.0 - 0.85 * max(uCancel, uBlocked));
+        float scrollWave = fract(alongM * 0.52 - abs(latM) * 0.85 - uTime * flowRate);
         float chevronPulse = smoothstep(0.18, 0.38, scrollWave) * smoothstep(0.82, 0.58, scrollWave);
         float isShaftOrHead = step(partId, 1.5);
         float flowHighlight = chevronPulse * isShaftOrHead * smoothstep(0.035, 0.065, hM);
@@ -355,6 +366,20 @@ function createAimArrowMaterial(noiseAtlas, config) {
           // Grounded dark umber-wine base skirt rim
           col = mix(col, uFireInk, skirtInk * 0.92);
         }
+
+        // Locked: target rings (parts 2/3) pulse to the core colour on their crown.
+        float isRing = step(1.5, partId);
+        float lockPulse = 0.55 + 0.45 * sin(uTime * 9.0);
+        vec3 coreCol = mix(uIceCore, uFireCore, isFire);
+        col = mix(col, coreCol * 1.18, uLock * isRing * smoothstep(0.4, 0.9, ridgeMetric) * lockPulse);
+        // Released: a short bright flash toward the core colour while the clip reaches its release frame.
+        col = mix(col, coreCol * 1.2, uCommit * 0.55 * (1.0 - skirtInk));
+        // Cancel-armed / cooldown: opaque desaturated slate (no transparency, Zero Glass).
+        float luma = dot(col, vec3(0.299, 0.587, 0.114));
+        vec3 slate = mix(vec3(0.16, 0.17, 0.2), vec3(0.58, 0.6, 0.64), clamp(luma * 1.4, 0.0, 1.0));
+        vec3 cancelCol = mix(slate, vec3(0.62, 0.16, 0.18), 0.35 * (1.0 - skirtInk));
+        col = mix(col, slate, uBlocked * 0.8);
+        col = mix(col, cancelCol, uCancel);
 
         gl_FragColor = vec4(col, 1.0);
       }
@@ -389,6 +414,13 @@ export class AimArrowSystem {
     this.length = this.config.frostLanceLength;
     this.active = false;
     this.age = 0;
+    this._target = {
+      origin: new THREE.Vector3(),
+      direction: new THREE.Vector3(1, 0, 0),
+      distance: this.config.frostLanceLength,
+    };
+    this._stateTarget = { lock: 0, cancel: 0, blocked: 0, commit: 0 };
+    this._releaseTimer = 0;
 
     this.geometry = createAimArrowGeometry();
     this.material = createAimArrowMaterial(this.noiseAtlas, this.config);
@@ -407,7 +439,34 @@ export class AimArrowSystem {
     return 'frost_lance';
   }
 
-  _applyAimState({ origin, direction, mode, distance } = {}) {
+  // Accepts `direction`, or the controller's `dirX/dirZ`, or `yaw`.
+  _readDirection(options) {
+    const d = options.direction;
+    if (d && (Number.isFinite(d.x ?? d[0]) || Number.isFinite(d.z ?? d[2]))) {
+      return { x: d.x ?? d[0] ?? 0, z: d.z ?? d[2] ?? 0 };
+    }
+    if (Number.isFinite(options.dirX) && Number.isFinite(options.dirZ)) {
+      return { x: options.dirX, z: options.dirZ };
+    }
+    if (Number.isFinite(options.yaw)) {
+      return { x: Math.sin(options.yaw), z: Math.cos(options.yaw) };
+    }
+    return null;
+  }
+
+  _readState(options) {
+    const s = options.lockState ?? options.state;
+    if (s === undefined) return;
+    const t = this._stateTarget;
+    t.lock = s === 'locked' ? 1 : 0;
+    t.cancel = s === 'cancel' ? 1 : 0;
+    t.blocked = s === 'blocked' ? 1 : 0;
+  }
+
+  _applyAimState(options = {}) {
+    const { origin, mode, distance } = options;
+    const direction = this._readDirection(options);
+    this._readState(options);
     if (origin) {
       const ox = origin.x ?? origin[0] ?? this.origin.x;
       const oz = origin.z ?? origin[2] ?? this.origin.z;
@@ -418,10 +477,8 @@ export class AimArrowSystem {
     }
 
     if (direction) {
-      const dx = direction.x ?? direction[0] ?? this.direction.x;
-      const dz = direction.z ?? direction[2] ?? this.direction.z;
-      const len = Math.hypot(dx, dz) || 1.0;
-      this.direction.set(dx / len, 0, dz / len);
+      const len = Math.hypot(direction.x, direction.z) || 1.0;
+      this.direction.set(direction.x / len, 0, direction.z / len);
     }
     this.side.set(-this.direction.z, 0, this.direction.x);
 
@@ -451,7 +508,79 @@ export class AimArrowSystem {
     }
 
     this.material.uniforms.uLength.value = this.length;
+    this._target.origin.copy(this.origin);
+    this._target.direction.copy(this.direction);
+    this._target.distance = this.distance;
     this._confromRibbonToTerrain();
+  }
+
+  // Sets the aim goal; `update(dt)` glides toward it so snaps read as a quick slide, not a pop.
+  updateAim(options = {}) {
+    if (!this.active) return this.show(options);
+    const nextMode = options.mode !== undefined ? this._normalizeMode(options.mode) : this.mode;
+    if (nextMode !== this.mode) return this.show({ ...options, keepState: true });
+    this._readState(options);
+    const t = this._target;
+    if (options.origin) {
+      const ox = options.origin.x ?? options.origin[0] ?? t.origin.x;
+      const oz = options.origin.z ?? options.origin[2] ?? t.origin.z;
+      t.origin.set(ox, this.getGroundHeight(ox, oz), oz);
+    }
+    const dir = this._readDirection(options);
+    if (dir) {
+      const len = Math.hypot(dir.x, dir.z) || 1.0;
+      t.direction.set(dir.x / len, 0, dir.z / len);
+    }
+    if (Number.isFinite(options.distance)) {
+      t.distance = clamp(options.distance, this.config.minDistance, this.config.maxDistance);
+    }
+    this._releaseTimer = 0;
+    return this;
+  }
+
+  setAim(options = {}) {
+    return this.updateAim(options);
+  }
+
+  _stepTowardTarget(dt) {
+    const t = this._target;
+    const k = 1.0 - Math.exp(-22.0 * dt);
+    let changed = false;
+    // Origin follows the Mage rigidly; only yaw and reticle distance are smoothed.
+    if (this.origin.distanceToSquared(t.origin) > 1e-8) {
+      this.origin.copy(t.origin);
+      changed = true;
+    }
+    const curYaw = Math.atan2(this.direction.x, this.direction.z);
+    const tgtYaw = Math.atan2(t.direction.x, t.direction.z);
+    let dYaw = tgtYaw - curYaw;
+    while (dYaw > Math.PI) dYaw -= TAU;
+    while (dYaw < -Math.PI) dYaw += TAU;
+    if (Math.abs(dYaw) > 1e-4) {
+      const yaw = Math.abs(dYaw) < 1e-3 ? tgtYaw : curYaw + dYaw * k;
+      this.direction.set(Math.sin(yaw), 0, Math.cos(yaw));
+      this.side.set(-this.direction.z, 0, this.direction.x);
+      changed = true;
+    }
+    if (this.mode === 'cinder_fall' && Math.abs(t.distance - this.distance) > 1e-3) {
+      this.distance += (t.distance - this.distance) * k;
+      this.length = this.distance;
+      this.material.uniforms.uLength.value = this.length;
+      changed = true;
+    }
+    return changed;
+  }
+
+  _stepState(dt) {
+    const u = this.material.uniforms;
+    const s = this._stateTarget;
+    const k = 1.0 - Math.exp(-14.0 * dt);
+    const prevLock = u.uLock.value;
+    u.uLock.value += (s.lock - u.uLock.value) * k;
+    u.uCancel.value += (s.cancel - u.uCancel.value) * k;
+    u.uBlocked.value += (s.blocked - u.uBlocked.value) * k;
+    u.uCommit.value += (s.commit - u.uCommit.value) * (1.0 - Math.exp(-30.0 * dt));
+    return Math.abs(u.uLock.value - prevLock) > 1e-3;
   }
 
   _confromRibbonToTerrain() {
@@ -479,6 +608,8 @@ export class AimArrowSystem {
     const headLen = isFire ? 1.65 : 2.25;
     const headBase = Math.max(shaftStart + 0.50, headApex - headLen);
     const maxBarbHalfW = isFire ? 0.92 : 1.12;
+    // Target rings cinch ~12% when the reticle is snapped onto an enemy.
+    const lockTighten = 1.0 - 0.12 * clamp(this.material.uniforms.uLock.value, 0.0, 1.0);
 
     for (let i = 0; i < vertCount; i++) {
       const bOff = i * 4;
@@ -546,9 +677,10 @@ export class AimArrowSystem {
 
         // 8 sculpted crown battlements in Cinder Fall; 4 glacial star points in Frost Lance
         const crownLobes = isFire ? Math.cos(ang * 8.0) : Math.cos(ang * 4.0);
-        const baseRingR = isFire
-          ? 1.78 + 0.08 * Math.max(0.0, crownLobes)
-          : 0.78 + 0.14 * Math.abs(Math.cos(ang * 2.0));
+        const baseRingR =
+          (isFire
+            ? 1.78 + 0.08 * Math.max(0.0, crownLobes)
+            : 0.78 + 0.14 * Math.abs(Math.cos(ang * 2.0))) * lockTighten;
         const ringHalfThick = isFire ? 0.16 : 0.12;
         const centerAlong = isFire ? L : L - 0.85;
 
@@ -569,7 +701,7 @@ export class AimArrowSystem {
         const cosA = Math.cos(ang);
         const sinA = Math.sin(ang);
 
-        const baseRingR = isFire ? 0.82 : 0.36;
+        const baseRingR = (isFire ? 0.82 : 0.36) * lockTighten;
         const ringHalfThick = isFire ? 0.12 : 0.085;
         const centerAlong = isFire ? L : L - 0.85;
 
@@ -609,7 +741,17 @@ export class AimArrowSystem {
   }
 
   show(options = {}) {
+    const fresh = !this.active && !options.keepState;
+    this._stateTarget.commit = 0;
+    this._releaseTimer = 0;
     this._applyAimState(options);
+    if (fresh) {
+      const u = this.material.uniforms;
+      u.uLock.value = this._stateTarget.lock;
+      u.uCancel.value = this._stateTarget.cancel;
+      u.uBlocked.value = this._stateTarget.blocked;
+      u.uCommit.value = 0;
+    }
     this.active = true;
     this.group.visible = true;
     return this;
@@ -617,15 +759,32 @@ export class AimArrowSystem {
 
   update(dt = 0.016, options = null) {
     if (options && typeof options === 'object') {
-      this._applyAimState(options);
-      this.active = true;
-      this.group.visible = true;
+      this.updateAim(options);
     }
     if (!this.active || !this.group.visible) return this;
     if (Number.isFinite(dt)) {
       this.age += dt;
       this.material.uniforms.uTime.value = this.age;
+      const moved = this._stepTowardTarget(dt);
+      const lockAnimating = this._stepState(dt);
+      if (moved || lockAnimating) this._confromRibbonToTerrain();
+      if (this._releaseTimer > 0) {
+        this._releaseTimer -= dt;
+        if (this._releaseTimer <= 0) this.hide();
+      }
     }
+    return this;
+  }
+
+  /**
+   * Release-E: keeps the arrow on its final aim in a bright committed state for
+   * `holdSeconds` (until the cast clip's release frame), then hides it.
+   */
+  release({ holdSeconds = 0 } = {}) {
+    if (!this.active || !(holdSeconds > 0)) return this.hide();
+    this._stateTarget.commit = 1;
+    this._stateTarget.cancel = 0;
+    this._releaseTimer = Math.min(1.0, holdSeconds);
     return this;
   }
 
@@ -645,6 +804,8 @@ export class AimArrowSystem {
   hide() {
     this.active = false;
     this.group.visible = false;
+    this._releaseTimer = 0;
+    this._stateTarget.commit = 0;
     return this;
   }
 

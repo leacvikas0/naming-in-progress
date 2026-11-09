@@ -57,6 +57,7 @@ import {
   COMMUNE_MAX_DISTANCE,
   COMMUNE_RESURRECT_DISTANCE,
   selectSoftLockTarget,
+  isSoftLockable,
   resolveShrineObstacles,
   DASH_COOLDOWN,
   DASH_IFRAMES,
@@ -66,6 +67,10 @@ import {
   KNIGHT_COMBO_SPECS,
   MAGE_COMBO_SPECS,
   MAGE_CHARGED_SHATTERLANCE_SPEC,
+  MAGE_E_CAST_SPECS,
+  MAGE_AIM_HOLD_SPEC,
+  MAGE_AIM_ASSIST,
+  composeMageSkillAim,
   createCombatActionAimController,
 } from './combat/combat-action-aim.js';
 import { createEnemyManager } from './combat/enemy-manager.js';
@@ -1308,14 +1313,21 @@ export async function createCoopPlayerSystem({
           : swing.kind === 'charged'
             ? SPELLS.shatterlance.range
             : HERO_STATS.Mage.boltRange;
-      const softTarget = selectSoftLockTarget(
-        st,
-        st.yaw,
-        enemyManager.activeEnemies,
-        { maxRange, partnerPos: partner }
-      );
-      if (softTarget) {
-        st.yaw = Math.atan2(softTarget.x - st.x, softTarget.z - st.z);
+      if (swing.heroId === 'Mage') {
+        // Mage turns (animated, before the release frame) instead of snapping.
+        const target = mageSoftLock(st, maxRange, mageAimRayYaw(st));
+        mageRt.faceYaw = target ? Math.atan2(target.x - st.x, target.z - st.z) : mageAimRayYaw(st);
+      } else {
+        const softTarget = selectSoftLockTarget(
+          st,
+          st.yaw,
+          enemyManager.activeEnemies,
+          { maxRange, partnerPos: partner }
+        );
+        st.lastSwingTarget = softTarget || null;
+        if (softTarget) {
+          st.yaw = Math.atan2(softTarget.x - st.x, softTarget.z - st.z);
+        }
       }
 
       if (swing.stepDist > 0 && !swing.stationary) {
@@ -1327,11 +1339,15 @@ export async function createCoopPlayerSystem({
       }
       applyTransform(st);
 
-      startOneShotAction(st, swing.clip, swing.duration, {
-        startTime: 0,
-        timeScale: swing.timeScale,
-        fade: 0.06,
-      });
+      if (swing.heroId === 'Mage') {
+        startMageSwingClip(st, swing);
+      } else {
+        startOneShotAction(st, swing.clip, swing.duration, {
+          startTime: 0,
+          timeScale: swing.timeScale,
+          fade: 0.06,
+        });
+      }
 
       coopClient.sendActionEvent({
         role: swing.heroId,
@@ -1372,6 +1388,7 @@ export async function createCoopPlayerSystem({
         st.consecutiveChargedCount = 0;
         campaignLoop.performMageBoltAttack(swing.comboIndex, st, partner);
       }
+      if (swing.heroId === 'Mage') onMageReleaseFrame();
 
       syncSharedPlayerFromLeader();
       onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
@@ -1436,58 +1453,313 @@ export async function createCoopPlayerSystem({
         });
       }
     },
-    onAimChanged: (aim, phase) => {
+    onAimChanged: (aim, phase, castResult = null) => {
       const aimArrow = vfxKit?.aimArrow;
       if (!aimArrow) return;
       const arrowPayload = {
         ...aim,
+        direction: { x: aim.dirX, y: 0, z: aim.dirZ },
         mode: aim.spellId,
         style: aim.spellId === 'cinder_fall' ? 'fire' : 'ice',
       };
       if (phase === 'hide') {
-        aimArrow.hide?.();
+        // Hold the committed arrow until the cast clip's release frame spawns the spell.
+        if (castResult?.scheduled && typeof aimArrow.release === 'function') {
+          aimArrow.release({ holdSeconds: castResult.releaseIn });
+        } else {
+          aimArrow.hide?.();
+        }
       } else if (phase === 'show') {
-        if (typeof aimArrow.show === 'function') {
-          aimArrow.show(arrowPayload);
-        } else if (typeof aimArrow.setAim === 'function') {
-          aimArrow.setAim(arrowPayload);
-        }
+        aimArrow.show?.(arrowPayload);
+      } else if (typeof aimArrow.updateAim === 'function') {
+        aimArrow.updateAim(arrowPayload);
       } else {
-        if (typeof aimArrow.updateAim === 'function') {
-          aimArrow.updateAim(arrowPayload);
-        } else if (typeof aimArrow.setAim === 'function') {
-          aimArrow.setAim(arrowPayload);
-        } else if (typeof aimArrow.show === 'function') {
-          aimArrow.show(arrowPayload);
-        }
+        aimArrow.show?.(arrowPayload);
       }
     },
-    onAimCast: (castPayload) => {
-      const mageState = heroStates.Mage;
-      const knightState = heroStates.Knight;
-      mageState.yaw = castPayload.yaw;
-      applyTransform(mageState);
-      startOneShotAction(mageState, 'cast_spell', 0.62, {
+    onAimCast: (castPayload) => beginMageSkillCast(castPayload),
+  });
+
+  // ---------------------------------------------------------------------------
+  // Mage aim / cast runtime: sticky soft-lock, animated turn-to-target, native
+  // 1.1 clip choice, release-frame spell spawning and dash/move cancel windows.
+  // ---------------------------------------------------------------------------
+  let lastKnownCamYaw = 0;
+  const mageRt = {
+    faceYaw: null, // facing goal while an attack owns the Mage's orientation
+    pendingCast: null, // { payload, spec, timer, target } until the E clip's release frame
+    queuedDash: false, // dash pressed during a wind-up: fires right after release
+    dashAfterRelease: false,
+    recoveryOpen: false, // after a release frame: dash/move may cut the clip
+    chargedSwap: null, // { swing, at, clip } Shatterlance wind-up -> thrust hand-off
+    aimSource: 'desktop', // 'desktop' | 'touch' | 'auto'
+    touch: null, // { dx, dy, overButton, leftButton } from the E button drag
+    aimTarget: null,
+    autoTarget: null,
+    autoYaw: 0,
+  };
+
+  function heroHasClip(st, key) {
+    const a = st?.char?.anim;
+    return Boolean(key && a && (a.semanticActions?.has(key) || a.rawActions?.has(key)));
+  }
+
+  // First playable clip: KayKit 1.1 names first, semantic keys as fallback.
+  function pickHeroClip(st, ...keys) {
+    for (const k of keys.flat()) {
+      if (heroHasClip(st, k)) return k;
+    }
+    return null;
+  }
+
+  function mageAimRayYaw(st) {
+    return st.moveInputYaw ?? lastKnownCamYaw ?? st.yaw;
+  }
+
+  function mageSoftLock(st, maxRange, aimYaw) {
+    const target = selectSoftLockTarget(st, aimYaw, enemyManager.activeEnemies, {
+      maxRange,
+      partnerPos: heroStates.Knight,
+      selfId: 'Mage',
+      partnerTarget: heroStates.Knight.lastSwingTarget || null,
+    });
+    st.softLockTarget = target || null;
+    return target;
+  }
+
+  function startMageSwingClip(st, swing) {
+    mageRt.recoveryOpen = false;
+    mageRt.chargedSwap = null;
+    const isCharged = swing.kind === 'charged';
+    const first = isCharged
+      ? pickHeroClip(st, swing.windupClip, swing.nativeClip, swing.clip, swing.fallbackClip)
+      : pickHeroClip(st, swing.nativeClip, swing.clip);
+    if (!first) return;
+    startOneShotAction(st, first, swing.duration, {
+      startTime: 0,
+      timeScale: swing.timeScale,
+      fade: swing.fade ?? 0.07,
+    });
+    if (isCharged && first === swing.windupClip) {
+      const thrust = pickHeroClip(st, swing.nativeClip, swing.fallbackClip);
+      if (thrust) {
+        mageRt.chargedSwap = {
+          swing,
+          at: Math.max(0, swing.contactTime - swing.nativeReleaseOffset),
+          clip: thrust,
+        };
+      }
+    }
+  }
+
+  function onMageReleaseFrame() {
+    mageRt.recoveryOpen = true;
+    if (mageRt.queuedDash) {
+      mageRt.queuedDash = false;
+      mageRt.dashAfterRelease = true;
+    }
+  }
+
+  function beginMageSkillCast(payload) {
+    const mage = heroStates.Mage;
+    const combat = campaignLoop.combatHeroes.Mage;
+    if (combat.downed) return { blocked: true };
+    if (combat.skillCd > 0.05) return { onCooldown: true, cooldownRemaining: combat.skillCd };
+    const spec = MAGE_E_CAST_SPECS[payload.spellId] || MAGE_E_CAST_SPECS.frost_lance;
+    const clip = pickHeroClip(mage, spec.nativeClip, spec.fallbackClip);
+    mageRt.recoveryOpen = false;
+    mageRt.chargedSwap = null;
+    if (clip) {
+      startOneShotAction(mage, clip, spec.lock, {
         startTime: 0,
-        timeScale: 1.0,
-        fade: 0.08,
+        timeScale: spec.timeScale,
+        fade: spec.fade,
       });
-      const res = campaignLoop.performPartnerSkill('Mage', heroStates, {
-        spellId: castPayload.spellId,
-        yaw: castPayload.yaw,
-        distance: castPayload.distance,
-        targetPos: castPayload.targetPos,
-      });
-      coopClient.sendSpellCast({
-        spellId: castPayload.spellId,
-        origin: { x: mageState.x, y: mageState.y, z: mageState.z },
-        yaw: mageState.yaw,
-        distance: castPayload.distance,
-        targetPos: castPayload.targetPos,
-      });
-      onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
-      return res;
-    },
+    }
+    mageRt.pendingCast = {
+      payload,
+      spec,
+      timer: spec.releaseTime,
+      target: payload.lockState === 'locked' ? mageRt.aimTarget : null,
+    };
+    mageRt.aimTarget = null;
+    return { scheduled: true, releaseIn: spec.releaseTime, clip };
+  }
+
+  function fireMageSkillCast() {
+    const { payload, target } = mageRt.pendingCast;
+    mageRt.pendingCast = null;
+    const mageState = heroStates.Mage;
+    let { yaw, distance, targetPos } = payload;
+    // A locked Cinder Fall follows its enemy through the wind-up (still clamped to 3..16 m).
+    if (payload.spellId === 'cinder_fall' && target && isSoftLockable(target)) {
+      const dx = target.x - mageState.x;
+      const dz = target.z - mageState.z;
+      yaw = Math.atan2(dx, dz);
+      distance = clamp(Math.hypot(dx, dz), MAGE_AIM_ASSIST.cinderMin, MAGE_AIM_ASSIST.cinderMax);
+      const tx = mageState.x + Math.sin(yaw) * distance;
+      const tz = mageState.z + Math.cos(yaw) * distance;
+      targetPos = { x: tx, y: walkableHeightAt(tx, tz), z: tz };
+    }
+    mageState.yaw = yaw;
+    applyTransform(mageState);
+    const res = campaignLoop.performPartnerSkill('Mage', heroStates, {
+      spellId: payload.spellId,
+      yaw,
+      distance,
+      targetPos,
+    });
+    coopClient.sendSpellCast({
+      spellId: payload.spellId,
+      origin: { x: mageState.x, y: mageState.y, z: mageState.z },
+      yaw,
+      distance,
+      targetPos,
+    });
+    onMageReleaseFrame();
+    onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
+    return res;
+  }
+
+  function refreshMageSkillAim(isInitialShow = false) {
+    const mage = heroStates.Mage;
+    const spellId = actionAim.aimState.active
+      ? actionAim.aimState.spellId
+      : mage.selectedSpell || actionAim.heroes.Mage.selectedSpell || 'frost_lance';
+    const aim = composeMageSkillAim({
+      source: mageRt.aimSource,
+      spellId,
+      origin: mage,
+      camYaw: lastKnownCamYaw,
+      pitch: lastKnownCamPitch,
+      facingYaw: mageRt.autoYaw,
+      touch: mageRt.touch,
+      autoTarget: mageRt.autoTarget,
+      current: mageRt.aimTarget,
+      enemies: enemyManager.activeEnemies,
+      onCooldown: campaignLoop.combatHeroes.Mage.skillCd > 0.05,
+      isTargetable: isSoftLockable,
+    });
+    mageRt.aimTarget = aim.target || null;
+    const params = {
+      origin: { x: mage.x, y: mage.y, z: mage.z },
+      yaw: aim.yaw,
+      pitch: lastKnownCamPitch,
+      distance: aim.distance,
+      spellId,
+      lockState: aim.lockState,
+      lockTargetId: aim.target?.instanceId ?? aim.target?.id ?? null,
+    };
+    return isInitialShow ? actionAim.startSkillAim(params) : actionAim.updateSkillAim(params);
+  }
+
+  // Facing owned by aim / attacks: exponential turn (~0.12 s to settle) so the
+  // Mage visibly pivots onto the target before the release frame.
+  function stepMageFacing(st, dt) {
+    if (st.actionState === 'dash') return false;
+    const sw = actionAim.heroes.Mage.activeSwing;
+    let goal = null;
+    if (actionAim.aimState.active) {
+      goal = actionAim.aimState.yaw;
+    } else if (mageRt.pendingCast) {
+      goal = mageRt.pendingCast.payload.yaw;
+    } else if (sw && !sw.contactFired) {
+      const t = st.softLockTarget;
+      if (t && isSoftLockable(t)) mageRt.faceYaw = Math.atan2(t.x - st.x, t.z - st.z);
+      goal = mageRt.faceYaw;
+    } else if (sw) {
+      goal = mageRt.faceYaw;
+    }
+    if (goal === null || goal === undefined) {
+      mageRt.faceYaw = null;
+      return false;
+    }
+    st.yaw += shortestAngleDiff(goal, st.yaw) * (1 - Math.exp(-24 * dt));
+    return true;
+  }
+
+  // Strafe/back-pedal clips while aiming so feet match the slowed movement.
+  function playMageAimLocomotion(st, moveX, moveZ, moving) {
+    const spec = MAGE_AIM_HOLD_SPEC;
+    let key;
+    let timeScale = 1.0;
+    let loop = true;
+    if (!moving) {
+      key = pickHeroClip(st, spec.nativeClip, spec.fallbackClip, 'idle');
+      loop = false;
+    } else {
+      const fwd = moveX * Math.sin(st.yaw) + moveZ * Math.cos(st.yaw);
+      const right = -moveX * Math.cos(st.yaw) + moveZ * Math.sin(st.yaw);
+      const dir =
+        Math.abs(fwd) >= Math.abs(right) ? (fwd >= 0 ? 'forward' : 'backward') : right >= 0 ? 'right' : 'left';
+      key = pickHeroClip(st, spec.locomotion[dir], 'walk');
+      if (dir === 'left' || dir === 'right') timeScale = 0.75;
+    }
+    if (!key) return;
+    const loco = `mage_aim:${key}`;
+    if (st.locomotionState === loco && st.char.anim.currentKey === key) return;
+    st.locomotionState = loco;
+    st.char.play(key, {
+      loop,
+      clampWhenFinished: !loop,
+      fade: loop ? 0.16 : spec.fade,
+      startTime: 0,
+      timeScale,
+    });
+  }
+
+  function stepMageActionRuntime(dt, controlLocked) {
+    const mage = heroStates.Mage;
+    if (controlLocked || campaignLoop.combatHeroes.Mage.downed) {
+      mageRt.pendingCast = null;
+      mageRt.queuedDash = false;
+      mageRt.dashAfterRelease = false;
+      mageRt.chargedSwap = null;
+      return;
+    }
+    if (mageRt.pendingCast) {
+      mageRt.pendingCast.timer -= dt;
+      if (mageRt.pendingCast.timer <= 0) fireMageSkillCast();
+    }
+    const swap = mageRt.chargedSwap;
+    const sw = actionAim.heroes.Mage.activeSwing;
+    if (swap) {
+      if (sw !== swap.swing) {
+        mageRt.chargedSwap = null;
+      } else if (sw.elapsed >= swap.at) {
+        mageRt.chargedSwap = null;
+        startOneShotAction(mage, swap.clip, Math.max(0.05, sw.duration - sw.elapsed), {
+          startTime: 0,
+          timeScale: 1.0,
+          fade: 0.08,
+        });
+      }
+    }
+    if (mageRt.dashAfterRelease) {
+      mageRt.dashAfterRelease = false;
+      if (activeHeroId === 'Mage') triggerAction('dash');
+    }
+    if (actionAim.aimState.active && activeHeroId === 'Mage') {
+      refreshMageSkillAim();
+    }
+    // Sticky lock lapses once the combo window closes.
+    if (!sw && !actionAim.aimState.active && actionAim.heroes.Mage.comboResetTimer <= 0) {
+      mage.softLockTarget = null;
+    }
+  }
+
+  vfxKit?.mageBolt?.setTargetResolver?.((pt) => {
+    let best = null;
+    let bestD = 1.6;
+    for (const e of enemyManager.activeEnemies) {
+      if (!e || e.active === false) continue;
+      const d = Math.hypot(e.x - pt.x, e.z - pt.z);
+      if (d < bestD) {
+        bestD = d;
+        best = e;
+      }
+    }
+    return best;
   });
 
   function getHeroDistance() {
@@ -1925,12 +2197,13 @@ export async function createCoopPlayerSystem({
     const knightState = heroStates.Knight;
     const leader = heroStates[activeHeroId];
 
-    const softTarget = selectSoftLockTarget(
-      leader,
-      leader.yaw,
-      enemyManager.activeEnemies,
-      { maxRange: spell.range, partnerPos: knightState }
-    );
+    const softTarget =
+      leader.id === 'Mage'
+        ? mageSoftLock(leader, spell.range, leader.yaw)
+        : selectSoftLockTarget(leader, leader.yaw, enemyManager.activeEnemies, {
+            maxRange: spell.range,
+            partnerPos: knightState,
+          });
 
     let aimYaw = options.yaw ?? leader.yaw;
     if (softTarget && options.yaw === undefined) {
@@ -1942,8 +2215,11 @@ export async function createCoopPlayerSystem({
 
     mageState.yaw = res.targetYaw ?? aimYaw;
     applyTransform(mageState);
-    const castClip = spell.slot === 2 || spell.slot === 4 ? 'cast_shoot' : 'cast_spell';
-    startOneShotAction(mageState, castClip, 0.62, {
+    const castClip =
+      spell.slot === 2 || spell.slot === 4
+        ? pickHeroClip(mageState, 'Ranged_Magic_Shoot', 'cast_shoot')
+        : pickHeroClip(mageState, 'Ranged_1H_Shoot', 'cast_spell');
+    startOneShotAction(mageState, castClip || 'cast_spell', 0.62, {
       startTime: 0,
       timeScale: 1.0,
       fade: 0.08,
@@ -1996,17 +2272,43 @@ export async function createCoopPlayerSystem({
     if (isPlayerControlLocked()) return { blockedByControlLock: true };
     if (!isAbilityUnlocked('skillE')) return { locked: true };
     const mageState = heroStates.Mage;
-    return actionAim.startSkillAim({
-      origin: opts.origin || { x: mageState.x, y: mageState.y, z: mageState.z },
-      yaw: opts.yaw ?? mageState.yaw,
-      pitch: opts.pitch ?? lastKnownCamPitch,
-      distance: opts.distance,
-      touchTarget: opts.touchTarget,
-      spellId: opts.spellId || heroStates.Mage.selectedSpell,
-    });
+    const legacyParams =
+      opts.yaw !== undefined || opts.distance !== undefined || opts.touchTarget || opts.origin;
+    if (legacyParams) {
+      return actionAim.startSkillAim({
+        origin: opts.origin || { x: mageState.x, y: mageState.y, z: mageState.z },
+        yaw: opts.yaw ?? mageState.yaw,
+        pitch: opts.pitch ?? lastKnownCamPitch,
+        distance: opts.distance,
+        touchTarget: opts.touchTarget,
+        spellId: opts.spellId || heroStates.Mage.selectedSpell,
+      });
+    }
+    // One E at a time: the previous cast still has to reach its release frame.
+    if (mageRt.pendingCast) return { busy: true };
+    const spellId = opts.spellId || mageState.selectedSpell || 'frost_lance';
+    mageRt.aimSource = opts.source || (opts.touch ? 'touch' : 'desktop');
+    mageRt.touch = opts.touch || null;
+    mageRt.aimTarget = null;
+    mageRt.autoYaw = mageState.yaw;
+    mageRt.autoTarget =
+      mageRt.aimSource === 'desktop'
+        ? null
+        : mageSoftLock(mageState, spellId === 'cinder_fall' ? 16.0 : 14.5, mageAimRayYaw(mageState));
+    // Raising the staff to aim may cut an already-released attack's recovery.
+    if (mageRt.recoveryOpen && actionAim.cancelRecovery('Mage').cancelled) {
+      mageState.actionState = null;
+      mageState.actionTimer = 0;
+    }
+    return refreshMageSkillAim(true);
   }
 
   function updateSkillAim(opts = {}) {
+    if (opts && opts.touch) {
+      mageRt.aimSource = 'touch';
+      mageRt.touch = opts.touch;
+      return actionAim.aimState.active ? refreshMageSkillAim() : { ...actionAim.aimState };
+    }
     return actionAim.updateSkillAim(opts);
   }
 
@@ -2015,7 +2317,14 @@ export async function createCoopPlayerSystem({
       actionAim.cancelSkillAim();
       return { blockedByControlLock: true };
     }
-    return actionAim.releaseSkillAim(opts);
+    if (opts && opts.touch) {
+      mageRt.aimSource = 'touch';
+      mageRt.touch = opts.touch;
+      if (actionAim.aimState.active) refreshMageSkillAim();
+      return actionAim.releaseSkillAim();
+    }
+    const hasLegacy = opts && (opts.yaw !== undefined || opts.distance !== undefined || opts.touchTarget);
+    return actionAim.releaseSkillAim(hasLegacy ? opts : null);
   }
 
   function triggerAction(actionType, actionOptions = {}) {
@@ -2086,6 +2395,19 @@ export async function createCoopPlayerSystem({
       }
       if (leader.id === 'Knight' && leader.shieldBlocking) {
         actionAim.releaseHeavy('Knight');
+      }
+      if (leader.id === 'Mage') {
+        // Dash never eats a release frame: queue it through the wind-up, then cut recovery.
+        if (actionAim.isInReleaseWindup('Mage') || mageRt.pendingCast) {
+          mageRt.queuedDash = true;
+          return { queued: true };
+        }
+        actionAim.cancelRecovery('Mage');
+        mageRt.recoveryOpen = false;
+        mageRt.chargedSwap = null;
+        if (leader.moveInputYaw !== null && leader.moveInputYaw !== undefined) {
+          leader.yaw = leader.moveInputYaw;
+        }
       }
       leader.dashDirX = Math.sin(leader.yaw);
       leader.dashDirZ = Math.cos(leader.yaw);
@@ -2191,7 +2513,8 @@ export async function createCoopPlayerSystem({
       if (actionAim.aimState.active) {
         return releaseSkillAim(actionOptions);
       }
-      startSkillAim(actionOptions);
+      // Quick-cast: auto-snap onto the soft-lock target, then release.
+      startSkillAim({ source: 'auto', ...actionOptions });
       return releaseSkillAim(actionOptions);
     }
 
@@ -2393,15 +2716,9 @@ export async function createCoopPlayerSystem({
       actionAim.update(dt);
       leader.bufferedAttack = actionAim.heroes[leader.id].bufferedAttack;
       leader.mashTimeScale = actionAim.heroes[leader.id].mashTimeScale;
-
-      if (actionAim.aimState.active && activeHeroId === 'Mage') {
-        actionAim.updateSkillAim({
-          origin: { x: heroStates.Mage.x, y: heroStates.Mage.y, z: heroStates.Mage.z },
-          yaw: camYaw || heroStates.Mage.yaw,
-          pitch: lastKnownCamPitch,
-        });
-      }
     }
+    lastKnownCamYaw = camYaw;
+    stepMageActionRuntime(dt, controlLocked);
 
     if (localHitstopTimer > 0) {
       localHitstopTimer = Math.max(0, localHitstopTimer - dt);
@@ -2444,6 +2761,28 @@ export async function createCoopPlayerSystem({
       (Boolean(keys && keys.has('shift')) || Boolean(joyState && joyState.sprinting));
 
     let didWrap = false;
+
+    // Mage: movement cuts an already-released attack/cast's recovery (never the wind-up).
+    if (
+      leader.id === 'Mage' &&
+      !controlLocked &&
+      moveMag > 0.12 &&
+      mageRt.recoveryOpen &&
+      leader.actionState &&
+      leader.actionState !== 'dash' &&
+      !actionAim.heroes.Mage.bufferedAttack &&
+      !actionAim.isInReleaseWindup('Mage') &&
+      !mageRt.pendingCast &&
+      !campaignLoop.combatHeroes.Mage.stormCataclysmActive
+    ) {
+      actionAim.cancelRecovery('Mage');
+      mageRt.recoveryOpen = false;
+      leader.actionState = null;
+      leader.actionTimer = 0;
+    }
+    const mageOwnsFacing = leader.id === 'Mage' && !controlLocked && stepMageFacing(leader, dt);
+    const mageAiming = leader.id === 'Mage' && actionAim.aimState.active;
+    leader.moveInputYaw = null;
 
     // 2. Update Active Hero (Leader)
     const isMageStationaryCast =
@@ -2499,13 +2838,19 @@ export async function createCoopPlayerSystem({
       const moveX = fx * nz + rx * nx;
       const moveZ = fz * nz + rz * nx;
 
+      leader.moveInputYaw = Math.atan2(moveX, moveZ);
+      leader.moveVecX = moveX;
+      leader.moveVecZ = moveZ;
+
       const blockMult = leader.shieldBlocking ? 0.35 : 1.0;
       const actionMult = leader.actionState && !leader.shieldBlocking ? 0.35 : 1.0;
+      const aimMult = mageAiming && !leader.actionState ? MAGE_AIM_HOLD_SPEC.moveSpeedMult : 1.0;
       const spd =
         player.speed *
-        (isSprinting ? player.sprintMult : moveMag < 0.55 ? 0.56 : 1.0) *
+        (isSprinting && !mageAiming ? player.sprintMult : moveMag < 0.55 ? 0.56 : 1.0) *
         blockMult *
-        actionMult;
+        actionMult *
+        aimMult;
 
       let next = resolveCollisions(
         leader.x + moveX * spd * dt,
@@ -2525,8 +2870,10 @@ export async function createCoopPlayerSystem({
       leader.z = next.z;
       didWrap = next.wrapped;
 
-      const targetYaw = Math.atan2(moveX, moveZ);
-      leader.yaw += shortestAngleDiff(targetYaw, leader.yaw) * Math.min(1, 14 * dt);
+      if (!mageOwnsFacing) {
+        const targetYaw = Math.atan2(moveX, moveZ);
+        leader.yaw += shortestAngleDiff(targetYaw, leader.yaw) * Math.min(1, 14 * dt);
+      }
     }
 
     // Vertical physics & Jump state transitions
@@ -2575,7 +2922,9 @@ export async function createCoopPlayerSystem({
       !leader.praying &&
       leader.landTimer <= 0
     ) {
-      if (moveMag < 0.08) {
+      if (mageAiming) {
+        playMageAimLocomotion(leader, leader.moveVecX || 0, leader.moveVecZ || 0, moveMag >= 0.08);
+      } else if (moveMag < 0.08) {
         playHeroLocomotionClip(leader, 'idle');
       } else if (isSprinting) {
         playHeroLocomotionClip(leader, 'sprint');

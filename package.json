@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "fetch": "node scripts/fetch-library.mjs",
+    "fetch:kaykit": "node scripts/fetch-kaykit.mjs",
     "index": "node scripts/index-library.mjs",
     "inspect": "node scripts/inspect-rig.mjs",
     "setup": "node scripts/fetch-library.mjs && node scripts/index-library.mjs && node scripts/inspect-rig.mjs",

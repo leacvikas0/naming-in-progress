@@ -27,6 +27,15 @@ import {
 import { createHousesKit } from '../assets/houses/index.js';
 import { createToroidalMeadow, MEADOW_PROFILES } from '../assets/flowers/index.js';
 import { createTimeOfDaySky, TOD_PRESETS } from './sky-tod.js';
+import {
+  evalVerdictSky,
+  evalChannelSky,
+  evalChannelReleaseSky,
+  evalSmiteSky,
+  evalBlessingSky,
+  idleVerdictSky,
+  VERDICT_SKY_TAILS,
+} from './verdict-sky-choreo.js';
 import { createWorldPost } from './post.js';
 import {
   createCoopPlayerSystem,
@@ -928,21 +937,20 @@ sculptedHud = createSculptedHud({
       coopSystem.triggerAction('ultimate');
     }
   },
-  onAimStart: () => {
+  // Mage E drag-to-aim: the HUD reports the drag vector; the player controller maps it.
+  onAimStart: ({ touch } = {}) => {
     if (coopSystem.player.activeHeroId === 'Mage') {
-      coopSystem.startSkillAim();
+      coopSystem.startSkillAim({ source: 'touch', touch });
     }
   },
-  onAimMove: ({ clientX, clientY }) => {
-    if (coopSystem.player.activeHeroId === 'Mage') {
-      const normY = 1.0 - clamp((clientY || window.innerHeight * 0.5) / Math.max(1, window.innerHeight), 0, 1);
-      const dist = 3.0 + normY * 13.0;
-      coopSystem.updateSkillAim({ distance: dist, yaw: camState.yaw });
+  onAimMove: ({ touch } = {}) => {
+    if (coopSystem.player.activeHeroId === 'Mage' && touch) {
+      coopSystem.updateSkillAim({ touch });
     }
   },
-  onAimRelease: () => {
+  onAimRelease: ({ touch } = {}) => {
     if (coopSystem.player.activeHeroId === 'Mage') {
-      coopSystem.releaseSkillAim();
+      coopSystem.releaseSkillAim(touch ? { touch } : null);
     }
   },
   onToggleElement: () => {
@@ -1510,8 +1518,56 @@ const _camImpactLook = new THREE.Vector3();
 const _camImpactFov = { value: 0 };
 const _vfxLookOffset = new THREE.Vector3();
 
-function syncPrayerEclipseAndMonochrome() {
+// Verdict sky clock: drives verdict-sky-choreo.js from the prayer channel / verdictSequence and
+// keeps running through the post-unlock release so the sky never pops back to day.
+const verdictSkyClock = {
+  phase: 'idle',
+  t: 0,
+  entryFront: 0,
+  boltSeed: 0.37,
+  snap: null,
+  out: idleVerdictSky(),
+  preview: null,
+};
+const _eclipseAtmoFog = new THREE.Color(0.03, 0.006, 0.012);
+const _atmoFogMix = new THREE.Color();
+
+function resetVerdictSky() {
+  verdictSkyClock.phase = 'idle';
+  verdictSkyClock.t = 0;
+  verdictSkyClock.out = idleVerdictSky();
+  verdictSkyClock.preview = null;
+  sky.setVerdictSky?.(null);
+}
+
+function applyVerdictSky(out) {
+  sky.setEclipseState?.({
+    weight: out.weight,
+    compression: out.compression,
+    windTimeScale: out.windTimeScale,
+    camera,
+  });
+  sky.setVerdictSky?.(out);
+  post.setSmiteMonochrome?.(out.monochrome);
+  // Depth atmosphere sinks into the eclipse instead of keeping the daytime haze
+  const fogU = post.params?.grade?.uFogColor?.value;
+  if (fogU && sky.state?.fogColor) {
+    // Switch as the curtains cross the horizon band, where distant terrain sits
+    const s01 = (a, b, x) => Math.min(1, Math.max(0, (x - a) / (b - a)));
+    const cover = out.weight * s01(0.72, 0.92, out.front) * (1 - s01(0.8, 0.95, out.clear));
+    fogU.copy(_atmoFogMix.copy(sky.state.fogColor).lerp(_eclipseAtmoFog, cover));
+  }
+}
+
+function syncPrayerEclipseAndMonochrome(dt = 0) {
   if (activeGameplayShotSpec) return;
+  const c = verdictSkyClock;
+  if (c.preview) {
+    const out = evalVerdictSky(c.preview.kind, c.preview.t, c.preview.kind === 'channel' ? 0 : 1);
+    out.boltSeed = c.boltSeed;
+    applyVerdictSky(out);
+    return;
+  }
   const cLoop = coopSystem?.campaignLoop;
   const vSeq = cLoop?.verdictSequence;
   const communeState = communeClient?.getState?.()?.state;
@@ -1522,49 +1578,50 @@ function syncPrayerEclipseAndMonochrome() {
       communeState === 'judging'
   );
 
-  if (vSeq?.active && vSeq.kind === 'smite') {
-    sky.setEclipseState?.({
-      weight: 1.0,
-      compression: 1.0,
-      windTimeScale: 0.0,
-      camera,
-    });
-    post.setSmiteMonochrome?.(1.0);
-  } else if (vSeq?.active && vSeq.kind === 'blessing') {
-    if (vSeq.elapsed < 4.25) {
-      sky.setEclipseState?.({
-        weight: 1.0,
-        compression: 1.0,
-        windTimeScale: 0.35,
-        camera,
-      });
-    } else {
-      const clearU = clamp((vSeq.elapsed - 4.25) / 0.55, 0, 1);
-      sky.setEclipseState?.({
-        weight: 1.0 - clearU,
-        compression: 1.0 - clearU,
-        windTimeScale: 0.35 + 0.65 * clearU,
-        camera,
-      });
+  const cur = c.out;
+  const coverage = cur.weight > 0 ? cur.front * (1 - cur.clear) : 0;
+  if (vSeq?.active && (vSeq.kind === 'smite' || vSeq.kind === 'blessing')) {
+    if (c.phase !== vSeq.kind) {
+      c.phase = vSeq.kind;
+      c.entryFront = coverage;
+      c.boltSeed = Math.random();
     }
-    post.setSmiteMonochrome?.(0.0);
+    c.t = vSeq.elapsed || 0;
   } else if (inPrayerChannel) {
-    sky.setEclipseState?.({
-      weight: 1.0,
-      compression: 1.0,
-      windTimeScale: 0.35,
-      camera,
-    });
-    post.setSmiteMonochrome?.(0.0);
-  } else {
-    sky.setEclipseState?.({
-      weight: 0.0,
-      compression: 0.0,
-      windTimeScale: 1.0,
-      camera,
-    });
-    post.setSmiteMonochrome?.(0.0);
+    if (c.phase !== 'channel') {
+      c.phase = 'channel';
+      c.t = 0;
+      c.entryFront = coverage;
+    } else {
+      c.t += dt;
+    }
+  } else if (c.phase === 'channel') {
+    c.phase = 'channelRelease';
+    c.t = 0;
+    c.snap = { ...cur };
+  } else if (c.phase !== 'idle') {
+    c.t += dt;
+    if (c.t >= VERDICT_SKY_TAILS[c.phase]) {
+      c.phase = 'idle';
+      c.t = 0;
+    }
   }
+
+  let out;
+  if (c.phase === 'channel') out = evalChannelSky(c.t, c.entryFront);
+  else if (c.phase === 'channelRelease') out = evalChannelReleaseSky(c.t, c.snap);
+  else if (c.phase === 'smite') out = evalSmiteSky(c.t, c.entryFront);
+  else if (c.phase === 'blessing') out = evalBlessingSky(c.t, c.entryFront);
+  else out = idleVerdictSky();
+  out.boltSeed = c.boltSeed;
+  c.out = out;
+  applyVerdictSky(out);
+}
+
+// Deterministic verdict-sky preview for captures: { kind: 'channel'|'smite'|'blessing', t } or null
+function setVerdictSkyPreview(spec = null) {
+  verdictSkyClock.preview = spec && spec.kind ? { kind: String(spec.kind), t: Number(spec.t) || 0 } : null;
+  syncPrayerEclipseAndMonochrome(0);
 }
 
 function syncCharacterGroundShadows() {
@@ -1710,6 +1767,7 @@ export function setView(id) {
   activeViewId = v.id;
   activeGameplayShotSpec = null;
   coopSystem?.resetCameraImpact?.();
+  resetVerdictSky();
   sky.setEclipseState?.({ weight: 0.0, compression: 0.0, windTimeScale: 1.0, camera });
   post.setSmiteMonochrome?.(0.0);
   if (v.mode === 'player') {
@@ -1749,6 +1807,7 @@ export function setShot(shotId) {
   closeAltarSteleModal();
   if (steleInteractPrompt) steleInteractPrompt.classList.remove('visible');
   applyTimeOfDay(s.tod);
+  resetVerdictSky();
   sky.setEclipseState?.({ weight: 0.0, compression: 0.0, windTimeScale: 1.0, camera });
   post.setSmiteMonochrome?.(0.0);
 
@@ -1808,6 +1867,7 @@ export function setGameplayShot(gameplayShotId) {
   coopSystem.resetCameraImpact?.();
   updateCamera();
 
+  resetVerdictSky();
   if (spec.eclipseState) {
     sky.setEclipseState?.({ ...spec.eclipseState, camera });
   } else {
@@ -2331,7 +2391,7 @@ function animate() {
     }
   }
 
-  syncPrayerEclipseAndMonochrome();
+  syncPrayerEclipseAndMonochrome(dt);
 
   const windScale = sky.getWindTimeScale ? sky.getWindTimeScale() : 1.0;
   windElapsed += dt * windScale;
@@ -2404,6 +2464,7 @@ window.__WORLD__ = {
   setCameraOrbit,
   setShot,
   setGameplayShot,
+  setVerdictSkyPreview,
   setTimeOfDay: applyTimeOfDay,
   setProfile,
   toggleHud,

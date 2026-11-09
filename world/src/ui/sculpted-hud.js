@@ -710,6 +710,39 @@ const SCULPTED_HUD_CSS = `
     display: flex;
   }
 
+  /* Mage E drag-to-aim: lit rim while aiming, crimson ring + label when cancel is armed */
+  .sh-power-slot.is-aiming .sh-power-stone-frame {
+    border-color: #fbd36b;
+    transform: scale(1.06);
+    box-shadow:
+      0 0 0 3px #7a5a2e,
+      0 8px 20px rgba(22, 16, 10, 0.38);
+  }
+
+  .sh-power-slot.is-cancel-armed .sh-power-stone-frame {
+    border-color: #b91c1c;
+    background: radial-gradient(circle at 50% 20%, #e7d6d0 0%, #c9a9a0 70%, #a8867c 100%);
+    box-shadow:
+      0 0 0 3px #7f1d1d,
+      0 8px 20px rgba(22, 16, 10, 0.38);
+  }
+
+  .sh-power-slot.is-cancel-armed .sh-power-stone-frame::after {
+    content: 'Cancel';
+    position: absolute;
+    top: -26px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: #7f1d1d;
+    color: #fde8e8;
+    font-family: Georgia, serif;
+    font-size: 0.78rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
   /* Tab Element Toggle Pill beside E */
   #sculpted-slot-tab .sh-power-stone-frame {
     width: auto;
@@ -2201,9 +2234,33 @@ export function createSculptedHud({
     });
   }
 
-  // E Power Slot: Hold E to aim / Release E to cast for Mage; Tap E for Knight
+  // E Power Slot: Hold E to aim / Release E to cast for Mage; Tap E for Knight.
+  // Mage touch flow: press = auto-snap aim, drag = aim direction/distance (up = camera
+  // forward), drag back onto the button after leaving it = cancel armed.
   let eAimActive = false;
   let ePointerId = null;
+  let eStart = { x: 0, y: 0 };
+  let eRect = null;
+  let eLeftButton = false;
+
+  const readTouchAim = (e) => {
+    const dx = (e?.clientX ?? eStart.x) - eStart.x;
+    const dy = eStart.y - (e?.clientY ?? eStart.y);
+    let overButton = false;
+    if (eRect && e && typeof e.clientX === 'number') {
+      const pad = eLeftButton ? 6 : 14; // hysteresis: must clearly leave before cancel can arm
+      const inside =
+        e.clientX >= eRect.left - pad &&
+        e.clientX <= eRect.right + pad &&
+        e.clientY >= eRect.top - pad &&
+        e.clientY <= eRect.bottom + pad;
+      if (!inside) eLeftButton = true;
+      overButton = inside;
+    }
+    const touch = { dx, dy, overButton, leftButton: eLeftButton };
+    slotE?.classList.toggle('is-cancel-armed', eLeftButton && overButton);
+    return touch;
+  };
 
   if (slotE) {
     slotE.addEventListener('pointerdown', (e) => {
@@ -2216,6 +2273,9 @@ export function createSculptedHud({
       }
       ePointerId = e.pointerId;
       eAimActive = true;
+      eStart = { x: e.clientX, y: e.clientY };
+      eRect = slotE.getBoundingClientRect?.() || null;
+      eLeftButton = false;
       if (state.activeRole === 'Knight') {
         if (typeof onAction === 'function') {
           onAction('skill_e', { role: 'Knight', element: state.activeElement });
@@ -2223,8 +2283,18 @@ export function createSculptedHud({
         if (typeof onAimStart === 'function') {
           onAimStart({ slot: 'E', role: 'Knight', element: state.activeElement, clientX: e.clientX, clientY: e.clientY });
         }
-      } else if (typeof onAimStart === 'function') {
-        onAimStart({ slot: 'E', role: 'Mage', element: state.activeElement, clientX: e.clientX, clientY: e.clientY });
+      } else {
+        slotE.classList.add('is-aiming');
+        if (typeof onAimStart === 'function') {
+          onAimStart({
+            slot: 'E',
+            role: 'Mage',
+            element: state.activeElement,
+            clientX: e.clientX,
+            clientY: e.clientY,
+            touch: readTouchAim(e),
+          });
+        }
       }
     });
 
@@ -2238,6 +2308,7 @@ export function createSculptedHud({
           element: state.activeElement,
           clientX: e.clientX,
           clientY: e.clientY,
+          touch: readTouchAim(e),
         });
       }
     });
@@ -2246,6 +2317,8 @@ export function createSculptedHud({
       if (!eAimActive) return;
       eAimActive = false;
       ePointerId = null;
+      const touch = e?.type === 'pointercancel' ? { dx: 0, dy: 0, overButton: true, leftButton: true } : readTouchAim(e);
+      slotE.classList.remove('is-aiming', 'is-cancel-armed');
       if (state.activeRole === 'Mage') {
         if (typeof onAimRelease === 'function') {
           onAimRelease({
@@ -2254,6 +2327,8 @@ export function createSculptedHud({
             element: state.activeElement,
             clientX: e?.clientX ?? 0,
             clientY: e?.clientY ?? 0,
+            touch,
+            cancelled: Boolean(touch.leftButton && touch.overButton),
           });
         } else if (typeof onAction === 'function') {
           onAction('skill_e', { role: 'Mage', element: state.activeElement });

@@ -983,6 +983,130 @@ function createGroundSigilMaterial(noiseAtlas, sharedUniforms, config) {
   });
 }
 
+// Smite bolt: 3 jagged tube strands (main + 2 forks) whose path is evaluated in the
+// vertex shader. position.x = along (0 top .. 1 tip), position.y = ring angle, position.z = strand id.
+export function createSmiteBoltGeometry(segments = 28, radial = 5) {
+  const strands = 3;
+  const ringVerts = radial;
+  const pos = [];
+  const idx = [];
+  for (let sId = 0; sId < strands; sId++) {
+    const base = pos.length / 3;
+    for (let i = 0; i <= segments; i++) {
+      for (let r = 0; r < ringVerts; r++) {
+        pos.push(i / segments, (r / ringVerts) * Math.PI * 2, sId);
+      }
+    }
+    for (let i = 0; i < segments; i++) {
+      for (let r = 0; r < ringVerts; r++) {
+        const a = base + i * ringVerts + r;
+        const b = base + i * ringVerts + ((r + 1) % ringVerts);
+        const c = a + ringVerts;
+        const d = b + ringVerts;
+        idx.push(a, c, b, b, c, d);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e5);
+  return g;
+}
+
+function createSmiteBoltMaterial() {
+  return new THREE.ShaderMaterial({
+    name: 'ArtoriousSmiteBoltMaterial',
+    transparent: false,
+    depthWrite: true,
+    depthTest: true,
+    side: THREE.FrontSide,
+    toneMapped: false,
+    uniforms: {
+      uBoltStart: { value: new THREE.Vector3(0, 60, 0) },
+      uBoltEnd: { value: new THREE.Vector3() },
+      uBoltSeed: { value: 0.37 },
+      uBoltReach: { value: 1.0 },
+      uBoltWidth: { value: 1.0 },
+    },
+    vertexShader: /* glsl */ `
+      uniform vec3 uBoltStart;
+      uniform vec3 uBoltEnd;
+      uniform float uBoltSeed;
+      uniform float uBoltReach;
+      uniform float uBoltWidth;
+      varying float vAlong;
+      varying vec3 vNormalW;
+      varying vec3 vWorldPos;
+
+      float h11(float n) { return fract(sin(n * 127.1 + uBoltSeed * 311.7) * 43758.5453); }
+
+      // Straight-segment zigzag (piecewise linear) perpendicular to the strike axis
+      vec3 zig(float t, float salt, float segs, float amp, vec3 a, vec3 b) {
+        float k = t * segs;
+        float i = floor(k);
+        float f = fract(k);
+        vec2 o0 = vec2(h11(i + salt), h11(i + salt + 41.0)) - 0.5;
+        vec2 o1 = vec2(h11(i + 1.0 + salt), h11(i + 1.0 + salt + 41.0)) - 0.5;
+        vec2 o = mix(o0, o1, f) * amp * sin(3.14159 * clamp(t, 0.0, 1.0));
+        vec3 ax = normalize(b - a);
+        vec3 side = normalize(cross(ax, vec3(0.0, 0.0, 1.0)) + vec3(1e-4));
+        vec3 up2 = normalize(cross(ax, side));
+        return mix(a, b, t) + side * o.x + up2 * o.y;
+      }
+
+      void main() {
+        float t = position.x;
+        float ang = position.y;
+        float strand = position.z;
+        float len = length(uBoltEnd - uBoltStart);
+        vec3 p;
+        vec3 pNext;
+        float radius;
+        if (strand < 0.5) {
+          p = zig(t, 0.0, 14.0, len * 0.09, uBoltStart, uBoltEnd);
+          pNext = zig(min(t + 0.01, 1.0), 0.0, 14.0, len * 0.09, uBoltStart, uBoltEnd);
+          radius = mix(0.34, 0.12, t);
+          vAlong = t;
+        } else {
+          float at = strand < 1.5 ? 0.38 : 0.62;
+          vec3 root = zig(at, 0.0, 14.0, len * 0.09, uBoltStart, uBoltEnd);
+          float sideSign = strand < 1.5 ? -1.0 : 1.0;
+          vec3 ax = normalize(uBoltEnd - uBoltStart);
+          vec3 side = normalize(cross(ax, vec3(0.0, 0.0, 1.0)) + vec3(1e-4));
+          vec3 tip = root + ax * len * 0.22 + side * sideSign * len * 0.16;
+          p = zig(t, strand * 17.0, 7.0, len * 0.05, root, tip);
+          pNext = zig(min(t + 0.01, 1.0), strand * 17.0, 7.0, len * 0.05, root, tip);
+          radius = mix(0.16, 0.04, t);
+          vAlong = at + t * 0.25;
+        }
+        vec3 axis = normalize(pNext - p + vec3(0.0, -1e-4, 0.0));
+        vec3 n1 = normalize(cross(axis, vec3(0.0, 0.0, 1.0)) + vec3(1e-4));
+        vec3 n2 = cross(axis, n1);
+        vec3 nrm = n1 * cos(ang) + n2 * sin(ang);
+        vec3 wp = p + nrm * radius * uBoltWidth;
+        vNormalW = nrm;
+        vWorldPos = wp;
+        gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uBoltReach;
+      varying float vAlong;
+      varying vec3 vNormalW;
+      varying vec3 vWorldPos;
+      void main() {
+        if (vAlong > uBoltReach) discard; // hard leader cutout descending from the sky
+        vec3 v = normalize(cameraPosition - vWorldPos);
+        float facing = abs(dot(normalize(vNormalW), v));
+        // Two-band cel bolt: white-hot core, blood-crimson sheath (HDR so bloom catches)
+        vec3 col = facing > 0.42 ? vec3(5.2, 4.6, 4.9) : vec3(2.6, 0.06, 0.16);
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  });
+}
+
 /* ------------------------------------------------------------------------- */
 /* 3. Pooled, Deterministic ArtoriousVfxSystem (<= 4 Draw Calls Active)      */
 /* ------------------------------------------------------------------------- */
@@ -1124,6 +1248,14 @@ export class ArtoriousVfxSystem {
     this.groundSigilMesh.frustumCulled = false;
     this.groundSigilMesh.count = 0;
     this.group.add(this.groundSigilMesh);
+
+    // DC 5: Smite bolt (visible only for ~0.3 s around the strike)
+    this.smiteBoltMat = createSmiteBoltMaterial();
+    this.smiteBoltMesh = new THREE.Mesh(createSmiteBoltGeometry(), this.smiteBoltMat);
+    this.smiteBoltMesh.name = 'Artorious_DC5_SmiteBolt';
+    this.smiteBoltMesh.frustumCulled = false;
+    this.smiteBoltMesh.visible = false;
+    this.group.add(this.smiteBoltMesh);
   }
 
   _seedRecords(seed = 1.0) {
@@ -1815,6 +1947,7 @@ export class ArtoriousVfxSystem {
           : 1.0;
     this.sharedUniforms.uTime.value = timeSeconds * Math.max(0.05, windRate);
 
+    this.smiteBoltMesh.visible = false;
     if (this.mode === 'channel') {
       this._evaluateChannel(timeSeconds);
     } else if (this.mode === 'smite' || this.mode === 'rose_gommage') {
@@ -2139,6 +2272,35 @@ export class ArtoriousVfxSystem {
    *   petals away in a billowing horizontal-rightward wind stream!
    * - Strictly ONLY petals (`groundSigilMesh.count = 0` — zero whole 3D roses on the ground!).
    */
+  // One heavy bolt: leader races down (0..0.04), strike (0.04..0.13), two after-strokes, gone by 0.31 s
+  _evaluateSmiteBolt(t) {
+    const width =
+      t < 0.04 ? 0.45 : t < 0.13 ? 1.0 : t < 0.17 ? 0.0 : t < 0.23 ? 0.8 : t < 0.27 ? 0.0 : t < 0.31 ? 0.5 : 0.0;
+    const reach = t < 0.04 ? Math.max(0.05, t / 0.04) : 1.0;
+    if (width <= 0) return;
+    const u = this.smiteBoltMat.uniforms;
+    const end = u.uBoltEnd.value.set(this.origin.x, this.origin.y, this.origin.z);
+    const start = u.uBoltStart.value.copy(end);
+    if (this.camera && typeof this.camera.getWorldDirection === 'function') {
+      this.camera.getWorldDirection(_camFwd);
+      _camFwd.y = 0;
+      if (_camFwd.lengthSq() < 1e-6) _camFwd.set(0, 0, -1);
+      _camFwd.normalize();
+    } else {
+      _camFwd.set(0, 0, -1);
+    }
+    // Strike falls from the eclipse side of the sky, slanted toward the victim
+    start.addScaledVector(_camFwd, 26.0);
+    start.y += 48.0;
+    start.x += 4.0;
+    u.uBoltSeed.value = 0.37 + Math.floor(this.origin.x * 7.0 + this.origin.z * 3.0) * 0.013;
+    u.uBoltReach.value = reach;
+    u.uBoltWidth.value = width;
+    this.smiteBoltMesh.visible = true;
+    const kick = t >= 0.04 ? Math.exp(-(t - 0.04) * 9.0) : 0;
+    this._shakeOffset.set(Math.sin(t * 97.0) * 0.09 * kick, -0.12 * kick, Math.cos(t * 83.0) * 0.05 * kick);
+  }
+
   _evaluateSmite(t) {
     const ox = this.origin.x;
     const oz = this.origin.z;
@@ -2151,6 +2313,7 @@ export class ArtoriousVfxSystem {
     this._characterDissolveProgress = smoothstep(0.10, 1.68, t);
     this._hitstopScale = t >= 0.02 && t <= 0.08 ? 0.15 : 1.0;
     this._shakeOffset.set(0, 0, 0);
+    this._evaluateSmiteBolt(t);
 
     // DC 1 & DC 2: 0 draw calls so the stark B&W world + 240 blood-crimson rose petals take 100% focus
     this.skyRibbonsMesh.count = 0;
@@ -2320,6 +2483,7 @@ export class ArtoriousVfxSystem {
     if (this.monolithsMesh.count > 0) drawCalls++;
     if (this.prismsAndDebrisMesh.count > 0) drawCalls++;
     if (this.groundSigilMesh.count > 0) drawCalls++;
+    if (this.smiteBoltMesh.visible) drawCalls++;
     return {
       active: true,
       mode: this.mode,
@@ -2351,10 +2515,13 @@ export class ArtoriousVfxSystem {
     this.monolithsMesh.count = 0;
     this.prismsAndDebrisMesh.count = 0;
     this.groundSigilMesh.count = 0;
+    this.smiteBoltMesh.visible = false;
   }
 
   dispose() {
     this.clear();
+    this.smiteBoltMesh.geometry.dispose();
+    this.smiteBoltMat.dispose();
     this.skyRibbonsMesh.geometry.dispose();
     this.monolithsMesh.geometry.dispose();
     this.prismsAndDebrisMesh.geometry.dispose();

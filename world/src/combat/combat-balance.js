@@ -660,6 +660,28 @@ export function resolveShrineObstacles(px, pz, entityRadius = 0.55, clampToArena
 /* 5. Pure Helper Functions                                                  */
 /* ------------------------------------------------------------------------- */
 
+// Soft-lock targets must be fully present: not dead, dying (death clip) or still rising (spawn clip).
+export function isSoftLockable(e) {
+  if (!e || e.dead || e.hp <= 0 || e.active === false) return false;
+  if ((e.deathTimer || 0) > 0 || e.dying) return false;
+  if ((e.spawnAnimTimer || 0) > 0 || e.spawning) return false;
+  return true;
+}
+
+export const SOFT_LOCK_STICKY_RANGE_MULT = 1.15;
+export const SOFT_LOCK_STICKY_CONE_MULT = 1.4;
+export const SOFT_LOCK_SWITCH_MARGIN = 0.3;
+
+/**
+ * Cone soft-lock (75° cone by default) scored by closeness to the aim ray,
+ * distance, and threat. Options:
+ * - `stickyTarget` (or `origin.softLockTarget`): the current lock is kept while it
+ *   stays valid inside a widened range/cone unless a challenger out-scores it by
+ *   `switchMargin` (hysteresis — no per-frame target flipping).
+ * - `selfId` ('Mage'/'Knight'): bias toward enemies targeting / winding up on us.
+ * - `partnerTarget`: bias toward the partner's current target (focus fire).
+ * Falls back to the nearest threat to self/partner outside the cone.
+ */
 export function selectSoftLockTarget(
   origin,
   forwardYaw,
@@ -669,36 +691,65 @@ export function selectSoftLockTarget(
     coneHalfAngle = (75 * Math.PI) / 360,
     partnerPos = null,
     partnerThreatRadius = 8.0,
+    stickyTarget = undefined,
+    switchMargin = SOFT_LOCK_SWITCH_MARGIN,
+    selfId = null,
+    partnerTarget = null,
   } = {}
 ) {
   if (!origin || !Array.isArray(enemies) || enemies.length === 0) return null;
 
+  const sticky = stickyTarget === undefined ? origin.softLockTarget || null : stickyTarget;
+  const selfRole = selfId || origin.id || null;
+
   let bestInCone = null;
   let bestInConeScore = -Infinity;
+  let stickyScore = -Infinity;
 
   let bestThreatFallback = null;
   let bestThreatScore = -Infinity;
 
   for (let i = 0; i < enemies.length; i++) {
     const e = enemies[i];
-    if (!e || e.dead || e.hp <= 0 || e.active === false) continue;
+    if (!isSoftLockable(e)) continue;
 
     const ex = e.x ?? e.group?.position?.x ?? 0;
     const ez = e.z ?? e.group?.position?.z ?? 0;
     const dx = ex - origin.x;
     const dz = ez - origin.z;
     const dist = Math.hypot(dx, dz);
+    const isSticky = sticky !== null && (e === sticky || (e.id !== undefined && e.id === sticky.id));
+    const rangeLimit = isSticky ? maxRange * SOFT_LOCK_STICKY_RANGE_MULT : maxRange;
+    const coneLimit = isSticky ? coneHalfAngle * SOFT_LOCK_STICKY_CONE_MULT : coneHalfAngle;
 
-    if (dist <= maxRange) {
+    if (dist <= rangeLimit) {
       const angleToEnemy = Math.atan2(dx, dz);
       const absAngleDiff = Math.abs(shortestAngleDiff(angleToEnemy, forwardYaw));
-      if (absAngleDiff <= coneHalfAngle + 1e-4) {
-        const distScore = 1.0 - dist / maxRange;
-        const angleScore = 1.0 - absAngleDiff / Math.max(1e-4, coneHalfAngle);
+      if (absAngleDiff <= coneLimit + 1e-4) {
+        const distScore = Math.max(0, 1.0 - dist / maxRange);
+        const angleScore = Math.max(0, 1.0 - absAngleDiff / Math.max(1e-4, coneHalfAngle));
+        // Perpendicular offset from the aim ray: "the one I'm pointing at" wins close calls.
+        const rayOffset = dist * Math.sin(Math.min(absAngleDiff, Math.PI / 2));
+        const rayScore = Math.max(0, 1.0 - rayOffset / 4.0);
         const markBonus = e.mark ? 0.35 : 0.0;
         const bossBonus = e.isBoss ? 0.25 : e.isElite ? 0.12 : 0.0;
         const windupBonus = e.aiState === 'windup' ? 0.2 : 0.0;
-        const score = distScore * 0.58 + angleScore * 0.42 + markBonus + bossBonus + windupBonus;
+        const onSelf = selfRole && e.targetHeroId === selfRole;
+        const threatBonus = onSelf ? (e.aiState === 'windup' || e.hasAttackToken ? 0.25 : 0.08) : 0.0;
+        const focusBonus =
+          partnerTarget && (e === partnerTarget || (e.id !== undefined && e.id === partnerTarget.id))
+            ? 0.15
+            : 0.0;
+        const score =
+          distScore * 0.46 +
+          angleScore * 0.34 +
+          rayScore * 0.2 +
+          markBonus +
+          bossBonus +
+          windupBonus +
+          threatBonus +
+          focusBonus;
+        if (isSticky) stickyScore = score;
         if (score > bestInConeScore) {
           bestInConeScore = score;
           bestInCone = e;
@@ -718,6 +769,14 @@ export function selectSoftLockTarget(
         bestThreatFallback = e;
       }
     }
+  }
+
+  // Hysteresis: keep the current lock unless the challenger is clearly better.
+  if (stickyScore > -Infinity && bestInCone !== sticky && bestInConeScore < stickyScore + switchMargin) {
+    const stickyEnemy = enemies.find(
+      (e) => e === sticky || (sticky && e && e.id !== undefined && e.id === sticky.id)
+    );
+    if (stickyEnemy) return stickyEnemy;
   }
 
   return bestInCone || bestThreatFallback || null;
