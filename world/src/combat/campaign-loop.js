@@ -2179,16 +2179,22 @@ export function createCampaignLoop({
 
     const kPos = heroStates?.Knight || { x: 0, y: 0, z: 0, yaw: 0 };
 
-    // Beats: storm halo descends + sigil (0-0.48s, sword raised) -> column strikes the
-    // blade (0.48s) -> combo4 slam at 0.68s lands the crack shockwave (~0.93s).
+    // Beats: Beat 1 low spin-gather as twin dragons coil upward (0-0.38s) ->
+    // Beat 2A first X-slash cut + lunge (0.38s) -> Beat 2B second X-slash cut + cross-bite detonation (0.70s).
     if (vfxKit) {
+      vfxKit.swordVfx?.setInfusion?.('eclipse', KNIGHT_ULT_DURATION);
+      vfxKit.swordVfx?.triggerSwing?.('charged', kPos, kPos.yaw || 0, 'eclipse', {
+        duration: 0.42,
+      });
       if (vfxKit.ultimateVfx?.playKnightAwakening) {
         vfxKit.ultimateVfx.playKnightAwakening(
           { x: kPos.x, y: walkableHeightAt(kPos.x, kPos.z), z: kPos.z },
-          { style: styleId, getBladeTip: vfxKit.swordVfx?.getBladeTipFn }
+          {
+            yaw: kPos.yaw || 0,
+            style: styleId,
+            getBladeTip: vfxKit.swordVfx?.getBladeTipFn,
+          }
         );
-      } else {
-        vfxKit.swordVfx?.triggerSwing?.('charged', kPos, kPos.yaw || 0, styleId);
       }
     }
     combatSfx?.playCouplesUltimate?.();

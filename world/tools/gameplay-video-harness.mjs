@@ -399,7 +399,7 @@ const SCENARIOS = {
     return errors;
   },
 
-  // 3. Knight E (Power Sword Ignition) & Q (2-Beat Twin-Element Sky-Lightning Awakening + Overhead Slam)
+  // 3. Knight E (Power Sword Ignition + Dragon Slash), Q (Twin-Dragon Coil & X-Slash Lunge) & 1.35x Speed Overdrive
   async 'knight-e-q-powers'() {
     const { page, errors } = await openWorldPage();
     await setupCleanStage(page, {
@@ -409,8 +409,8 @@ const SCENARIOS = {
       yaw: Math.PI * 0.5,
       element: 'fire',
       camDist: 6.4,
-      camPitch: 0.16,
-      camYawOffset: -0.28,
+      camPitch: 0.18,
+      camYawOffset: -0.32,
     });
     await page.evaluate(() => {
       const w = window.__WORLD__;
@@ -420,27 +420,33 @@ const SCENARIOS = {
       w.campaignLoop.combatHeroes.Knight.ultCd = 0;
       const e1 = w.enemyManager.spawnImmediateFromSpec({
         archetype: 'warrior',
-        x: 58.4,
-        z: -13.6,
+        x: 59.2,
+        z: -14.0,
       });
       if (e1) {
-        e1.hp = 5000;
-        e1.maxHp = 5000;
+        e1.hp = 9999;
+        e1.maxHp = 9999;
         e1.aiState = 'dormant';
         e1.wakeRadius = 0.01;
       }
     });
-    await recordClip(page, 'knight-e-q-powers', 4.2, async (t, pg) => {
-      if (hitFrame(t, 0.25)) await keyAct(pg, 'e', true);
-      if (hitFrame(t, 0.35)) await keyAct(pg, 'e', false);
-      if (hitFrame(t, 1.45)) await keyAct(pg, 'q', true);
-      if (hitFrame(t, 1.55)) await keyAct(pg, 'q', false);
-      if (hitFrame(t, 3.15)) {
-        await pg.evaluate(() => window.__WORLD__.coopSystem.triggerAction('attack'));
+    await recordClip(page, 'knight-e-q-powers', 4.8, async (t, pg) => {
+      if (hitFrame(t, 0.2)) await keyAct(pg, 'e', true);
+      if (hitFrame(t, 0.3)) await keyAct(pg, 'e', false);
+      if (hitFrame(t, 1.15)) await keyAct(pg, 'q', true);
+      if (hitFrame(t, 1.25)) await keyAct(pg, 'q', false);
+      for (const tapT of [2.45, 2.78, 3.12, 3.48]) {
+        if (hitFrame(t, tapT)) {
+          await pg.evaluate(() => window.__WORLD__.coopSystem.triggerAction('attack'));
+        }
       }
-      if (t < 1.4) return 'E-Power-Sword';
-      if (t < 3.1) return 'Q-Twin-Element-Awakening';
-      return 'Eclipse-Slash';
+      if (hitFrame(t, 4.1)) await keyAct(pg, 'w', true);
+      if (hitFrame(t, 4.7)) await keyAct(pg, 'w', false);
+
+      if (t < 1.12) return 'E-Dragon-Ignition';
+      if (t < 2.42) return 'Q-Twin-Dragon-XSlash';
+      if (t < 4.05) return '1.35x-Overdrive-Combo4-Dragon';
+      return '1.35x-Overdrive-Run';
     });
     await page.close();
     return errors;

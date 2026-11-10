@@ -1359,15 +1359,16 @@ export async function createCoopPlayerSystem({
       if (swing.heroId === 'Mage') {
         startMageSwingClip(st, swing);
       } else {
-        const clipToPlay = pickHeroClip(st, swing.nativeClip, swing.clip) || swing.clip;
-        startOneShotAction(st, clipToPlay, swing.visualDuration ?? swing.duration, {
+        const knightClip = pickHeroClip(st, swing.nativeClip, swing.clip) || swing.clip;
+        const ultAtkMult = campaignLoop.combatHeroes.Knight.ultActive ? 1.35 : 1.0;
+        const effectiveAnimScale = (swing.animTimeScale ?? swing.timeScale) * ultAtkMult;
+        const effectiveVisDur = (swing.visualDuration ?? swing.duration) / ultAtkMult;
+        startOneShotAction(st, knightClip, effectiveVisDur, {
           startTime: 0,
-          timeScale: swing.animTimeScale ?? swing.timeScale,
-          fade: 0.08,
+          timeScale: effectiveAnimScale,
+          fade: 0.07,
         });
-      }
 
-      if (swing.heroId === 'Knight') {
         const activeStyle =
           campaignLoop.combatHeroes.Knight.sunSwornBreathing &&
           campaignLoop.combatHeroes.Knight.breathingStyle === 'none'
@@ -1378,8 +1379,18 @@ export async function createCoopPlayerSystem({
           { x: st.x, y: st.y, z: st.z },
           knightRt.faceYaw ?? st.yaw,
           activeStyle,
-          { duration: swing.duration }
+          { duration: swing.duration / ultAtkMult }
         );
+        if (
+          swing.clip === 'combo4' &&
+          (campaignLoop.combatHeroes.Knight.powerSwordActive ||
+            campaignLoop.combatHeroes.Knight.ultActive)
+        ) {
+          vfxKit.ultimateVfx?.playDragonSlash?.(
+            { x: st.x, y: st.y, z: st.z },
+            { yaw: knightRt.faceYaw ?? st.yaw, style: activeStyle, duration: 0.72 }
+          );
+        }
       }
 
       coopClient.sendActionEvent({
@@ -1563,6 +1574,7 @@ export async function createCoopPlayerSystem({
     faceYaw: null,
     recoveryOpen: false,
     pendingUltSlam: 0,
+    pendingUltCross2: 0,
   };
   const mageRt = {
     faceYaw: null, // facing goal while an attack owns the Mage's orientation
@@ -1845,6 +1857,7 @@ export async function createCoopPlayerSystem({
   function stepKnightActionRuntime(dt, controlLocked) {
     if (controlLocked || campaignLoop.combatHeroes.Knight.downed) {
       knightRt.pendingUltSlam = 0;
+      knightRt.pendingUltCross2 = 0;
       knightRt.recoveryOpen = false;
       return;
     }
@@ -1852,24 +1865,43 @@ export async function createCoopPlayerSystem({
       knightRt.pendingUltSlam -= dt;
       if (knightRt.pendingUltSlam <= 0) {
         knightRt.pendingUltSlam = 0;
-        const slamClip =
-          pickHeroClip(
-            heroStates.Knight,
-            'Melee_1H_Attack_Jump_Chop',
-            'Melee_1H_Attack_Chop',
-            'combo4'
-          ) || 'combo4';
-        startOneShotAction(heroStates.Knight, slamClip, 0.72, {
+        const cut1Clip =
+          pickHeroClip(heroStates.Knight, 'Melee_1H_Attack_Slice_Diagonal', 'combo2') || 'combo2';
+        startOneShotAction(heroStates.Knight, cut1Clip, 0.34, {
           startTime: 0,
-          timeScale: 1.38,
-          fade: 0.06,
+          timeScale: 1.75,
+          fade: 0.05,
         });
+        heroStates.Knight.lungeRemaining = 0.55;
+        heroStates.Knight.lungeDuration = 0.22;
         vfxKit.swordVfx?.triggerSwing?.(
-          'combo4',
+          'combo2',
           { x: heroStates.Knight.x, y: heroStates.Knight.y, z: heroStates.Knight.z },
           heroStates.Knight.yaw,
           'eclipse',
-          { duration: 0.68 }
+          { duration: 0.34 }
+        );
+      }
+    }
+    if (knightRt.pendingUltCross2 > 0) {
+      knightRt.pendingUltCross2 -= dt;
+      if (knightRt.pendingUltCross2 <= 0) {
+        knightRt.pendingUltCross2 = 0;
+        const cut2Clip =
+          pickHeroClip(heroStates.Knight, 'Melee_1H_Attack_Slice_Horizontal', 'combo1') || 'combo1';
+        startOneShotAction(heroStates.Knight, cut2Clip, 0.42, {
+          startTime: 0,
+          timeScale: 1.75,
+          fade: 0.05,
+        });
+        heroStates.Knight.lungeRemaining = 0.45;
+        heroStates.Knight.lungeDuration = 0.20;
+        vfxKit.swordVfx?.triggerSwing?.(
+          'combo1',
+          { x: heroStates.Knight.x, y: heroStates.Knight.y, z: heroStates.Knight.z },
+          heroStates.Knight.yaw,
+          'eclipse',
+          { duration: 0.42 }
         );
       }
     }
@@ -2671,6 +2703,7 @@ export async function createCoopPlayerSystem({
         leader.lungeRemaining = 0;
         knightRt.recoveryOpen = false;
         knightRt.pendingUltSlam = 0;
+        knightRt.pendingUltCross2 = 0;
         const hasInput = leader.moveInputYaw !== null && leader.moveInputYaw !== undefined;
         if (hasInput) {
           const refYaw = typeof lastKnownCamYaw === 'number' ? lastKnownCamYaw : leader.yaw;
@@ -2781,6 +2814,14 @@ export async function createCoopPlayerSystem({
             leader.yaw,
             campaignLoop.combatHeroes.Knight.breathingStyle
           );
+          vfxKit.ultimateVfx?.playDragonSlash?.(
+            { x: leader.x, y: leader.y, z: leader.z },
+            {
+              yaw: leader.yaw,
+              style: campaignLoop.combatHeroes.Knight.breathingStyle || 'solar',
+              duration: 0.72,
+            }
+          );
           onBanner?.({
             title:
               res.element === 'fire'
@@ -2823,16 +2864,49 @@ export async function createCoopPlayerSystem({
         actionAim.cancelSwing('Knight');
         knightRt.recoveryOpen = false;
         vfxKit.swordVfx?.endSwing?.();
+        const softTarget = selectSoftLockTarget(
+          heroStates.Knight,
+          heroStates.Knight.yaw,
+          enemyManager.activeEnemies,
+          { maxRange: 7.5, partnerPos: heroStates.Mage }
+        );
+        if (
+          softTarget &&
+          !campaignLoop.combatHeroes.Knight.downed &&
+          campaignLoop.combatHeroes.Knight.ultCd <= 0.05 &&
+          campaignLoop.combatHeroes.Knight.qEnergy >= campaignLoop.combatHeroes.Knight.qEnergyMax
+        ) {
+          heroStates.Knight.yaw = Math.atan2(
+            softTarget.x - heroStates.Knight.x,
+            softTarget.z - heroStates.Knight.z
+          );
+          player.yaw = heroStates.Knight.yaw;
+          applyTransform(heroStates.Knight);
+        }
         const res = campaignLoop.performKnightUltimate(heroStates, { requireEnergy: true });
         if (res && !res.onCooldown && !res.notEnoughEnergy) {
-          const raiseClip =
-            pickHeroClip(heroStates.Knight, 'Ranged_Magic_Raise', 'pray_channel') || 'pray_channel';
-          startOneShotAction(heroStates.Knight, raiseClip, 0.60, {
+          if (softTarget) {
+            heroStates.Knight.yaw = Math.atan2(
+              softTarget.x - heroStates.Knight.x,
+              softTarget.z - heroStates.Knight.z
+            );
+            player.yaw = heroStates.Knight.yaw;
+            applyTransform(heroStates.Knight);
+          }
+          const spinClip =
+            pickHeroClip(
+              heroStates.Knight,
+              'Melee_2H_Attack_Spinning',
+              'Melee_2H_Attack_Spin',
+              'charged'
+            ) || 'charged';
+          startOneShotAction(heroStates.Knight, spinClip, 0.38, {
             startTime: 0,
-            timeScale: 1.15,
-            fade: 0.08,
+            timeScale: 1.55,
+            fade: 0.06,
           });
-          knightRt.pendingUltSlam = 0.60;
+          knightRt.pendingUltSlam = 0.38;
+          knightRt.pendingUltCross2 = 0.70;
           triggerCameraImpulse({
             intensity: 0.24,
             dirX: Math.sin(leader.yaw),
@@ -2847,6 +2921,7 @@ export async function createCoopPlayerSystem({
             y: leader.y,
             z: leader.z,
           });
+          syncSharedPlayerFromLeader();
           onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
         }
         return res;
@@ -2953,6 +3028,7 @@ export async function createCoopPlayerSystem({
       vfxKit.swordVfx?.endSwing?.();
       knightRt.recoveryOpen = false;
       knightRt.pendingUltSlam = 0;
+      knightRt.pendingUltCross2 = 0;
     }
     leader.actionState = null;
     leader.actionTimer = 0;
@@ -3004,7 +3080,9 @@ export async function createCoopPlayerSystem({
 
     // Advance 1-input swing buffer, mash speed ramp, and contact-frame hit detection
     if (!controlLocked) {
-      actionAim.update(dt);
+      const knightUltAtkMult =
+        activeHeroId === 'Knight' && campaignLoop.combatHeroes.Knight.ultActive ? 1.35 : 1.0;
+      actionAim.update(dt * knightUltAtkMult);
       leader.bufferedAttack = actionAim.heroes[leader.id].bufferedAttack;
       leader.mashTimeScale = actionAim.heroes[leader.id].mashTimeScale;
 
@@ -3204,12 +3282,15 @@ export async function createCoopPlayerSystem({
       const aimMult = mageAiming
         ? MAGE_AIM_HOLD_SPEC.moveSpeedMult * mageAimDirectionalSpeed(shortestAngleDiff(leader.moveInputYaw, leader.yaw))
         : 1.0;
+      const ultMoveMult =
+        leader.id === 'Knight' && campaignLoop.combatHeroes.Knight.ultActive ? 1.35 : 1.0;
       const spd =
         player.speed *
         (isSprinting && !mageAiming ? player.sprintMult : moveMag < 0.55 ? 0.56 : 1.0) *
         blockMult *
         actionMult *
-        aimMult;
+        aimMult *
+        ultMoveMult;
 
       let next = resolveCollisions(
         leader.x + moveX * spd * dt,

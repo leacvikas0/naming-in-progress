@@ -1,107 +1,659 @@
 // ============================================================================
 // world/assets/vfx/ultimate-vfx.js
 //
-// Shared cinematic language for all three ultimates (Knight Q Sky-Lightning
-// Awakening, Couples Sun & Tide Eclipse, Mage Q Storm Cataclysm):
-//   storm halo descends -> ground sigil inks itself -> thick opaque column
-//   strikes -> crack shockwave + crest wall + ink splash + sparks/petals.
+// Stage 4 & 5 High-Craft 3D Ukiyo-e Twin-Element Dragon System
+// (*Hinokami Sun-Dragon* & *Glacial Tide Dragon*)
 //
-// Contract: <= 6 InstancedMeshes while active, 0 draw calls idle.
-//   1. boltMesh   - jagged opaque cel tubes (white HDR core / body / ink rim)
-//   2. discMesh   - ground sigil (mode 0) or crack shockwave + ink splash (mode 1)
-//   3. crestMesh  - open cylinder shockwave crest wall
-//   4. cloudMesh  - storm-halo cloud puffs, undersides lit by strikes
-//   5. petalMesh  - ivory lotus / crimson rose petals (couples bloom)
-//   6. sparkMesh  - stretched octahedron sparks / embers
-// All materials: transparent:false, depthWrite:true, hard discard cutouts.
-// Records are pooled; per-frame update allocates nothing.
+// Visual & Engineering Contract:
+// - Strictly <= 6 draw calls when active, 0 draw calls when idle:
+//     1-2. `dragonHeads[0..1]` (2 Meshes): Sculpted, chiseled 3D Eastern Dragon
+//          (*Ryu*) heads (~620 triangles each, local +Z forward, +Y up, +X right)
+//          with tapered snout & flared nasal crest (`aPartId = 0`), articulated
+//          -30° open lower jaw (`aPartId = 1`), glowing inner elemental throat
+//          (`aPartId = 2`), 8 sharp upper/lower fangs (`aPartId = 3`), twin 1.20m
+//          swept-back stag/dragon antler horns (`aPartId = 4`), 8 flowing Ukiyo-e
+//          flame/wave mane ruff fins (`aPartId = 5`), and blazing slit dragon
+//          eyes (`aPartId = 6`).
+//     3-4. `dragonBodies[0..1]` (2 Dynamic BufferGeometry Meshes): 56 spine rings
+//          x 10 radial tube vertices + 56 x 2 tall (0.45m) Dorsal Flame/Wave Mane
+//          Fin ribbon vertices, updated every active frame along a 3D spline
+//          trajectory P(s) from head (u = 0, locked to neck base) to calligraphic
+//          brush tail (u = 1) with traveling sinusoidal S-wave undulation.
+//     5.   `sparkMesh` (1 InstancedMesh, 48 chiseled crystal/ember shards):
+//          Swirls along the dragons' wake and bursts 36 shards outward on cross-bite.
+//     6.   `petalMesh` (1 InstancedMesh, 48 sacred lotus/rose petals):
+//          Used for `spawnCouplesBloom` / `playCouplesUltimate`.
+// - All materials use `transparent: false, depthWrite: true`, hard `discard < 0.45`
+//   cutouts, and Ukiyo-e woodblock cel shading with sumi-ink borders.
 // ============================================================================
 
 import * as THREE from 'three';
 import { getSharedNoiseAtlas } from './noise-atlas.js';
+import { createGlacierCrystalGeometry } from './frost-lance.js';
 
 const TAU = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
+
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const saturate = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const lerp = (a, b, t) => a + (b - a) * t;
+
 function smoothstep(a, b, x) {
   const t = saturate((x - a) / (b - a));
   return t * t * (3 - 2 * t);
 }
+
 function outQuint(t) {
   const u = 1 - saturate(t);
   return 1 - u * u * u * u * u;
 }
+
 function hash11(n) {
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453123;
   return x - Math.floor(x);
 }
 
-// Palette rows: core (HDR-boosted in shader), body, deep, ink.
 export const ULTIMATE_PALETTES = Object.freeze({
-  rime: { idx: 0, core: '#f4feff', body: '#4fb3f2', deep: '#16508f', ink: '#0a1f3a' },
-  solar: { idx: 1, core: '#fff2b0', body: '#ff7a14', deep: '#c42008', ink: '#1f0b05' },
-  tempest: { idx: 2, core: '#fff6cc', body: '#b38cf5', deep: '#4c1d95', ink: '#110720' },
-  couples: { idx: 3, core: '#fff8e6', body: '#f2c14e', deep: '#c0163a', ink: '#1c0a12' },
-  eclipse: { idx: 4, core: '#fffaf0', body: '#ffae3a', deep: '#2a4f9e', ink: '#140c1e' },
-  ivory: { idx: 5, core: '#ffffff', body: '#ffe3a0', deep: '#c8961a', ink: '#24170a' },
-  rose: { idx: 6, core: '#fff1f2', body: '#ff4d6d', deep: '#9f1239', ink: '#1f0710' },
+  rime: {
+    idx: 0,
+    id: 'rime',
+    label: 'Glacial Tide Dragon',
+    core: '#f0fcff',
+    body: '#56b8f5',
+    deep: '#1b5694',
+    ink: '#0d2c4d',
+  },
+  solar: {
+    idx: 1,
+    id: 'solar',
+    label: 'Hinokami Sun-Dragon',
+    core: '#fff3a1',
+    body: '#ff7b14',
+    deep: '#b91c1c',
+    ink: '#210d06',
+  },
+  tempest: {
+    idx: 2,
+    id: 'tempest',
+    label: 'Thunderclap Dragon',
+    core: '#fff6cc',
+    body: '#b38cf5',
+    deep: '#4c1d95',
+    ink: '#110720',
+  },
+  couples: {
+    idx: 3,
+    id: 'couples',
+    label: 'Sacred Union',
+    core: '#fff8e6',
+    body: '#f2c14e',
+    deep: '#c0163a',
+    ink: '#1c0a12',
+  },
+  eclipse: {
+    idx: 4,
+    id: 'eclipse',
+    label: 'Twin-Element Eclipse',
+    core: '#fff3a1',
+    body: '#ff7b14',
+    deep: '#b91c1c',
+    ink: '#210d06',
+  },
+  ivory: {
+    idx: 5,
+    id: 'ivory',
+    label: 'Sacred Lotus Ivory',
+    core: '#ffffff',
+    body: '#ffe3a0',
+    deep: '#c8961a',
+    ink: '#24170a',
+  },
+  rose: {
+    idx: 6,
+    id: 'rose',
+    label: 'Crimson Rose',
+    core: '#fff1f2',
+    body: '#ff4d6d',
+    deep: '#9f1239',
+    ink: '#1f0710',
+  },
 });
+
 const PAL_KEYS = ['rime', 'solar', 'tempest', 'couples', 'eclipse', 'ivory', 'rose'];
+
+function normalizeDragonStyle(style) {
+  const s = String(style || '').toLowerCase();
+  if (s === 'rime' || s === 'ice' || s === 'frost' || s === 'glacial') return 'rime';
+  if (s === 'solar' || s === 'fire' || s === 'sunfire' || s === 'hinokami') return 'solar';
+  if (s === 'eclipse' || s === 'dual' || s === 'sun_and_tide' || s === 'blessed') return 'eclipse';
+  if (s === 'tempest' || s === 'storm' || s === 'wisteria') return 'solar';
+  return 'eclipse';
+}
 
 function palIndex(style) {
   const s = String(style || '').toLowerCase();
   if (ULTIMATE_PALETTES[s]) return ULTIMATE_PALETTES[s].idx;
   if (s === 'fire' || s === 'sunfire' || s === 'hinokami') return 1;
   if (s === 'ice' || s === 'frost' || s === 'glacial') return 0;
-  if (s === 'storm' || s === 'thunderclap' || s === 'wisteria') return 2;
-  return 2;
+  return 1;
 }
 
-const MAX_BOLTS = 16;
-const MAX_DISCS = 8;
-const MAX_CRESTS = 6;
-const MAX_HALOS = 2;
-const PUFFS_PER_HALO = 26;
-const EYE_PUFFS = 4;
-const MAX_PUFFS = MAX_HALOS * PUFFS_PER_HALO;
-const MAX_PETALS = 48;
-const MAX_SPARKS = 72;
-const MAX_SPARK_BURSTS = 8;
-const MAX_BLOOMS = 1;
+/* ------------------------------------------------------------------------- */
+/* 1. Sculpted Eastern Dragon (*Ryu*) Head & Dynamic Body Geometries         */
+/* ------------------------------------------------------------------------- */
 
-/* ---------------------------- geometries --------------------------------- */
+/**
+ * Builds a chiseled, faceted 3D Eastern Dragon (*Ryu*) head (~610 triangles):
+ * - Local `+Z` forward (snout tip at z = +0.95m), `+Y` dorsal up, `+X` right.
+ * - Attributes: `position`, `normal`, `uv`, `aPartId`, `aEdgeFactor`:
+ *     - `aPartId = 0`: Tapered Dragon Snout, Flared Nasal Crest, Chiseled Cheek Flares & Fierce Brow Ridges
+ *     - `aPartId = 1`: Articulated Open Lower Jaw (pitched -30° downward)
+ *     - `aPartId = 2`: Glowing Inner Elemental Throat & Tongue
+ *     - `aPartId = 3`: 8 Sharp Upper & Lower Fangs
+ *     - `aPartId = 4`: Twin Swept-Back Stag/Dragon Antler Horns (1.20m S-curve with branching tines)
+ *     - `aPartId = 5`: Flowing Ukiyo-e Flame/Wave Mane Ruff (8 serrated fins ringing back of head)
+ *     - `aPartId = 6`: Blazing Slit Dragon Eyes (z = +0.32m, x = ±0.22m, y = +0.18m)
+ */
+export function createEasternDragonHeadGeometry() {
+  const positions = [];
+  const normals = [];
+  const uvs = [];
+  const partIds = [];
+  const edgeFactors = [];
 
-function createBoltTubeGeometry(segments = 22, sides = 6) {
-  const pos = [];
-  const nrm = [];
-  const uv = [];
-  const idx = [];
-  for (let s = 0; s <= segments; s++) {
-    const y = s / segments;
-    for (let k = 0; k <= sides; k++) {
-      const a = (k / sides) * TAU;
-      const c = Math.cos(a);
-      const n = Math.sin(a);
-      pos.push(c, y, n);
-      nrm.push(c, 0, n);
-      uv.push(k / sides, y);
+  const vA = new THREE.Vector3();
+  const vB = new THREE.Vector3();
+  const vC = new THREE.Vector3();
+  const cb = new THREE.Vector3();
+  const ab = new THREE.Vector3();
+
+  function pushTri(ax, ay, az, bx, by, bz, cx, cy, cz, partId, eA = 0.2, eB = 0.2, eC = 0.2, uvA = [0, 0], uvB = [0.5, 0.5], uvC = [1, 1]) {
+    vA.set(ax, ay, az);
+    vB.set(bx, by, bz);
+    vC.set(cx, cy, cz);
+    cb.subVectors(vC, vB);
+    ab.subVectors(vA, vB);
+    cb.cross(ab);
+    if (cb.lengthSq() > 1e-10) cb.normalize();
+    else cb.set(0, 1, 0);
+
+    positions.push(ax, ay, az, bx, by, bz, cx, cy, cz);
+    normals.push(cb.x, cb.y, cb.z, cb.x, cb.y, cb.z, cb.x, cb.y, cb.z);
+    uvs.push(uvA[0], uvA[1], uvB[0], uvB[1], uvC[0], uvC[1]);
+    partIds.push(partId, partId, partId);
+    edgeFactors.push(eA, eB, eC);
+  }
+
+  function pushQuad(a, b, c, d, partId, eA = 0.2, eB = 0.2, eC = 0.2, eD = 0.2, u0 = 0, v0 = 0, u1 = 1, v1 = 1) {
+    pushTri(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2], partId, eA, eB, eC, [u0, v0], [u1, v0], [u1, v1]);
+    pushTri(a[0], a[1], a[2], c[0], c[1], c[2], d[0], d[1], d[2], partId, eA, eC, eD, [u0, v0], [u1, v1], [u0, v1]);
+  }
+
+  // -------------------------------------------------------------------------
+  // Part 0: Tapered Upper Skull, Snout, Flared Nasal Crest & Cheek Flares
+  // 8 stations along Z from occiput (-0.18m) to snout tip (+0.95m), 10 profile pts
+  // -------------------------------------------------------------------------
+  const skullStations = [
+    { z: -0.18, w: 0.27, hTop: 0.25, hBot: -0.04, cheekFlare: 0.04, nasalCrest: 0.0 },
+    { z: 0.02, w: 0.34, hTop: 0.30, hBot: -0.03, cheekFlare: 0.14, nasalCrest: 0.02 },
+    { z: 0.22, w: 0.31, hTop: 0.32, hBot: -0.02, cheekFlare: 0.10, nasalCrest: 0.04 },
+    { z: 0.42, w: 0.24, hTop: 0.25, hBot: -0.01, cheekFlare: 0.03, nasalCrest: 0.06 },
+    { z: 0.60, w: 0.21, hTop: 0.22, hBot: 0.00, cheekFlare: 0.02, nasalCrest: 0.07 },
+    { z: 0.76, w: 0.23, hTop: 0.26, hBot: 0.01, cheekFlare: 0.05, nasalCrest: 0.13 },
+    { z: 0.88, w: 0.18, hTop: 0.28, hBot: 0.03, cheekFlare: 0.03, nasalCrest: 0.16 },
+    { z: 0.95, w: 0.10, hTop: 0.21, hBot: 0.05, cheekFlare: 0.00, nasalCrest: 0.08 },
+  ];
+
+  const SKULL_COLS = 12;
+  const skullRings = [];
+  for (let s = 0; s < skullStations.length; s++) {
+    const st = skullStations[s];
+    const v = s / (skullStations.length - 1);
+    const ring = [];
+    for (let c = 0; c < SKULL_COLS; c++) {
+      const u = c / SKULL_COLS;
+      const ang = u * TAU; // 0 = top dorsal ridge, PI = ventral palate
+      const sinA = Math.sin(ang);
+      const cosA = Math.cos(ang);
+      // Chiseled faceted profile: sharp dorsal crest (cosA > 0.7), flared cheek ridge (abs(sinA) > 0.7)
+      let x = sinA * st.w;
+      let y = cosA >= 0 ? lerp(0, st.hTop, Math.pow(cosA, 0.75)) : lerp(0, st.hBot, Math.pow(-cosA, 0.85));
+      if (cosA > 0.82) {
+        y += st.nasalCrest * (cosA - 0.82) / 0.18;
+      }
+      if (Math.abs(sinA) > 0.65 && cosA > -0.4 && cosA < 0.45) {
+        x += Math.sign(sinA) * st.cheekFlare;
+        y -= 0.02;
+      }
+      const edge = clamp(Math.abs(sinA) * 0.65 + Math.max(0, cosA) * 0.35, 0.1, 0.95);
+      ring.push({ pos: [x, y, st.z], u, v, edge });
+    }
+    skullRings.push(ring);
+  }
+
+  for (let s = 0; s < skullRings.length - 1; s++) {
+    const r0 = skullRings[s];
+    const r1 = skullRings[s + 1];
+    for (let c = 0; c < SKULL_COLS; c++) {
+      const cn = (c + 1) % SKULL_COLS;
+      pushQuad(
+        r0[c].pos,
+        r0[cn].pos,
+        r1[cn].pos,
+        r1[c].pos,
+        0,
+        r0[c].edge,
+        r0[cn].edge,
+        r1[cn].edge,
+        r1[c].edge,
+        r0[c].u,
+        r0[c].v,
+        r1[cn].u,
+        r1[cn].v
+      );
     }
   }
-  const row = sides + 1;
-  for (let s = 0; s < segments; s++) {
-    for (let k = 0; k < sides; k++) {
-      const a = s * row + k;
-      const b = a + row;
-      idx.push(a, b, a + 1, b, b + 1, a + 1);
+
+  // Close back of skull & front of snout
+  const backCenter = [0, 0.10, -0.20];
+  const snoutTipCenter = [0, 0.13, 0.97];
+  const firstSkull = skullRings[0];
+  const lastSkull = skullRings[skullRings.length - 1];
+  for (let c = 0; c < SKULL_COLS; c++) {
+    const cn = (c + 1) % SKULL_COLS;
+    pushTri(
+      backCenter[0], backCenter[1], backCenter[2],
+      firstSkull[cn].pos[0], firstSkull[cn].pos[1], firstSkull[cn].pos[2],
+      firstSkull[c].pos[0], firstSkull[c].pos[1], firstSkull[c].pos[2],
+      0, 0.2, firstSkull[cn].edge, firstSkull[c].edge
+    );
+    pushTri(
+      lastSkull[c].pos[0], lastSkull[c].pos[1], lastSkull[c].pos[2],
+      lastSkull[cn].pos[0], lastSkull[cn].pos[1], lastSkull[cn].pos[2],
+      snoutTipCenter[0], snoutTipCenter[1], snoutTipCenter[2],
+      0, lastSkull[c].edge, lastSkull[cn].edge, 0.85
+    );
+  }
+
+  // Fierce Angled Supraorbital Brow Ridges & Flared Whiskers (`aPartId = 0`)
+  for (const side of [-1, 1]) {
+    const b0 = [side * 0.14, 0.24, 0.46];
+    const b1 = [side * 0.27, 0.28, 0.32];
+    const b2 = [side * 0.34, 0.38, 0.08];
+    const b3 = [side * 0.18, 0.31, 0.12];
+    const bApex = [side * 0.29, 0.42, 0.22];
+    pushTri(b0[0], b0[1], b0[2], b1[0], b1[1], b1[2], bApex[0], bApex[1], bApex[2], 0, 0.4, 0.85, 0.95);
+    pushTri(b1[0], b1[1], b1[2], b2[0], b2[1], b2[2], bApex[0], bApex[1], bApex[2], 0, 0.85, 0.95, 0.95);
+    pushTri(b2[0], b2[1], b2[2], b3[0], b3[1], b3[2], bApex[0], bApex[1], bApex[2], 0, 0.95, 0.5, 0.95);
+    pushTri(b3[0], b3[1], b3[2], b0[0], b0[1], b0[2], bApex[0], bApex[1], bApex[2], 0, 0.5, 0.4, 0.95);
+
+    // Swept-outward Ryu nasal whisker tendril
+    const wBaseA = [side * 0.15, 0.10, 0.78];
+    const wBaseB = [side * 0.15, 0.04, 0.72];
+    const wMidA = [side * 0.36, 0.08, 0.54];
+    const wMidB = [side * 0.34, 0.01, 0.48];
+    const wTip = [side * 0.52, 0.06, 0.18];
+    pushQuad(wBaseA, wBaseB, wMidB, wMidA, 0, 0.4, 0.4, 0.75, 0.75);
+    pushQuad(wMidA, wMidB, wBaseB, wBaseA, 0, 0.75, 0.75, 0.4, 0.4);
+    pushTri(wMidA[0], wMidA[1], wMidA[2], wMidB[0], wMidB[1], wMidB[2], wTip[0], wTip[1], wTip[2], 0, 0.75, 0.75, 1.0);
+    pushTri(wMidB[0], wMidB[1], wMidB[2], wMidA[0], wMidA[1], wMidA[2], wTip[0], wTip[1], wTip[2], 0, 0.75, 0.75, 1.0);
+  }
+
+  // -------------------------------------------------------------------------
+  // Part 1: Articulated Open Lower Jaw (pitched -30° open around z=0.04, y=-0.04)
+  // -------------------------------------------------------------------------
+  const jawPitch = 0.52; // ~30 degrees downward
+  const cosJ = Math.cos(jawPitch);
+  const sinJ = Math.sin(jawPitch);
+  const toJawWorld = (lx, ly, lz) => {
+    const dz = lz - 0.04;
+    const dy = ly;
+    return [
+      lx,
+      -0.04 + dy * cosJ - dz * sinJ,
+      0.04 + dz * cosJ + dy * sinJ,
+    ];
+  };
+
+  const jawStations = [
+    { lz: 0.00, w: 0.24, hTop: 0.00, hBot: -0.11 },
+    { lz: 0.22, w: 0.22, hTop: 0.00, hBot: -0.12 },
+    { lz: 0.46, w: 0.18, hTop: 0.01, hBot: -0.11 },
+    { lz: 0.68, w: 0.14, hTop: 0.02, hBot: -0.09 },
+    { lz: 0.80, w: 0.08, hTop: 0.03, hBot: -0.07 },
+  ];
+  const JAW_COLS = 8;
+  const jawRings = [];
+  for (let s = 0; s < jawStations.length; s++) {
+    const st = jawStations[s];
+    const v = s / (jawStations.length - 1);
+    const ring = [];
+    for (let c = 0; c < JAW_COLS; c++) {
+      const u = c / JAW_COLS;
+      const ang = u * TAU;
+      const sinA = Math.sin(ang);
+      const cosA = Math.cos(ang);
+      const lx = sinA * st.w;
+      const ly = cosA >= 0 ? st.hTop * cosA : -st.hBot * cosA;
+      const edge = clamp(Math.abs(sinA) * 0.7 + (cosA < 0 ? -cosA * 0.3 : 0.1), 0.15, 0.9);
+      ring.push({ pos: toJawWorld(lx, ly, st.lz), u, v, edge });
+    }
+    jawRings.push(ring);
+  }
+
+  for (let s = 0; s < jawRings.length - 1; s++) {
+    const r0 = jawRings[s];
+    const r1 = jawRings[s + 1];
+    for (let c = 0; c < JAW_COLS; c++) {
+      const cn = (c + 1) % JAW_COLS;
+      pushQuad(
+        r0[c].pos,
+        r0[cn].pos,
+        r1[cn].pos,
+        r1[c].pos,
+        1,
+        r0[c].edge,
+        r0[cn].edge,
+        r1[cn].edge,
+        r1[c].edge,
+        r0[c].u,
+        r0[c].v,
+        r1[cn].u,
+        r1[cn].v
+      );
     }
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setIndex(idx);
-  return g;
+  const jawTip = toJawWorld(0, -0.04, 0.88);
+  const lastJaw = jawRings[jawRings.length - 1];
+  for (let c = 0; c < JAW_COLS; c++) {
+    const cn = (c + 1) % JAW_COLS;
+    pushTri(
+      lastJaw[c].pos[0], lastJaw[c].pos[1], lastJaw[c].pos[2],
+      lastJaw[cn].pos[0], lastJaw[cn].pos[1], lastJaw[cn].pos[2],
+      jawTip[0], jawTip[1], jawTip[2],
+      1, lastJaw[c].edge, lastJaw[cn].edge, 0.95
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Part 2: Glowing Inner Elemental Throat & Tongue (`aPartId = 2`)
+  // -------------------------------------------------------------------------
+  const t0L = [-0.15, 0.02, 0.10];
+  const t0R = [0.15, 0.02, 0.10];
+  const t1R = [0.14, -0.10, 0.12];
+  const t1L = [-0.14, -0.10, 0.12];
+  pushQuad(t0L, t0R, t1R, t1L, 2, 0.1, 0.1, 0.1, 0.1);
+
+  // Flaming elemental tongue rising from the lower jaw floor
+  const tgBaseL = toJawWorld(-0.09, 0.01, 0.14);
+  const tgBaseR = toJawWorld(0.09, 0.01, 0.14);
+  const tgMidL = toJawWorld(-0.07, 0.04, 0.44);
+  const tgMidR = toJawWorld(0.07, 0.04, 0.44);
+  const tgTipL = toJawWorld(-0.05, 0.07, 0.68);
+  const tgTipR = toJawWorld(0.05, 0.07, 0.68);
+  const tgCleft = toJawWorld(0.0, 0.05, 0.56);
+  pushQuad(tgBaseL, tgBaseR, tgMidR, tgMidL, 2, 0.15, 0.15, 0.25, 0.25);
+  pushTri(tgMidL[0], tgMidL[1], tgMidL[2], tgCleft[0], tgCleft[1], tgCleft[2], tgTipL[0], tgTipL[1], tgTipL[2], 2, 0.25, 0.4, 0.8);
+  pushTri(tgCleft[0], tgCleft[1], tgCleft[2], tgMidR[0], tgMidR[1], tgMidR[2], tgTipR[0], tgTipR[1], tgTipR[2], 2, 0.4, 0.25, 0.8);
+
+  // -------------------------------------------------------------------------
+  // Part 3: 8 Sharp Upper & Lower Fangs (`aPartId = 3`)
+  // -------------------------------------------------------------------------
+  function addPyramidalFang(baseCenterPos, tipPos, radius) {
+    const b0 = [baseCenterPos[0] - radius, baseCenterPos[1], baseCenterPos[2] - radius];
+    const b1 = [baseCenterPos[0] + radius, baseCenterPos[1], baseCenterPos[2] - radius];
+    const b2 = [baseCenterPos[0] + radius, baseCenterPos[1], baseCenterPos[2] + radius];
+    const b3 = [baseCenterPos[0] - radius, baseCenterPos[1], baseCenterPos[2] + radius];
+    pushTri(b0[0], b0[1], b0[2], b1[0], b1[1], b1[2], tipPos[0], tipPos[1], tipPos[2], 3, 0.2, 0.2, 0.9);
+    pushTri(b1[0], b1[1], b1[2], b2[0], b2[1], b2[2], tipPos[0], tipPos[1], tipPos[2], 3, 0.2, 0.2, 0.9);
+    pushTri(b2[0], b2[1], b2[2], b3[0], b3[1], b3[2], tipPos[0], tipPos[1], tipPos[2], 3, 0.2, 0.2, 0.9);
+    pushTri(b3[0], b3[1], b3[2], b0[0], b0[1], b0[2], tipPos[0], tipPos[1], tipPos[2], 3, 0.2, 0.2, 0.9);
+  }
+
+  for (const side of [-1, 1]) {
+    // Upper front canine + upper rear fang
+    addPyramidalFang([side * 0.13, 0.02, 0.74], [side * 0.12, -0.15, 0.72], 0.032);
+    addPyramidalFang([side * 0.17, 0.00, 0.46], [side * 0.16, -0.12, 0.44], 0.028);
+    // Lower front canine + lower rear fang (attached to pitched lower jaw)
+    addPyramidalFang(toJawWorld(side * 0.11, 0.02, 0.66), toJawWorld(side * 0.10, 0.17, 0.64), 0.028);
+    addPyramidalFang(toJawWorld(side * 0.15, 0.01, 0.42), toJawWorld(side * 0.14, 0.13, 0.40), 0.024);
+  }
+
+  // -------------------------------------------------------------------------
+  // Part 4: Twin Swept-Back Stag/Dragon Antler Horns (`aPartId = 4`)
+  // Two 1.20m graceful S-curved horns (`z = +0.10 .. -1.05m`, `y = +0.25 .. +0.88m`)
+  // with branching stag tines
+  // -------------------------------------------------------------------------
+  const HORN_SEGS = 9;
+  const HORN_SIDES = 6;
+  for (const side of [-1, 1]) {
+    const hornRings = [];
+    for (let i = 0; i <= HORN_SEGS; i++) {
+      const t = i / HORN_SEGS;
+      const hz = lerp(0.10, -1.05, t);
+      const hy = lerp(0.25, 0.88, Math.pow(t, 0.82)) + Math.sin(t * Math.PI * 1.65) * 0.09;
+      const hx = side * (lerp(0.13, 0.42, Math.pow(t, 0.75)) + Math.sin(t * Math.PI) * 0.06);
+      const rad = lerp(0.068, 0.012, t);
+      const ring = [];
+      for (let k = 0; k < HORN_SIDES; k++) {
+        const a = (k / HORN_SIDES) * TAU;
+        ring.push([
+          hx + Math.cos(a) * rad,
+          hy + Math.sin(a) * rad,
+          hz,
+        ]);
+      }
+      hornRings.push({ ring, t, center: [hx, hy, hz] });
+    }
+    for (let i = 0; i < HORN_SEGS; i++) {
+      const r0 = hornRings[i].ring;
+      const r1 = hornRings[i + 1].ring;
+      const e0 = lerp(0.25, 0.95, hornRings[i].t);
+      const e1 = lerp(0.25, 0.95, hornRings[i + 1].t);
+      for (let k = 0; k < HORN_SIDES; k++) {
+        const kn = (k + 1) % HORN_SIDES;
+        pushQuad(r0[k], r0[kn], r1[kn], r1[k], 4, e0, e0, e1, e1, k / HORN_SIDES, hornRings[i].t, (k + 1) / HORN_SIDES, hornRings[i + 1].t);
+      }
+    }
+    // Branching stag tines at s = 2 and s = 4
+    for (const [idx, tineLen, liftY, outX] of [
+      [2, 0.34, 0.24, side * 0.14],
+      [4, 0.28, 0.22, side * 0.12],
+    ]) {
+      const c = hornRings[idx].center;
+      const r = 0.036;
+      const tip = [c[0] + outX, c[1] + liftY, c[2] - tineLen];
+      const b0 = [c[0] - r, c[1], c[2]];
+      const b1 = [c[0] + r, c[1], c[2]];
+      const b2 = [c[0], c[1] + r, c[2] - r];
+      pushTri(b0[0], b0[1], b0[2], b1[0], b1[1], b1[2], tip[0], tip[1], tip[2], 4, 0.4, 0.4, 0.95);
+      pushTri(b1[0], b1[1], b1[2], b2[0], b2[1], b2[2], tip[0], tip[1], tip[2], 4, 0.4, 0.4, 0.95);
+      pushTri(b2[0], b2[1], b2[2], b0[0], b0[1], b0[2], tip[0], tip[1], tip[2], 4, 0.4, 0.4, 0.95);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Part 5: Flowing Ukiyo-e Flame/Wave Mane Ruff (`aPartId = 5`)
+  // 8 swept-back serrated flame/wave fins ringing the back of the head & jaw
+  // (`z = +0.05 .. -0.65m`)
+  // -------------------------------------------------------------------------
+  const MANE_FINS = 8;
+  for (let i = 0; i < MANE_FINS; i++) {
+    const frac = i / (MANE_FINS - 1);
+    const ang = lerp(-Math.PI * 0.78, Math.PI * 0.78, frac); // wraps around crown & cheeks
+    const sinA = Math.sin(ang);
+    const cosA = Math.cos(ang);
+    const bx = sinA * 0.26;
+    const by = cosA * 0.22 + 0.06;
+    const bz = 0.05 - Math.abs(sinA) * 0.08;
+
+    const tx = -cosA * 0.07;
+    const ty = sinA * 0.07;
+    const midX = sinA * 0.42;
+    const midY = cosA * 0.36 + 0.12;
+    const midZ = -0.28;
+    const tipX = sinA * 0.54;
+    const tipY = cosA * 0.48 + 0.18;
+    const tipZ = -0.65;
+
+    const p0L = [bx - tx, by - ty, bz];
+    const p0R = [bx + tx, by + ty, bz];
+    const p1L = [midX - tx * 0.85, midY - ty * 0.85, midZ];
+    const p1R = [midX + tx * 0.85, midY + ty * 0.85, midZ];
+    const pTip = [tipX, tipY, tipZ];
+
+    // Double-sided fin triangles so visible from all angles
+    pushQuad(p0L, p0R, p1R, p1L, 5, 0.25, 0.25, 0.65, 0.65, 0, 0, 1, 0.55);
+    pushQuad(p0R, p0L, p1L, p1R, 5, 0.25, 0.25, 0.65, 0.65, 0, 0, 1, 0.55);
+    pushTri(p1L[0], p1L[1], p1L[2], p1R[0], p1R[1], p1R[2], pTip[0], pTip[1], pTip[2], 5, 0.65, 0.65, 1.0, [0, 0.55], [1, 0.55], [0.5, 1.0]);
+    pushTri(p1R[0], p1R[1], p1R[2], p1L[0], p1L[1], p1L[2], pTip[0], pTip[1], pTip[2], 5, 0.65, 0.65, 1.0, [0, 0.55], [1, 0.55], [0.5, 1.0]);
+  }
+
+  // -------------------------------------------------------------------------
+  // Part 6: Blazing Slit Dragon Eyes (`aPartId = 6`)
+  // Two fierce angled eyes on the brow sides (`z = +0.32m, x = ±0.22m, y = +0.18m`)
+  // -------------------------------------------------------------------------
+  for (const side of [-1, 1]) {
+    const ex = side * 0.235;
+    const ey = 0.18;
+    const ez = 0.32;
+    const eFront = [ex - side * 0.02, ey - 0.025, ez + 0.095];
+    const eBack = [ex + side * 0.02, ey + 0.045, ez - 0.095];
+    const eTop = [ex + side * 0.015, ey + 0.055, ez + 0.01];
+    const eBot = [ex + side * 0.015, ey - 0.035, ez - 0.01];
+    const eApex = [ex + side * 0.042, ey + 0.01, ez];
+    pushTri(eFront[0], eFront[1], eFront[2], eTop[0], eTop[1], eTop[2], eApex[0], eApex[1], eApex[2], 6, 0.1, 0.1, 0.0);
+    pushTri(eTop[0], eTop[1], eTop[2], eBack[0], eBack[1], eBack[2], eApex[0], eApex[1], eApex[2], 6, 0.1, 0.1, 0.0);
+    pushTri(eBack[0], eBack[1], eBack[2], eBot[0], eBot[1], eBot[2], eApex[0], eApex[1], eApex[2], 6, 0.1, 0.1, 0.0);
+    pushTri(eBot[0], eBot[1], eBot[2], eFront[0], eFront[1], eFront[2], eApex[0], eApex[1], eApex[2], 6, 0.1, 0.1, 0.0);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setAttribute('aPartId', new THREE.Float32BufferAttribute(partIds, 1));
+  geometry.setAttribute('aEdgeFactor', new THREE.Float32BufferAttribute(edgeFactors, 1));
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+const SPINE_RINGS = 56;
+const TUBE_RADIAL = 10;
+const FIN_VERTS_PER_RING = 4; // 2 for +X side, 2 for -X side of dorsal fin for crisp two-sided normals
+const VERTS_PER_RING = TUBE_RADIAL + FIN_VERTS_PER_RING;
+
+/**
+ * Dynamic BufferGeometry for each serpentine Dragon Body + tall Dorsal Flame/Wave Mane Fin:
+ * - `56` spine rings x `10` radial tube vertices + `56 x 2` (double-sided) tall Dorsal
+ *   Flame/Wave Mane Fin ribbon vertices rising `0.45m` along the top of the spine!
+ */
+export function createDragonBodyBufferGeometry() {
+  const totalVerts = SPINE_RINGS * VERTS_PER_RING;
+  const tubeQuads = (SPINE_RINGS - 1) * TUBE_RADIAL;
+  const finQuads = (SPINE_RINGS - 1) * 2;
+  const totalIndices = (tubeQuads + finQuads) * 6;
+
+  const positions = new Float32Array(totalVerts * 3);
+  const normals = new Float32Array(totalVerts * 3);
+  const uvs = new Float32Array(totalVerts * 2);
+  const partIds = new Float32Array(totalVerts);
+  const edgeFactors = new Float32Array(totalVerts);
+  const indices = new Uint16Array(totalIndices);
+
+  for (let i = 0; i < SPINE_RINGS; i++) {
+    const u = i / (SPINE_RINGS - 1);
+    const base = i * VERTS_PER_RING;
+    for (let r = 0; r < TUBE_RADIAL; r++) {
+      const v = r / TUBE_RADIAL;
+      const ang = v * TAU; // 0 = dorsal top, PI = ventral belly
+      const isBelly = Math.cos(ang) < -0.55;
+      const vIdx = base + r;
+      normals[vIdx * 3 + 1] = 1.0;
+      uvs[vIdx * 2 + 0] = u;
+      uvs[vIdx * 2 + 1] = v;
+      partIds[vIdx] = isBelly ? 2.0 : 0.0;
+      edgeFactors[vIdx] = clamp(0.18 + 0.55 * u + (1.0 - Math.abs(Math.cos(ang))) * 0.22, 0.1, 0.98);
+    }
+
+    // Dorsal Flame/Wave Mane Fin vertices (+X and -X faces)
+    const fin0Base = base + TUBE_RADIAL;
+    const fin0Tip = base + TUBE_RADIAL + 1;
+    const fin1Base = base + TUBE_RADIAL + 2;
+    const fin1Tip = base + TUBE_RADIAL + 3;
+
+    for (const [bIdx, tIdx] of [
+      [fin0Base, fin0Tip],
+      [fin1Base, fin1Tip],
+    ]) {
+      normals[bIdx * 3 + 0] = 1.0;
+      normals[tIdx * 3 + 0] = 1.0;
+      uvs[bIdx * 2 + 0] = u;
+      uvs[bIdx * 2 + 1] = 0.0;
+      uvs[tIdx * 2 + 0] = u;
+      uvs[tIdx * 2 + 1] = 1.0;
+      partIds[bIdx] = 5.0;
+      partIds[tIdx] = 5.0;
+      edgeFactors[bIdx] = 0.25;
+      edgeFactors[tIdx] = 1.0;
+    }
+  }
+
+  let ptr = 0;
+  for (let i = 0; i < SPINE_RINGS - 1; i++) {
+    const r0 = i * VERTS_PER_RING;
+    const r1 = (i + 1) * VERTS_PER_RING;
+    for (let c = 0; c < TUBE_RADIAL; c++) {
+      const cn = (c + 1) % TUBE_RADIAL;
+      const a = r0 + c;
+      const b = r0 + cn;
+      const d = r1 + cn;
+      const e = r1 + c;
+      indices[ptr++] = a;
+      indices[ptr++] = b;
+      indices[ptr++] = d;
+      indices[ptr++] = a;
+      indices[ptr++] = d;
+      indices[ptr++] = e;
+    }
+    // Fin side A
+    const f0a = r0 + TUBE_RADIAL;
+    const f0b = r0 + TUBE_RADIAL + 1;
+    const f1a = r1 + TUBE_RADIAL;
+    const f1b = r1 + TUBE_RADIAL + 1;
+    indices[ptr++] = f0a;
+    indices[ptr++] = f1a;
+    indices[ptr++] = f1b;
+    indices[ptr++] = f0a;
+    indices[ptr++] = f1b;
+    indices[ptr++] = f0b;
+
+    // Fin side B (opposite winding)
+    const g0a = r0 + TUBE_RADIAL + 2;
+    const g0b = r0 + TUBE_RADIAL + 3;
+    const g1a = r1 + TUBE_RADIAL + 2;
+    const g1b = r1 + TUBE_RADIAL + 3;
+    indices[ptr++] = g0a;
+    indices[ptr++] = g0b;
+    indices[ptr++] = g1b;
+    indices[ptr++] = g0a;
+    indices[ptr++] = g1b;
+    indices[ptr++] = g1a;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  const posAttr = new THREE.BufferAttribute(positions, 3);
+  const normAttr = new THREE.BufferAttribute(normals, 3);
+  posAttr.setUsage(THREE.DynamicDrawUsage);
+  normAttr.setUsage(THREE.DynamicDrawUsage);
+
+  geometry.setAttribute('position', posAttr);
+  geometry.setAttribute('normal', normAttr);
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geometry.setAttribute('aPartId', new THREE.BufferAttribute(partIds, 1));
+  geometry.setAttribute('aEdgeFactor', new THREE.BufferAttribute(edgeFactors, 1));
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  return geometry;
 }
 
 export function createUltimatePetalGeometry(rows = 8, cols = 6) {
@@ -134,479 +686,405 @@ export function createUltimatePetalGeometry(rows = 8, cols = 6) {
   return g;
 }
 
-/* ---------------------------- materials ---------------------------------- */
+/* ------------------------------------------------------------------------- */
+/* 2. Ukiyo-e Woodblock Cel Shaders (`transparent: false, depthWrite: true`) */
+/* ------------------------------------------------------------------------- */
 
-const GLSL_COMMON = /* glsl */ `
+function createUkiyoeDragonMaterial(noiseAtlas, sharedUniforms, styleKey = 'solar') {
+  const pal = ULTIMATE_PALETTES[styleKey] || ULTIMATE_PALETTES.solar;
+  return new THREE.ShaderMaterial({
+    name: `UltimateVfx_UkiyoeDragonMaterial_${styleKey}`,
+    transparent: false,
+    depthWrite: true,
+    depthTest: true,
+    side: THREE.FrontSide,
+    uniforms: {
+      uNoiseAtlas: { value: noiseAtlas },
+      uTime: sharedUniforms.uTime,
+      uSunDir: sharedUniforms.uSunDir,
+      uDaylight: sharedUniforms.uDaylight,
+      uAge01: { value: 0.0 },
+      uColorDeep: { value: new THREE.Color(pal.deep) },
+      uColorBody: { value: new THREE.Color(pal.body) },
+      uColorCore: { value: new THREE.Color(pal.core) },
+      uColorInk: { value: new THREE.Color(pal.ink) },
+    },
+    vertexShader: /* glsl */ `
+      attribute float aPartId;
+      attribute float aEdgeFactor;
+      varying vec2 vUv;
+      varying float vPartId;
+      varying float vEdgeFactor;
+      varying vec3 vWorldPos;
+      varying vec3 vWorldNormal;
+
+      void main() {
+        vUv = uv;
+        vPartId = aPartId;
+        vEdgeFactor = aEdgeFactor;
+        vec4 world = modelMatrix * vec4(position, 1.0);
+        vWorldPos = world.xyz;
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * world;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uNoiseAtlas;
+      uniform float uTime;
+      uniform vec3 uSunDir;
+      uniform float uDaylight;
+      uniform float uAge01;
+      uniform vec3 uColorDeep;
+      uniform vec3 uColorBody;
+      uniform vec3 uColorCore;
+      uniform vec3 uColorInk;
+
+      varying vec2 vUv;
+      varying float vPartId;
+      varying float vEdgeFactor;
+      varying vec3 vWorldPos;
+      varying vec3 vWorldNormal;
+
+      void main() {
+        int part = int(vPartId + 0.5);
+        vec3 N = normalize(vWorldNormal);
+        vec3 V = normalize(cameraPosition - vWorldPos);
+        float ndv = clamp(abs(dot(N, V)), 0.0, 1.0);
+
+        float u = clamp(vUv.x, 0.0, 1.0);
+        float v = clamp(vUv.y, 0.0, 1.0);
+
+        vec2 flowUv = vec2(u * 2.8 - uTime * 2.6, v * 2.2 + uTime * 0.9);
+        vec4 n0 = texture2D(uNoiseAtlas, flowUv);
+        vec4 n1 = texture2D(uNoiseAtlas, flowUv * 1.85 + vec2(0.37, 0.61));
+        float waveNoise = n0.b * 0.62 + n1.g * 0.38;
+
+        // Organic licking flame tongues / Hokusai wave foam along dorsal fin (part == 5),
+        // calligraphic tail tip (u > 0.68), and end-of-life dissolve (uAge01 > 0.72)
+        float finErode = part == 5
+          ? (1.0 - v * 0.66) + waveNoise * 0.62 * smoothstep(0.0, 0.92, 1.0 - u * 0.35)
+          : 1.0 - smoothstep(0.68, 0.99, u) * 0.65 + waveNoise * 0.42;
+
+        float lifeDissolve = 1.0 - smoothstep(0.72, 0.995, uAge01);
+        float erodedMask = finErode * lifeDissolve;
+
+        // Hard alphaTest cutout (strictly >= 0.45, zero transparent glass!)
+        if (erodedMask < 0.45) discard;
+
+        vec3 L = normalize(vec3(uSunDir.x, max(0.42, uSunDir.y), uSunDir.z));
+        float ndl = clamp(dot(N, L) * 0.5 + 0.5, 0.0, 1.0);
+
+        vec3 col = uColorDeep;
+        float rimInk = 1.0 - smoothstep(0.14, 0.25, ndv);
+        float cutoutInk = 1.0 - smoothstep(0.45, 0.54, erodedMask);
+
+        if (part == 6) {
+          // Blazing slit dragon eyes
+          col = uColorCore * 1.65;
+          col = mix(col, uColorInk, rimInk * 0.75);
+        } else if (part == 3 || part == 4) {
+          // Sharp fangs & swept-back stag/dragon antler horns
+          float hornGrad = smoothstep(0.15, 0.78, vEdgeFactor + ndl * 0.25);
+          col = mix(uColorBody * 1.12, uColorCore * 1.38, hornGrad);
+          col = mix(col, uColorInk, max(rimInk * 0.85, cutoutInk));
+        } else if (part == 2) {
+          // Glowing inner elemental throat & segmented ventral belly scutes
+          float scuteRib = smoothstep(0.08, 0.0, abs(fract(u * 26.0) - 0.5));
+          col = mix(uColorBody * 1.18, uColorCore * 1.35, step(0.38, ndl + waveNoise * 0.25));
+          col = mix(col, uColorInk, max(scuteRib * 0.65, max(rimInk * 0.80, cutoutInk)));
+        } else if (part == 5) {
+          // Dorsal Flame/Wave Mane Fin & Head Ruff
+          float tongueScore = v * 0.68 + waveNoise * 0.48;
+          col = uColorDeep;
+          col = mix(col, uColorBody * 1.15, step(0.36, tongueScore));
+          col = mix(col, uColorCore * 1.32, step(0.68, tongueScore));
+          float finRib = smoothstep(0.035, 0.0, abs(tongueScore - 0.36)) * 0.75;
+          float finTipInk = smoothstep(0.88, 0.98, v);
+          col = mix(col, uColorInk, max(max(cutoutInk, rimInk * 0.75), max(finRib, finTipInk * 0.85)));
+        } else {
+          // Sculpted Dragon Snout, Lower Jaw & Serpentine Scaled Body (part == 0 or 1)
+          float scaleWave = sin(u * 38.0 + cos(v * 18.85) * 2.2) * 0.14;
+          float striation = sin(v * 18.0 - u * 14.0 + n0.b * 4.8) * 0.12;
+          float celScore = ndl * 0.56 + (1.0 - vEdgeFactor * 0.45) * 0.32 + waveNoise * 0.26 + scaleWave + striation;
+
+          col = uColorDeep;
+          col = mix(col, uColorBody * 1.10, step(0.42, celScore));
+          col = mix(col, uColorCore * 1.26, step(0.74, celScore));
+
+          float waveRib1 = smoothstep(0.032, 0.0, abs(celScore - 0.42)) * 0.78;
+          float waveRib2 = smoothstep(0.028, 0.0, abs(celScore - 0.74)) * 0.68;
+          col = mix(col, uColorInk, max(max(cutoutInk, rimInk * 0.86), max(waveRib1, waveRib2)));
+        }
+
+        gl_FragColor = vec4(col * mix(0.88, 1.0, uDaylight), 1.0);
+      }
+    `,
+  });
+}
+
+const GLSL_PALETTE_ARRAY = /* glsl */ `
   uniform vec3 uCore[7];
   uniform vec3 uBody[7];
   uniform vec3 uDeep[7];
   uniform vec3 uInk[7];
-  uniform float uCoreBoost;
-  float h11(float n) { return fract(sin(n * 127.1 + 311.7) * 43758.5453); }
 `;
 
-function paletteUniforms() {
+function createPaletteUniforms() {
   const mk = (key) => PAL_KEYS.map((k) => new THREE.Color(ULTIMATE_PALETTES[k][key]));
   return {
     uCore: { value: mk('core') },
     uBody: { value: mk('body') },
     uDeep: { value: mk('deep') },
     uInk: { value: mk('ink') },
-    uCoreBoost: { value: 4.2 },
   };
 }
 
-function baseMaterial(name, shared, extraUniforms, vertexShader, fragmentShader, side = THREE.FrontSide) {
+function createSparkCrystalMaterial(noiseAtlas, sharedUniforms) {
   return new THREE.ShaderMaterial({
-    name,
+    name: 'UltimateVfx_SparkCrystalMaterial',
     transparent: false,
     depthWrite: true,
     depthTest: true,
-    side,
-    uniforms: { ...shared, ...extraUniforms },
-    vertexShader,
-    fragmentShader,
+    side: THREE.FrontSide,
+    uniforms: {
+      ...createPaletteUniforms(),
+      uNoiseAtlas: { value: noiseAtlas },
+      uTime: sharedUniforms.uTime,
+    },
+    vertexShader: /* glsl */ `
+      attribute vec4 aSparkMeta; // x: palIdx, y: heat, z: dissolve, w: seed
+      varying vec3 vWorldPos;
+      varying vec3 vWorldNormal;
+      varying vec4 vMeta;
+
+      void main() {
+        vMeta = aSparkMeta;
+        vec4 world = modelMatrix * instanceMatrix * vec4(position, 1.0);
+        vWorldPos = world.xyz;
+        vWorldNormal = normalize(mat3(modelMatrix * instanceMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * world;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      ${GLSL_PALETTE_ARRAY}
+      uniform sampler2D uNoiseAtlas;
+      varying vec3 vWorldPos;
+      varying vec3 vWorldNormal;
+      varying vec4 vMeta;
+
+      void main() {
+        int p = clamp(int(vMeta.x + 0.5), 0, 6);
+        float heat = vMeta.y;
+        float dissolve = clamp(vMeta.z, 0.0, 1.0);
+        float seed = vMeta.w;
+
+        vec4 n = texture2D(uNoiseAtlas, vWorldPos.xz * 0.85 + vec2(seed * 0.37, vWorldPos.y * 0.73));
+        if (dissolve > 0.01 && n.b < dissolve) discard;
+
+        vec3 N = normalize(vWorldNormal);
+        vec3 V = normalize(cameraPosition - vWorldPos);
+        float ndv = abs(dot(N, V));
+
+        vec3 col = uDeep[p];
+        if (ndv > 0.24) col = uBody[p] * (1.15 + 0.35 * heat);
+        if (ndv > 0.54) col = uCore[p] * (1.35 + 0.55 * heat);
+        if (ndv < 0.16) col = uInk[p];
+
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
   });
 }
 
-function createBoltMaterial(shared) {
-  return baseMaterial(
-    'UltimateVfx_BoltMaterial',
-    shared,
-    {},
-    /* glsl */ `
-      ${GLSL_COMMON}
-      uniform float uTime;
-      attribute vec4 aBoltA; // seed, palette, reveal, fade
-      attribute vec4 aBoltB; // jag amplitude (m), radius (m), ascend flag, flash
-      varying float vT;
-      varying vec3 vN;
-      varying vec3 vW;
-      varying vec4 vA;
-      varying vec4 vB;
-      void main() {
-        float t = position.y;
-        vec3 base = (instanceMatrix * vec4(0.0, t, 0.0, 1.0)).xyz;
-        vec3 ax = normalize(instanceMatrix[0].xyz);
-        vec3 az = normalize(instanceMatrix[2].xyz);
-        float flick = floor(uTime * 15.0);
-        float s = aBoltA.x * 13.0 + flick * 3.17;
-        float k = t * 9.0;
-        float i0 = floor(k);
-        float f = fract(k);
-        vec2 j0 = vec2(h11(i0 + s), h11(i0 + s + 7.7)) - 0.5;
-        vec2 j1 = vec2(h11(i0 + 1.0 + s), h11(i0 + 1.0 + s + 7.7)) - 0.5;
-        float k2 = t * 23.0;
-        float i2 = floor(k2);
-        vec2 m0 = vec2(h11(i2 + s * 1.3), h11(i2 + s * 1.3 + 3.1)) - 0.5;
-        vec2 m1 = vec2(h11(i2 + 1.0 + s * 1.3), h11(i2 + 1.0 + s * 1.3 + 3.1)) - 0.5;
-        float pin = pow(sin(3.14159 * clamp(t, 0.0, 1.0)), 0.55);
-        vec2 jag = (mix(j0, j1, f) * 2.0 + mix(m0, m1, fract(k2)) * 0.55) * aBoltB.x * pin;
-        // fat at both ends (cloud root / impact), knotted along the shaft
-        float r = aBoltB.y * (0.62 + 0.38 * smoothstep(0.75, 1.0, t) + 0.55 * smoothstep(0.08, 0.0, t));
-        r *= 0.85 + 0.3 * h11(i2 + s);
-        vec3 world = base + ax * (jag.x + position.x * r) + az * (jag.y + position.z * r);
-        vN = normalize(ax * normal.x + az * normal.z);
-        vW = world;
-        vT = t;
-        vA = aBoltA;
-        vB = aBoltB;
-        gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
-      }
-    `,
-    /* glsl */ `
-      ${GLSL_COMMON}
-      uniform sampler2D uNoise;
-      varying float vT;
-      varying vec3 vN;
-      varying vec3 vW;
-      varying vec4 vA;
-      varying vec4 vB;
-      void main() {
-        float reveal = vA.z;
-        bool ascend = vB.z > 0.5;
-        float front = ascend ? reveal : 1.0 - reveal;
-        if (ascend ? vT > front : vT < front) discard;
-        float n = texture2D(uNoise, vec2(vT * 2.3 + vA.x, vA.x * 0.37)).b;
-        if (n < vA.w * 1.15) discard;
-        int p = int(vA.y + 0.5);
-        vec3 V = normalize(cameraPosition - vW);
-        float ndv = abs(dot(normalize(vN), V));
-        float flash = vB.w;
-        float lead = smoothstep(0.10, 0.0, abs(vT - front));
-        vec3 col = uInk[p];
-        if (ndv > 0.20) col = uDeep[p] * 1.25;
-        if (ndv > 0.36) col = uBody[p] * (1.6 + flash);
-        if (ndv > 0.58 - lead * 0.3) col = uCore[p] * (uCoreBoost + flash * 2.0);
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `
-  );
-}
-
-function createDiscMaterial(shared) {
-  const mat = baseMaterial(
-    'UltimateVfx_GroundDiscMaterial',
-    shared,
-    {},
-    /* glsl */ `
-      attribute vec4 aDiscA; // mode, palette, age01, seed
-      attribute vec4 aDiscB; // reveal, fade, spin, _
-      varying vec2 vP;
-      varying vec4 vA;
-      varying vec4 vB;
-      void main() {
-        vP = position.xz;
-        vA = aDiscA;
-        vB = aDiscB;
-        gl_Position = projectionMatrix * viewMatrix * instanceMatrix * vec4(position, 1.0);
-      }
-    `,
-    /* glsl */ `
-      ${GLSL_COMMON}
-      uniform sampler2D uNoise;
-      varying vec2 vP;
-      varying vec4 vA;
-      varying vec4 vB;
-      const float PI = 3.14159265;
-      float band(float x, float c, float w) { return step(abs(x - c), w); }
-      void main() {
-        int p = int(vA.y + 0.5);
-        float r = length(vP);
-        if (r > 1.0) discard;
-        float ang = atan(vP.y, vP.x);
-        float fade = vB.y;
-        float n = texture2D(uNoise, vP * 0.9 + vec2(vA.w * 0.13, vA.w * 0.29)).b;
-        if (n < fade * 1.1) discard;
-        vec3 col;
-        if (vA.x < 0.5) {
-          // Lotus mandala sigil, inked outlines + HDR gold channels, drawn by angular sweep.
-          float a01 = fract((ang + PI) / (2.0 * PI));
-          if (a01 > vB.x) discard;
-          float a = ang + vB.z;
-          float ink = 0.0;
-          float gold = 0.0;
-          ink = max(ink, band(r, 0.94, 0.040));
-          gold = max(gold, band(r, 0.94, 0.016));
-          ink = max(ink, band(r, 0.80, 0.020));
-          gold = max(gold, band(r, 0.80, 0.007));
-          ink = max(ink, band(r, 0.26, 0.026));
-          gold = max(gold, band(r, 0.26, 0.010));
-          float seg = 2.0 * PI / 8.0;
-          float pa = mod(a, seg) - seg * 0.5;
-          float pr = (r - 0.27) / 0.52;
-          if (pr > 0.0 && pr < 1.0) {
-            float hw = 0.36 * pow(sin(pr * PI * 0.92 + 0.08), 0.8) * (1.0 - pr * 0.35);
-            float e = abs(pa) / max(hw, 0.001);
-            ink = max(ink, band(e, 1.0, 0.16));
-            gold = max(gold, band(e, 1.0, 0.065));
-            float rib = abs(pa) * r;
-            ink = max(ink, step(rib, 0.008) * step(pr, 0.82));
-          }
-          // offset outer petals
-          float pb = mod(a + seg * 0.5, seg) - seg * 0.5;
-          float qr = (r - 0.55) / 0.36;
-          if (qr > 0.0 && qr < 1.0) {
-            float hw2 = 0.26 * sin(qr * PI);
-            float e2 = abs(pb) / max(hw2, 0.001);
-            ink = max(ink, band(e2, 1.0, 0.20));
-            gold = max(gold, band(e2, 1.0, 0.08));
-          }
-          float bead = mod(a, seg * 0.5) - seg * 0.25;
-          float bd = length(vec2(bead * 0.87, r - 0.87));
-          ink = max(ink, step(bd, 0.035));
-          gold = max(gold, step(bd, 0.018));
-          ink = max(ink, step(r, 0.10));
-          gold = max(gold, step(r, 0.06));
-          if (ink < 0.5) discard;
-          col = gold > 0.5 ? uBody[p] * 2.2 + uCore[p] * 0.6 * step(r, 0.06) : uInk[p];
-        } else {
-          // Crack shockwave ring + radial cracks + central ink splash.
-          float age = vA.z;
-          float R = 0.08 + 0.9 * (1.0 - pow(1.0 - clamp(age * 1.7, 0.0, 1.0), 4.0));
-          float w = mix(0.075, 0.025, age);
-          float d = abs(r - R);
-          float hit = 0.0;
-          col = uInk[p];
-          if (d < w + 0.03) {
-            float edgeN = texture2D(uNoise, vec2(ang * 1.3, R * 2.0)).r;
-            if (d < w + 0.03 * edgeN) hit = 1.0;
-            if (d < w) col = uBody[p] * 1.8;
-            if (d < w * 0.42) col = uCore[p] * uCoreBoost;
-          }
-          if (hit < 0.5) {
-            float crackLen = min(R * 1.04, 0.97);
-            for (int i = 0; i < 11; i++) {
-              float fi = float(i);
-              float ca = fi / 11.0 * 2.0 * PI + (h11(fi + vA.w) - 0.5) * 0.45;
-              float lenI = crackLen * (0.55 + 0.45 * h11(fi * 3.1 + vA.w));
-              float wig = sin(r * 21.0 + fi * 4.0) * 0.045 + sin(r * 53.0 + fi) * 0.015;
-              float da = abs(mod(ang - ca - wig + PI, 2.0 * PI) - PI) * r;
-              float cw = 0.014 * (1.0 - r / max(lenI, 0.01)) + 0.003;
-              if (r < lenI && da < cw + 0.012) {
-                hit = 1.0;
-                col = da < cw ? uBody[p] * (1.5 + 1.5 * (1.0 - age)) : uInk[p];
-              }
-            }
-          }
-          if (hit < 0.5) {
-            // sumi ink splash: blot + flung droplets
-            float blot = texture2D(uNoise, vP * 1.6 + vec2(vA.w)).b;
-            float splashR = 0.20 + 0.10 * blot;
-            if (r < splashR * min(1.0, age * 6.0 + 0.3)) hit = 1.0;
-            float drop = texture2D(uNoise, vP * 3.1 + vec2(vA.w * 0.7)).a;
-            if (r > 0.22 && r < 0.62 && drop > 0.86) hit = 1.0;
-            col = uInk[p];
-          }
-          if (hit < 0.5) discard;
-        }
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `
-  );
-  mat.polygonOffset = true;
-  mat.polygonOffsetFactor = -2;
-  mat.polygonOffsetUnits = -4;
-  return mat;
-}
-
-function createCrestMaterial(shared) {
-  return baseMaterial(
-    'UltimateVfx_CrestWallMaterial',
-    shared,
-    {},
-    /* glsl */ `
-      attribute vec4 aCrestA; // palette, age01, seed, fade
-      varying vec2 vUv;
-      varying vec4 vA;
-      void main() {
-        vUv = uv;
-        vA = aCrestA;
-        gl_Position = projectionMatrix * viewMatrix * instanceMatrix * vec4(position, 1.0);
-      }
-    `,
-    /* glsl */ `
-      ${GLSL_COMMON}
-      uniform sampler2D uNoise;
-      varying vec2 vUv;
-      varying vec4 vA;
-      void main() {
-        int p = int(vA.x + 0.5);
-        float n = texture2D(uNoise, vec2(vUv.x * 5.0 + vA.z, 0.31)).b;
-        float n2 = texture2D(uNoise, vec2(vUv.x * 13.0 + vA.z, vUv.y * 0.5)).g;
-        float crest = 0.35 + 0.65 * pow(n, 1.3) + 0.12 * n2;
-        if (vUv.y > crest) discard;
-        float er = texture2D(uNoise, vec2(vUv.x * 7.0, vUv.y * 1.3 + vA.z)).b;
-        if (er < vA.w * 1.1) discard;
-        float topD = crest - vUv.y;
-        vec3 col = uDeep[p] * 1.1;
-        if (topD < 0.36) col = uBody[p] * 1.7;
-        if (topD < 0.12) col = uCore[p] * uCoreBoost * 0.8;
-        if (topD < 0.035 || vUv.y < 0.06) col = uInk[p];
-        if (topD > 0.36 && topD < 0.42) col = uInk[p];
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `,
-    THREE.DoubleSide
-  );
-}
-
-function createCloudMaterial(shared) {
-  return baseMaterial(
-    'UltimateVfx_StormCloudMaterial',
-    shared,
-    {
-      uCloudDark: { value: new THREE.Color('#151026') },
-      uCloudMid: { value: new THREE.Color('#3b3160') },
+function createPetalMaterial(noiseAtlas, sharedUniforms) {
+  return new THREE.ShaderMaterial({
+    name: 'UltimateVfx_PetalMaterial',
+    transparent: false,
+    depthWrite: true,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    uniforms: {
+      ...createPaletteUniforms(),
+      uNoiseAtlas: { value: noiseAtlas },
+      uTime: sharedUniforms.uTime,
     },
-    /* glsl */ `
-      attribute vec4 aCloudA; // palette, flash, fade, seed
-      varying vec3 vN;
-      varying vec3 vW;
-      varying vec4 vA;
-      varying vec3 vL;
-      void main() {
-        vA = aCloudA;
-        vL = position;
-        vec4 w = instanceMatrix * vec4(position, 1.0);
-        vW = w.xyz;
-        vN = normalize(mat3(instanceMatrix) * normal);
-        gl_Position = projectionMatrix * viewMatrix * w;
-      }
-    `,
-    /* glsl */ `
-      ${GLSL_COMMON}
-      uniform sampler2D uNoise;
-      uniform vec3 uCloudDark;
-      uniform vec3 uCloudMid;
-      varying vec3 vN;
-      varying vec3 vW;
-      varying vec4 vA;
-      varying vec3 vL;
-      void main() {
-        int p = int(vA.x + 0.5);
-        float n = texture2D(uNoise, vL.xz * 0.5 + vL.y * 0.3 + vec2(vA.w)).b;
-        if (n < vA.z * 1.1) discard;
-        vec3 N = normalize(vN);
-        vec3 V = normalize(cameraPosition - vW);
-        float ndv = abs(dot(N, V));
-        float lit = dot(N, normalize(vec3(0.3, 1.0, 0.2)));
-        vec3 col = lit > 0.25 ? uCloudMid : uCloudDark;
-        // strike flash lights only the undersides, briefly; a thin palette rim otherwise
-        float under = smoothstep(0.1, -0.6, N.y);
-        if (lit > 0.25 && ndv < 0.42) col = mix(uCloudMid, uBody[p], 0.35);
-        if (vA.y > 0.15 && under > 0.5) col = uBody[p] * (1.0 + 1.6 * vA.y);
-        if (vA.y > 0.55 && under > 0.8) col = uCore[p] * (1.0 + 2.0 * vA.y);
-        if (ndv < 0.22) col = uInk[p] * 0.6;
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `
-  );
-}
-
-function createPetalMaterial(shared) {
-  return baseMaterial(
-    'UltimateVfx_PetalMaterial',
-    shared,
-    {},
-    /* glsl */ `
-      attribute vec4 aPetalA; // palette (5 ivory lotus / 6 rose), fade, seed, glow
+    vertexShader: /* glsl */ `
+      attribute vec4 aPetalA; // x: palIdx, y: fade, z: seed, w: glow
       varying vec2 vUv;
       varying vec4 vA;
       void main() {
         vUv = uv;
         vA = aPetalA;
-        gl_Position = projectionMatrix * viewMatrix * instanceMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0);
       }
     `,
-    /* glsl */ `
-      ${GLSL_COMMON}
-      uniform sampler2D uNoise;
+    fragmentShader: /* glsl */ `
+      ${GLSL_PALETTE_ARRAY}
+      uniform sampler2D uNoiseAtlas;
       varying vec2 vUv;
       varying vec4 vA;
       void main() {
-        int p = int(vA.x + 0.5);
-        float n = texture2D(uNoise, vUv * vec2(0.6, 0.9) + vec2(vA.z)).b;
+        int p = clamp(int(vA.x + 0.5), 0, 6);
+        float n = texture2D(uNoiseAtlas, vUv * vec2(0.6, 0.9) + vec2(vA.z)).b;
         if (n < vA.y * 1.1) discard;
         float x = abs(vUv.x * 2.0 - 1.0);
-        vec3 col = mix(uCore[p] * (1.25 + vA.w), uBody[p] * 1.3, smoothstep(0.35, 0.95, vUv.y));
-        if (p == 5) col = mix(col, uDeep[6] * 1.3, smoothstep(0.78, 0.98, vUv.y));
+        vec3 col = mix(uCore[p] * (1.18 + vA.w * 0.4), uBody[p] * 1.15, smoothstep(0.35, 0.95, vUv.y));
+        if (p == 5) col = mix(col, uDeep[6] * 1.15, smoothstep(0.78, 0.98, vUv.y));
         if (x < 0.06 && vUv.y < 0.8) col = uDeep[p];
         if (x > 0.84 || vUv.y < 0.03) col = uInk[p];
         gl_FragColor = vec4(col, 1.0);
       }
     `,
-    THREE.DoubleSide
-  );
+  });
 }
 
-function createSparkMaterial(shared) {
-  return baseMaterial(
-    'UltimateVfx_SparkMaterial',
-    shared,
-    {},
-    /* glsl */ `
-      attribute vec2 aSparkA; // palette, heat
-      varying vec3 vN;
-      varying vec3 vW;
-      varying vec2 vA;
-      void main() {
-        vA = aSparkA;
-        vec4 w = instanceMatrix * vec4(position, 1.0);
-        vW = w.xyz;
-        vN = normalize(mat3(instanceMatrix) * normal);
-        gl_Position = projectionMatrix * viewMatrix * w;
-      }
-    `,
-    /* glsl */ `
-      ${GLSL_COMMON}
-      varying vec3 vN;
-      varying vec3 vW;
-      varying vec2 vA;
-      void main() {
-        int p = int(vA.x + 0.5);
-        float ndv = abs(dot(normalize(vN), normalize(cameraPosition - vW)));
-        vec3 col = ndv > 0.45 ? uCore[p] * (1.0 + 3.0 * vA.y) : uBody[p] * (1.0 + vA.y);
-        if (ndv < 0.15) col = uDeep[p];
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `
-  );
-}
+/* ------------------------------------------------------------------------- */
+/* 3. UltimateVfxSystem — Twin-Element Ukiyo-e Dragon Choreography           */
+/* ------------------------------------------------------------------------- */
 
-/* ------------------------------ system ----------------------------------- */
+const MAX_DRAGONS = 2;
+const MAX_SPARKS = 48;
+const MAX_PETALS = 48;
 
-const _m = new THREE.Matrix4();
-const _q = new THREE.Quaternion();
-const _s = new THREE.Vector3();
 const _p = new THREE.Vector3();
-const _a = new THREE.Vector3();
-const _b = new THREE.Vector3();
-const _c = new THREE.Vector3();
-const _d = new THREE.Vector3();
-const _e = new THREE.Euler();
-
-function makeRecords(n, extra) {
-  const arr = [];
-  for (let i = 0; i < n; i++) arr.push({ active: false, age: 0, delay: 0, life: 1, seed: i * 1.37, ...extra() });
-  return arr;
-}
+const _pNext = new THREE.Vector3();
+const _pPrev = new THREE.Vector3();
+const _tangent = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _binorm = new THREE.Vector3();
+const _headLook = new THREE.Matrix4();
+const _dummy = new THREE.Object3D();
+const _euler = new THREE.Euler();
 
 export class UltimateVfxSystem {
   constructor({ scene = null, getGroundHeight = () => 0 } = {}) {
-    this.scene = scene;
+    this.scene = scene || null;
     this.getGroundHeight = typeof getGroundHeight === 'function' ? getGroundHeight : () => 0;
     this.noiseAtlas = getSharedNoiseAtlas();
+
     this.uTime = { value: 0 };
-    const pal = paletteUniforms();
-    this.shared = { ...pal, uTime: this.uTime, uNoise: { value: this.noiseAtlas } };
+    this.sharedUniforms = {
+      uTime: this.uTime,
+      uSunDir: { value: new THREE.Vector3(0.45, 0.78, 0.42).normalize() },
+      uDaylight: { value: 1.0 },
+    };
 
     this.group = new THREE.Group();
     this.group.name = 'UltimateVfxRoot';
     this.group.visible = false;
-    if (scene) scene.add(this.group);
-
-    const mk = (name, geo, mat, max, attrs) => {
-      for (const [key, size] of attrs) {
-        geo.setAttribute(key, new THREE.InstancedBufferAttribute(new Float32Array(max * size), size));
-      }
-      const mesh = new THREE.InstancedMesh(geo, mat, max);
-      mesh.name = name;
-      mesh.frustumCulled = false;
-      mesh.count = 0;
-      mesh.userData.isVfx = true;
-      this.group.add(mesh);
-      return mesh;
-    };
-    this.boltMesh = mk('UltimateVfx_DC1_Bolts', createBoltTubeGeometry(), createBoltMaterial(this.shared), MAX_BOLTS, [['aBoltA', 4], ['aBoltB', 4]]);
-    const discGeo = new THREE.CircleGeometry(1, 64).rotateX(-Math.PI / 2);
-    this.discMesh = mk('UltimateVfx_DC2_GroundDiscs', discGeo, createDiscMaterial(this.shared), MAX_DISCS, [['aDiscA', 4], ['aDiscB', 4]]);
-    const crestGeo = new THREE.CylinderGeometry(1, 1, 1, 56, 1, true).translate(0, 0.5, 0);
-    this.crestMesh = mk('UltimateVfx_DC3_CrestWalls', crestGeo, createCrestMaterial(this.shared), MAX_CRESTS, [['aCrestA', 4]]);
-    this.cloudMesh = mk('UltimateVfx_DC4_StormHalo', new THREE.IcosahedronGeometry(1, 1), createCloudMaterial(this.shared), MAX_PUFFS, [['aCloudA', 4]]);
-    this.petalMesh = mk('UltimateVfx_DC5_Petals', createUltimatePetalGeometry(), createPetalMaterial(this.shared), MAX_PETALS, [['aPetalA', 4]]);
-    this.sparkMesh = mk('UltimateVfx_DC6_Sparks', new THREE.OctahedronGeometry(1, 0), createSparkMaterial(this.shared), MAX_SPARKS, [['aSparkA', 2]]);
-
-    const v3 = () => new THREE.Vector3();
-    this.bolts = makeRecords(MAX_BOLTS, () => ({ from: v3(), to: v3(), width: 0.2, jag: 0.4, pal: 2, revealDur: 0.08, ascend: false, flash: 0, track: null, trackFrom: null }));
-    this.discs = makeRecords(MAX_DISCS, () => ({ pos: v3(), radius: 2, mode: 0, pal: 2, revealDur: 0.4, spin: 0 }));
-    this.crests = makeRecords(MAX_CRESTS, () => ({ pos: v3(), radius: 4, height: 1, pal: 2 }));
-    this.halos = makeRecords(MAX_HALOS, () => ({ center: v3(), height: 8, r0: 7, r1: 4, pal: 2, formDur: 0.5, flashAt: -9 }));
-    this.sparkBursts = makeRecords(MAX_SPARK_BURSTS, () => ({ pos: v3(), count: 12, speed: 6, pal: 2 }));
-    this.blooms = makeRecords(MAX_BLOOMS, () => ({ pos: v3(), openAt: 0.55, flyCount: 24 }));
-    this.cataclysm = { active: false, haloIdx: -1, sigilIdx: -1, pos: v3() };
-    this._tipFallback = v3();
-  }
-
-  /* ------------------------------ spawning ------------------------------- */
-
-  _take(pool) {
-    let best = pool[0];
-    for (const r of pool) {
-      if (!r.active) return r;
-      if (r.age - r.delay > best.age - best.delay) best = r;
+    if (this.scene) {
+      this.scene.add(this.group);
     }
-    return best;
+
+    this._shakeOffset = new THREE.Vector3();
+    this._hitstopScale = 1.0;
+    this.cataclysm = { active: false, pos: new THREE.Vector3(), timer: 0 };
+
+    // Shared Sculpted Eastern Dragon Head geometry (~610 tris)
+    this.sharedHeadGeo = createEasternDragonHeadGeometry();
+
+    // 2 Dragon Slots: Slot 0 = Solar Dragon ('solar'), Slot 1 = Glacial Dragon ('rime')
+    this.dragons = [];
+    this.dragonHeads = [];
+    this.dragonBodies = [];
+
+    for (let i = 0; i < MAX_DRAGONS; i++) {
+      const defaultStyle = i === 0 ? 'solar' : 'rime';
+      const mat = createUkiyoeDragonMaterial(this.noiseAtlas, this.sharedUniforms, defaultStyle);
+
+      const headMesh = new THREE.Mesh(this.sharedHeadGeo, mat);
+      headMesh.name = `UltimateVfx_DragonHead_${i}`;
+      headMesh.frustumCulled = false;
+      headMesh.visible = false;
+      headMesh.userData.isVfx = true;
+      this.group.add(headMesh);
+
+      const bodyGeo = createDragonBodyBufferGeometry();
+      const bodyMesh = new THREE.Mesh(bodyGeo, mat);
+      bodyMesh.name = `UltimateVfx_DragonBody_${i}`;
+      bodyMesh.frustumCulled = false;
+      bodyMesh.visible = false;
+      bodyMesh.userData.isVfx = true;
+      this.group.add(bodyMesh);
+
+      this.dragonHeads.push(headMesh);
+      this.dragonBodies.push(bodyMesh);
+
+      this.dragons.push({
+        slot: i,
+        active: false,
+        mode: 'awakening', // 'awakening' | 'slash'
+        style: defaultStyle,
+        palIdx: i === 0 ? 1 : 0,
+        origin: new THREE.Vector3(),
+        yaw: 0,
+        age: 0,
+        duration: 1.25,
+        scale: 1.0,
+        phase: i * Math.PI,
+        handSide: i === 0 ? 1 : -1,
+        biteBurstTriggered: false,
+        getBladeTip: null,
+        headMesh,
+        bodyMesh,
+        mat,
+        spinePoints: Array.from({ length: SPINE_RINGS }, () => new THREE.Vector3()),
+      });
+    }
+
+    // Orbiting / Bursting Ember & Frost Crystal Sparks (48 instances, 1 draw call)
+    const sparkGeo = createGlacierCrystalGeometry({
+      seed: 41.3,
+      sides: 6,
+      taper: 0.68,
+      roughness: 0.12,
+      bend: 0.38,
+    });
+    this.sparkMetaAttr = new THREE.InstancedBufferAttribute(new Float32Array(MAX_SPARKS * 4), 4);
+    sparkGeo.setAttribute('aSparkMeta', this.sparkMetaAttr);
+    this.sparkMat = createSparkCrystalMaterial(this.noiseAtlas, this.sharedUniforms);
+    this.sparkMesh = new THREE.InstancedMesh(sparkGeo, this.sparkMat, MAX_SPARKS);
+    this.sparkMesh.name = 'UltimateVfx_DC5_DragonSparks';
+    this.sparkMesh.frustumCulled = false;
+    this.sparkMesh.count = 0;
+    this.sparkMesh.userData.isVfx = true;
+    this.group.add(this.sparkMesh);
+
+    this.sparkParticles = [];
+    for (let i = 0; i < MAX_SPARKS; i++) {
+      this.sparkParticles.push({
+        active: false,
+        age: 0,
+        life: 0.55,
+        pos: new THREE.Vector3(),
+        vel: new THREE.Vector3(),
+        palIdx: i % 2,
+        scale: 0.18,
+        seed: (i * 1.73) % 10.0,
+      });
+    }
+
+    // Sacred Lotus & Rose Petals for `spawnCouplesBloom` / `playCouplesUltimate` (48 instances, 1 draw call)
+    const petalGeo = createUltimatePetalGeometry();
+    this.petalMetaAttr = new THREE.InstancedBufferAttribute(new Float32Array(MAX_PETALS * 4), 4);
+    petalGeo.setAttribute('aPetalA', this.petalMetaAttr);
+    this.petalMat = createPetalMaterial(this.noiseAtlas, this.sharedUniforms);
+    this.petalMesh = new THREE.InstancedMesh(petalGeo, this.petalMat, MAX_PETALS);
+    this.petalMesh.name = 'UltimateVfx_DC6_CouplesPetals';
+    this.petalMesh.frustumCulled = false;
+    this.petalMesh.count = 0;
+    this.petalMesh.userData.isVfx = true;
+    this.group.add(this.petalMesh);
+
+    this.bloomState = {
+      active: false,
+      pos: new THREE.Vector3(),
+      age: 0,
+      life: 1.5,
+      openAt: 0.45,
+      flyCount: 28,
+      seed: 1.37,
+    };
   }
 
   _ground(x, z) {
@@ -614,467 +1092,744 @@ export class UltimateVfxSystem {
     return Number.isFinite(g) ? g : 0;
   }
 
-  spawnBolt(from, to, { delay = 0, life = 0.5, width = 0.2, jag = 0.4, pal = 2, revealDur = 0.08, ascend = false, track = null, trackFrom = null, seed = null } = {}) {
-    const b = this._take(this.bolts);
-    b.active = true;
-    b.age = 0;
-    b.delay = delay;
-    b.life = life;
-    b.from.copy(from);
-    b.to.copy(to);
-    b.width = width;
-    b.jag = jag;
-    b.pal = pal;
-    b.revealDur = revealDur;
-    b.ascend = ascend;
-    b.track = track;
-    b.trackFrom = trackFrom;
-    b.seed = seed ?? Math.random() * 10;
-    return b;
-  }
-
-  spawnDisc(pos, { delay = 0, life = 1, radius = 2, mode = 0, pal = 2, revealDur = 0.4, spin = 0 } = {}) {
-    const d = this._take(this.discs);
-    Object.assign(d, { active: true, age: 0, delay, life, radius, mode, pal, revealDur, spin, seed: Math.random() * 10 });
-    d.pos.copy(pos);
-    return d;
-  }
-
-  spawnCrest(pos, { delay = 0, life = 0.6, radius = 4, height = 1, pal = 2 } = {}) {
-    const c = this._take(this.crests);
-    Object.assign(c, { active: true, age: 0, delay, life, radius, height, pal, seed: Math.random() * 10 });
-    c.pos.copy(pos);
-    return c;
-  }
-
-  spawnHalo(center, { delay = 0, life = 1.6, height = 8.5, r0 = 7.5, r1 = 3.6, pal = 2, formDur = 0.5 } = {}) {
-    const h = this._take(this.halos);
-    Object.assign(h, { active: true, age: 0, delay, life, height, r0, r1, pal, formDur, flashAt: -9, seed: Math.random() * 10 });
-    h.center.copy(center);
-    return h;
-  }
-
-  spawnSparks(pos, { delay = 0, life = 0.6, count = 12, speed = 6, pal = 2 } = {}) {
-    const s = this._take(this.sparkBursts);
-    Object.assign(s, { active: true, age: 0, delay, life, count, speed, pal, seed: Math.random() * 10 });
-    s.pos.copy(pos);
-    return s;
-  }
-
-  _impact(pos, pal, scale = 1, delay = 0) {
-    this.spawnDisc(pos, { delay, life: 0.95, radius: 6.2 * scale, mode: 1, pal });
-    this.spawnCrest(pos, { delay, life: 0.6, radius: 4.8 * scale, height: 1.15 * scale, pal });
-    _p.copy(pos);
-    _p.y += 0.2;
-    this.spawnSparks(_p, { delay, life: 0.75, count: Math.round(18 * scale), speed: 9 * scale, pal });
-  }
-
-  /* --------------------------- choreography ------------------------------ */
-
-  /**
-   * Knight Q: anticipation (halo descends + sigil, 0-0.48s) -> column strikes the
-   * raised blade (0.48s) -> ground release under the slam (0.93s) -> disperse (~1.6s).
-   */
-  playKnightAwakening(pos, { style = 'tempest', getBladeTip = null, releaseDelay = 0.93 } = {}) {
-    const pal = palIndex(style);
-    const gy = this._ground(pos.x, pos.z);
-    _a.set(pos.x, gy, pos.z);
-    // Halo sits low (5.6 m) so it stays inside a third-person gameplay frustum.
-    const halo = this.spawnHalo(_a, { life: 1.75, height: 5.6, r0: 9.0, r1: 4.6, pal, formDur: 0.5 });
-    halo.flashAt = 0.48;
-    this.spawnDisc(_a, { life: 1.7, radius: 2.8, mode: 0, pal, revealDur: 0.42, spin: 0.7 });
-    _b.set(pos.x, gy + 6.0, pos.z);
-    this._tipFallback.set(pos.x, gy + 2.3, pos.z);
-    const track = typeof getBladeTip === 'function' ? getBladeTip : null;
-    this.spawnBolt(_b, this._tipFallback, { delay: 0.30, life: 0.2, width: 0.05, jag: 0.4, pal, revealDur: 0.14, track });
-    this.spawnBolt(_b, this._tipFallback, { delay: 0.48, life: 0.62, width: 0.3, jag: 0.42, pal, revealDur: 0.05, track });
-    this.spawnBolt(_b, this._tipFallback, { delay: 0.50, life: 0.42, width: 0.11, jag: 0.75, pal, revealDur: 0.05, track });
-    for (let i = 0; i < 3; i++) {
-      const ang = i * 2.1 + 0.4;
-      _c.set(pos.x + Math.cos(ang) * 4.2, gy + 5.5 + i * 0.2, pos.z + Math.sin(ang) * 4.2);
-      this.spawnBolt(_b, _c, { delay: 0.47 + i * 0.03, life: 0.34, width: 0.07, jag: 0.5, pal, revealDur: 0.06 });
-    }
-    this.spawnSparks(this._tipFallback, { delay: 0.5, life: 0.55, count: 14, speed: 6.5, pal });
-    this._impact(_a, pal, 1.0, releaseDelay);
-    this.group.visible = true;
+  _applyDragonPalette(dragon, styleKey) {
+    const pal = ULTIMATE_PALETTES[styleKey] || ULTIMATE_PALETTES.solar;
+    dragon.style = styleKey;
+    dragon.palIdx = pal.idx;
+    dragon.mat.uniforms.uColorDeep.value.set(pal.deep);
+    dragon.mat.uniforms.uColorBody.value.set(pal.body);
+    dragon.mat.uniforms.uColorCore.value.set(pal.core);
+    dragon.mat.uniforms.uColorInk.value.set(pal.ink);
   }
 
   /**
-   * Couples ultimate: twin sigils + rising prayer pillars (rose Knight / ivory Mage)
-   * and a closed lotus bud under a descending gold halo; at `strikeDelay` a braided
-   * three-strand column lands, the bud bursts open and petals fly.
+   * Evaluates the 3D trajectory point at normalized progress `s` (`0..1`) for a dragon:
+   * - `mode === 'awakening'` (`duration = 1.25s`, Beat 1 = `0.00..0.42s`, Beat 2 = `0.42..1.25s`):
+   *   - Beat 1 (`s <= 0.336` corresponding to `t = 0.00..0.42s`):
+   *     Both dragons erupt from the ground on opposite sides of `origin` (`radius = 1.55m`)
+   *     and spiral upward (`1.4` turns from `y = 0.25m` to `y = 2.05m`) around the Knight
+   *     in a tight double-helix coil!
+   *   - Beat 2 (`s > 0.336` corresponding to `t = 0.42..1.25s`):
+   *     Both dragons uncoil from shoulder height and surge forward (`5.8m` along `yaw`)
+   *     in a sweeping figure-8 cross-arc (`y = 1.15m`), crossing jaws at `3.6m` in front
+   *     of the Knight (`t = 0.72s`, `s = 0.576`)!
+   * - `mode === 'slash'` (`duration = 0.75s`):
+   *   Coils around the Knight's slashing arm and whips forward `4.8m` along `yaw` in an S-curve arc!
    */
-  playCouplesUltimate(knightPos, magePos, impactPos, { strikeDelay = 0.55 } = {}) {
-    const P = ULTIMATE_PALETTES;
-    const heroes = [[knightPos, P.rose.idx], [magePos, P.ivory.idx]];
-    for (const [hp, pal] of heroes) {
-      if (!hp) continue;
-      const gy = this._ground(hp.x, hp.z);
-      _a.set(hp.x, gy, hp.z);
-      this.spawnDisc(_a, { life: 1.4, radius: 1.5, mode: 0, pal, revealDur: 0.3, spin: -0.8 });
-      _b.set(hp.x, gy + 7.5, hp.z);
-      this.spawnBolt(_a, _b, { life: 0.7, width: 0.13, jag: 0.12, pal, revealDur: 0.32, ascend: true });
+  _sampleDragonTrajectory(dragon, s, outVec) {
+    const clampedS = clamp(s, 0.0, 1.0);
+    const ox = dragon.origin.x;
+    const oy = dragon.origin.y;
+    const oz = dragon.origin.z;
+    const fwdX = Math.sin(dragon.yaw);
+    const fwdZ = Math.cos(dragon.yaw);
+    const rightX = Math.cos(dragon.yaw);
+    const rightZ = -Math.sin(dragon.yaw);
+    const sideSign = dragon.handSide; // +1 for Dragon 0 (Solar), -1 for Dragon 1 (Glacial)
+
+    if (dragon.mode === 'slash') {
+      // S-curve whip forward 4.8m along `yaw` from flanking shoulder arch
+      const fwdDist = lerp(-0.25, 4.8, Math.pow(clampedS, 0.82));
+      const sCurveLat =
+        sideSign *
+        Math.cos(clampedS * Math.PI * 1.35) *
+        lerp(1.45, 0.35, clampedS);
+      const arcY =
+        1.15 +
+        Math.sin(clampedS * Math.PI) * 0.55;
+
+      outVec.set(
+        ox + fwdX * fwdDist + rightX * sCurveLat,
+        oy + arcY,
+        oz + fwdZ * fwdDist + rightZ * sCurveLat
+      );
+      return outVec;
     }
-    const gy = this._ground(impactPos.x, impactPos.z);
-    _a.set(impactPos.x, gy, impactPos.z);
-    const halo = this.spawnHalo(_a, { life: 1.65, height: 6.2, r0: 10.0, r1: 5.6, pal: P.couples.idx, formDur: strikeDelay });
-    halo.flashAt = strikeDelay;
-    this.spawnDisc(_a, { life: 1.6, radius: 4.4, mode: 0, pal: P.couples.idx, revealDur: strikeDelay * 0.9, spin: 0.5 });
-    _b.set(impactPos.x, gy + 6.7, impactPos.z);
-    this.spawnBolt(_b, _a, { delay: strikeDelay, life: 0.7, width: 0.55, jag: 0.28, pal: P.couples.idx, revealDur: 0.06 });
-    for (let i = 0; i < 2; i++) {
-      const off = i === 0 ? 0.55 : -0.55;
-      _c.set(impactPos.x + off, gy + 6.7, impactPos.z - off * 0.4);
-      _d.set(impactPos.x - off * 0.4, gy, impactPos.z + off * 0.4);
-      this.spawnBolt(_c, _d, { delay: strikeDelay - 0.02, life: 0.6, width: 0.14, jag: 0.65, pal: i === 0 ? P.rose.idx : P.ivory.idx, revealDur: 0.07 });
+
+    // `mode === 'awakening'`: Open Flanking Wing-Arch (`s = 0..0.34`) -> Sweeping Figure-8 X-Cross Lunge (`s = 0.34..1.0`)
+    // NEVER wraps horizontal coils behind the Knight's back, so the Knight and both Dragon Heads stay 100% visible!
+    const beatSplit = 0.34;
+    if (clampedS <= beatSplit) {
+      const u1 = saturate(clampedS / beatSplit);
+      // Rise from ground at left/right flanks (`lx = ±1.25m -> ±2.05m`), arching high over the Knight's shoulders (`ly = 0.28m -> 2.15m`)
+      const lx = sideSign * (1.25 + Math.sin(u1 * Math.PI * 0.65) * 0.85);
+      const lz = lerp(-0.35, 0.75, smoothstep(0.0, 1.0, u1));
+      const ly = lerp(0.28, 2.15, Math.sin(u1 * Math.PI * 0.5));
+      outVec.set(
+        ox + rightX * lx + fwdX * lz,
+        oy + ly,
+        oz + rightZ * lx + fwdZ * lz
+      );
+      return outVec;
     }
-    const bloom = this._take(this.blooms);
-    Object.assign(bloom, { active: true, age: 0, delay: 0, life: 1.6, openAt: strikeDelay, flyCount: 28, seed: Math.random() * 10 });
-    bloom.pos.copy(_a);
-    this._impact(_a, P.couples.idx, 1.2, strikeDelay);
-    this.group.visible = true;
+
+    // Beat 2 (`s = 0.34..1.0`): Dive forward from the high flanking arches (`lz = 0.75m -> 6.2m`),
+    // crossing jaws in a blazing Fire + Ice `X` at `lz = 3.4m` (`u2 = 0.45`) and soaring upward at the tail end!
+    const u2 = saturate((clampedS - beatSplit) / (1.0 - beatSplit));
+    const lz = lerp(0.75, 6.2, Math.pow(u2, 0.85));
+    // Smooth cosine cross from `+2.02 * sideSign` through `0` (at u2 ≈ 0.45) to `-1.55 * sideSign`
+    const lx = sideSign * lerp(2.02, -1.55, smoothstep(0.0, 0.88, u2));
+    // Dive from `2.15m` down to chest height (`1.08m`) at the X-cross (`u2 = 0.48`), then rise to `1.85m`
+    const diveU = Math.sin(u2 * Math.PI * 0.88);
+    const ly = lerp(2.15, 1.85, u2) - diveU * 1.05;
+
+    outVec.set(
+      ox + rightX * lx + fwdX * lz,
+      oy + ly,
+      oz + rightZ * lx + fwdZ * lz
+    );
+    return outVec;
   }
 
-  /** Mage Q: persistent violet storm halo + spinning sigil for the whole channel. */
+  /**
+   * Rebuilds the 56-ring dynamic serpentine body + 0.50m dorsal mane fin and positions
+   * the sculpted 3D Eastern Dragon head at `u = 0` for an active dragon slot.
+   */
+  _updateDragonGeometry(dragon, clockTime) {
+    const progress = saturate(dragon.age / Math.max(0.1, dragon.duration));
+    if (progress >= 1.0) {
+      dragon.active = false;
+      dragon.headMesh.visible = false;
+      dragon.bodyMesh.visible = false;
+      return;
+    }
+
+    dragon.mat.uniforms.uAge01.value = progress;
+
+    // Head leads along the trajectory; body spans behind the head over `bodySpanS`
+    const headS = clamp(0.10 + progress * 0.90, 0.10, 1.0);
+    const bodySpanS = dragon.mode === 'slash' ? 0.42 : 0.38;
+    const tailS = Math.max(0.0, headS - bodySpanS * smoothstep(0.0, 0.16, progress));
+
+    // Evaluate 56 spine points from u = 0 (head neck base) to u = 1 (tail tip)
+    // with traveling sinusoidal S-wave undulation
+    const spine = dragon.spinePoints;
+    for (let i = 0; i < SPINE_RINGS; i++) {
+      const u = i / (SPINE_RINGS - 1);
+      const s = lerp(headS, tailS, u);
+
+      this._sampleDragonTrajectory(dragon, s, _p);
+      this._sampleDragonTrajectory(dragon, Math.min(1.0, s + 0.015), _pNext);
+      this._sampleDragonTrajectory(dragon, Math.max(0.0, s - 0.015), _pPrev);
+
+      _tangent.subVectors(_pNext, _pPrev);
+      if (_tangent.lengthSq() < 1e-6) _tangent.set(Math.sin(dragon.yaw), 0, Math.cos(dragon.yaw));
+      else _tangent.normalize();
+
+      _right.crossVectors(_tangent, UP);
+      if (_right.lengthSq() < 1e-5) _right.set(1, 0, 0);
+      else _right.normalize();
+      _binorm.crossVectors(_right, _tangent).normalize();
+
+      // Traveling sinusoidal S-wave undulation (smoothly ramped from 0 at neck u=0 so head locks cleanly)
+      const smoothRamp = smoothstep(0.0, 0.14, u) * (1.0 - 0.22 * u);
+      const lat = Math.sin(u * 10.5 - clockTime * 18.0 + dragon.phase) * 0.22 * smoothRamp;
+      const vert = Math.cos(u * 8.0 - clockTime * 18.0 + dragon.phase) * 0.11 * smoothRamp;
+
+      spine[i]
+        .copy(_p)
+        .addScaledVector(_right, lat)
+        .addScaledVector(_binorm, vert);
+    }
+
+    // Orient & position the sculpted 3D Eastern Dragon head at spine[0] (`u = 0`)
+    _tangent.subVectors(spine[0], spine[2]);
+    if (_tangent.lengthSq() < 1e-6) {
+      _tangent.set(Math.sin(dragon.yaw), 0, Math.cos(dragon.yaw));
+    } else {
+      _tangent.normalize();
+    }
+
+    const headMesh = dragon.headMesh;
+    headMesh.position.copy(spine[0]);
+    _pNext.copy(spine[0]).add(_tangent);
+    _headLook.lookAt(_pNext, spine[0], UP);
+    headMesh.quaternion.setFromRotationMatrix(_headLook);
+    const headScale = dragon.scale * 1.28 * (1.0 - 0.15 * smoothstep(0.82, 1.0, progress));
+    headMesh.scale.setScalar(headScale);
+    headMesh.visible = true;
+
+    // Deform the 56-ring serpentine body tube + 0.50m dorsal flame/wave mane fin
+    const geo = dragon.bodyMesh.geometry;
+    const posArr = geo.attributes.position.array;
+    const normArr = geo.attributes.normal.array;
+
+    for (let i = 0; i < SPINE_RINGS; i++) {
+      const u = i / (SPINE_RINGS - 1);
+      const pCur = spine[i];
+      const pPrev = spine[Math.max(0, i - 1)];
+      const pNext = spine[Math.min(SPINE_RINGS - 1, i + 1)];
+
+      _tangent.subVectors(pPrev, pNext);
+      if (_tangent.lengthSq() < 1e-6) {
+        _tangent.set(Math.sin(dragon.yaw), 0, Math.cos(dragon.yaw));
+      } else {
+        _tangent.normalize();
+      }
+
+      _right.crossVectors(_tangent, UP);
+      if (_right.lengthSq() < 1e-5) _right.set(1, 0, 0);
+      else _right.normalize();
+      _binorm.crossVectors(_right, _tangent).normalize();
+
+      // Sleek, sinuous serpent body behind head, tapering to a fine calligraphic brush point at tail
+      const rTube =
+        (0.20 * Math.sin(Math.pow(1.0 - u, 0.72) * Math.PI * 0.88) + 0.025 * (1.0 - u)) *
+        dragon.scale;
+      // Tall 0.50m Dorsal Flame/Wave Mane Fin with organic traveling wave crests
+      const finH =
+        (0.50 * Math.sin(Math.pow(1.0 - u, 0.65) * Math.PI * 0.92) + 0.06 * (1.0 - u)) *
+        (0.84 + 0.24 * Math.sin(u * 26.0 - clockTime * 22.0 + dragon.phase)) *
+        dragon.scale;
+      const finSway = Math.sin(u * 19.0 - clockTime * 20.0 + dragon.phase) * 0.06;
+
+      const base = i * VERTS_PER_RING;
+      for (let c = 0; c < TUBE_RADIAL; c++) {
+        const ang = (c / TUBE_RADIAL) * TAU; // 0 = dorsal top (+binorm), PI = ventral belly (-binorm)
+        const sinA = Math.sin(ang);
+        const cosA = Math.cos(ang);
+
+        const nx = _right.x * sinA + _binorm.x * cosA;
+        const ny = _right.y * sinA + _binorm.y * cosA;
+        const nz = _right.z * sinA + _binorm.z * cosA;
+
+        const vIdx = (base + c) * 3;
+        posArr[vIdx + 0] = pCur.x + nx * rTube;
+        posArr[vIdx + 1] = pCur.y + ny * rTube;
+        posArr[vIdx + 2] = pCur.z + nz * rTube;
+
+        normArr[vIdx + 0] = nx;
+        normArr[vIdx + 1] = ny;
+        normArr[vIdx + 2] = nz;
+      }
+
+      // Dorsal fin base & tip (sits atop dorsal spine at cosA = 1, rising `finH` along `_binorm`)
+      const bx = pCur.x + _binorm.x * (rTube * 0.88);
+      const by = pCur.y + _binorm.y * (rTube * 0.88);
+      const bz = pCur.z + _binorm.z * (rTube * 0.88);
+
+      const tx = bx + _binorm.x * finH + _right.x * finSway;
+      const ty = by + _binorm.y * finH + _right.y * finSway;
+      const tz = bz + _binorm.z * finH + _right.z * finSway;
+
+      const f0Base = (base + TUBE_RADIAL) * 3;
+      const f0Tip = (base + TUBE_RADIAL + 1) * 3;
+      const f1Base = (base + TUBE_RADIAL + 2) * 3;
+      const f1Tip = (base + TUBE_RADIAL + 3) * 3;
+
+      posArr[f0Base + 0] = bx;
+      posArr[f0Base + 1] = by;
+      posArr[f0Base + 2] = bz;
+      posArr[f0Tip + 0] = tx;
+      posArr[f0Tip + 1] = ty;
+      posArr[f0Tip + 2] = tz;
+
+      posArr[f1Base + 0] = bx;
+      posArr[f1Base + 1] = by;
+      posArr[f1Base + 2] = bz;
+      posArr[f1Tip + 0] = tx;
+      posArr[f1Tip + 1] = ty;
+      posArr[f1Tip + 2] = tz;
+
+      normArr[f0Base + 0] = _right.x;
+      normArr[f0Base + 1] = _right.y;
+      normArr[f0Base + 2] = _right.z;
+      normArr[f0Tip + 0] = _right.x;
+      normArr[f0Tip + 1] = _right.y;
+      normArr[f0Tip + 2] = _right.z;
+
+      normArr[f1Base + 0] = -_right.x;
+      normArr[f1Base + 1] = -_right.y;
+      normArr[f1Base + 2] = -_right.z;
+      normArr[f1Tip + 0] = -_right.x;
+      normArr[f1Tip + 1] = -_right.y;
+      normArr[f1Tip + 2] = -_right.z;
+    }
+
+    geo.attributes.position.needsUpdate = true;
+    geo.attributes.normal.needsUpdate = true;
+    dragon.bodyMesh.visible = true;
+  }
+
+  _emitSpark(pos, vel, palIdx = 1, scale = 0.20, life = 0.52) {
+    let best = this.sparkParticles[0];
+    for (const sp of this.sparkParticles) {
+      if (!sp.active) {
+        best = sp;
+        break;
+      }
+      if (sp.age > best.age) best = sp;
+    }
+    best.active = true;
+    best.age = 0;
+    best.life = life;
+    best.pos.copy(pos);
+    best.vel.copy(vel);
+    best.palIdx = palIdx;
+    best.scale = scale;
+  }
+
+  _burstSparks(center, count = 36, style = 'eclipse', speed = 7.8) {
+    const norm = normalizeDragonStyle(style);
+    for (let i = 0; i < count; i++) {
+      const h1 = hash11(this.uTime.value * 3.7 + i * 1.31);
+      const h2 = hash11(this.uTime.value * 5.3 + i * 2.17);
+      const h3 = hash11(this.uTime.value * 7.1 + i * 3.43);
+      const az = (i / count) * TAU + (h1 - 0.5) * 0.35;
+      const el = 0.18 + h2 * 0.85;
+      const sp = speed * (0.55 + 0.65 * h3);
+      _tangent.set(
+        Math.cos(az) * Math.cos(el) * sp,
+        Math.sin(el) * sp + 1.8,
+        Math.sin(az) * Math.cos(el) * sp
+      );
+      const pal =
+        norm === 'eclipse'
+          ? i % 2 === 0
+            ? ULTIMATE_PALETTES.solar.idx
+            : ULTIMATE_PALETTES.rime.idx
+          : palIndex(norm);
+      this._emitSpark(center, _tangent, pal, 0.16 + 0.10 * h1, 0.42 + 0.24 * h2);
+    }
+  }
+
+  /* ----------------------------------------------------------------------- */
+  /* Public Choreography API                                                 */
+  /* ----------------------------------------------------------------------- */
+
+  /**
+   * Knight Q Twin-Element Dragon Awakening (`duration = 1.25s`):
+   * - Spawns TWO dragons simultaneously (`Dragon 0 = Solar Fire`, `Dragon 1 = Glacial Ice`):
+   *   - Beat 1 (`t = 0.00s .. 0.42s` — Double-Helix Spiral Ascent): Both dragons erupt
+   *     from the ground on opposite sides of `pos` (`radius = 1.55m`) and spiral upward
+   *     (`1.4` turns from `y = 0.25m` to `y = 2.05m`) around the Knight in a tight
+   *     double-helix coil!
+   *   - Beat 2 (`t = 0.42s .. 1.25s` — Figure-8 Forward Lunge & Cross-Bite): Both dragons
+   *     uncoil from shoulder height and surge forward (`5.8m` along `yaw`) in a sweeping
+   *     figure-8 cross-arc (`y = 1.15m`), crossing jaws at `3.6m` in front of the Knight
+   *     (`t = 0.72s`) with wide-open fanged jaws and bursting 36 ember/frost sparks outward!
+   */
+  playKnightAwakening(pos, { yaw = null, style = 'eclipse', getBladeTip = null, duration = 1.25 } = {}) {
+    const px = pos?.x ?? pos?.[0] ?? 0;
+    const pz = pos?.z ?? pos?.[2] ?? 0;
+    const py = Number.isFinite(pos?.y) ? pos.y : this._ground(px, pz);
+    const resolvedYaw = Number.isFinite(yaw)
+      ? yaw
+      : Number.isFinite(pos?.yaw)
+        ? pos.yaw
+        : 0;
+
+    const norm = normalizeDragonStyle(style);
+    const style0 = norm === 'rime' ? 'rime' : 'solar';
+    const style1 = norm === 'solar' ? 'solar' : 'rime';
+
+    const styles = [style0, style1];
+    for (let i = 0; i < MAX_DRAGONS; i++) {
+      const d = this.dragons[i];
+      this._applyDragonPalette(d, styles[i]);
+      d.active = true;
+      d.mode = 'awakening';
+      d.origin.set(px, py, pz);
+      d.yaw = resolvedYaw;
+      d.age = 0;
+      d.duration = duration;
+      d.scale = 1.0;
+      d.phase = i * Math.PI;
+      d.handSide = i === 0 ? 1 : -1;
+      d.biteBurstTriggered = false;
+      d.getBladeTip = typeof getBladeTip === 'function' ? getBladeTip : null;
+    }
+
+    // Initial eruption sparks around the double-helix base
+    _p.set(px, py + 0.45, pz);
+    this._burstSparks(_p, 16, 'eclipse', 5.2);
+
+    this.group.visible = true;
+    this._evaluate(0);
+    return this;
+  }
+
+  /**
+   * Elemental Dragon Slash (`duration = 0.75s`):
+   * - Spawns 1 dragon (or 2 intertwined dragons if `style === 'eclipse'`) that coils
+   *   around the Knight's slashing arm and whips forward `4.8m` along `yaw` in an
+   *   S-curve arc, biting through the target in front of the Knight!
+   */
+  playDragonSlash(pos, { yaw = null, style = 'solar', duration = 0.75 } = {}) {
+    const px = pos?.x ?? pos?.[0] ?? 0;
+    const pz = pos?.z ?? pos?.[2] ?? 0;
+    const py = Number.isFinite(pos?.y) ? pos.y : this._ground(px, pz);
+    const resolvedYaw = Number.isFinite(yaw)
+      ? yaw
+      : Number.isFinite(pos?.yaw)
+        ? pos.yaw
+        : 0;
+    const norm = normalizeDragonStyle(style);
+    const isDual = norm === 'eclipse';
+
+    const d0 = this.dragons[0];
+    this._applyDragonPalette(d0, norm === 'rime' ? 'rime' : 'solar');
+    d0.active = true;
+    d0.mode = 'slash';
+    d0.origin.set(px, py, pz);
+    d0.yaw = resolvedYaw;
+    d0.age = 0;
+    d0.duration = duration;
+    d0.scale = 0.88;
+    d0.phase = 0;
+    d0.handSide = 1;
+    d0.biteBurstTriggered = false;
+
+    const d1 = this.dragons[1];
+    if (isDual) {
+      this._applyDragonPalette(d1, 'rime');
+      d1.active = true;
+      d1.mode = 'slash';
+      d1.origin.set(px, py, pz);
+      d1.yaw = resolvedYaw;
+      d1.age = 0;
+      d1.duration = duration;
+      d1.scale = 0.84;
+      d1.phase = Math.PI;
+      d1.handSide = -1;
+      d1.biteBurstTriggered = false;
+    } else {
+      d1.active = false;
+      d1.headMesh.visible = false;
+      d1.bodyMesh.visible = false;
+    }
+
+    this.group.visible = true;
+    this._evaluate(0);
+    return this;
+  }
+
+  /**
+   * Spawns a Sacred Lotus & Crimson Rose bloom burst at `pos` (compatibility for couples synergy).
+   */
+  spawnCouplesBloom(pos, { openAt = 0.35, life = 1.5, flyCount = 28 } = {}) {
+    const px = pos?.x ?? pos?.[0] ?? 0;
+    const pz = pos?.z ?? pos?.[2] ?? 0;
+    const py = Number.isFinite(pos?.y) ? pos.y : this._ground(px, pz);
+    this.bloomState.active = true;
+    this.bloomState.pos.set(px, py, pz);
+    this.bloomState.age = 0;
+    this.bloomState.life = life;
+    this.bloomState.openAt = openAt;
+    this.bloomState.flyCount = flyCount;
+    this.bloomState.seed = Math.random() * 10.0;
+    this.group.visible = true;
+    return this;
+  }
+
+  playCouplesUltimate(knightPos, magePos, impactPos, { strikeDelay = 0.45 } = {}) {
+    const target = impactPos || knightPos || magePos || { x: 0, y: 0, z: 0 };
+    this.playKnightAwakening(target, { style: 'eclipse', duration: 1.25 });
+    this.spawnCouplesBloom(target, { openAt: strikeDelay, life: 1.5, flyCount: 28 });
+    return this;
+  }
+
+  spawnBurst(pos, { style = 'eclipse', count = 24, speed = 7.2 } = {}) {
+    if (!pos) return this;
+    const px = pos.x ?? pos[0] ?? 0;
+    const pz = pos.z ?? pos[2] ?? 0;
+    const py = (pos.y ?? pos[1] ?? this._ground(px, pz)) + 0.6;
+    _p.set(px, py, pz);
+    this._burstSparks(_p, count, style, speed);
+    this.group.visible = true;
+    return this;
+  }
+
+  spawnSparks(pos, { count = 16, speed = 6.5, pal = 1 } = {}) {
+    const style = pal === 0 ? 'rime' : 'solar';
+    return this.spawnBurst(pos, { style, count, speed });
+  }
+
   startCataclysm(pos, duration = 6.0) {
-    const pal = ULTIMATE_PALETTES.tempest.idx;
-    const gy = this._ground(pos.x, pos.z);
-    _a.set(pos.x, gy, pos.z);
-    this.cataclysm.pos.copy(_a);
-    const halo = this.spawnHalo(_a, { life: duration + 0.8, height: 6.0, r0: 11.0, r1: 6.4, pal, formDur: 0.6 });
-    halo.flashAt = 0.3;
-    this.cataclysm.halo = halo;
-    this.cataclysm.sigil = this.spawnDisc(_a, { life: duration + 0.4, radius: 3.3, mode: 0, pal, revealDur: 0.5, spin: 0.45 });
+    if (pos) this.cataclysm.pos.set(pos.x ?? 0, pos.y ?? 0, pos.z ?? 0);
     this.cataclysm.active = true;
-    _b.set(pos.x, gy + 6.5, pos.z);
-    _c.set(pos.x, gy + 2.2, pos.z);
-    this.spawnBolt(_b, _c, { delay: 0.3, life: 0.45, width: 0.2, jag: 0.35, pal, revealDur: 0.06 });
-    this.spawnSparks(_c, { delay: 0.32, count: 10, speed: 5, pal });
-    this.group.visible = true;
+    this.cataclysm.timer = duration;
+    return this;
   }
 
-  /** One cataclysm wave: columns from the halo onto each target (max 4). */
   cataclysmStrike(targets = null) {
-    const pal = ULTIMATE_PALETTES.tempest.idx;
-    const c = this.cataclysm;
-    if (!c.active) return;
-    let n = 0;
-    const strikeAt = (x, z, i) => {
-      const gy = this._ground(x, z);
-      _a.set(x, gy, z);
-      const ang = hash11(this.uTime.value * 3.1 + i) * TAU;
-      _b.set(c.pos.x + Math.cos(ang) * 5.4, c.pos.y + 5.9, c.pos.z + Math.sin(ang) * 5.4);
-      this.spawnBolt(_b, _a, { delay: i * 0.07, life: 0.42, width: 0.24, jag: 0.6, pal, revealDur: 0.06 });
-      this.spawnDisc(_a, { delay: i * 0.07, life: 0.6, radius: 2.6, mode: 1, pal });
-      this.spawnCrest(_a, { delay: i * 0.07, life: 0.45, radius: 2.0, height: 0.7, pal });
-      _a.y += 0.2;
-      this.spawnSparks(_a, { delay: i * 0.07, life: 0.5, count: 8, speed: 6, pal });
-    };
-    if (targets) {
-      for (const t of targets) {
-        if (n >= 4) break;
-        const e = t?.enemy || t;
-        if (!e || !Number.isFinite(e.x)) continue;
-        strikeAt(e.x, e.z, n++);
+    if (!this.cataclysm.active) return this;
+    if (Array.isArray(targets) && targets.length > 0) {
+      const t = targets[0]?.enemy || targets[0];
+      if (t && Number.isFinite(t.x)) {
+        this.spawnBurst({ x: t.x, y: this._ground(t.x, t.z), z: t.z }, { style: 'eclipse', count: 14 });
       }
     }
-    for (let i = n; i < 2; i++) {
-      const ang = hash11(this.uTime.value * 7.3 + i * 2.7) * TAU;
-      const rad = 3.5 + 2.5 * hash11(this.uTime.value + i);
-      strikeAt(c.pos.x + Math.cos(ang) * rad, c.pos.z + Math.sin(ang) * rad, i);
-    }
-    if (c.halo?.active) c.halo.flashAt = c.halo.age;
+    return this;
   }
 
   stopCataclysm() {
-    const c = this.cataclysm;
-    if (!c.active) return;
-    c.active = false;
-    for (const r of [c.halo, c.sigil]) {
-      if (r?.active) r.life = Math.min(r.life, r.age + 0.5);
-    }
+    this.cataclysm.active = false;
+    this.cataclysm.timer = 0;
+    return this;
   }
 
-  /* ------------------------------- update -------------------------------- */
+  /* ----------------------------------------------------------------------- */
+  /* Frame Update & Deterministic Seeker                                     */
+  /* ----------------------------------------------------------------------- */
 
   update(dt) {
+    if (this.cataclysm.active) {
+      this.cataclysm.timer -= dt;
+      if (this.cataclysm.timer <= 0) this.cataclysm.active = false;
+    }
     if (!this.group.visible) return;
     this.uTime.value += dt;
-    this._advance(dt);
-    this._evaluate();
+    this._evaluate(dt);
   }
 
-  _advance(dt) {
-    for (const pool of [this.bolts, this.discs, this.crests, this.halos, this.sparkBursts, this.blooms]) {
-      for (const r of pool) {
-        if (!r.active) continue;
-        r.age += dt;
-        if (r.age - r.delay > r.life) r.active = false;
+  _evaluate(dt = 0) {
+    const clockTime = this.uTime.value;
+    let activeDragonCount = 0;
+
+    for (let i = 0; i < MAX_DRAGONS; i++) {
+      const d = this.dragons[i];
+      if (!d.active) {
+        d.headMesh.visible = false;
+        d.bodyMesh.visible = false;
+        continue;
       }
-    }
-  }
 
-  _evaluate() {
-    let nb = 0;
-    const bA = this.boltMesh.geometry.attributes.aBoltA;
-    const bB = this.boltMesh.geometry.attributes.aBoltB;
-    for (const b of this.bolts) {
-      if (!b.active) continue;
-      const t = b.age - b.delay;
-      if (t < 0) continue;
-      if (b.track) b.track(b.to);
-      const reveal = saturate(t / b.revealDur);
-      const fade = smoothstep(b.life * 0.55, b.life, t);
-      const flash = Math.exp(-t * 9.0);
-      _c.subVectors(b.to, b.from);
-      const len = _c.length();
-      if (len < 1e-3) continue;
-      _c.divideScalar(len);
-      _d.set(0, 0, 1);
-      if (Math.abs(_c.z) > 0.9) _d.set(1, 0, 0);
-      _a.crossVectors(_c, _d).normalize();
-      _b.crossVectors(_a, _c).normalize();
-      _c.multiplyScalar(len);
-      _m.makeBasis(_a, _c, _b).setPosition(b.from);
-      this.boltMesh.setMatrixAt(nb, _m);
-      bA.setXYZW(nb, b.seed, b.pal, reveal, fade);
-      bB.setXYZW(nb, b.jag, b.width, b.ascend ? 1 : 0, flash);
-      nb++;
-    }
-    this.boltMesh.count = nb;
-    this.boltMesh.instanceMatrix.needsUpdate = true;
-    bA.needsUpdate = true;
-    bB.needsUpdate = true;
-
-    let nd = 0;
-    const dA = this.discMesh.geometry.attributes.aDiscA;
-    const dB = this.discMesh.geometry.attributes.aDiscB;
-    for (const d of this.discs) {
-      if (!d.active) continue;
-      const t = d.age - d.delay;
-      if (t < 0) continue;
-      const u = saturate(t / d.life);
-      const fade = d.mode === 0 ? smoothstep(d.life - 0.45, d.life, t) : smoothstep(0.45, 1.0, u);
-      const grow = d.mode === 0 ? lerp(0.86, 1.0, outQuint(t / Math.max(0.05, d.revealDur))) : 1;
-      _p.set(d.pos.x, d.pos.y + 0.05 + nd * 0.004, d.pos.z);
-      _s.set(d.radius * grow, 1, d.radius * grow);
-      _m.compose(_p, _q.identity(), _s);
-      this.discMesh.setMatrixAt(nd, _m);
-      dA.setXYZW(nd, d.mode, d.pal, u, d.seed);
-      dB.setXYZW(nd, saturate(t / d.revealDur), fade, d.spin * t, 0);
-      nd++;
-    }
-    this.discMesh.count = nd;
-    this.discMesh.instanceMatrix.needsUpdate = true;
-    dA.needsUpdate = true;
-    dB.needsUpdate = true;
-
-    let nc = 0;
-    const cA = this.crestMesh.geometry.attributes.aCrestA;
-    for (const c of this.crests) {
-      if (!c.active) continue;
-      const t = c.age - c.delay;
-      if (t < 0) continue;
-      const u = saturate(t / c.life);
-      const rad = c.radius * (0.12 + 0.88 * outQuint(u * 1.25));
-      const h = c.height * (1.0 - 0.65 * u) * smoothstep(0.0, 0.08, u);
-      _p.copy(c.pos);
-      _s.set(rad, Math.max(0.01, h), rad);
-      _m.compose(_p, _q.identity(), _s);
-      this.crestMesh.setMatrixAt(nc, _m);
-      cA.setXYZW(nc, c.pal, u, c.seed, smoothstep(0.5, 1.0, u));
-      nc++;
-    }
-    this.crestMesh.count = nc;
-    this.crestMesh.instanceMatrix.needsUpdate = true;
-    cA.needsUpdate = true;
-
-    let np = 0;
-    const clA = this.cloudMesh.geometry.attributes.aCloudA;
-    for (const h of this.halos) {
-      if (!h.active) continue;
-      const t = h.age - h.delay;
-      if (t < 0) continue;
-      const form = outQuint(t / h.formDur);
-      const disperse = smoothstep(h.life - 0.6, h.life, t);
-      const flash = h.age >= h.flashAt ? Math.exp(-(h.age - h.flashAt) * 4.5) : 0;
-      for (let i = 0; i < PUFFS_PER_HALO; i++) {
-        const hs = hash11(h.seed * 3.3 + i * 1.71);
-        const hs2 = hash11(h.seed * 1.9 + i * 2.93);
-        // first EYE_PUFFS knot the storm's eye (bolt origin); the rest form a two-row ring
-        const eye = i < EYE_PUFFS;
-        const ringI = eye ? i : i - EYE_PUFFS;
-        const ringN = eye ? EYE_PUFFS : PUFFS_PER_HALO - EYE_PUFFS;
-        const ang = (ringI / ringN) * TAU + h.seed + t * (eye ? -0.6 : 0.3) + hs * 0.2;
-        const ringR = lerp(h.r0, h.r1, form) * (ringI % 2 === 0 ? 1.0 : 0.8) * (0.94 + 0.12 * hs2);
-        const rad = (eye ? 0.9 * form : ringR) * (1 + disperse * 0.7);
-        const y = h.center.y + h.height + (eye ? 0.5 : 0) + (1 - form) * 4.5 + (ringI % 2 === 0 ? 0.25 : -0.25) + disperse * 1.4;
-        const sc = (eye ? 0.75 : 0.62 + 0.5 * hs) * smoothstep(0.0, 0.35, form + 0.05) * Math.sqrt(h.r1 / 4.6);
-        _p.set(h.center.x + Math.cos(ang) * rad, y, h.center.z + Math.sin(ang) * rad);
-        _e.set((hs - 0.5) * 0.5, ang, (hs2 - 0.5) * 0.4);
-        _q.setFromEuler(_e);
-        _s.set(sc * 1.7, sc * 0.62, sc * 1.2);
-        _m.compose(_p, _q, _s);
-        this.cloudMesh.setMatrixAt(np, _m);
-        clA.setXYZW(np, h.pal, flash * (0.6 + 0.4 * hs2), disperse, hs * 5);
-        np++;
+      d.age += dt;
+      if (d.age >= d.duration) {
+        d.active = false;
+        d.headMesh.visible = false;
+        d.bodyMesh.visible = false;
+        continue;
       }
-    }
-    this.cloudMesh.count = np;
-    this.cloudMesh.instanceMatrix.needsUpdate = true;
-    clA.needsUpdate = true;
 
-    let npt = 0;
-    const pA = this.petalMesh.geometry.attributes.aPetalA;
-    for (const bl of this.blooms) {
-      if (!bl.active) continue;
-      const t = bl.age - bl.delay;
-      if (t < 0) continue;
-      const rise = outQuint(t / 0.35);
-      const open = outQuint((t - bl.openAt) / 0.35);
-      const fade = smoothstep(bl.life - 0.5, bl.life, t);
-      // 12 large lotus petals: closed bud -> burst open flat
-      for (let i = 0; i < 12 && npt < MAX_PETALS; i++) {
-        const outer = i >= 6;
-        const yaw = (i / 6) * TAU + (outer ? Math.PI / 6 : 0);
-        const tilt = lerp(outer ? 0.35 : 0.12, outer ? 1.2 : 0.8, open);
-        const sc = (outer ? 2.6 : 2.0) * rise * (1 + 0.2 * open);
-        _e.set(tilt, yaw, 0, 'YXZ');
-        _q.setFromEuler(_e);
-        _p.copy(bl.pos);
-        _p.y += 0.06;
-        _s.set(sc, sc, sc);
-        _m.compose(_p, _q, _s);
-        this.petalMesh.setMatrixAt(npt, _m);
-        pA.setXYZW(npt, 5, fade, i * 0.37, open * 0.8);
-        npt++;
+      activeDragonCount++;
+      this._updateDragonGeometry(d, clockTime);
+
+      // Continuous orbiting wake sparks while slithering
+      if (dt > 0 && hash11(clockTime * 37.0 + i * 7.3) > 0.35) {
+        const ringIdx = Math.min(SPINE_RINGS - 1, Math.floor(hash11(clockTime * 19.1 + i) * 24));
+        const wp = d.spinePoints[ringIdx];
+        _tangent.set(
+          (hash11(clockTime * 13.7 + i) - 0.5) * 3.2,
+          1.2 + hash11(clockTime * 23.3 + i) * 2.4,
+          (hash11(clockTime * 31.1 + i) - 0.5) * 3.2
+        );
+        this._emitSpark(wp, _tangent, d.palIdx, 0.14, 0.36);
       }
-      // flying rose + lotus petals after the strike
-      const ft = t - bl.openAt;
-      if (ft > 0) {
-        for (let i = 0; i < bl.flyCount && npt < MAX_PETALS; i++) {
-          const hs = hash11(bl.seed + i * 1.37);
-          const hs2 = hash11(bl.seed + i * 2.71);
-          const ang = (i / bl.flyCount) * TAU + hs * 0.4 + ft * (0.9 + hs);
-          const sp = 4.5 + 5.0 * hs2;
-          const drag = (1 - Math.exp(-2.2 * ft)) / 2.2;
-          const r = 0.6 + sp * drag;
-          _p.set(bl.pos.x + Math.cos(ang) * r, bl.pos.y + 0.4 + (3.5 + 3 * hs) * drag - 1.1 * ft * ft, bl.pos.z + Math.sin(ang) * r);
-          _e.set(ft * (4 + hs * 6), ang, ft * 5 * hs2);
-          _q.setFromEuler(_e);
-          const sc = 0.5 + 0.3 * hs;
-          _s.set(sc, sc, sc);
-          _m.compose(_p, _q, _s);
-          this.petalMesh.setMatrixAt(npt, _m);
-          pA.setXYZW(npt, i % 3 === 0 ? 5 : 6, fade, hs * 7, 0.3);
-          npt++;
+
+      // Cross-bite climax spark burst:
+      // In `awakening`, both dragons cross jaws at 3.6m in front of Knight at t = 0.72s!
+      const biteTriggerTime = d.mode === 'awakening' ? 0.72 : d.duration * 0.52;
+      if (!d.biteBurstTriggered && d.age >= biteTriggerTime) {
+        d.biteBurstTriggered = true;
+        if (i === 0) {
+          const biteCount = d.mode === 'awakening' ? 36 : 20;
+          const biteStyle = this.dragons[1].active ? 'eclipse' : d.style;
+          this._burstSparks(d.headMesh.position, biteCount, biteStyle, 8.2);
         }
       }
     }
-    this.petalMesh.count = npt;
-    this.petalMesh.instanceMatrix.needsUpdate = true;
-    pA.needsUpdate = true;
 
-    let ns = 0;
-    const sA = this.sparkMesh.geometry.attributes.aSparkA;
-    for (const s of this.sparkBursts) {
-      if (!s.active) continue;
-      const t = s.age - s.delay;
-      if (t < 0) continue;
-      const u = saturate(t / s.life);
-      for (let i = 0; i < s.count && ns < MAX_SPARKS; i++) {
-        const h1 = hash11(s.seed + i * 1.13);
-        const h2 = hash11(s.seed + i * 2.31);
-        const h3 = hash11(s.seed + i * 3.77);
-        const life = s.life * (0.55 + 0.45 * h3);
-        if (t > life) continue;
-        const az = h1 * TAU;
-        const el = 0.25 + h2 * 1.0;
-        const sp = s.speed * (0.55 + 0.6 * h3);
-        _a.set(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).multiplyScalar(sp);
-        const drag = (1 - Math.exp(-3.0 * t)) / 3.0;
-        _p.set(s.pos.x + _a.x * drag, s.pos.y + _a.y * drag - 4.5 * t * t, s.pos.z + _a.z * drag);
-        _b.set(_a.x * Math.exp(-3 * t), _a.y * Math.exp(-3 * t) - 9.0 * t, _a.z * Math.exp(-3 * t));
-        const vl = _b.length();
-        if (vl > 1e-4) _b.divideScalar(vl);
-        else _b.copy(UP);
-        _q.setFromUnitVectors(UP, _b);
-        const shrink = 1 - smoothstep(0.6, 1.0, t / life);
-        const w = 0.05 * shrink + 0.005;
-        _s.set(w, (0.08 + Math.min(0.4, vl * 0.045)) * shrink + 0.01, w);
-        _m.compose(_p, _q, _s);
-        this.sparkMesh.setMatrixAt(ns, _m);
-        sA.setXY(ns, s.pal, 1 - u);
-        ns++;
+    // Evaluate 48 chiseled crystal/ember shards
+    let sparkCount = 0;
+    for (let i = 0; i < MAX_SPARKS; i++) {
+      const sp = this.sparkParticles[i];
+      if (!sp.active) continue;
+      sp.age += dt;
+      if (sp.age >= sp.life) {
+        sp.active = false;
+        continue;
+      }
+
+      const u = saturate(sp.age / sp.life);
+      const dissolve = smoothstep(0.45, 0.98, u);
+      if (dt > 0) {
+        sp.pos.addScaledVector(sp.vel, dt);
+        sp.vel.y -= 6.5 * dt;
+        sp.vel.multiplyScalar(Math.exp(-1.8 * dt));
+      }
+
+      _dummy.position.copy(sp.pos);
+      if (sp.vel.lengthSq() > 1e-4) {
+        _p.copy(sp.vel).normalize();
+        _dummy.quaternion.setFromUnitVectors(UP, _p);
+      } else {
+        _dummy.quaternion.identity();
+      }
+      _dummy.scale.set(sp.scale * 0.55, sp.scale * 1.45, sp.scale * 0.55);
+      _dummy.updateMatrix();
+      this.sparkMesh.setMatrixAt(sparkCount, _dummy.matrix);
+      this.sparkMetaAttr.setXYZW(sparkCount, sp.palIdx, 1.0 - u, dissolve, sp.seed);
+      sparkCount++;
+    }
+    this.sparkMesh.count = sparkCount;
+    this.sparkMesh.instanceMatrix.needsUpdate = true;
+    this.sparkMetaAttr.needsUpdate = true;
+
+    // Evaluate Sacred Lotus / Rose petals (`spawnCouplesBloom`)
+    let petalCount = 0;
+    const bl = this.bloomState;
+    if (bl.active) {
+      bl.age += dt;
+      if (bl.age >= bl.life) {
+        bl.active = false;
+      } else {
+        const t = bl.age;
+        const rise = outQuint(t / 0.35);
+        const open = outQuint(Math.max(0, t - bl.openAt) / 0.35);
+        const fade = smoothstep(bl.life - 0.45, bl.life, t);
+
+        for (let i = 0; i < 12 && petalCount < MAX_PETALS; i++) {
+          const outer = i >= 6;
+          const yaw = (i / 6) * TAU + (outer ? Math.PI / 6 : 0);
+          const tilt = lerp(outer ? 0.35 : 0.12, outer ? 1.2 : 0.8, open);
+          const sc = (outer ? 2.2 : 1.7) * rise * (1.0 + 0.2 * open);
+          _euler.set(tilt, yaw, 0, 'YXZ');
+          _dummy.position.set(bl.pos.x, bl.pos.y + 0.06, bl.pos.z);
+          _dummy.quaternion.setFromEuler(_euler);
+          _dummy.scale.setScalar(sc);
+          _dummy.updateMatrix();
+          this.petalMesh.setMatrixAt(petalCount, _dummy.matrix);
+          this.petalMetaAttr.setXYZW(petalCount, 5, fade, i * 0.37, open * 0.8);
+          petalCount++;
+        }
+
+        const ft = t - bl.openAt;
+        if (ft > 0) {
+          for (let i = 0; i < bl.flyCount && petalCount < MAX_PETALS; i++) {
+            const hs = hash11(bl.seed + i * 1.37);
+            const hs2 = hash11(bl.seed + i * 2.71);
+            const ang = (i / bl.flyCount) * TAU + hs * 0.4 + ft * (0.9 + hs);
+            const sp = 4.5 + 4.5 * hs2;
+            const drag = (1.0 - Math.exp(-2.2 * ft)) / 2.2;
+            const r = 0.5 + sp * drag;
+            _dummy.position.set(
+              bl.pos.x + Math.cos(ang) * r,
+              bl.pos.y + 0.4 + (3.2 + 2.8 * hs) * drag - 1.1 * ft * ft,
+              bl.pos.z + Math.sin(ang) * r
+            );
+            _euler.set(ft * (4.0 + hs * 5.0), ang, ft * 4.5 * hs2);
+            _dummy.quaternion.setFromEuler(_euler);
+            _dummy.scale.setScalar(0.45 + 0.28 * hs);
+            _dummy.updateMatrix();
+            this.petalMesh.setMatrixAt(petalCount, _dummy.matrix);
+            this.petalMetaAttr.setXYZW(petalCount, i % 3 === 0 ? 5 : 6, fade, hs * 7.0, 0.3);
+            petalCount++;
+          }
+        }
       }
     }
-    this.sparkMesh.count = ns;
-    this.sparkMesh.instanceMatrix.needsUpdate = true;
-    sA.needsUpdate = true;
+    this.petalMesh.count = petalCount;
+    this.petalMesh.instanceMatrix.needsUpdate = true;
+    this.petalMetaAttr.needsUpdate = true;
 
-    const any = nb + nd + nc + np + npt + ns > 0;
-    const pending = this._anyPending();
-    this.group.visible = any || pending;
+    const anyVisible = activeDragonCount > 0 || sparkCount > 0 || petalCount > 0;
+    this.group.visible = anyVisible;
   }
 
-  _anyPending() {
-    for (const pool of [this.bolts, this.discs, this.crests, this.halos, this.sparkBursts, this.blooms]) {
-      for (const r of pool) if (r.active) return true;
-    }
-    return false;
-  }
-
-  setLighting() {}
-
-  /** Deterministic preview: replays a scenario from t = 0 to `timeSeconds`. */
+  /**
+   * Deterministic seeker for preview/QA captures.
+   */
   seek(timeSeconds, scenario = null) {
     if (scenario) {
       this.clear();
       scenario(this);
     }
     this.uTime.value = timeSeconds;
-    this._advance(timeSeconds);
-    this.group.visible = true;
-    this._evaluate();
+    const steps = 12;
+    const stepDt = timeSeconds / Math.max(1, steps);
+    for (const d of this.dragons) {
+      if (d.active) d.age = 0;
+    }
+    for (let i = 0; i < steps; i++) {
+      this._evaluate(stepDt);
+    }
     return this;
   }
 
+  setLighting({ sunDir, daylight = 1.0 } = {}) {
+    if (sunDir) this.sharedUniforms.uSunDir.value.copy(sunDir).normalize();
+    if (Number.isFinite(daylight)) {
+      this.sharedUniforms.uDaylight.value = clamp(daylight, 0.0, 1.2);
+    }
+  }
+
+  getCameraShakeOffset(target = new THREE.Vector3()) {
+    return target.copy(this._shakeOffset);
+  }
+
+  getHitstopScale() {
+    return this._hitstopScale;
+  }
+
   getStats() {
-    const meshes = [this.boltMesh, this.discMesh, this.crestMesh, this.cloudMesh, this.petalMesh, this.sparkMesh];
     let drawCalls = 0;
+    let activeDragons = 0;
     let instances = 0;
     if (this.group.visible) {
-      for (const m of meshes) {
-        if (m.count > 0) {
-          drawCalls++;
-          instances += m.count;
+      for (const d of this.dragons) {
+        if (d.active && d.headMesh.visible) {
+          drawCalls += 2; // 1 sculpted head Mesh + 1 spline-deforming body Mesh
+          activeDragons++;
         }
       }
+      if (this.sparkMesh.count > 0) {
+        drawCalls++;
+        instances += this.sparkMesh.count;
+      }
+      if (this.petalMesh.count > 0) {
+        drawCalls++;
+        instances += this.petalMesh.count;
+      }
     }
-    return { active: drawCalls > 0, drawCalls, instances, cataclysm: this.cataclysm.active };
+    return {
+      active: drawCalls > 0,
+      drawCalls,
+      activeDragons,
+      activeSparks: this.group.visible ? this.sparkMesh.count : 0,
+      activePetals: this.group.visible ? this.petalMesh.count : 0,
+      instances,
+      cataclysm: this.cataclysm.active,
+    };
   }
 
   clear() {
-    for (const pool of [this.bolts, this.discs, this.crests, this.halos, this.sparkBursts, this.blooms]) {
-      for (const r of pool) {
-        r.active = false;
-        r.track = null;
-      }
+    for (const d of this.dragons) {
+      d.active = false;
+      d.age = 0;
+      d.biteBurstTriggered = false;
+      d.getBladeTip = null;
+      d.headMesh.visible = false;
+      d.bodyMesh.visible = false;
     }
+    for (const sp of this.sparkParticles) {
+      sp.active = false;
+    }
+    this.bloomState.active = false;
     this.cataclysm.active = false;
-    this.cataclysm.halo = null;
-    this.cataclysm.sigil = null;
-    for (const m of [this.boltMesh, this.discMesh, this.crestMesh, this.cloudMesh, this.petalMesh, this.sparkMesh]) m.count = 0;
+    this.cataclysm.timer = 0;
+    this.sparkMesh.count = 0;
+    this.petalMesh.count = 0;
+    this._shakeOffset.set(0, 0, 0);
+    this._hitstopScale = 1.0;
     this.group.visible = false;
   }
 
   dispose() {
     this.clear();
-    for (const m of [this.boltMesh, this.discMesh, this.crestMesh, this.cloudMesh, this.petalMesh, this.sparkMesh]) {
-      m.geometry.dispose();
-      m.material.dispose();
+    this.sharedHeadGeo.dispose();
+    for (const d of this.dragons) {
+      d.bodyMesh.geometry.dispose();
+      d.mat.dispose();
     }
-    this.group.parent?.remove(this.group);
+    this.sparkMesh.geometry.dispose();
+    this.sparkMat.dispose();
+    this.petalMesh.geometry.dispose();
+    this.petalMat.dispose();
+    if (this.group.parent) {
+      this.group.parent.remove(this.group);
+    }
   }
 }
 

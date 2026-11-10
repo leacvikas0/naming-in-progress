@@ -3145,6 +3145,14 @@ export function setShot(shotId) {
 }
 
 export function setGameplayShot(gameplayShotId) {
+  if (!gameplayShotId) {
+    activeGameplayShotSpec = null;
+    coopSystem?.vfxKit?.clear?.();
+    coopSystem?.vfxKit?.swordVfx?.setInfusion?.('none', 0);
+    coopSystem?.enemyManager?.setFrozenForShot?.(null);
+    coopSystem?.campaignLoop?.setIndicatorsHiddenForShot?.(false, coopSystem?.heroStates);
+    return;
+  }
   const spec =
     STAGE5_GAMEPLAY_SHOTS[gameplayShotId] ||
     STAGE5_GAMEPLAY_SHOTS['01-desktop-act1-sunfire-slash'];
