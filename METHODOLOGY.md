@@ -59,6 +59,39 @@
      1. **Vikas's Exact Directives:** [`docs/superpowers/plans/2026-11-07-vikas-verbatim-prompts-archive.md`](file:///C:/Users/silen/projects/kilo-3d-kit/docs/superpowers/plans/2026-11-07-vikas-verbatim-prompts-archive.md) (specifically calling out the relevant step numbers for their task so they read Vikas's unedited words).
      2. **Full Game Systems & Math Plan:** [`docs/superpowers/plans/2026-11-07-amarante-final-playable-handoff.md`](file:///C:/Users/silen/projects/kilo-3d-kit/docs/superpowers/plans/2026-11-07-amarante-final-playable-handoff.md) so the subagent understands the game's core intent (role-symmetric co-op between Vikas and Ishika, audio-native tone-judged cheesy love confessions, ancient God of Love, and fun-but-hard co-op survival).
      3. **Visual Baseline Screenshots via `view_file` (`docs/design-references/visual-baseline-2026-11-07/*.png`):** Every subagent MUST call `view_file` on at least 3 baseline screenshots (`integrated-site1-well-day.png`, `integrated-site2-platform-day.png`, `integrated-site3-wall-day.png`, `live-verify-3-genshin-hud-stage3.png`, `zeropop-day-plaza.png`) BEFORE writing code or critiquing, so it visually calibrates to our Ghibli sunlit valley, warm travertine monuments, and translucent HUD.
-7. **Mandatory End-to-End Video Gameplay Verification Before User Sign-Off:**
+7. **Mandatory End-toEnd Video Gameplay Verification Before User Sign-Off:**
    - Never ask Vikas to test a combat, enemy, control, or UI feature until an automated Playwright + video recording harness has recorded the live experience (`.webm`/`.mp4`), a subagent or lead agent has watched the video via `view_file` + `google:load_video`, and all obvious visual, animation, targeting, and game-feel bugs have been fixed first.
+8. **Pacing, Rhythm & "Breathing Room" Rule (Think Like a Novel):**
+   - Gameplay, combat choreography, and world exploration must have deliberate rhythm and breathing room—never a non-stop wall of visual clutter, nor sluggish underwater slow-motion.
+   - Give distinct beats space to land: fast, decisive enemy approaches and strikes contrasted with clear punish windows; clean, readable floating damage callouts; and quiet exploration between high-intensity stone defense encounters.
+9. **Mandatory 3-Beat Close-Quarters Visceral Combat & "Honest Hitbox" Video Audit:**
+   - Automated QA harnesses that only mash abilities or cast big AOEs will miss fundamental close-quarters melee flaws. Every enemy AI, combat, or animation change MUST record and inspect a dedicated **Close-Quarters 1v1 / 1v3 Melee Audit Video** covering three unscripted-feeling beats:
+     1. **Beat A — Aggressive Enemy Approach & Honest Blade-to-Body Contact (Zero "Bluetooth Hits"):**
+        - Have the hero stand still while melee enemies approach and attack, then take 2 steps back mid-windup.
+        - Enemies must sprint in decisively (`Running_A` at full speed all the way to `~1.2m–1.6m`, never dropping into a `1.0–1.6 m/s` slow-motion crawl inside `4.5–7.0m`), animate their swings at snappy combat speed (`~1.55×–1.85×`), and **physically step/lunge forward into their downswing** (`~1.18m–1.55m` center-to-center) so their 3D weapon visibly slices through the hero's body.
+        - Hit detection (`isInAttackArc`) must match the actual 3D weapon length (`~1.65m` for standard 1H skeletons, `~2.2m` for 2H elites, `~2.5m` for bosses). If the hero steps or dashes outside physical blade reach, the swing must cleanly **whiff**—never damage the player across empty air.
+     2. **Beat B — Unmistakable Player Damage Feedback (Readable Without Looking at the Corner HUD):**
+        - When an enemy hits a hero, a viewer watching the center of the screen must immediately feel and see the impact via four synchronized signals:
+          - A bold floating crimson **`-DMG`** pill (or icy-gold **`BLOCKED -DMG`** when blocking with Knight's shield `[F]`) spawning directly above the struck hero,
+          - A `0.18s` crimson/white emissive hit-flash on the struck hero's 3D mesh,
+          - A physical directional knockback jolt away from the attacker + crisp `hit_A` flinch animation (when idle/moving),
+          - A translucent crimson screen-edge damage vignette pulse + top-left HP bar shake/flash.
+     3. **Beat C — Visceral Enemy Hit Reactions (No "Plastic Toy" Enemies):**
+        - Strike an enemy with basic `combo1 -> combo2 -> combo3` sword slashes (zero spells). Every single hit must pop a crisp floating damage number, flash the enemy's 3D mesh (`0.14s` warm-white/crimson emissive flash), apply a directional knockback impulse away from the swing, and trigger a snappy flinch reaction.
+10. **Logical Anti-Cheat & State-Machine Precondition Gate:**
+    - Every interactive mechanic (`[G]` Read Stone, `[R]` Awaken/Commune, Hero Swap, Proximity Revive) must enforce strict logical preconditions in both the UI prompt layer and the authoritative game/worker state machine:
+      - Sacred Inscription Stones cannot be read (`[G]`) or awakened while living enemies contest the stone (`<= 20m` from the stone or `<= 16m` from either hero).
+      - Keyword stone prayers cannot unlock remote stones the heroes are not physically standing beside.
+      - Players cannot swap control into a downed hero (`0 HP`), and in Solo mode the AI wingman must immediately prioritize sprinting to revive a downed human leader.
+11. **Windows Persistent Dev Server Protocol (Escaping the Harness Job Object):**
+    - On Windows, standard `run_command` child processes (including `Start-Process`) inherit the tool call's Windows Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) and are terminated as soon as the command exits or the turn ends.
+    - Whenever launching a persistent local HTTP server for live browser playtesting (`http://127.0.0.1:4173/world/index.html`), ALWAYS spawn it via **WMI (`Win32_Process.Create`)** so `WmiPrvSE.exe` parents the process outside the agent Job Object:
+      ```powershell
+      Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+        CommandLine = 'cmd.exe /c "set PORT=4173&& node C:\Users\silen\projects\kilo-3d-kit\world\tools\serve.mjs > C:\Users\silen\projects\kilo-3d-kit\world\shots\aggr-qa\server.log 2>&1"'
+        CurrentDirectory = 'C:\Users\silen\projects\kilo-3d-kit'
+      }
+      ```
+    - Always verify `Invoke-WebRequest -Uri 'http://127.0.0.1:4173/world/index.html' -UseBasicParsing` returns `StatusCode 200` before telling Vikas the server is ready.
+
 
