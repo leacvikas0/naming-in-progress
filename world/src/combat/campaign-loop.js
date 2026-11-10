@@ -2097,16 +2097,11 @@ export function createCampaignLoop({
       mageState.char.group.rotation.y = aimYaw;
     }
 
-    const canApplyRimeMark =
-      getUnlockedStage() >= 1 ||
-      (getStonesSolvedMask() & 1) !== 0 ||
-      (!getProgressionState && manualUnlockedStage === null);
-
     if (ascendedActive) {
       fireMageStaffVolleyVfx(mageState, targetPos, 2);
       fireMageStaffVolleyVfx(mageState, targetPos, 3);
     } else {
-      fireMageStaffVolleyVfx(mageState, targetPos, canApplyRimeMark ? comboIndex : 0);
+      fireMageStaffVolleyVfx(mageState, targetPos, comboIndex);
     }
 
     if (combatSfx) {
@@ -2119,6 +2114,10 @@ export function createCampaignLoop({
 
     let hits = [];
     if (enemyManager) {
+      const canApplyRimeMark =
+        getUnlockedStage() >= 1 ||
+        (getStonesSolvedMask() & 1) !== 0 ||
+        (!getProgressionState && manualUnlockedStage === null);
       if (ascendedActive || comboIndex === 3) {
         hits = enemyManager.applyAreaOrLineHit({
           origin: softTarget || targetPos,
