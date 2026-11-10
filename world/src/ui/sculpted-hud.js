@@ -1118,6 +1118,54 @@ const SCULPTED_HUD_CSS = `
     border-color: #1f1c18;
     font-weight: 700;
   }
+
+  /* ----------------------------------------------------------------------- */
+  /* 7. Screen-Edge Damage Vignette & Top-Left HP Bar Impact Shake           */
+  /* ----------------------------------------------------------------------- */
+  #sculpted-damage-vignette {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 26;
+    opacity: 0;
+    background: radial-gradient(
+      ellipse at center,
+      rgba(225, 29, 72, 0) 48%,
+      rgba(225, 29, 72, 0.34) 84%,
+      rgba(159, 18, 57, 0.68) 100%
+    );
+    transition: opacity 220ms ease-out;
+  }
+
+  #sculpted-damage-vignette.is-blocked {
+    background: radial-gradient(
+      ellipse at center,
+      rgba(56, 189, 248, 0) 56%,
+      rgba(56, 189, 248, 0.24) 88%,
+      rgba(14, 165, 233, 0.46) 100%
+    );
+  }
+
+  #sculpted-damage-vignette.is-active {
+    opacity: 1;
+    transition: opacity 40ms ease-out;
+  }
+
+  @keyframes shDamageShake {
+    0% { transform: translate3d(0, 0, 0); }
+    20% { transform: translate3d(-6px, 2px, 0); }
+    45% { transform: translate3d(5px, -2px, 0); }
+    70% { transform: translate3d(-3px, 1px, 0); }
+    100% { transform: translate3d(0, 0, 0); }
+  }
+
+  .sh-life-row.is-damaged-shake {
+    animation: shDamageShake 240ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
+  }
+
+  .sh-life-row.is-damaged-shake .sh-hp-channel {
+    box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.95), 0 0 14px rgba(225, 29, 72, 0.65);
+  }
 `;
 
 /**
@@ -1197,6 +1245,7 @@ export function createSculptedHud({
   root.id = 'sculpted-hud-root';
 
   root.innerHTML = `
+    <div id="sculpted-damage-vignette" aria-hidden="true"></div>
     <!-- 1. TOP-LEFT: Genshin-Style Party Strip (Authentic Chibi Bust Portrait + Floating White Name + HP Bar) -->
     <div id="sculpted-party-bars" role="region" aria-label="Party Status">
       <div class="sh-life-row is-leader" id="sh-life-row-primary" data-role="Knight" title="Click to swap hero in solo mode">
@@ -2514,6 +2563,44 @@ export function createSculptedHud({
     updatePartyStatus(snapshot);
   }
 
+  const damageVignetteEl = root.querySelector('#sculpted-damage-vignette');
+  let vignetteTimer = null;
+  let primaryShakeTimer = null;
+  let partnerShakeTimer = null;
+
+  function triggerDamagePulse({ role = 'Knight', damage = 15, blocked = false } = {}) {
+    const isPrimaryHit = role === state.activeRole;
+    if (damageVignetteEl && (isPrimaryHit || !blocked)) {
+      damageVignetteEl.classList.toggle('is-blocked', Boolean(blocked));
+      damageVignetteEl.classList.add('is-active');
+      if (vignetteTimer) clearTimeout(vignetteTimer);
+      vignetteTimer = setTimeout(() => {
+        damageVignetteEl.classList.remove('is-active');
+        vignetteTimer = null;
+      }, blocked ? 140 : 230);
+    }
+
+    const rowEl = isPrimaryHit ? primaryRowEl : partnerRowEl;
+    if (rowEl && !blocked) {
+      rowEl.classList.remove('is-damaged-shake');
+      void rowEl.offsetWidth;
+      rowEl.classList.add('is-damaged-shake');
+      if (isPrimaryHit) {
+        if (primaryShakeTimer) clearTimeout(primaryShakeTimer);
+        primaryShakeTimer = setTimeout(() => {
+          rowEl.classList.remove('is-damaged-shake');
+          primaryShakeTimer = null;
+        }, 250);
+      } else {
+        if (partnerShakeTimer) clearTimeout(partnerShakeTimer);
+        partnerShakeTimer = setTimeout(() => {
+          rowEl.classList.remove('is-damaged-shake');
+          partnerShakeTimer = null;
+        }, 250);
+      }
+    }
+  }
+
   // Initial render (Starts Bare: Stage 0, communeDiscovered = false)
   setProfileMode(state.profile);
   syncEnvironmentPolarity();
@@ -2556,6 +2643,7 @@ export function createSculptedHud({
     cancelSlotEAim,
     updatePartyStatus,
     updateHudState,
+    triggerDamagePulse,
     resetJoystick,
     isModalOpen: () => Boolean(pauseModal?.classList.contains('is-open')),
     setVisible(visible = true) {

@@ -33,6 +33,7 @@ import {
   createCharactersKit,
   TARGET_CHARACTER_HEIGHT,
 } from '../../assets/characters/index.js';
+import { setCharacterHitFlash } from '../../assets/characters/toon-skin.js';
 import {
   clamp,
   shortestAngleDiff,
@@ -691,6 +692,7 @@ export async function createEnemyManager({
       iceSlowFactor: 0,
       burnTimer: 0,
       burnDps: 0,
+      hitFlashTimer: 0,
       spawnAnimTimer,
       attackAnimTimer: 0,
       aiState: 'orbit',
@@ -699,12 +701,12 @@ export async function createEnemyManager({
       telegraphX: clampedPos.x,
       telegraphY: groundY + 0.04,
       telegraphZ: clampedPos.z,
-      cooldownTimer: 0.18 + (slot.slotIndex % 3) * 0.12,
+      cooldownTimer: 0.14 + (slot.slotIndex % 3) * 0.08,
       hasAttackToken: false,
       orbitSpeed: orbitSign,
       standoffDist: arch.isRanged
         ? 6.6 + (slot.slotIndex % 2) * 1.1
-        : 2.15 + (slot.slotIndex % 3) * 0.32,
+        : 1.62 + (slot.slotIndex % 3) * 0.20,
       distToTarget: 10.0,
       targetHeroId: spawnSpec.preferredTarget || arch.preferredTarget || 'Knight',
       huntingMage: Boolean((spawnSpec.preferredTarget || arch.preferredTarget) === 'Mage'),
@@ -768,6 +770,7 @@ export async function createEnemyManager({
       wakeRadius: spawnSpec.wakeRadius ?? 6.5,
       tokenIneligible: false,
     };
+    setCharacterHitFlash(slot.char, 0);
     initPoise(enemy, arch.poise || 0);
     if (spawnSpec.dormant) {
       enemy.aiState = 'dormant';
@@ -794,6 +797,7 @@ export async function createEnemyManager({
       slot.char.group.visible = false;
       slot.char.group.scale.setScalar(1.0);
       slot.char.mixer.timeScale = 1.0;
+      setCharacterHitFlash(slot.char, 0);
     }
     enemy.active = false;
     activeEnemies = activeEnemies.filter((e) => e !== enemy);
@@ -822,6 +826,7 @@ export async function createEnemyManager({
       const s = allPoolSlots[i];
       s.busy = false;
       s.enemy = null;
+      setCharacterHitFlash(s.char, 0);
       s.char.group.visible = false;
       s.char.group.scale.setScalar(1.0);
       s.char.mixer.timeScale = 1.0;
@@ -1133,6 +1138,39 @@ export async function createEnemyManager({
     }
 
     if (!enemy.dead && !enemy.isPile && result.damageDealt > 0) {
+      enemy.hitFlashTimer = 0.14;
+      setCharacterHitFlash(enemy.char, 1.0, 0xfff1f2);
+
+      const inSuperArmorWindup =
+        wasInWindup && (enemy.isElite || enemy.isBoss) && !canBreakWindupSuperArmor;
+      if (!enemy.isStationary && !inSuperArmorWindup) {
+        const attPos = hitSpec.attackerPos;
+        let kbx = attPos ? enemy.x - attPos.x : -Math.sin(enemy.yaw || 0);
+        let kbz = attPos ? enemy.z - attPos.z : -Math.cos(enemy.yaw || 0);
+        const kbLen = Math.hypot(kbx, kbz) || 1;
+        kbx /= kbLen;
+        kbz /= kbLen;
+        const isHeavyImpact = Boolean(
+          result.detonation ||
+            hitSpec.spellId ||
+            source === 'combo4' ||
+            source === 'heavy' ||
+            source === 'charged' ||
+            source === 'intercept'
+        );
+        const kbSpeed = enemy.isBoss
+          ? 1.35
+          : enemy.isElite
+            ? isHeavyImpact
+              ? 3.8
+              : 2.2
+            : isHeavyImpact
+              ? 6.2
+              : 3.4;
+        enemy.vx += kbx * kbSpeed;
+        enemy.vz += kbz * kbSpeed;
+      }
+
       let reaction = resolvePostHit(enemy, hitSpec, result.damageDealt);
       if (pre === 'guardbreak') reaction = 'stagger';
       // Detonations already stun (stunTimer); they must not also stack a poise stagger.
@@ -1148,14 +1186,19 @@ export async function createEnemyManager({
                 : STAGGER_SECONDS.trash;
         enterStagger(enemy, secs, (enemy.slotIndex + Math.round(enemy.hp)) % 2 ? 'Hit_B' : 'Hit_A');
       } else if (result.frontalShieldBlocked && enemy.aiState !== 'windup') {
-        enemy.attackAnimTimer = 0.24;
-        enemy.char.play('parry', { loop: false, fade: 0.05, force: true });
+        enemy.attackAnimTimer = 0.22;
+        enemy.char.play('parry', { loop: false, fade: 0.04, timeScale: 1.35, force: true });
       } else if (result.guardShattered && enemy.aiState !== 'windup') {
-        enemy.attackAnimTimer = 0.45;
-        enemy.char.play('hit_B', { loop: false, fade: 0.06, force: true });
+        enemy.attackAnimTimer = 0.38;
+        enemy.char.play('hit_B', { loop: false, fade: 0.05, timeScale: 1.35, force: true });
       } else if (reaction === 'flinch' && enemy.aiState === 'orbit') {
-        enemy.attackAnimTimer = 0.32;
-        safePlay(enemy.char, enemy.slotIndex % 2 ? 'Hit_B' : 'Hit_A', { loop: false, fade: 0.06, force: true }, 'hit_A');
+        enemy.attackAnimTimer = 0.24;
+        safePlay(
+          enemy.char,
+          enemy.slotIndex % 2 ? 'Hit_B' : 'Hit_A',
+          { loop: false, fade: 0.04, timeScale: 1.45, force: true },
+          'hit_A'
+        );
       }
     }
 
@@ -1526,13 +1569,34 @@ export async function createEnemyManager({
     }
   }
 
+  function getEnemyAttackSpeedMult(e, atkId) {
+    const baseSpeed = atkId === 'captain_chop' ? 1.85 : 1.55;
+    return baseSpeed * (e.isBoss && e.phase === 'p3' ? BOSS_P3_SPEED : 1.0);
+  }
+
   function startAttack(e, atkId, target) {
     const atk = ENEMY_ATTACKS[atkId];
     if (!atk) return false;
-    const speed = e.isBoss && e.phase === 'p3' ? BOSS_P3_SPEED : 1.0;
+    const speed = getEnemyAttackSpeedMult(e, atkId);
     const dur = clipSeconds(e.char, atk.clip);
     const tl = attackTimeline(atk, dur, speed);
-    e.attack = { id: atkId, atk, dur, tl, clipT: 0, t: 0, contactIdx: 0, speed, recoverT: 0, decal: null, action: null, targetHeroId: target.id || e.targetHeroId };
+    const sc = e.group.scale.x || 1;
+    const maxStepIn = atk.lunge ? atk.lunge : (e.isBoss ? 0.65 : 0.46 * sc);
+    e.attack = {
+      id: atkId,
+      atk,
+      dur,
+      tl,
+      clipT: 0,
+      t: 0,
+      contactIdx: 0,
+      speed,
+      stepInRemaining: maxStepIn,
+      recoverT: 0,
+      decal: null,
+      action: null,
+      targetHeroId: target.id || e.targetHeroId,
+    };
     e.aiState = 'windup';
     e.windupTimer = 0;
     e.windupDuration = tl.contactTimes[0];
@@ -1548,7 +1612,7 @@ export async function createEnemyManager({
     e.attack.action = safePlay(
       e.char,
       atk.clip,
-      { loop: false, fade: 0.1, force: true, timeScale: (atk.windupSlow ?? 1) * speed },
+      { loop: false, fade: 0.06, force: true, timeScale: (atk.windupSlow ?? 1) * speed },
       e.isBoss ? 'charged' : 'combo1'
     );
     updateAttackAim(e, target);
@@ -1570,13 +1634,20 @@ export async function createEnemyManager({
     if (!atk) return false;
     const heroId = target.id || e.targetHeroId || 'Knight';
     if (!canStartWindup(windupLog, heroId, simTime)) return false;
-    const speed = e.isBoss && e.phase === 'p3' ? BOSS_P3_SPEED : 1.0;
+    const speed = getEnemyAttackSpeedMult(e, atkId);
     const tl = attackTimeline(atk, clipSeconds(e.char, atk.clip), speed);
     if (!canScheduleContacts(contactLog, heroId, e.instanceId, absoluteContacts(e, atk, tl, target))) {
-      e.cooldownTimer = Math.max(e.cooldownTimer, 0.12);
+      e.cooldownTimer = Math.max(e.cooldownTimer, 0.08);
       return false;
     }
     return startAttack(e, atkId, target);
+  }
+
+  function getHonestMeleeContactReach(e, atkId, atk) {
+    const sc = e.group.scale.x || 1;
+    if (atkId === 'boss_2h' || atkId === 'boss_combo') return 2.45;
+    if (atkId === 'captain_chop') return 1.95 * sc;
+    return Math.min(atk.range * sc, 1.68 * sc);
   }
 
   function resolveContact(e, idx, knight, mage) {
@@ -1617,8 +1688,12 @@ export async function createEnemyManager({
       const hid = h.id || (i === 0 ? 'Knight' : 'Mage');
       let hit;
       if (atk.ranged) continue;
-      if (atk.area) hit = Math.hypot(h.x - a.areaX, h.z - a.areaZ) <= atk.radius + 0.35;
-      else hit = isInAttackArc(e, e.yaw, h, atk.range * (e.group.scale.x || 1) + 0.35, atk.arcDeg);
+      if (atk.area) {
+        hit = Math.hypot(h.x - a.areaX, h.z - a.areaZ) <= atk.radius + 0.12;
+      } else {
+        const contactReach = getHonestMeleeContactReach(e, a.id, atk);
+        hit = isInAttackArc(e, e.yaw, h, contactReach, atk.arcDeg);
+      }
       if (!hit) continue;
       const blockable = atk.blockable !== false;
       if (hid === 'Knight' && blockable && knightBlock.active && isParryTiming(knightBlock.startAt, simTime)) {
@@ -1644,19 +1719,42 @@ export async function createEnemyManager({
       if (a.recoverT <= 0) {
         cancelAttack(e);
         e.aiState = 'orbit';
-        e.cooldownTimer = e.attackCooldown * (0.8 + rand() * 0.4) * (e.isBoss && e.phase === 'p3' ? 0.7 : 1.0);
+        e.cooldownTimer = e.attackCooldown * (0.45 + rand() * 0.22) * (e.isBoss && e.phase === 'p3' ? 0.65 : 1.0);
       }
       return;
     }
     const r = advanceAttackClip(a.atk, a.dur, a.clipT, dt * m, a.speed);
     a.clipT = r.clipT;
     a.t += dt * m;
-    a.action?.setEffectiveTimeScale?.(r.timeScale);
+    const visualTs = r.clipT >= a.tl.slowEndClip ? r.timeScale * 1.25 : r.timeScale;
+    a.action?.setEffectiveTimeScale?.(visualTs);
     e.windupTimer = a.t;
     e.telegraphProgress = clamp(a.t / Math.max(0.01, a.tl.contactTimes[0]), 0, 1);
     if (a.contactIdx === 0 && a.clipT < a.tl.slowEndClip && target) updateAttackAim(e, target);
     if (a.decal) a.decal.mesh.material.uniforms.uProgress.value = e.telegraphProgress;
-    if (a.atk.lunge && a.contactIdx === 0 && target && a.clipT >= a.tl.slowEndClip - 0.25) {
+
+    const sc = e.group.scale.x || 1;
+    if (!a.atk.ranged && !a.atk.areaAtTarget && a.contactIdx === 0 && target && a.clipT >= a.tl.slowEndClip * 0.35) {
+      const d = Math.hypot(target.x - e.x, target.z - e.z);
+      const minCloseDist = Math.max(e.isBoss ? 1.62 : 1.15 * sc, (e.radius || 0.5) + 0.55);
+      if (d > minCloseDist && (a.stepInRemaining ?? 0) > 1e-4) {
+        const lungeSpd = a.atk.lunge ? (a.atk.lungeSpeed || 8.5) : 6.5;
+        const step = Math.min(d - minCloseDist, a.stepInRemaining, lungeSpd * dt * m);
+        a.stepInRemaining = Math.max(0, a.stepInRemaining - step);
+        const np = applyEnemySpatialConstraints(
+          e.x + ((target.x - e.x) / d) * step,
+          e.z + ((target.z - e.z) / d) * step,
+          e.radius
+        );
+        e.x = np.x;
+        e.z = np.z;
+      }
+      if (a.atk.leap) {
+        const start = a.tl.slowEndClip - 0.25;
+        const end = a.atk.contacts[0] * a.dur;
+        e.leapLift = 1.7 * Math.sin(Math.PI * clamp((a.clipT - start) / Math.max(0.05, end - start), 0, 1));
+      }
+    } else if (a.atk.lunge && a.contactIdx === 0 && target && a.clipT >= a.tl.slowEndClip - 0.25) {
       const d = Math.hypot(target.x - e.x, target.z - e.z);
       if (d > 1.3) {
         const step = Math.min(d - 1.2, (a.atk.lungeSpeed || 7.5) * dt * m);
@@ -1670,6 +1768,7 @@ export async function createEnemyManager({
         e.leapLift = 1.7 * Math.sin(Math.PI * clamp((a.clipT - start) / Math.max(0.05, end - start), 0, 1));
       }
     }
+
     for (let i = 0; i < r.crossed.length; i++) {
       if (!e.attack) return; // parried
       e.leapLift = 0;
@@ -1678,7 +1777,7 @@ export async function createEnemyManager({
     }
     if (e.attack && r.finished) {
       e.aiState = 'recover';
-      e.attack.recoverT = a.atk.recovery ?? 0.4;
+      e.attack.recoverT = (a.atk.recovery ?? 0.4) * 0.52;
     }
   }
 
@@ -1692,8 +1791,10 @@ export async function createEnemyManager({
         return 'boss_leap_slam';
       }
       const id = selectBossAttack(e.phase, rand(), e.lastAttackId);
-      if (dist <= ENEMY_ATTACKS[id].range * 0.9) return id;
-      return dist <= ENEMY_ATTACKS.boss_2h.range * 0.9 ? 'boss_2h' : null;
+      const bAtk = ENEMY_ATTACKS[id];
+      const bTrigger = bAtk?.area ? bAtk.range * 0.72 : 2.25;
+      if (dist <= bTrigger) return id;
+      return dist <= 2.25 ? 'boss_2h' : null;
     }
     const ok = e.attacks.filter((id) => {
       const atk = ENEMY_ATTACKS[id];
@@ -1701,9 +1802,19 @@ export async function createEnemyManager({
       if (e.isHybridRangedMelee && Boolean(atk.ranged) !== e.usingRangedMode) return false;
       // Casters time eruptions for pinned heroes (or after holding the cast for 4 s).
       if (atk.cooldown && (e.eruptionCooldown > 0 || !(pinned[heroId] || e.eruptionHold >= 4))) return false;
-      if (atk.lunge) return dist >= atk.minDist && dist <= atk.lunge + atk.range;
-      const reach = atk.area && !atk.areaAtTarget ? atk.radius : atk.range;
-      return dist <= reach * sc * 0.92;
+      if (atk.lunge) return dist >= atk.minDist && dist <= atk.lunge + atk.range * 0.75;
+      if (atk.ranged) return dist <= atk.range * sc * 0.92;
+      if (atk.area) {
+        const aReach = atk.areaAtTarget ? atk.range * 0.92 : atk.radius * 0.78;
+        return dist <= aReach * sc;
+      }
+      const closeStrikeDist =
+        id === 'boss_2h' || id === 'boss_combo'
+          ? 2.25
+          : id === 'captain_chop'
+            ? 1.82 * sc
+            : 1.58 * sc;
+      return dist <= closeStrikeDist;
     });
     if (!ok.length) return null;
     let id = ok.find((x) => ENEMY_ATTACKS[x].cooldown) || ok.find((x) => ENEMY_ATTACKS[x].lunge);
@@ -1726,11 +1837,9 @@ export async function createEnemyManager({
   function preferredRange(e) {
     if (e.isHybridRangedMelee && e.usingRangedMode) return e.rangedMinDist + 1.0;
     if (e.isRanged) return e.attackRange * 0.8;
-    const melee = e.isHybridRangedMelee
-      ? e.attacks.filter((id) => !ENEMY_ATTACKS[id]?.ranged && !ENEMY_ATTACKS[id]?.area)
-      : e.attacks;
-    const atk = ENEMY_ATTACKS[melee.find((id) => !ENEMY_ATTACKS[id]?.lunge) || melee[0]];
-    return Math.max(1.4, (atk?.range || e.attackRange) * (e.group.scale.x || 1) * 0.8);
+    const sc = e.group.scale.x || 1;
+    if (e.isBoss) return 1.72;
+    return Math.max(1.15, 1.22 * sc);
   }
 
   function approach(e, dt, dist, dirX, dirZ, mv) {
@@ -1739,17 +1848,16 @@ export async function createEnemyManager({
     if (dist > want) {
       let speed;
       let clip;
-      if (e.shieldWall && e.shieldDownTimer <= 0 && dist < 7) {
+      if (e.shieldWall && e.shieldDownTimer <= 0 && dist < 2.1) {
         e.shieldUp = true;
-        speed = 1.0 * mv;
-        clip = 'Melee_Blocking';
+        speed = e.speed * 0.65 * mv;
+        clip = walkClip;
       } else {
-        e.shieldUp = false;
-        const run = dist > 4.5;
-        speed = (run ? e.speed : 1.6) * mv;
-        clip = run ? 'Running_A' : walkClip;
+        e.shieldUp = Boolean(e.shieldWall && e.shieldDownTimer <= 0);
+        speed = (e.shieldUp ? e.speed * 0.86 : e.speed) * mv;
+        clip = 'Running_A';
       }
-      const step = Math.min(dist - want * 0.95, speed * dt);
+      const step = Math.min(dist - want * 0.94, speed * dt);
       const moved = moveBy(e, dirX * (step / dt), dirZ * (step / dt), dt);
       playEnemyLocomotion(e, clip, moved);
     } else {
@@ -1773,11 +1881,16 @@ export async function createEnemyManager({
       playEnemyLocomotion(e, 'Walking_Backwards', moved);
       return;
     }
+    if (!e.isRanged && !(e.isHybridRangedMelee && e.usingRangedMode) && dist > e.standoffDist + 0.85) {
+      const closeSpd = (e.shieldUp ? e.speed * 0.78 : e.speed * 0.92) * mv;
+      const moved = moveBy(e, dirX * closeSpd, dirZ * closeSpd, dt);
+      playEnemyLocomotion(e, 'Running_A', moved);
+      return;
+    }
     if (e.shieldUp) {
-      // Shield wall holds formation: slow guarded advance to the standoff ring.
-      if (dist > e.standoffDist + 0.4) {
-        const moved = moveBy(e, dirX * 0.9 * mv, dirZ * 0.9 * mv, dt);
-        playEnemyLocomotion(e, 'Melee_Blocking', moved);
+      if (dist > e.standoffDist + 0.25) {
+        const moved = moveBy(e, dirX * 2.2 * mv, dirZ * 2.2 * mv, dt);
+        playEnemyLocomotion(e, 'Walking_A', moved);
       } else {
         playEnemyLocomotion(e, 'Melee_Blocking');
       }
@@ -1790,20 +1903,20 @@ export async function createEnemyManager({
         e.flankBias && !e.isRanged && rand() < 0.75
           ? 'flank'
           : STANDOFF_BEHAVIOURS[(e.behaviourIdx + e.slotIndex) % STANDOFF_BEHAVIOURS.length];
-      e.behaviourTimer = 1.2 + rand() * 1.4;
+      e.behaviourTimer = 1.0 + rand() * 1.1;
       if (e.behaviour === 'strafe' && rand() < 0.35) e.orbitSpeed = -e.orbitSpeed;
     }
     if (e.behaviour === 'taunt') {
       e.behaviour = 'strafe';
-      if (e.tauntCooldown <= 0 && !e.isBoss && dist > 2.5) {
+      if (e.tauntCooldown <= 0 && !e.isBoss && dist > 2.2) {
         e.tauntCooldown = 7.0;
-        startCast(e, 'Skeletons_Taunt', 0, null, 1.0, 'idle');
+        startCast(e, 'Skeletons_Taunt', 0, null, 1.35, 'idle');
         return;
       }
     }
     if (e.behaviour === 'backoff') {
-      if (dist < e.standoffDist + 1.5) {
-        const moved = moveBy(e, -dirX * 1.3 * mv, -dirZ * 1.3 * mv, dt);
+      if (dist < e.standoffDist + 0.8) {
+        const moved = moveBy(e, -dirX * 1.6 * mv, -dirZ * 1.6 * mv, dt);
         playEnemyLocomotion(e, 'Walking_Backwards', moved);
         return;
       }
@@ -1812,12 +1925,12 @@ export async function createEnemyManager({
     let sign = e.orbitSpeed >= 0 ? 1 : -1;
     if (e.behaviour === 'flank' && Number.isFinite(target.yaw)) {
       // Circle toward the hero's back.
-      const bx = target.x - Math.sin(target.yaw) * 2.0 - e.x;
-      const bz = target.z - Math.cos(target.yaw) * 2.0 - e.z;
+      const bx = target.x - Math.sin(target.yaw) * 1.6 - e.x;
+      const bz = target.z - Math.cos(target.yaw) * 1.6 - e.z;
       sign = -dirZ * bx + dirX * bz >= 0 ? 1 : -1;
     }
-    const radial = clamp((dist - e.standoffDist) * 1.5, -1.5, 1.5);
-    const tang = (e.behaviour === 'flank' ? 3.6 : 2.3) * mv;
+    const radial = clamp((dist - e.standoffDist) * 2.4, -2.8, 3.6);
+    const tang = (e.behaviour === 'flank' ? 4.2 : 2.9) * mv;
     const vx = dirX * radial * mv + -dirZ * sign * tang;
     const vz = dirZ * radial * mv + dirX * sign * tang;
     const moved = moveBy(e, vx, vz, dt);
@@ -2247,6 +2360,10 @@ export async function createEnemyManager({
 
       if (e.spawnAnimTimer > 0) e.spawnAnimTimer = Math.max(0, e.spawnAnimTimer - dt);
       if (e.attackAnimTimer > 0) e.attackAnimTimer = Math.max(0, e.attackAnimTimer - dt);
+      if (e.hitFlashTimer > 0) {
+        e.hitFlashTimer = Math.max(0, e.hitFlashTimer - dt);
+        setCharacterHitFlash(e.char, e.hitFlashTimer / 0.14, 0xfff1f2);
+      }
       if (e.markTimer > 0) {
         e.markTimer = Math.max(0, e.markTimer - dt);
         if (e.markTimer <= 0) e.mark = null;

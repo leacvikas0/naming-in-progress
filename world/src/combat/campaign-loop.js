@@ -354,9 +354,9 @@ export function createCampaignLoop({
   let heartResonance = 25;
   let elapsed = 0;
   let hudDirtyTimer = 0;
-  let wingmanCastTimer = 1.6;
+  let wingmanCastTimer = 0.45;
   let wingmanSpellIdx = 0;
-  let wingmanBoltTimer = 0.75;
+  let wingmanBoltTimer = 0.35;
   let wingmanBoltIdx = 0;
   let bothDownedTimer = 0;
   let lastHeroStates = null;
@@ -364,6 +364,10 @@ export function createCampaignLoop({
   let friendlyFireCallback = typeof onFriendlyFireHit === 'function' ? onFriendlyFireHit : null;
   function setOnFriendlyFireHit(fn) {
     friendlyFireCallback = typeof fn === 'function' ? fn : null;
+  }
+  let playerDamagedCallback = null;
+  function setOnPlayerDamaged(fn) {
+    playerDamagedCallback = typeof fn === 'function' ? fn : null;
   }
   const PARTNER_REVIVE_RADIUS = 2.8;
   const PARTNER_REVIVE_SECONDS = 2.5;
@@ -1133,12 +1137,14 @@ export function createCampaignLoop({
       h.burstHitTimer = 0.28;
     }
 
-    if (
+    const blockedByShield = Boolean(
       heroId === 'Knight' &&
-      combatHeroes.Knight.shieldBlocking && !enemy?.currentHit?.unblockable &&
-      !hitOptions?.alreadyReduced &&
-      isInKnightFrontArc(enemy)
-    ) {
+        combatHeroes.Knight.shieldBlocking &&
+        !enemy?.currentHit?.unblockable &&
+        !hitOptions?.alreadyReduced &&
+        isInKnightFrontArc(enemy)
+    );
+    if (blockedByShield) {
       effectiveDmg = Math.max(
         1,
         Math.round(effectiveDmg * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
@@ -1183,6 +1189,8 @@ export function createCampaignLoop({
       );
     } else if (hitOptions?.friendlyFire && rem > 0) {
       if (targetHeroState && typeof targetHeroState === 'object') {
+        targetHeroState.hitFlashTimer = 0.18;
+        targetHeroState.hitFlashBlocked = false;
         targetHeroState.actionState = 'hit_A';
         targetHeroState.actionTimer = Math.max(targetHeroState.actionTimer || 0, 0.48);
       }
@@ -1192,6 +1200,46 @@ export function createCampaignLoop({
         damageDealt: rem,
         source: hitOptions.source || 'friendly_fire',
         element: hitOptions.element || 'fire',
+      });
+    } else if (rem > 0 || absorbed > 0) {
+      if (targetHeroState && typeof targetHeroState === 'object') {
+        targetHeroState.hitFlashTimer = 0.18;
+        targetHeroState.hitFlashBlocked = blockedByShield || (rem === 0 && absorbed > 0);
+        if (enemy && typeof enemy.x === 'number' && typeof targetHeroState.x === 'number') {
+          let kbx = targetHeroState.x - enemy.x;
+          let kbz = targetHeroState.z - enemy.z;
+          const kbLen = Math.hypot(kbx, kbz) || 1;
+          kbx /= kbLen;
+          kbz /= kbLen;
+          const kbDist = blockedByShield ? 0.09 : 0.26;
+          targetHeroState.hitKnockbackX = kbx * kbDist;
+          targetHeroState.hitKnockbackZ = kbz * kbDist;
+        }
+        if (
+          targetHeroState.char?.play &&
+          !blockedByShield &&
+          rem > 0 &&
+          !targetHeroState.actionState &&
+          !targetHeroState.shieldBlocking &&
+          !targetHeroState.praying
+        ) {
+          targetHeroState.actionState = 'hit_A';
+          targetHeroState.actionTimer = 0.22;
+          targetHeroState.char.play('hit_A', {
+            loop: false,
+            fade: 0.04,
+            timeScale: 1.35,
+            force: true,
+          });
+        }
+      }
+      playerDamagedCallback?.(targetHeroState, {
+        heroId,
+        damageDealt: rem,
+        absorbed,
+        blockedByShield,
+        interceptedByKnight: Boolean(hitOptions?.interceptedByKnight),
+        source: enemy?.currentHit?.attackId || enemy?.archetype || 'enemy_attack',
       });
     }
     return {
@@ -2049,11 +2097,16 @@ export function createCampaignLoop({
       mageState.char.group.rotation.y = aimYaw;
     }
 
+    const canApplyRimeMark =
+      getUnlockedStage() >= 1 ||
+      (getStonesSolvedMask() & 1) !== 0 ||
+      (!getProgressionState && manualUnlockedStage === null);
+
     if (ascendedActive) {
       fireMageStaffVolleyVfx(mageState, targetPos, 2);
       fireMageStaffVolleyVfx(mageState, targetPos, 3);
     } else {
-      fireMageStaffVolleyVfx(mageState, targetPos, comboIndex);
+      fireMageStaffVolleyVfx(mageState, targetPos, canApplyRimeMark ? comboIndex : 0);
     }
 
     if (combatSfx) {
@@ -2066,10 +2119,6 @@ export function createCampaignLoop({
 
     let hits = [];
     if (enemyManager) {
-      const canApplyRimeMark =
-        getUnlockedStage() >= 1 ||
-        (getStonesSolvedMask() & 1) !== 0 ||
-        (!getProgressionState && manualUnlockedStage === null);
       if (ascendedActive || comboIndex === 3) {
         hits = enemyManager.applyAreaOrLineHit({
           origin: softTarget || targetPos,
@@ -3021,6 +3070,15 @@ export function createCampaignLoop({
     const mage = heroStates?.Mage;
     if (knight && mage) lastHeroStates = heroStates;
     if (camera) lastCamera = camera;
+
+    for (const hSt of [knight, mage]) {
+      if (hSt && !hSt.char && hSt.actionTimer > 0) {
+        hSt.actionTimer = Math.max(0, hSt.actionTimer - dt);
+        if (hSt.actionTimer <= 0) {
+          hSt.actionState = null;
+        }
+      }
+    }
 
     // 0. Advance Divine Verdict Sequence (4.80s 4-Beat Blessing/Resurrection OR 2.80s Smite)
     let blessingActivatedThisFrame = false;
@@ -4102,6 +4160,7 @@ export function createCampaignLoop({
     resetCampaign,
     setIndicatorsHiddenForShot,
     setOnFriendlyFireHit,
+    setOnPlayerDamaged,
     updateIndicatorsInstancedMeshes,
     update,
   };

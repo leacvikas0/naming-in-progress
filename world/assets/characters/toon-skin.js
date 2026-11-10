@@ -827,6 +827,40 @@ export function setCharacterVerdictShaderState(
 }
 
 /**
+ * Applies a brief emissive hit-flash across all cel-shaded toon materials on a
+ * character or enemy root (`weight` in `[0, 1]`).
+ */
+export function setCharacterHitFlash(
+  rootOrChar,
+  weight = 0.0,
+  flashColorHex = 0xff3b5c
+) {
+  const root = rootOrChar?.group || rootOrChar?.modelRoot || rootOrChar;
+  if (!root || typeof root.traverse !== 'function') return;
+
+  const w = THREE.MathUtils.clamp(Number(weight) || 0, 0, 1);
+  const applyFlash = (mat) => {
+    if (!mat || mat.userData?.isOutlineMaterial || !mat.emissive) return;
+    if (w > 0.001) {
+      mat.emissive.setHex(flashColorHex);
+      mat.emissiveIntensity = w * 1.15;
+    } else if (mat.emissiveIntensity !== 0) {
+      mat.emissive.setRGB(0, 0, 0);
+      mat.emissiveIntensity = 0;
+    }
+  };
+
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.material || obj.userData?.isOutline) return;
+    if (Array.isArray(obj.material)) {
+      obj.material.forEach(applyFlash);
+    } else {
+      applyFlash(obj.material);
+    }
+  });
+}
+
+/**
  * Upgrades all meshes inside a loaded character or weapon root to cel-shaded
  * `MeshToonMaterial` + skinned view-space inverted-hull outlines.
  */

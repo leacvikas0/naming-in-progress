@@ -1073,6 +1073,90 @@ const SCENARIOS = {
     await page.close();
     return errors;
   },
+
+  // 12. METHODOLOGY RULE 9: 3-Beat Close-Quarters Visceral Combat & "Honest Hitbox" Video Audit
+  async 'close-quarters-melee-audit'() {
+    const { page, errors } = await openWorldPage();
+    await page.evaluate(() => {
+      const w = window.__WORLD__;
+      w.setGameplayShot?.(null);
+      w.enemyManager.clearAllEnemies();
+      w.campaignLoop.resetCampaign();
+      const prog0 = w.coopClient.progression.setUnlocks({
+        communeDiscovered: false,
+        iceUnlocked: false,
+        fireUnlocked: false,
+        ultimateUnlocked: false,
+        stone1Solved: false,
+        stone2Solved: false,
+        stone3Solved: false,
+        stonesSolvedMask: 0,
+      });
+      w.coopSystem.setUnlockedStage(0);
+      w.campaignLoop.setUnlockedStage(0, 0);
+      w.sculptedHud?.setProgressionState(prog0);
+      w.campaignLoop.setOpenValleyMode(false);
+      if (w.coopSystem.player.activeHeroId !== 'Knight') {
+        w.coopSystem.swapActiveHero();
+      }
+      // Teleport to sunlit Plaza clearing and spawn 3 melee skeletons 5.2m..6.4m ahead
+      w.coopSystem.teleportLeaderAndPartner(0.0, 12.0, Math.PI);
+      const m = w.coopSystem.heroStates.Mage;
+      if (m) {
+        m.x = 6.5;
+        m.z = 16.5;
+        m.char.group.position.set(m.x, m.y, m.z);
+      }
+      w.enemyManager.spawnWave(
+        {
+          id: 'close_quarters_audit',
+          spawns: [
+            { archetype: 'warrior', x: 0.0, z: 6.4 },
+            { archetype: 'rogue', x: -1.6, z: 6.8 },
+            { archetype: 'orc_raider', x: 1.6, z: 6.8 },
+          ],
+        },
+        'act1_arena'
+      );
+      w.camState.mode = 'player';
+      w.camState.yaw = Math.PI;
+      w.camState.pitch = 0.22;
+      w.camState.dist = 6.2;
+    });
+    await stepFrames(page, 6);
+    await recordClip(page, 'close-quarters-melee-audit', 7.5, async (t, pg) => {
+      // Beat A & B (0.0s..2.3s): Knight stands still while enemies sprint in, step-lunge into ~1.2m blade contact,
+      // and land real unblocked hits (showing crimson -DMG pill, 3D crimson hit-flash, knockback + hit_A flinch, crimson screen vignette, HP bar shake).
+      // Beat B2 (2.3s..3.3s): Knight holds Shield Block [F] for blocked hit feedback (icy BLOCKED -DMG pill), then steps back to make an enemy whiff!
+      if (hitFrame(t, 2.3)) await keyAct(pg, 'f', true);
+      if (hitFrame(t, 3.15)) await keyAct(pg, 'f', false);
+      if (hitFrame(t, 3.2)) await keyAct(pg, 's', true);
+      if (hitFrame(t, 3.3)) await keyAct(pg, 'Shift', true);
+      if (hitFrame(t, 3.4)) await keyAct(pg, 'Shift', false);
+      if (hitFrame(t, 3.7)) await keyAct(pg, 's', false);
+
+      // Beat C (3.8s..7.4s): Knight steps in and unleashes basic combo1 -> combo2 -> combo3 -> combo4 slashes (zero spells),
+      // verifying floating damage numbers on every slash, 3D enemy hit-flash, directional knockback recoil, and snappy flinches!
+      if (hitFrame(t, 3.75)) await keyAct(pg, 'w', true);
+      if (hitFrame(t, 4.15)) await keyAct(pg, 'w', false);
+      for (const slashT of [4.1, 4.52, 4.95, 5.42, 5.95, 6.4, 6.85]) {
+        if (hitFrame(t, slashT)) {
+          await pg.evaluate(() => window.__WORLD__.coopSystem.triggerAction('attack'));
+        }
+      }
+      const diag = await pg.evaluate(() => {
+        const w = window.__WORLD__;
+        const k = w.coopSystem.heroStates.Knight;
+        const khp = w.campaignLoop.combatHeroes.Knight.hp;
+        const e0 = w.enemyManager.activeEnemies[0];
+        const d0 = e0 && k ? Math.hypot(e0.x - k.x, e0.z - k.z).toFixed(2) : '-';
+        return `K_hp=${khp} d0=${d0}m e_cnt=${w.enemyManager.activeEnemies.length}`;
+      });
+      return `MeleeAudit ${diag}`;
+    });
+    await page.close();
+    return errors;
+  },
 };
 
 const listToRun = specFile

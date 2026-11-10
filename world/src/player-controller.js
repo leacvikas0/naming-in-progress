@@ -3575,6 +3575,39 @@ export async function createCoopPlayerSystem({
       camera,
     });
 
+    for (const hSt of [leader, partner]) {
+      if (!hSt) continue;
+      if (hSt.hitKnockbackX || hSt.hitKnockbackZ) {
+        const kbx = hSt.hitKnockbackX || 0;
+        const kbz = hSt.hitKnockbackZ || 0;
+        hSt.hitKnockbackX = 0;
+        hSt.hitKnockbackZ = 0;
+        let nextKb = resolveCollisions(hSt.x + kbx, hSt.z + kbz, player.radius);
+        if (campaignLoop.currentActId === 'act3_shrine' || nextKb.z < -68.0) {
+          const shr = resolveShrineObstacles(
+            nextKb.x,
+            nextKb.z,
+            player.radius,
+            campaignLoop.currentActId === 'act3_shrine'
+          );
+          nextKb = { ...nextKb, x: shr.x, z: shr.z };
+        }
+        hSt.x = nextKb.x;
+        hSt.z = nextKb.z;
+        if (hSt.grounded) {
+          hSt.y = walkableHeightAt(hSt.x, hSt.z);
+        }
+      }
+      if ((hSt.hitFlashTimer || 0) > 0) {
+        hSt.hitFlashTimer = Math.max(0, hSt.hitFlashTimer - dt);
+        const flashHex = hSt.hitFlashBlocked ? 0x7dd3fc : 0xff2a4b;
+        ToonSkin.setCharacterHitFlash?.(hSt.char, hSt.hitFlashTimer / 0.18, flashHex);
+      } else if (hSt.hitFlashTimer === 0) {
+        hSt.hitFlashTimer = -1;
+        ToonSkin.setCharacterHitFlash?.(hSt.char, 0);
+      }
+    }
+
     applyTransform(leader);
     applyTransform(partner);
     leader.char.update(dt);

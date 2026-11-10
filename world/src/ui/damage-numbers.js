@@ -77,6 +77,28 @@ const DAMAGE_NUMBERS_CSS = `
     text-shadow: 0 1.5px 4px rgba(24, 14, 8, 0.92);
   }
 
+  .am-dmg-pop.el-player-hit {
+    font-size: 1.32rem;
+    color: #ffffff;
+    background: linear-gradient(180deg, #f43f5e 0%, #be123c 100%);
+    border: 2px solid #fecdd3;
+    box-shadow: 0 4px 16px rgba(225, 29, 72, 0.68);
+    text-shadow: 0 1.5px 3px rgba(28, 4, 12, 0.95);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .am-dmg-pop.el-player-blocked {
+    font-size: 1.15rem;
+    color: #f0f9ff;
+    background: linear-gradient(180deg, #0284c7 0%, #0f172a 100%);
+    border: 2px solid #7dd3fc;
+    box-shadow: 0 4px 14px rgba(14, 165, 233, 0.55);
+    text-shadow: 0 1.5px 3px rgba(8, 24, 38, 0.95);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
   .am-dmg-tag {
     font-size: 0.64rem;
     font-weight: 700;
@@ -92,6 +114,8 @@ const DAMAGE_NUMBERS_CSS = `
 
 export function normalizeDamageElement(rawElementOrSource = '') {
   const s = String(rawElementOrSource || '').toLowerCase();
+  if (s === 'player-hit' || s === 'player_hit') return 'player-hit';
+  if (s === 'player-blocked' || s === 'player_blocked') return 'player-blocked';
   if (
     s.includes('ice') ||
     s.includes('rime') ||
@@ -176,12 +200,14 @@ export function createDamageNumbersOverlay({
     return { x: sx, y: sy, visible: true };
   }
 
-  function renderItemContent(el, cleanLabel, numVal) {
+  function renderItemContent(el, cleanLabel, numVal, normEl = 'physical') {
     if (!el) return;
+    const dispVal =
+      normEl === 'player-hit' || normEl === 'player-blocked' ? `-${numVal}` : `${numVal}`;
     if (cleanLabel) {
-      el.innerHTML = `<span class="am-dmg-tag">${cleanLabel}</span><span class="am-dmg-val">${numVal}</span>`;
+      el.innerHTML = `<span class="am-dmg-tag">${cleanLabel}</span><span class="am-dmg-val">${dispVal}</span>`;
     } else {
-      el.innerHTML = `<span class="am-dmg-val">${numVal}</span>`;
+      el.innerHTML = `<span class="am-dmg-val">${dispVal}</span>`;
     }
   }
 
@@ -222,7 +248,7 @@ export function createDamageNumbersOverlay({
           existing.worldPos.y = existing.worldPos.y * 0.65 + (Number(worldPos.y) || 0) * 0.35;
           existing.worldPos.z = existing.worldPos.z * 0.65 + (Number(worldPos.z) || 0) * 0.35;
         }
-        renderItemContent(existing.el, existing.label, existing.amount);
+        renderItemContent(existing.el, existing.label, existing.amount, existing.element);
         updateItemDom(existing, camera);
         return existing;
       }
@@ -238,7 +264,7 @@ export function createDamageNumbersOverlay({
       el.className = `am-dmg-pop el-${normEl}${crit ? ' is-crit' : ''}`;
       el.dataset.damageElement = normEl;
       el.dataset.damageCrit = crit ? 'true' : 'false';
-      renderItemContent(el, cleanLabel, numVal);
+      renderItemContent(el, cleanLabel, numVal, normEl);
       root.appendChild(el);
     }
 

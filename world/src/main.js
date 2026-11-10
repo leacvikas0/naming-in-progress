@@ -1619,26 +1619,27 @@ function emitFloatingDamageForEnemyHit(enemy, result, hitSpec = {}) {
     return;
   }
 
-  // 3. Peak Finishers & Signature Skills (`Shatterlance`, `Combo4`, `Frost Lance`, `Cinder Fall`, `Intercept`):
-  //    Consolidate multi-enemy cleaves into ONE clean number per skill cast; suppress routine tap combos!
+  // 3. All Melee Combos, Staff Bolts, Peak Finishers & Signature Skills:
+  //    Pop crisp damage numbers on every hit so enemies feel visceral and responsive!
   const isPeakMoment =
     PEAK_DAMAGE_SOURCES.has(src) ||
     Boolean(result.killed && (enemy.isBoss || enemy.isElite));
-  if (!isPeakMoment) return;
 
   const element = resolveHitDamageElement(hitSpec, result);
   damageNumbers.spawnDamageNumber({
     amount: dmg,
     element,
     source: src,
-    isCrit: false,
-    mergeKey: `peak_${src}`,
-    duration: 0.85,
+    isCrit: isPeakMoment,
+    mergeKey: isPeakMoment
+      ? `peak_${src}_${enemy.instanceId || enemy.slotIndex || 0}`
+      : null,
+    duration: isPeakMoment ? 0.85 : 0.72,
     worldPos: {
       x: enemy.x,
       y: enemy.y,
       z: enemy.z,
-      heightOffset: enemy.isBoss ? 2.15 : 1.75,
+      heightOffset: enemy.isBoss ? 2.15 : 1.72,
     },
   });
 }
@@ -1694,6 +1695,42 @@ coopSystem?.campaignLoop?.setOnFriendlyFireHit?.((targetHeroState, info = {}) =>
       },
     });
   }
+  sculptedHud?.triggerDamagePulse?.({
+    role: info.heroId || 'Knight',
+    damage: info.damageDealt || 15,
+    blocked: false,
+  });
+  if (coopSystem?.campaignLoop && coopSystem?.heroStates) {
+    updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
+  }
+});
+
+coopSystem?.campaignLoop?.setOnPlayerDamaged?.((targetHeroState, info = {}) => {
+  const dmg = Number(info.damageDealt || 0);
+  const absorbed = Number(info.absorbed || 0);
+  const blocked = Boolean(info.blockedByShield || (dmg === 0 && absorbed > 0));
+  if (damageNumbers && targetHeroState && (dmg > 0 || absorbed > 0)) {
+    damageNumbers.spawnDamageNumber({
+      amount: dmg > 0 ? dmg : absorbed,
+      element: blocked ? 'player-blocked' : 'player-hit',
+      source: info.source || 'enemy_attack',
+      isCrit: false,
+      label: blocked ? 'BLOCKED' : '',
+      mergeKey: null,
+      duration: blocked ? 0.78 : 0.92,
+      worldPos: {
+        x: targetHeroState.x ?? 0,
+        y: targetHeroState.y ?? 0,
+        z: targetHeroState.z ?? 0,
+        heightOffset: 1.92,
+      },
+    });
+  }
+  sculptedHud?.triggerDamagePulse?.({
+    role: info.heroId || 'Knight',
+    damage: dmg > 0 ? dmg : absorbed,
+    blocked,
+  });
   if (coopSystem?.campaignLoop && coopSystem?.heroStates) {
     updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
   }
