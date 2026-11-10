@@ -665,6 +665,52 @@ export function createCampaignLoop({
     return true;
   }
 
+  function getNearbyLivingEnemies(centerPos, radius = 18.0) {
+    if (!enemyManager || !Array.isArray(enemyManager.activeEnemies)) return [];
+    const hasCoords =
+      centerPos && Number.isFinite(Number(centerPos.x)) && Number.isFinite(Number(centerPos.z));
+    return enemyManager.activeEnemies.filter((e) => {
+      if (!e || e.dead || e.active === false || (e.hp !== undefined && e.hp <= 0)) return false;
+      if (!hasCoords) return true;
+      return Math.hypot(e.x - centerPos.x, e.z - centerPos.z) <= radius;
+    });
+  }
+
+  function isStoneContested(stoneOrPos, heroStates = null, radius = 20.0) {
+    if (!enemyManager || !Array.isArray(enemyManager.activeEnemies)) return false;
+    const sx = stoneOrPos?.position?.x ?? stoneOrPos?.x;
+    const sz = stoneOrPos?.position?.z ?? stoneOrPos?.z;
+    if (Number.isFinite(sx) && Number.isFinite(sz)) {
+      if (getNearbyLivingEnemies({ x: sx, z: sz }, radius).length > 0) return true;
+    }
+    const k = heroStates?.Knight || heroStates?.knight || lastHeroStates?.Knight;
+    const m = heroStates?.Mage || heroStates?.mage || lastHeroStates?.Mage;
+    if (k && Number.isFinite(k.x) && Number.isFinite(k.z)) {
+      if (getNearbyLivingEnemies(k, 16.0).length > 0) return true;
+    }
+    if (m && Number.isFinite(m.x) && Number.isFinite(m.z)) {
+      if (getNearbyLivingEnemies(m, 16.0).length > 0) return true;
+    }
+    const rawId = String(stoneOrPos?.siteId || stoneOrPos?.id || '').toLowerCase();
+    const shKey =
+      rawId.includes('grove') || rawId.includes('site2')
+        ? 'site2_platform'
+        : rawId.includes('pier') || rawId.includes('wall') || rawId.includes('site3')
+          ? 'site3_wall'
+          : rawId.includes('well') || rawId.includes('plaza') || rawId.includes('site1')
+            ? 'site1_well'
+            : null;
+    if (
+      shKey &&
+      activeStrongholdIds.has(shKey) &&
+      (enemyManager.activeEnemies.some((e) => e && !e.dead && e.active !== false) ||
+        (Array.isArray(enemyManager.spawnQueue) && enemyManager.spawnQueue.length > 0))
+    ) {
+      return true;
+    }
+    return false;
+  }
+
   function isMiracleReady(heroStates = null) {
     if (!isStage3Unlocked()) return false;
     if (modeBMiracleCd > 0.05) return false;
@@ -701,13 +747,20 @@ export function createCampaignLoop({
     const anyLowHp =
       kHpRatio < COMMUNE_COMBAT_HP_THRESHOLD || mHpRatio < COMMUNE_COMBAT_HP_THRESHOLD;
 
-    const inCombat = Boolean(
-      enemyManager &&
-        Array.isArray(enemyManager.activeEnemies) &&
-        enemyManager.activeEnemies.some(
-          (e) => e && !e.dead && (e.hp === undefined || e.hp > 0) && e.active !== false
-        )
-    );
+    const hasHeroCoords =
+      openValleyMode &&
+      ((k && Number.isFinite(k.x) && Number.isFinite(k.z)) ||
+        (m && Number.isFinite(m.x) && Number.isFinite(m.z)));
+    const inCombat = hasHeroCoords
+      ? (k ? getNearbyLivingEnemies(k, 18.0).length > 0 : false) ||
+        (m ? getNearbyLivingEnemies(m, 18.0).length > 0 : false)
+      : Boolean(
+          enemyManager &&
+            Array.isArray(enemyManager.activeEnemies) &&
+            enemyManager.activeEnemies.some(
+              (e) => e && !e.dead && (e.hp === undefined || e.hp > 0) && e.active !== false
+            )
+        );
 
     if (bothDowned) {
       return {
@@ -4030,6 +4083,8 @@ export function createCampaignLoop({
     handlePlayerHit,
     applyCommuneVerdict,
     isMiracleReady,
+    getNearbyLivingEnemies,
+    isStoneContested,
     canCommuneTogether,
     canStartDivinePrayer,
     getPartnerDistance,

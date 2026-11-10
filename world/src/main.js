@@ -1718,16 +1718,25 @@ communeClient = createCommuneClient({
     const speakerHero = speakerRole === 'Knight' ? snap.knight : snap.mage;
     const partnerHero = partnerRole === 'Knight' ? snap.knight : snap.mage;
     const nearStone = coopSystem.getNearestInscriptionStone?.(6.2) || null;
+    const stoneContested = nearStone
+      ? Boolean(
+          coopSystem.campaignLoop?.isStoneContested?.(nearStone, coopSystem.heroStates)
+        )
+      : false;
+    const nearbyLivingCount =
+      coopSystem.campaignLoop?.getNearbyLivingEnemies?.(player, 18.0)?.length ??
+      (coopSystem.enemyManager?.activeEnemies?.length || 0);
     const progState = coopSystem.coopClient.getProgressionState();
     const resolvedCommuneMode =
       snap.communeMode === 'divine_miracle' || (snap.miracleReady && !nearStone)
         ? 'divine_miracle'
         : 'normal';
+    const effectiveNearStoneId = !stoneContested && nearStone?.id ? nearStone.id : null;
     return {
       room: coopSystem.coopClient.getRoomCode(),
       speakerRole,
       partnerRole,
-      nearStoneId: nearStone?.id || null,
+      nearStoneId: effectiveNearStoneId,
       communeMode: resolvedCommuneMode,
       miracleReady: Boolean(snap.miracleReady),
       stonesSolvedMask: snap.stonesSolvedMask ?? progState?.stonesSolvedMask ?? 0,
@@ -1739,9 +1748,11 @@ communeClient = createCommuneClient({
         partnerHp: partnerHero?.hp ?? 100,
         partnerMaxHp: partnerHero?.maxHp ?? 100,
         partnerDowned: Boolean(partnerHero?.downed),
-        inCombat: (coopSystem.enemyManager?.activeEnemies?.length || 0) > 0,
-        nearbyEnemies: coopSystem.enemyManager?.activeEnemies?.length || 0,
-        nearStoneId: nearStone?.id || null,
+        inCombat: nearbyLivingCount > 0,
+        nearbyEnemies: nearbyLivingCount,
+        nearStoneId: effectiveNearStoneId,
+        nearestStoneSiteId: effectiveNearStoneId,
+        stoneContested,
         communeMode: resolvedCommuneMode,
         miracleReady: Boolean(snap.miracleReady),
         modeAHealCd: snap.modeAHealCd || 0,
@@ -3395,6 +3406,11 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (e.key === 'F4') {
+    const isDevMode =
+      debugDevPill?.classList.contains('visible') ||
+      new URLSearchParams(location.search).has('debug') ||
+      new URLSearchParams(location.search).has('nolobby');
+    if (!isDevMode) return;
     // DEV_SOLO_TEST_REMOVE_FOR_PROD: Cycle unlocked stage 0 -> 1 -> 2 -> 3 -> 0
     e.preventDefault();
     const curProg = coopSystem.coopClient.getProgressionState();
@@ -3972,6 +3988,18 @@ export function enterStoneInspection(stone = null) {
     stone || stoneGazeState.nearbyStone || coopSystem.getNearestInscriptionStone(6.0);
   if (!targetStone) return null;
 
+  if (coopSystem?.campaignLoop?.isStoneContested?.(targetStone, coopSystem?.heroStates)) {
+    showCombatBanner(
+      {
+        title: 'SACRED STONE SEALED BY GUARDIANS',
+        subtitle: 'Defeat all nearby enemies before reading the Sacred Inscription!',
+        kind: 'warning',
+      },
+      3200
+    );
+    return null;
+  }
+
   try {
     if (typeof document !== 'undefined' && document.pointerLockElement) {
       document.exitPointerLock?.();
@@ -4067,32 +4095,30 @@ function updateSacredStoneGaze(dt) {
   const nearStone = coopSystem.getNearestInscriptionStone(5.5);
   stoneGazeState.nearbyStone = nearStone;
 
-  if (nearStone && camState.mode === 'player') {
+  const stoneContested = nearStone
+    ? Boolean(coopSystem?.campaignLoop?.isStoneContested?.(nearStone, coopSystem?.heroStates))
+    : Boolean((coopSystem?.campaignLoop?.getNearbyLivingEnemies?.(player, 16.0)?.length || 0) > 0);
+  stoneGazeState.inActiveMeleeDanger = stoneContested;
+
+  // Only reveal [R] Commune button when the stone is uncontested (never while guardians are still alive!)
+  if (nearStone && !stoneContested && camState.mode === 'player') {
     if (!coopSystem.coopClient.getProgressionState()?.communeDiscovered) {
       const updated = coopSystem.coopClient.progression.setUnlocks({ communeDiscovered: true });
       sculptedHud?.setProgressionState(updated);
     }
   }
 
-  const activeEnemies = coopSystem?.enemyManager?.activeEnemies || [];
-  const inActiveMeleeDanger = activeEnemies.some((e) => {
-    if (!e || e.dead || !e.active || (e.hp !== undefined && e.hp <= 0)) return false;
-    const d = Math.hypot(e.x - player.x, e.z - player.z);
-    return d <= 8.0 && (e.aiState === 'windup' || e.attackAnimTimer > 0);
-  });
-  stoneGazeState.inActiveMeleeDanger = inActiveMeleeDanger;
-
-  if (stoneGazeState.inspectActive && inActiveMeleeDanger) {
+  if (stoneGazeState.inspectActive && stoneContested) {
     exitStoneInspection();
   }
 
-  // Position the world-projected "Read Carved Stone" button right near the stone when in range
+  // Position the world-projected "Read Carved Stone" button right near the stone ONLY when no enemies contest it!
   const showReadBtn = Boolean(
     camState.mode === 'player' &&
       nearStone &&
+      !stoneContested &&
       !stoneGazeState.inspectActive &&
       stoneGazeState.inspectBlend <= 0.02 &&
-      !inActiveMeleeDanger &&
       !isUiOverlayBlockingInput() &&
       !coopSystem?.campaignLoop?.isControlLocked?.() &&
       !coopSystem?.campaignLoop?.verdictSequence?.active

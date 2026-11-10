@@ -712,22 +712,37 @@ export function evaluatePrayerDeterministic({
   // --------------------------------------------------------------------------
   const matchesStone2 = matchesAnyKeyword(cleanTranscript, STONE2_SPECIFIC_KEYWORDS);
   const matchesStone3 = matchesAnyKeyword(cleanTranscript, STONE3_SPECIFIC_KEYWORDS);
+  const hasExplicitProximityContext = Boolean(
+    gameState &&
+      ('nearestStoneSiteId' in gameState ||
+        'nearStoneId' in gameState ||
+        'stoneId' in gameState ||
+        'siteId' in gameState)
+  );
+  const stoneContested = Boolean(gameState?.stoneContested);
 
   let newlySolvedStoneId = null;
   let newlySolvedStoneNumber = null;
 
-  if (nearestStoneSiteId === 'site3_wall' && !stone3Solved && matchesStone3) {
-    newlySolvedStoneId = 'site3_wall';
-    newlySolvedStoneNumber = 3;
-  } else if (nearestStoneSiteId === 'site2_platform' && !stone2Solved && matchesStone2) {
-    newlySolvedStoneId = 'site2_platform';
-    newlySolvedStoneNumber = 2;
-  } else if (!stone2Solved && matchesStone2 && (!matchesStone3 || nearestStoneSiteId !== 'site3_wall')) {
-    newlySolvedStoneId = 'site2_platform';
-    newlySolvedStoneNumber = 2;
-  } else if (!stone3Solved && matchesStone3) {
-    newlySolvedStoneId = 'site3_wall';
-    newlySolvedStoneNumber = 3;
+  if (!stoneContested) {
+    if (nearestStoneSiteId === 'site3_wall' && !stone3Solved && matchesStone3) {
+      newlySolvedStoneId = 'site3_wall';
+      newlySolvedStoneNumber = 3;
+    } else if (nearestStoneSiteId === 'site2_platform' && !stone2Solved && matchesStone2) {
+      newlySolvedStoneId = 'site2_platform';
+      newlySolvedStoneNumber = 2;
+    } else if (
+      !hasExplicitProximityContext &&
+      !stone2Solved &&
+      matchesStone2 &&
+      (!matchesStone3 || nearestStoneSiteId !== 'site3_wall')
+    ) {
+      newlySolvedStoneId = 'site2_platform';
+      newlySolvedStoneNumber = 2;
+    } else if (!hasExplicitProximityContext && !stone3Solved && matchesStone3) {
+      newlySolvedStoneId = 'site3_wall';
+      newlySolvedStoneNumber = 3;
+    }
   }
 
   if (newlySolvedStoneNumber === 2 || newlySolvedStoneNumber === 3) {

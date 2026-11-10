@@ -1420,7 +1420,13 @@ export function createSculptedHud({
             Swap Hero
           </button>
           <!-- DEV_SOLO_TEST_REMOVE_FOR_PROD -->
-          <button type="button" class="sh-choice-pill" id="sculpted-pause-dev-stage-btn" title="Unlock next power stage for solo testing">
+          <button
+            type="button"
+            class="sh-choice-pill"
+            id="sculpted-pause-dev-stage-btn"
+            style="${typeof window !== 'undefined' && (new URLSearchParams(window.location?.search || '').has('debug') || new URLSearchParams(window.location?.search || '').has('nolobby')) ? '' : 'display:none;'}"
+            title="Unlock next power stage for solo testing"
+          >
             Dev: Unlock Next Power
           </button>
           <button type="button" class="sh-modal-close-btn" id="sculpted-pause-resume-btn">

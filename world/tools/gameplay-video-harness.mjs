@@ -712,7 +712,9 @@ const SCENARIOS = {
       // Beat 1 (t=0.1s..1.1s): Walk up to Village Well (0,0) while 6-enemy Well Stronghold spawns around Plaza
       if (hitFrame(t, 0.1)) await keyAct(pg, 'w', true);
       if (hitFrame(t, 1.1)) await keyAct(pg, 'w', false);
-      // Beat 2 (t=1.2s..2.5s): Fight Well defenders right beside the Well
+      // Beat 2 (t=1.2s..2.5s): Fight Well defenders right beside the Well & try pressing [G] mid-fight (must be blocked!)
+      if (hitFrame(t, 1.4)) await keyAct(pg, 'g', true);
+      if (hitFrame(t, 1.5)) await keyAct(pg, 'g', false);
       for (const tapT of [1.2, 1.65, 2.1]) {
         if (hitFrame(t, tapT)) {
           await pg.evaluate(() => window.__WORLD__.coopSystem.triggerAction('attack'));
@@ -752,7 +754,10 @@ const SCENARIOS = {
 
       const info = await pg.evaluate(() => {
         const w = window.__WORLD__;
-        return `stg=${w.campaignLoop.getUnlockedStage()} insp=${w.stoneGazeState.inspectActive ? 1 : 0} en=${w.enemyManager.activeEnemies.length}`;
+        const gVis = document.getElementById('stone-world-read-btn')?.classList.contains('is-visible')
+          ? 1
+          : 0;
+        return `stg=${w.campaignLoop.getUnlockedStage()} gBtn=${gVis} insp=${w.stoneGazeState.inspectActive ? 1 : 0} en=${w.enemyManager.activeEnemies.length}`;
       });
       return `Well-Stronghold ${info}`;
     });

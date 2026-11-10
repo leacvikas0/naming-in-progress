@@ -2043,9 +2043,10 @@ export async function createCoopPlayerSystem({
     const gate = campaignLoop.canCommuneTogether(heroStates);
     if (!force && !gate.allowed) {
       if (gate.reason === 'too_far') {
+        const maxD = Number(gate.maxDist || 6.0).toFixed(1);
         onBanner?.({
-          title: 'STAND WITHIN 4.0m TO PRAY',
-          subtitle: `Move closer to your beloved (${gate.distance.toFixed(1)}m / 4.0m max) to open the Court of Dark Flowers.`,
+          title: `STAND WITHIN ${maxD}m TO PRAY`,
+          subtitle: `Move closer to your beloved (${gate.distance.toFixed(1)}m / ${maxD}m max) to open the Court of Dark Flowers.`,
           kind: 'warning',
         });
       } else if (gate.reason === 'combat_hp_too_high') {
@@ -2401,12 +2402,20 @@ export async function createCoopPlayerSystem({
   // Stone-progression gate shared by desktop keys and touch. Defaults to fully
   // unlocked so offline/dev sessions without room progression stay playable.
   let unlockedStage = 3;
+  let manualStageSet = false;
   const STAGE_FOR_ABILITY = { skillE: 1, spell: 1, tabToggle: 2, ultimateQ: 3 };
   function setUnlockedStage(stage) {
+    manualStageSet = true;
     unlockedStage = Math.max(0, Math.min(3, Math.floor(Number(stage) || 0)));
   }
   function isAbilityUnlocked(kind) {
-    return unlockedStage >= (STAGE_FOR_ABILITY[kind] ?? 0);
+    const req = STAGE_FOR_ABILITY[kind] ?? 0;
+    const effStage = manualStageSet
+      ? unlockedStage
+      : typeof campaignLoop?.getUnlockedStage === 'function'
+        ? Number(campaignLoop.getUnlockedStage())
+        : unlockedStage;
+    return effStage >= req;
   }
 
   function triggerSpell(slotOrId, options = {}) {
@@ -2989,13 +2998,22 @@ export async function createCoopPlayerSystem({
 
   function swapActiveHero() {
     if (isPlayerControlLocked()) return activeHeroId;
+    const nextHeroId = activeHeroId === 'Knight' ? 'Mage' : 'Knight';
+    if (campaignLoop.combatHeroes[nextHeroId]?.downed) {
+      onBanner?.({
+        title: `${nextHeroId.toUpperCase()} IS DOWNED`,
+        subtitle: 'Stand within 2.8m for 2.5s to revive your fallen partner!',
+        kind: 'warning',
+      });
+      return activeHeroId;
+    }
     const prevLeader = heroStates[activeHeroId];
     prevLeader.praying = false;
     if (prevLeader.id === 'Knight' && prevLeader.shieldBlocking) {
       actionAim.releaseHeavy('Knight');
     }
     actionAim.cancelSkillAim();
-    activeHeroId = activeHeroId === 'Knight' ? 'Mage' : 'Knight';
+    activeHeroId = nextHeroId;
     partnerHeroId = activeHeroId === 'Knight' ? 'Mage' : 'Knight';
     syncSharedPlayerFromLeader();
     coopClient.swapRoles();
@@ -3399,14 +3417,15 @@ export async function createCoopPlayerSystem({
 
     const isPeerLinked = Boolean(coopClient.getState().peerConnected && remotePartnerTarget.active);
     const blessingActive = Boolean(campaignLoop.isDivineBlessingActive?.());
+    const leaderDowned = Boolean(campaignLoop.combatHeroes[leader.id]?.downed);
     if (isPeerLinked) {
-      if (!controlLocked) {
+      if (!isPlayerControlLocked()) {
         partner.x += (remotePartnerTarget.x - partner.x) * Math.min(1, 12 * dt);
         partner.z += (remotePartnerTarget.z - partner.z) * Math.min(1, 12 * dt);
         partner.y = walkableHeightAt(partner.x, partner.z);
         partner.yaw += shortestAngleDiff(remotePartnerTarget.yaw, partner.yaw) * Math.min(1, 12 * dt);
       }
-    } else if (!controlLocked && !campaignLoop.combatHeroes[partner.id]?.downed) {
+    } else if (!isPlayerControlLocked() && !campaignLoop.combatHeroes[partner.id]?.downed) {
       const catActive = Boolean(
         partner.id === 'Knight' &&
           campaignLoop.combatHeroes.Mage?.stormCataclysmActive &&
@@ -3423,14 +3442,21 @@ export async function createCoopPlayerSystem({
       );
       if (partner.wingAnchorYaw === undefined || partner.wingAnchorYaw === null) {
         partner.wingAnchorYaw = leader.yaw;
-      } else if (catActive || blessingActive || (!leaderInCombatCombo && moveMag > 0.25)) {
+      } else if (catActive || blessingActive || leaderDowned || (!leaderInCombatCombo && moveMag > 0.25)) {
         // Only rotate the wingman's anchor angle when the leader is genuinely travelling (never during melee swings or turns-in-place!)
         partner.wingAnchorYaw +=
           shortestAngleDiff(leader.yaw, partner.wingAnchorYaw) * Math.min(1, 6 * dt);
       }
-      const effectiveRefYaw = catActive || blessingActive ? leader.yaw : partner.wingAnchorYaw;
+      const effectiveRefYaw =
+        catActive || blessingActive || leaderDowned ? leader.yaw : partner.wingAnchorYaw;
       const wingOffsetAngle = catActive ? effectiveRefYaw - 1.32 : effectiveRefYaw - 2.1;
-      const wingOffsetDist = catActive ? 9.15 : blessingActive ? 1.45 : 2.15;
+      const wingOffsetDist = catActive
+        ? 9.15
+        : leaderDowned
+          ? 1.15
+          : blessingActive
+            ? 1.45
+            : 2.15;
       const refX = catActive ? catCenter.x : leader.x;
       const refZ = catActive ? catCenter.z : leader.z;
       const targetWingX = refX + Math.sin(wingOffsetAngle) * wingOffsetDist;
@@ -3440,7 +3466,7 @@ export async function createCoopPlayerSystem({
       const distW = Math.hypot(dxW, dzW);
       const heroDist = Math.hypot(leader.x - partner.x, leader.z - partner.z);
 
-      if (catActive && partner.actionState && distW > 1.2) {
+      if ((catActive || leaderDowned) && partner.actionState && distW > 1.2) {
         partner.actionState = null;
         partner.actionTimer = 0;
       }
@@ -3458,22 +3484,27 @@ export async function createCoopPlayerSystem({
         // Hysteresis deadband: never start or continue micro-following while the leader is attacking nearby!
         const startFollowDist = catActive
           ? 1.15
-          : blessingActive
-            ? 0.95
-            : leaderInCombatCombo
-              ? 3.4
-              : 1.75;
-        const stopFollowDist = catActive ? 0.45 : blessingActive ? 0.28 : 0.42;
+          : leaderDowned
+            ? 0.55
+            : blessingActive
+              ? 0.95
+              : leaderInCombatCombo
+                ? 3.4
+                : 1.75;
+        const stopFollowDist = catActive ? 0.45 : leaderDowned ? 0.25 : blessingActive ? 0.28 : 0.42;
 
         if (!partner.wingmanMoving) {
           const farFromLeader =
-            catActive || blessingActive || heroDist > (leaderInCombatCombo ? 3.6 : 2.65);
+            catActive ||
+            leaderDowned ||
+            blessingActive ||
+            heroDist > (leaderInCombatCombo ? 3.6 : 2.65);
           if (distW > startFollowDist && farFromLeader) {
             partner.wingmanMoving = true;
           }
         } else if (
           distW <= stopFollowDist + 0.03 ||
-          (!catActive && !blessingActive && leaderInCombatCombo && heroDist <= 3.2)
+          (!catActive && !leaderDowned && !blessingActive && leaderInCombatCombo && heroDist <= 3.2)
         ) {
           partner.wingmanMoving = false;
           partner.wingmanLoco = 'idle';
