@@ -726,7 +726,10 @@ function updateCoopPill(roomState) {
     const effStage =
       devStageOverride !== null
         ? devStageOverride
-        : Number(roomState.progression.unlockedStage || 0);
+        : Math.max(
+            Number(roomState.progression.unlockedStage || 0),
+            Number(coopSystem?.campaignLoop?.getUnlockedStage?.() || 0)
+          );
     sculptedHud.setProgressionState({
       communeDiscovered: Boolean(roomState.progression.communeDiscovered || effStage >= 1),
       iceUnlocked: Boolean(roomState.progression.iceUnlocked || effStage >= 1),
@@ -735,17 +738,26 @@ function updateCoopPill(roomState) {
       unlockedStage: effStage,
       stonesSolved: Math.max(Number(roomState.progression.stonesSolved || 0), effStage),
       stonesSolvedMask: roomState.progression.stonesSolvedMask,
-      stone1Solved: roomState.progression.stone1Solved,
-      stone2Solved: roomState.progression.stone2Solved,
-      stone3Solved: roomState.progression.stone3Solved,
-      activeElement: roomState.progression.activeElement,
+      stone1Solved: roomState.progression.stone1Solved || effStage >= 1,
+      stone2Solved: roomState.progression.stone2Solved || effStage >= 2,
+      stone3Solved: roomState.progression.stone3Solved || effStage >= 3,
+      activeElement:
+        coopSystem?.heroStates?.[coopSystem?.player?.activeHeroId]?.selectedElement ||
+        roomState.progression.activeElement,
     });
   }
   if (roomState.progression) {
+    const effStage =
+      devStageOverride !== null
+        ? devStageOverride
+        : Math.max(
+            Number(roomState.progression.unlockedStage || 0),
+            Number(coopSystem?.campaignLoop?.getUnlockedStage?.() || 0)
+          );
     // May run during createCoopPlayerSystem (coopSystem still in TDZ); the
     // post-construction updateCoopPill call below re-applies it.
     try {
-      coopSystem.setUnlockedStage(Number(roomState.progression.unlockedStage || 0));
+      coopSystem.setUnlockedStage(effStage);
     } catch {
       /* not constructed yet */
     }
@@ -2108,6 +2120,7 @@ sculptedHud = createSculptedHud({
       stone3Solved: nextStage >= 3,
       stonesSolvedMask: mask,
     });
+    coopSystem.setUnlockedStage?.(nextStage);
     coopSystem.campaignLoop?.setUnlockedStage?.(nextStage, mask);
     sculptedHud?.setProgressionState(updated);
     updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
@@ -2129,23 +2142,45 @@ sculptedHud = createSculptedHud({
 });
 
 if (sculptedHud) {
+  const syncHeroElementState = (el) => {
+    if (el !== 'ice' && el !== 'fire') return;
+    const spell = el === 'fire' ? 'cinder_fall' : 'frost_lance';
+    if (coopSystem?.heroStates?.Knight) coopSystem.heroStates.Knight.selectedElement = el;
+    if (coopSystem?.heroStates?.Mage) {
+      coopSystem.heroStates.Mage.selectedElement = el;
+      coopSystem.heroStates.Mage.selectedSpell = spell;
+    }
+    if (coopSystem?.actionAim?.heroes?.Knight) {
+      coopSystem.actionAim.heroes.Knight.selectedElement = el;
+    }
+    if (coopSystem?.actionAim?.heroes?.Mage) {
+      coopSystem.actionAim.heroes.Mage.selectedElement = el;
+      coopSystem.actionAim.heroes.Mage.selectedSpell = spell;
+    }
+    if (coopSystem?.campaignLoop?.combatHeroes?.Knight) {
+      coopSystem.campaignLoop.combatHeroes.Knight.selectedElement = el;
+    }
+    if (coopSystem?.campaignLoop?.combatHeroes?.Mage) {
+      coopSystem.campaignLoop.combatHeroes.Mage.selectedElement = el;
+      coopSystem.campaignLoop.combatHeroes.Mage.selectedSpell = spell;
+    }
+    if (coopSystem?.coopClient?.progression?.state) {
+      coopSystem.coopClient.progression.state.activeElement = el;
+    }
+  };
   const origSetElement = sculptedHud.setElement;
   sculptedHud.setElement = (el) => {
-    if (el === 'ice' || el === 'fire') {
-      if (coopSystem?.heroStates?.Knight) coopSystem.heroStates.Knight.selectedElement = el;
-      if (coopSystem?.heroStates?.Mage) coopSystem.heroStates.Mage.selectedElement = el;
-    }
+    syncHeroElementState(el);
     return origSetElement(el);
   };
   const origSetProgressionState = sculptedHud.setProgressionState;
   sculptedHud.setProgressionState = (patch = {}) => {
+    if (typeof patch?.unlockedStage === 'number') {
+      coopSystem?.setUnlockedStage?.(patch.unlockedStage);
+      coopSystem?.campaignLoop?.setUnlockedStage?.(patch.unlockedStage, patch.stonesSolvedMask);
+    }
     if (patch?.activeElement === 'ice' || patch?.activeElement === 'fire') {
-      if (coopSystem?.heroStates?.Knight) {
-        coopSystem.heroStates.Knight.selectedElement = patch.activeElement;
-      }
-      if (coopSystem?.heroStates?.Mage) {
-        coopSystem.heroStates.Mage.selectedElement = patch.activeElement;
-      }
+      syncHeroElementState(patch.activeElement);
     }
     return origSetProgressionState(patch);
   };
@@ -3346,6 +3381,7 @@ window.addEventListener('keydown', (e) => {
       stone3Solved: nextStage >= 3,
       stonesSolvedMask: mask,
     });
+    coopSystem.setUnlockedStage?.(nextStage);
     coopSystem.campaignLoop?.setUnlockedStage?.(nextStage, mask);
     sculptedHud?.setProgressionState(updated);
     updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
@@ -3386,11 +3422,13 @@ window.addEventListener('keydown', (e) => {
 
   const prog = coopSystem.coopClient.getProgressionState() || {};
   const hudState = sculptedHud?.getState?.() || {};
+  const loopStage = Number(coopSystem?.campaignLoop?.getUnlockedStage?.() || 0);
   const communeReady = Boolean(
     prog.communeDiscovered ||
       prog.unlockedStage >= 1 ||
       hudState.communeDiscovered ||
-      hudState.unlockedStage >= 1
+      hudState.unlockedStage >= 1 ||
+      loopStage >= 1
   );
   const eSkillReady = Boolean(
     prog.unlockedStage >= 1 ||
@@ -3398,19 +3436,22 @@ window.addEventListener('keydown', (e) => {
       prog.fireUnlocked ||
       hudState.unlockedStage >= 1 ||
       hudState.iceUnlocked ||
-      hudState.fireUnlocked
+      hudState.fireUnlocked ||
+      loopStage >= 1
   );
   const tabToggleReady = Boolean(
     prog.unlockedStage >= 2 ||
       (prog.iceUnlocked && prog.fireUnlocked) ||
       hudState.unlockedStage >= 2 ||
-      (hudState.iceUnlocked && hudState.fireUnlocked)
+      (hudState.iceUnlocked && hudState.fireUnlocked) ||
+      loopStage >= 2
   );
   const qUltReady = Boolean(
     prog.unlockedStage >= 3 ||
       prog.ultimateUnlocked ||
       hudState.unlockedStage >= 3 ||
-      hudState.ultimateUnlocked
+      hudState.ultimateUnlocked ||
+      loopStage >= 3
   );
 
   if (!wasPressed && k === 'r') {

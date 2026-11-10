@@ -1849,7 +1849,7 @@ export async function createCoopPlayerSystem({
       mageRt.dashAfterRelease = false;
       if (activeHeroId === 'Mage') triggerAction('dash');
     }
-    if (actionAim.aimState.active && activeHeroId === 'Mage') {
+    if (actionAim.aimState.active && activeHeroId === 'Mage' && mageRt.composeAim) {
       refreshMageSkillAim();
     }
     // Sticky lock lapses once the combo window closes.
