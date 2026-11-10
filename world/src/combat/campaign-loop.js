@@ -3585,7 +3585,25 @@ export function createCampaignLoop({
         wingmanCastTimer -= dt;
         wingmanBoltTimer -= dt;
 
-        if (wingmanCastTimer <= 0) {
+        const nearbyEnemies = enemyManager.activeEnemies
+          .filter(
+            (e) =>
+              e &&
+              !e.dead &&
+              e.active &&
+              Math.hypot(e.x - mage.x, e.z - mage.z) <= 15.5
+          )
+          .sort(
+            (a, b) =>
+              Math.hypot(a.x - mage.x, a.z - mage.z) -
+              Math.hypot(b.x - mage.x, b.z - mage.z)
+          );
+        const nearestEnemy = nearbyEnemies[0] || null;
+        const nearestDist = nearestEnemy
+          ? Math.hypot(nearestEnemy.x - mage.x, nearestEnemy.z - mage.z)
+          : Infinity;
+
+        if (wingmanCastTimer <= 0 && nearestEnemy && nearestDist <= 15.5) {
           wingmanCastTimer = 6.5;
           wingmanBoltTimer = 1.05;
           let nextSpellId;
@@ -3609,35 +3627,28 @@ export function createCampaignLoop({
           }
           wingmanSpellIdx++;
           combatHeroes.Mage.spellCooldowns[nextSpellId] = 0;
-          const livingEnemies = enemyManager.activeEnemies
-            .filter((e) => e && !e.dead && e.active)
-            .sort(
-              (a, b) =>
-                Math.hypot(a.x - mage.x, a.z - mage.z) -
-                Math.hypot(b.x - mage.x, b.z - mage.z)
-            );
-          const target = livingEnemies[0] || null;
-          if (target) {
-            const distToTarget = Math.hypot(target.x - mage.x, target.z - mage.z);
-            const yaw = Math.atan2(target.x - mage.x, target.z - mage.z);
-            mage.yaw = yaw;
-            mage.actionState = 'cast_spell';
-            mage.actionTimer = 0.62;
-            mage.char?.play?.('cast_spell', {
-              loop: false,
-              fade: 0.08,
-              startTime: 0,
-              timeScale: 1.0,
-              force: true,
-            });
-            castSpell(nextSpellId, mage, yaw, knight, {
-              fromWingmanAi: true,
-              ignoreCooldown: true,
-              distance: clamp(distToTarget, 3.0, 16.0),
-              targetPos: { x: target.x, y: target.y ?? 0, z: target.z },
-            });
-          }
-        } else if (wingmanBoltTimer <= 0) {
+          const yaw = Math.atan2(nearestEnemy.x - mage.x, nearestEnemy.z - mage.z);
+          mage.yaw = yaw;
+          mage.actionState = 'cast_spell';
+          mage.actionTimer = 0.62;
+          mage.char?.play?.('cast_spell', {
+            loop: false,
+            fade: 0.08,
+            startTime: 0,
+            timeScale: 1.0,
+            force: true,
+          });
+          castSpell(nextSpellId, mage, yaw, knight, {
+            fromWingmanAi: true,
+            ignoreCooldown: true,
+            distance: clamp(nearestDist, 3.0, 16.0),
+            targetPos: { x: nearestEnemy.x, y: nearestEnemy.y ?? 0, z: nearestEnemy.z },
+          });
+        } else if (
+          wingmanBoltTimer <= 0 &&
+          nearestEnemy &&
+          nearestDist <= (HERO_STATS.Mage.boltRange || 13.5)
+        ) {
           wingmanBoltTimer = 1.05;
           const bIdx = wingmanBoltIdx % 3;
           wingmanBoltIdx++;

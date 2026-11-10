@@ -3036,14 +3036,17 @@ export async function createCoopPlayerSystem({
     applyTransform(leader);
     playHeroLocomotionClip(leader, 'idle');
 
-    const wingAngle = yaw - 1.85;
-    const wx = x + Math.sin(wingAngle) * 1.95;
-    const wz = z + Math.cos(wingAngle) * 1.95;
+    const wingAngle = yaw - 2.1;
+    const wx = x + Math.sin(wingAngle) * 2.15;
+    const wz = z + Math.cos(wingAngle) * 2.15;
     partner.x = wx;
     partner.z = wz;
     partner.y = walkableHeightAt(wx, wz);
     partner.vy = 0;
-    partner.yaw = yaw - 0.18;
+    partner.yaw = yaw - 0.22;
+    partner.wingAnchorYaw = yaw;
+    partner.wingmanMoving = false;
+    partner.wingmanLoco = 'idle';
     partner.grounded = true;
     partner.lungeRemaining = 0;
     partner.dashCooldown = 0;
@@ -3410,7 +3413,23 @@ export async function createCoopPlayerSystem({
           campaignLoop.combatHeroes.Mage?.stormCataclysmCenter
       );
       const catCenter = campaignLoop.combatHeroes.Mage?.stormCataclysmCenter;
-      const wingOffsetAngle = catActive ? leader.yaw - 1.32 : leader.yaw - 2.1;
+      const leaderSwinging = Boolean(
+        (leader.actionState && leader.actionState !== 'dash') ||
+          actionAim.heroes[leader.id]?.activeSwing ||
+          leader.lungeRemaining > 1e-4
+      );
+      const leaderInCombatCombo = Boolean(
+        leaderSwinging || (actionAim.heroes[leader.id]?.comboResetTimer || 0) > 0
+      );
+      if (partner.wingAnchorYaw === undefined || partner.wingAnchorYaw === null) {
+        partner.wingAnchorYaw = leader.yaw;
+      } else if (catActive || blessingActive || (!leaderInCombatCombo && moveMag > 0.25)) {
+        // Only rotate the wingman's anchor angle when the leader is genuinely travelling (never during melee swings or turns-in-place!)
+        partner.wingAnchorYaw +=
+          shortestAngleDiff(leader.yaw, partner.wingAnchorYaw) * Math.min(1, 6 * dt);
+      }
+      const effectiveRefYaw = catActive || blessingActive ? leader.yaw : partner.wingAnchorYaw;
+      const wingOffsetAngle = catActive ? effectiveRefYaw - 1.32 : effectiveRefYaw - 2.1;
       const wingOffsetDist = catActive ? 9.15 : blessingActive ? 1.45 : 2.15;
       const refX = catActive ? catCenter.x : leader.x;
       const refZ = catActive ? catCenter.z : leader.z;
@@ -3419,6 +3438,7 @@ export async function createCoopPlayerSystem({
       const dxW = targetWingX - partner.x;
       const dzW = targetWingZ - partner.z;
       const distW = Math.hypot(dxW, dzW);
+      const heroDist = Math.hypot(leader.x - partner.x, leader.z - partner.z);
 
       if (catActive && partner.actionState && distW > 1.2) {
         partner.actionState = null;
@@ -3429,43 +3449,90 @@ export async function createCoopPlayerSystem({
         partner.x = targetWingX;
         partner.z = targetWingZ;
         partner.y = walkableHeightAt(partner.x, partner.z);
-        partner.yaw = leader.yaw;
+        partner.yaw = leader.yaw - 0.22;
+        partner.wingAnchorYaw = leader.yaw;
+        partner.wingmanMoving = false;
+        partner.wingmanLoco = 'idle';
         playHeroLocomotionClip(partner, 'idle');
-      } else if (distW > (blessingActive ? 0.45 : 0.65) && !partner.actionState && !leader.praying) {
-        const dirX = dxW / distW;
-        const dirZ = dzW / distW;
-        const partnerSpd =
-          catActive || blessingActive
-            ? player.speed * player.sprintMult * 1.25
-            : distW > 4.2
-              ? player.speed * player.sprintMult
-              : distW > 1.75
-                ? player.speed * 1.02
-                : player.speed * 0.56;
-        const step = Math.min(distW - (blessingActive ? 0.25 : 0.45), partnerSpd * dt);
-        const nextP = resolveCollisions(
-          partner.x + dirX * step,
-          partner.z + dirZ * step,
-          player.radius * 0.9
-        );
-        partner.x = nextP.x;
-        partner.z = nextP.z;
-        partner.y = walkableHeightAt(partner.x, partner.z);
-
-        const pTargetYaw = Math.atan2(dirX, dirZ);
-        partner.yaw += shortestAngleDiff(pTargetYaw, partner.yaw) * Math.min(1, 14 * dt);
-
-        if (catActive || distW > 4.2 || (isSprinting && moveMag > 0.2)) {
-          playHeroLocomotionClip(partner, 'sprint');
-        } else if (distW > 1.75 || moveMag > 0.55) {
-          playHeroLocomotionClip(partner, 'run');
-        } else {
-          playHeroLocomotionClip(partner, 'walk');
-        }
       } else if (!partner.actionState && !leader.praying) {
-        partner.y = walkableHeightAt(partner.x, partner.z);
-        partner.yaw += shortestAngleDiff(leader.yaw - 0.22, partner.yaw) * Math.min(1, 5 * dt);
-        playHeroLocomotionClip(partner, 'idle');
+        // Hysteresis deadband: never start or continue micro-following while the leader is attacking nearby!
+        const startFollowDist = catActive
+          ? 1.15
+          : blessingActive
+            ? 0.95
+            : leaderInCombatCombo
+              ? 3.4
+              : 1.75;
+        const stopFollowDist = catActive ? 0.45 : blessingActive ? 0.28 : 0.42;
+
+        if (!partner.wingmanMoving) {
+          const farFromLeader =
+            catActive || blessingActive || heroDist > (leaderInCombatCombo ? 3.6 : 2.65);
+          if (distW > startFollowDist && farFromLeader) {
+            partner.wingmanMoving = true;
+          }
+        } else if (
+          distW <= stopFollowDist + 0.03 ||
+          (!catActive && !blessingActive && leaderInCombatCombo && heroDist <= 3.2)
+        ) {
+          partner.wingmanMoving = false;
+          partner.wingmanLoco = 'idle';
+        }
+
+        if (partner.wingmanMoving && distW > stopFollowDist) {
+          const dirX = dxW / distW;
+          const dirZ = dzW / distW;
+          const partnerSpd =
+            catActive || blessingActive
+              ? player.speed * player.sprintMult * 1.25
+              : distW > 4.2
+                ? player.speed * player.sprintMult
+                : distW > 1.55
+                  ? player.speed * 1.02
+                  : player.speed * 0.56;
+          const step = Math.min(distW - stopFollowDist, partnerSpd * dt);
+          const nextP = resolveCollisions(
+            partner.x + dirX * step,
+            partner.z + dirZ * step,
+            player.radius * 0.9
+          );
+          partner.x = nextP.x;
+          partner.z = nextP.z;
+          partner.y = walkableHeightAt(partner.x, partner.z);
+
+          const moveYaw = Math.atan2(dirX, dirZ);
+          const settleYaw = leader.yaw - 0.22;
+          const blendToSettle = clamp((1.05 - distW) / 0.65, 0, 1);
+          const pTargetYaw =
+            moveYaw + shortestAngleDiff(settleYaw, moveYaw) * blendToSettle;
+          partner.yaw += shortestAngleDiff(pTargetYaw, partner.yaw) * Math.min(1, 10 * dt);
+
+          let nextLoco = partner.wingmanLoco || 'walk';
+          if (catActive || distW > 4.5 || (isSprinting && moveMag > 0.2)) {
+            nextLoco = 'sprint';
+          } else if (nextLoco === 'sprint' && distW > 3.2) {
+            nextLoco = 'sprint';
+          } else if (distW > 1.85 || moveMag > 0.55) {
+            nextLoco = 'run';
+          } else if (nextLoco === 'run' && distW > 1.1) {
+            nextLoco = 'run';
+          } else {
+            nextLoco = 'walk';
+          }
+          partner.wingmanLoco = nextLoco;
+          playHeroLocomotionClip(partner, nextLoco);
+        } else {
+          partner.wingmanMoving = false;
+          partner.wingmanLoco = 'idle';
+          partner.y = walkableHeightAt(partner.x, partner.z);
+          const hasNearbyEnemy = enemyManager?.activeEnemies?.some(
+            (e) => e && !e.dead && e.active && Math.hypot(e.x - partner.x, e.z - partner.z) <= 15.5
+          );
+          if (!leaderInCombatCombo && !hasNearbyEnemy) {
+            partner.yaw += shortestAngleDiff(leader.yaw - 0.22, partner.yaw) * Math.min(1, 4 * dt);
+          }
+          playHeroLocomotionClip(partner, 'idle');
+        }
       }
     }
 

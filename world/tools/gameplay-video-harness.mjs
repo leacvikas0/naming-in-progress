@@ -569,6 +569,48 @@ const SCENARIOS = {
     await page.close();
     return errors;
   },
+
+  // 6. Solo Wingman Mage Stability: Open game in solo mode, Knight attacks right beside the Mage (4-hit combo + walk + attack)
+  async 'solo-wingman-mage'() {
+    const { page, errors } = await openWorldPage();
+    await setupCleanStage(page, {
+      hero: 'Knight',
+      x: 2.8,
+      z: 14.5,
+      yaw: Math.PI + 0.15,
+      element: 'ice',
+      camDist: 5.8,
+      camPitch: 0.2,
+      camYawOffset: 0.18,
+      freezePartner: false,
+    });
+    await recordClip(page, 'solo-wingman-mage', 5.0, async (t, pg) => {
+      // Beat 1 (t=0.25s..2.10s): Knight performs a 4-hit combo right at initial solo spawn beside the Mage
+      for (const tapT of [0.25, 0.72, 1.22, 1.72]) {
+        if (hitFrame(t, tapT)) {
+          await pg.evaluate(() => window.__WORLD__.coopSystem.triggerAction('attack'));
+        }
+      }
+      // Beat 2 (t=2.50s..3.30s): Knight walks forward so Mage follows and settles beside him
+      if (hitFrame(t, 2.5)) await keyAct(pg, 'w', true);
+      if (hitFrame(t, 3.3)) await keyAct(pg, 'w', false);
+      // Beat 3 (t=3.65s..4.80s): Knight performs another combo right after Mage settles at the follow threshold!
+      for (const tapT of [3.65, 4.1, 4.55]) {
+        if (hitFrame(t, tapT)) {
+          await pg.evaluate(() => window.__WORLD__.coopSystem.triggerAction('attack'));
+        }
+      }
+      const m = await pg.evaluate(() => {
+        const st = window.__WORLD__?.coopSystem?.heroStates?.Mage;
+        return st
+          ? `M:${st.char?.anim?.currentClipName || 'none'} yaw=${(st.yaw ?? 0).toFixed(2)} spd=${(st.groundSpeed ?? 0).toFixed(2)}`
+          : '';
+      });
+      return `${t < 2.45 ? 'Spawn-Combo' : t < 3.55 ? 'Follow-Walk' : 'Post-Walk-Combo'} ${m}`;
+    });
+    await page.close();
+    return errors;
+  },
 };
 
 const listToRun = specFile
