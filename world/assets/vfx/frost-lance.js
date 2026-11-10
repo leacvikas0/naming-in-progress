@@ -134,9 +134,10 @@ export const FROST_LANCE_DEFAULTS = Object.freeze({
   range: 14.5, // metres
   speed: 26.0, // fracture front speed, m/s
   windupTime: 0.11, // Beat 1: cast wind-up
-  holdAfterImpact: 2.12, // Beat 3: standing glacier duration before withdrawal
-  shatterShakeTime: 0.28, // pre-sink shudder duration
-  sinkTime: 1.05, // Beat 4: sink withdrawal duration
+  holdAfterImpact: 0.78, // Beat 3: standing glacier duration before withdrawal
+  shatterShakeTime: 0.14, // pre-sink shudder duration
+  sinkTime: 0.58, // Beat 4: sink withdrawal duration
+  totalDuration: 1.70, // total camera-friendly duration
 
   // Footprint Progression (matching original ice.js + wider, denser far end)
   widthNear: 0.58, // half-width at caster's feet, metres
@@ -147,13 +148,13 @@ export const FROST_LANCE_DEFAULTS = Object.freeze({
   scatter: 0.55,
   frontBias: 0.85,
 
-  // Silhouette (heavier, more intimidating glacial monolith wall & crown)
+  // Silhouette (camera-friendly glacial spikes that never block the combat sightline)
   heightNear: 0.58, // spike height at caster, metres
-  height: 3.38, // towering glacier height at far end, metres
+  height: 1.65, // glacier height at far end, metres
   heightCurve: 1.48,
   heightJitter: 0.52,
   crown: 0.50,
-  peak: 1.46, // extra height swell at impact point (~4.8m towering monoliths)
+  peak: 0.62, // height swell factor at impact point
   peakWidth: 0.32,
   rubble: 0.40, // 40% chunky ankle-height glacier blocks filling the bed
   rubbleScale: 0.35,
@@ -1148,8 +1149,14 @@ export class FrostLanceSystem {
     const c = this.config;
     const travelDuration = c.range / Math.max(1.0, c.speed); // ~0.5577s
     this.impactTime = c.windupTime + travelDuration; // ~0.668s
-    this.withdrawStartTime = this.impactTime + c.holdAfterImpact; // ~2.79s
-    this.totalDuration = this.withdrawStartTime + c.shatterShakeTime + c.sinkTime; // ~4.19s
+    this.totalDuration =
+      Number.isFinite(c.totalDuration) && c.totalDuration > 0
+        ? c.totalDuration
+        : this.impactTime + c.holdAfterImpact + c.shatterShakeTime + c.sinkTime;
+    this.withdrawStartTime = Math.min(
+      this.impactTime + c.holdAfterImpact,
+      Math.max(this.impactTime + 0.12, this.totalDuration - c.shatterShakeTime - c.sinkTime)
+    );
 
     // 1. Seed 168 Crystal Spikes:
     //    - 118 Line Spikes arranged as a wide-open Glacial V-Canyon so the central
@@ -1590,7 +1597,11 @@ export class FrostLanceSystem {
 
   _spikeHeight(record) {
     const c = this.config;
-    let h = lerp(c.heightNear, c.height, Math.pow(saturate(record.along), c.heightCurve));
+    const u = saturate(record.along);
+    let h = lerp(c.heightNear, c.height, Math.pow(u, c.heightCurve));
+    if (u < 0.35) {
+      h *= 0.55 + 0.45 * (u / 0.35);
+    }
 
     const apexFactor =
       record.tier === 'apexCrown'

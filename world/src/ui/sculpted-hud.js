@@ -121,47 +121,50 @@ const SVG_SACRED_LOTUS = `
 </svg>
 `;
 
-/* Refined Precision Crystalline Crest for [E] Ice (Warm Ivory + Subtle Silver-Ice #bae6fd Accent) */
+/* Refined Precision Crystalline Crest for [E] Ice (Icy Cyan #38bdf8 & Frost White #e0f2fe) */
 const SVG_ICE_CRYSTAL_GLYPH = `
 <svg class="sh-skill-glyph-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
   <!-- Subtle Geometric Diamond Frame -->
-  <rect x="13" y="13" width="22" height="22" rx="1.5" transform="rotate(45 24 24)" stroke="#bae6fd" stroke-width="1.5" opacity="0.58"/>
+  <rect x="13" y="13" width="22" height="22" rx="1.5" transform="rotate(45 24 24)" stroke="#38bdf8" stroke-width="1.6" opacity="0.72"/>
   <!-- Diagonal Frost Spines -->
-  <path d="M13.5 13.5 L34.5 34.5 M34.5 13.5 L13.5 34.5" stroke="#bae6fd" stroke-width="1.8" stroke-linecap="round" opacity="0.82"/>
-  <!-- Outer Silver-Ice Star Facets -->
-  <polygon points="24,6 28.4,19.6 42,24 28.4,28.4 24,42 19.6,28.4 6,24 19.6,19.6" fill="#bae6fd" opacity="0.88"/>
-  <!-- Pure Warm-Ivory Core -->
-  <polygon points="24,11.5 26.8,21.2 36.5,24 26.8,26.8 24,36.5 21.2,26.8 11.5,24 21.2,21.2" fill="#ffffff"/>
+  <path d="M13.5 13.5 L34.5 34.5 M34.5 13.5 L13.5 34.5" stroke="#38bdf8" stroke-width="1.9" stroke-linecap="round" opacity="0.88"/>
+  <!-- Outer Icy Cyan Star Facets -->
+  <polygon points="24,5.5 28.6,19.4 42.5,24 28.6,28.6 24,42.5 19.4,28.6 5.5,24 19.4,19.4" fill="#38bdf8" opacity="0.94"/>
+  <!-- Pure Frost Core -->
+  <polygon points="24,11.5 26.8,21.2 36.5,24 26.8,26.8 24,36.5 21.2,26.8 11.5,24 21.2,21.2" fill="#e0f2fe"/>
 </svg>
 `;
 
-/* Refined Precision Sunfire Crest for [E] Fire (Warm Ivory + Subtle Ember-Gold #fed7aa Accent) */
+/* Blazing Multi-Tongue Sunfire Crest for [E] Fire (#ff4d2a Outer, #ff9e1b Middle, #fff3a1 Core) */
 const SVG_FIRE_SUNFIRE_GLYPH = `
 <svg class="sh-skill-glyph-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
   <!-- Subtle Geometric Solar Halo -->
-  <circle cx="24" cy="25" r="14.5" stroke="#fed7aa" stroke-width="1.5" stroke-dasharray="3.5 2.5" opacity="0.55"/>
-  <!-- Outer Warm Ember-Gold Flame Silhouette -->
-  <path d="M24 6.5 C29 12.8, 36.2 18.6, 35 28.8 C34 36, 29.2 40.2, 24 40.2 C18.8 40.2, 14 36, 13 28.8 C11.8 20.6, 16.8 15, 19.5 11.8 C19.5 15.5, 21.4 17.2, 24 6.5 Z" fill="#fed7aa" opacity="0.90"/>
-  <!-- Pure Warm-Ivory Inner Flame Core -->
-  <path d="M24.2 14.2 C27.8 18.6, 31.6 22.8, 30.6 29.8 C29.8 34.4, 27 37.2, 24 37.2 C21 37.2, 18.2 34.4, 17.4 29.8 C16.6 24.6, 19.8 20.8, 21.5 18.4 C21.6 21, 22.8 21.8, 24.2 14.2 Z" fill="#ffffff"/>
+  <circle cx="24" cy="25" r="15.5" stroke="#ff9e1b" stroke-width="1.5" stroke-dasharray="3.5 2.5" opacity="0.65"/>
+  <!-- Outer Blazing Crimson-Orange Multi-Tongue Flame (#ff4d2a) -->
+  <path d="M24.8 4.8 C29.2 10.6, 33.6 15.2, 32.8 22.4 C35.2 20.4, 36.8 17.6, 37.0 14.8 C40.4 19.6, 41.6 26.4, 39.2 32.4 C36.6 39.0, 30.8 43.0, 24.0 43.0 C17.2 43.0, 11.4 38.8, 9.0 32.0 C6.8 26.0, 8.4 19.2, 12.4 14.4 C12.2 17.6, 13.6 20.2, 15.8 21.8 C14.8 14.8, 19.2 9.0, 24.8 4.8 Z" fill="#ff4d2a"/>
+  <!-- Middle Amber-Gold Flame (#ff9e1b) -->
+  <path d="M24.4 12.8 C27.8 17.2, 30.8 21.2, 30.0 27.2 C31.6 25.8, 32.8 23.8, 33.0 21.8 C35.0 25.2, 35.4 30.0, 33.6 34.2 C31.8 38.4, 28.2 41.0, 24.0 41.0 C19.8 41.0, 16.2 38.4, 14.6 34.0 C13.0 29.8, 13.8 25.2, 16.2 21.8 C16.2 24.0, 17.2 25.8, 18.8 27.0 C18.0 21.4, 21.0 16.6, 24.4 12.8 Z" fill="#ff9e1b"/>
+  <!-- Pure White-Gold Inner Core (#fff3a1) -->
+  <path d="M24.2 21.6 C26.6 25.0, 28.6 28.2, 28.0 32.8 C27.4 36.8, 25.8 39.2, 24.0 39.2 C22.2 39.2, 20.6 36.8, 20.0 32.8 C19.4 28.6, 21.4 25.0, 24.2 21.6 Z" fill="#fff3a1"/>
 </svg>
 `;
 
-/* Clean Left-Side [Tab] Element Switch: Refined Minimalist Ice & Fire Glyphs + Horizontal Text when switching */
+/* Clean Left-Side [Tab] Element Switch: Vivid Multi-Tongue Flame & Crisp Icy Cyan Crystal + Horizontal Text when switching */
 const SVG_TAB_SWAP_GLYPH = `
 <span class="sh-tab-switch-inner">
   <span class="sh-tab-icons-pair">
     <span class="sh-tab-opt sh-tab-opt-ice" data-el-opt="ice" aria-hidden="true">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
-        <path d="M6.2 6.2L17.8 17.8M17.8 6.2L6.2 17.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.72"/>
-        <polygon points="12,2.5 14.3,9.7 21.5,12 14.3,14.3 12,21.5 9.7,14.3 2.5,12 9.7,9.7" fill="currentColor"/>
-        <polygon points="12,6.5 13.3,10.7 17.5,12 13.3,13.3 12,17.5 10.7,13.3 6.5,12 10.7,10.7" fill="#ffffff"/>
+        <path d="M5.8 5.8L18.2 18.2M18.2 5.8L5.8 18.2" stroke="#38bdf8" stroke-width="1.6" stroke-linecap="round" opacity="0.88"/>
+        <polygon points="12,2.2 14.5,9.5 21.8,12 14.5,14.5 12,21.8 9.5,14.5 2.2,12 9.5,9.5" fill="#38bdf8"/>
+        <polygon points="12,6.2 13.4,10.6 17.8,12 13.4,13.4 12,17.8 10.6,13.4 6.2,12 10.6,10.6" fill="#e0f2fe"/>
       </svg>
     </span>
     <span class="sh-tab-opt sh-tab-opt-fire" data-el-opt="fire" aria-hidden="true">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
-        <path d="M12 3.2C14.8 6.6 18.2 9.6 17.5 14.8C16.9 18.6 14.5 20.8 12 20.8C9.5 20.8 7.1 18.6 6.5 14.8C5.9 10.6 8.4 7.6 9.8 5.8C9.8 7.8 10.8 8.7 12 3.2Z" fill="currentColor"/>
-        <path d="M12.1 8.2C13.9 10.4 15.6 12.5 15.1 15.8C14.7 18 13.5 19.3 12 19.3C10.5 19.3 9.3 18 8.9 15.8C8.5 13.3 10 11.4 10.9 10.2C11 11.5 11.6 11.8 12.1 8.2Z" fill="#ffffff"/>
+        <path d="M12.4 2.2C14.6 5.1 16.8 7.5 16.4 11.2C17.6 10.2 18.4 8.8 18.5 7.4C20.2 9.8 20.8 13.2 19.6 16.2C18.3 19.5 15.4 21.5 12 21.5C8.6 21.5 5.7 19.4 4.5 16.0C3.4 13.0 4.2 9.6 6.2 7.2C6.1 8.8 6.8 10.1 7.9 10.9C7.4 7.4 9.6 4.5 12.4 2.2Z" fill="#ff4d2a"/>
+        <path d="M12.2 6.4C13.9 8.6 15.4 10.6 15.0 13.6C15.8 12.9 16.4 11.9 16.5 10.9C17.5 12.6 17.7 15.0 16.8 17.1C15.9 19.2 14.1 20.5 12 20.5C9.9 20.5 8.1 19.2 7.3 17.0C6.5 14.9 6.9 12.6 8.1 10.9C8.1 12.0 8.6 12.9 9.4 13.5C9.0 10.7 10.5 8.3 12.2 6.4Z" fill="#ff9e1b"/>
+        <path d="M12.1 11.2C13.2 12.8 14.2 14.3 13.9 16.5C13.6 18.4 12.9 19.6 12 19.6C11.1 19.6 10.4 18.4 10.1 16.5C9.8 14.5 10.8 12.8 12.1 11.2Z" fill="#fff3a1"/>
       </svg>
     </span>
   </span>
@@ -631,19 +634,24 @@ const SCULPTED_HUD_CSS = `
     border-radius: 50%;
     border: 1px solid transparent;
     color: rgba(255, 255, 255, 0.46);
-    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+    opacity: 0.52;
+    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, opacity 140ms ease, transform 140ms ease;
   }
 
   #sculpted-slot-tab[data-element="ice"] .sh-tab-opt-ice {
-    background: rgba(255, 255, 255, 0.14);
-    border-color: rgba(186, 230, 253, 0.68);
-    color: #bae6fd;
+    background: rgba(56, 189, 248, 0.22);
+    border-color: rgba(56, 189, 248, 0.85);
+    color: #38bdf8;
+    opacity: 1;
+    transform: scale(1.06);
   }
 
   #sculpted-slot-tab[data-element="fire"] .sh-tab-opt-fire {
-    background: rgba(255, 255, 255, 0.14);
-    border-color: rgba(254, 215, 170, 0.68);
-    color: #fed7aa;
+    background: rgba(255, 77, 42, 0.24);
+    border-color: rgba(255, 158, 27, 0.88);
+    color: #ff9e1b;
+    opacity: 1;
+    transform: scale(1.06);
   }
 
   /* Horizontal text ahead of icons — hidden at rest, expands out when switching */
@@ -912,11 +920,12 @@ const SCULPTED_HUD_CSS = `
     animation: shMiracleHaloPulse 1.5s ease-in-out infinite;
   }
 
-  /* Hide All Combat Controls & Joystick While Communing ([R] Active) */
+  /* Hide All Combat Controls & Joystick While Communing ([R] Active) or Verdict Cutscene */
   #sculpted-action-cluster,
   #sculpted-powers-dock,
-  #sculpted-joystick-zone {
-    transition: opacity 0.22s ease;
+  #sculpted-joystick-zone,
+  #sculpted-commune-wrap {
+    transition: opacity 0.22s ease, transform 0.22s ease;
   }
 
   #sculpted-hud-root.is-communing #sculpted-action-cluster,
@@ -926,6 +935,12 @@ const SCULPTED_HUD_CSS = `
   #sculpted-hud-root.is-communing #sculpted-powers-dock .sh-open-ring {
     opacity: 0 !important;
     pointer-events: none !important;
+  }
+
+  #sculpted-hud-root.is-verdict-cutscene #sculpted-commune-wrap {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(8px);
   }
 
   /* Inline Crimson Wave Bars + Timer inside Commune [R] when Listening */
@@ -1163,6 +1178,7 @@ export function createSculptedHud({
       maxSeconds: 30,
     },
     communeChannelActive: false,
+    verdictSequenceActive: false,
     miracleReady: null,
     partnerDistance: 2.0,
     qEnergyPct: null,
@@ -1584,9 +1600,13 @@ export function createSculptedHud({
     const ultUnlocked = Boolean(state.ultimateUnlocked || state.unlockedStage >= 3);
 
     const isCommuningNow = Boolean(
-      state.communeChannelActive || state.commune.listening || state.commune.partnerListening
+      state.communeChannelActive ||
+        state.verdictSequenceActive ||
+        state.commune.listening ||
+        state.commune.partnerListening
     );
     root.classList.toggle('is-communing', isCommuningNow);
+    root.classList.toggle('is-verdict-cutscene', Boolean(state.verdictSequenceActive));
     if (isCommuningNow && joyState.active) {
       resetJoystick();
     }
@@ -1768,6 +1788,9 @@ export function createSculptedHud({
     }
     if (typeof patch.isCommuning === 'boolean') {
       state.communeChannelActive = patch.isCommuning;
+    }
+    if (patch.verdictSequenceActive !== undefined) {
+      state.verdictSequenceActive = Boolean(patch.verdictSequenceActive);
     }
     if (typeof patch.partnerListening === 'boolean') {
       state.commune.partnerListening = patch.partnerListening;
@@ -2159,7 +2182,7 @@ export function createSculptedHud({
 
   let tabSwitchRevealTimer = null;
 
-  function flashTabSwitchText() {
+  function triggerTabSwitchLabel() {
     if (!slotTab) return;
     slotTab.classList.add('is-switching');
     if (tabSwitchRevealTimer) clearTimeout(tabSwitchRevealTimer);
@@ -2168,6 +2191,7 @@ export function createSculptedHud({
       tabSwitchRevealTimer = null;
     }, 1500);
   }
+  const flashTabSwitchText = triggerTabSwitchLabel;
 
   // [Tab] Element Toggle Ring (visible only when BOTH Ice & Fire are solved)
   if (slotTab) {
@@ -2179,7 +2203,7 @@ export function createSculptedHud({
       state.activeElement = state.activeElement === 'ice' ? 'fire' : 'ice';
       state.tabSwitchHintDismissed = true;
       renderProgressionAndSlots();
-      flashTabSwitchText();
+      triggerTabSwitchLabel();
       if (typeof onToggleElement === 'function') {
         onToggleElement(state.activeElement);
       }
@@ -2361,7 +2385,7 @@ export function createSculptedHud({
       state.activeElement = element;
       renderProgressionAndSlots();
       if (changed) {
-        flashTabSwitchText();
+        triggerTabSwitchLabel();
       }
     }
   }
@@ -2384,6 +2408,7 @@ export function createSculptedHud({
     qEnergyMax,
     heartResonance,
     communeChannelActive,
+    verdictSequenceActive,
     isCommuning,
     miracleReady,
     partnerDistance,
@@ -2402,7 +2427,7 @@ export function createSculptedHud({
         ((state.iceUnlocked && state.fireUnlocked) || state.unlockedStage >= 2)
       ) {
         state.tabSwitchHintDismissed = true;
-        flashTabSwitchText();
+        triggerTabSwitchLabel();
       }
     }
     if (activeSwordBuffElement !== undefined) {
@@ -2410,6 +2435,9 @@ export function createSculptedHud({
     }
     if (typeof communeChannelActive === 'boolean') {
       state.communeChannelActive = communeChannelActive;
+    }
+    if (verdictSequenceActive !== undefined) {
+      state.verdictSequenceActive = Boolean(verdictSequenceActive);
     }
     if (typeof isCommuning === 'boolean') {
       state.communeChannelActive = isCommuning;

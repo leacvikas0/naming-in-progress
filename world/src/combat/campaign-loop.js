@@ -289,6 +289,7 @@ export function createCampaignLoop({
       partnerBuffTimer: 0,
       perfectDodgeBuff: false,
       iframeTimer: 0,
+      burstHitTimer: 0,
       interceptCd: 0,
       dashCd: 0,
       dodgeIcd: 0,
@@ -326,6 +327,7 @@ export function createCampaignLoop({
       partnerBuffTimer: 0,
       perfectDodgeBuff: false,
       iframeTimer: 0,
+      burstHitTimer: 0,
       infuseCd: 0,
       dashCd: 0,
       dodgeIcd: 0,
@@ -363,9 +365,9 @@ export function createCampaignLoop({
   function setOnFriendlyFireHit(fn) {
     friendlyFireCallback = typeof fn === 'function' ? fn : null;
   }
-  const PARTNER_REVIVE_RADIUS = 2.5;
+  const PARTNER_REVIVE_RADIUS = 2.8;
   const PARTNER_REVIVE_SECONDS = 2.5;
-  const PARTNER_REVIVE_HP = 0.35;
+  const PARTNER_REVIVE_HP = 0.45;
   let communeChannelActive = false;
   let communeMode = 'normal'; // 'normal' | 'divine_miracle'
   let modeAHealCd = 0;
@@ -457,6 +459,13 @@ export function createCampaignLoop({
 
   function setOpenValleyMode(enabled) {
     openValleyMode = Boolean(enabled);
+    if (openValleyMode) {
+      activeStrongholdIds.clear();
+      strongholdClearedMask = 0;
+      for (const k of Object.keys(strongholdWaveIndex)) {
+        strongholdWaveIndex[k] = -1;
+      }
+    }
     return openValleyMode;
   }
 
@@ -1064,6 +1073,13 @@ export function createCampaignLoop({
     }
 
     let effectiveDmg = rawDmg;
+    if (vfxKit !== null && enemy !== null && !hitOptions?.friendlyFire) {
+      if ((h.burstHitTimer || 0) > 0) {
+        effectiveDmg = Math.max(1, Math.round(effectiveDmg * 0.35));
+      }
+      h.burstHitTimer = 0.28;
+    }
+
     if (
       heroId === 'Knight' &&
       combatHeroes.Knight.shieldBlocking && !enemy?.currentHit?.unblockable &&
@@ -1072,7 +1088,7 @@ export function createCampaignLoop({
     ) {
       effectiveDmg = Math.max(
         1,
-        Math.round(rawDmg * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
+        Math.round(effectiveDmg * (1.0 - KNIGHT_SHIELD_BLOCK_DR))
       );
       drainKnightGuard(rawDmg * KNIGHT_GUARD_HIT_COST + (enemy?.currentHit?.guardDmg || 0));
     }
@@ -1095,7 +1111,7 @@ export function createCampaignLoop({
 
     h.hp = Math.max(0, h.hp - rem);
     const partnerOfHit = combatHeroes[heroId === 'Knight' ? 'Mage' : 'Knight'];
-    if (rem > 0 && partnerOfHit?.downed) partnerOfHit.reviveProgress *= 0.5;
+    if (rem > 0 && !isBlockedKnightChip && partnerOfHit?.downed) partnerOfHit.reviveProgress *= 0.5;
     if (combatSfx?.playPlayerHit) {
       combatSfx.playPlayerHit();
     }
@@ -1147,7 +1163,7 @@ export function createCampaignLoop({
       heroStates?.[partnerKey] || heroStates?.[partnerKey.toLowerCase()] || null;
 
     const speakerPos = speakerEntity || { x: 2.8, y: 0, z: 14.5 };
-    const partnerPos = partnerEntity || {
+    let partnerPos = partnerEntity || {
       x: (speakerPos.x ?? 2.8) + 1.8,
       y: speakerPos.y ?? 0,
       z: (speakerPos.z ?? 14.5) + 0.5,
@@ -1181,17 +1197,17 @@ export function createCampaignLoop({
       if (isSmiteVerdict) {
         resolvedPrayerMode = 'smite';
       } else if (
-        verdict === 'selfish_penalty' ||
-        (rawHpDelta !== null && rawHpDelta < 0) ||
-        (rawHpDeltaPct !== null && rawHpDeltaPct < 0)
-      ) {
-        resolvedPrayerMode = 'penalty';
-      } else if (
         verdict === 'awakening' ||
         Boolean(judgment?.unlocksStage) ||
         Boolean(judgment?.stoneSolvedId)
       ) {
         resolvedPrayerMode = 'awakening';
+      } else if (
+        verdict === 'selfish_penalty' ||
+        (rawHpDelta !== null && rawHpDelta < 0) ||
+        (rawHpDeltaPct !== null && rawHpDeltaPct < 0)
+      ) {
+        resolvedPrayerMode = 'penalty';
       } else if (verdict === 'sarcastic_pat') {
         resolvedPrayerMode = 'pat';
       } else if (
@@ -1210,6 +1226,25 @@ export function createCampaignLoop({
     // 1. SMITE (`smite`, `rude_smite`, `rose_gommage`)
     if (resolvedPrayerMode === 'smite' || isSmiteVerdict) {
       clearDivineBlessing();
+      if (
+        partnerEntity &&
+        speakerEntity &&
+        Math.hypot(
+          (partnerEntity.x ?? 0) - (speakerEntity.x ?? 0),
+          (partnerEntity.z ?? 0) - (speakerEntity.z ?? 0)
+        ) > 2.4
+      ) {
+        partnerEntity.x = (speakerPos.x ?? 0) + 1.45;
+        partnerEntity.z = (speakerPos.z ?? 0) + 0.35;
+        partnerEntity.y = walkableHeightAt(partnerEntity.x, partnerEntity.z);
+        partnerEntity.char?.group?.position?.set?.(
+          partnerEntity.x,
+          partnerEntity.y,
+          partnerEntity.z
+        );
+        partnerPos = partnerEntity;
+      }
+
       const killBoth = Boolean(
         verdict === 'rose_gommage' ||
           judgment?.killBoth ||
@@ -1350,26 +1385,37 @@ export function createCampaignLoop({
     // 3. AWAKENING (Stone Riddle Solved / Stage Unlocked)
     if (resolvedPrayerMode === 'awakening') {
       stoneGuessCd = 3.0;
-      combatHeroes.Knight.downed = false;
-      combatHeroes.Knight.reviveProgress = 0;
-      combatHeroes.Knight.hp = combatHeroes.Knight.maxHp;
-      combatHeroes.Mage.downed = false;
-      combatHeroes.Mage.reviveProgress = 0;
-      combatHeroes.Mage.hp = combatHeroes.Mage.maxHp;
+      if (rawHpDeltaPct !== null && rawHpDeltaPct < 0) {
+        const dock = Math.max(1, Math.round(speakerHero.maxHp * Math.abs(rawHpDeltaPct)));
+        const floorHp = Math.max(1, Math.round(speakerHero.maxHp * 0.15));
+        speakerHero.hp = Math.max(floorHp, speakerHero.hp - dock);
+      } else {
+        const healPct =
+          rawHpDeltaPct !== null && rawHpDeltaPct > 0 ? clamp(rawHpDeltaPct, 0.6, 1.0) : 1.0;
+        for (const h of [combatHeroes.Knight, combatHeroes.Mage]) {
+          if (h.downed) {
+            h.downed = false;
+            h.reviveProgress = 0;
+            h.hp = Math.max(
+              Math.round(h.maxHp * PARTNER_REVIVE_HP),
+              Math.round(h.maxHp * healPct)
+            );
+          } else {
+            h.hp = clamp(h.hp + Math.round(h.maxHp * healPct), 1, h.maxHp);
+          }
+        }
+      }
       if (speakerEntity) speakerEntity.praying = false;
       if (partnerEntity) partnerEntity.praying = false;
 
-      // Only Stage 0 -> 1 Altar Stele awakening triggers the 3.5s Blood-Moon Eclipse reveal!
-      if (Number(judgment?.stageUnlocked) === 1 && !judgment?.stoneSolvedId) {
-        awakeningEclipseTimer = 3.5;
-      }
+      awakeningEclipseTimer = 3.5;
 
       if (Number(judgment?.stageUnlocked) >= 3) {
         addHeroQEnergy('Knight', combatHeroes.Knight.qEnergyMax);
         addHeroQEnergy('Mage', combatHeroes.Mage.qEnergyMax);
       }
 
-      vfxKit?.artoriousVfx?.triggerBlessing?.(speakerPos, partnerPos);
+      vfxKit?.artoriousVfx?.triggerHeal?.(speakerPos, partnerPos);
       combatSfx?.playShieldChime?.();
       addResonance(35);
       emitBanner(
@@ -1386,7 +1432,10 @@ export function createCampaignLoop({
         verdict: 'awakening',
         prayerMode: 'awakening',
         sequenceActive: false,
-        awakeningEclipseActive: awakeningEclipseTimer > 0,
+        awakeningEclipseActive:
+          !vfxKit && judgment?.stoneSolvedId === 'stone_grove'
+            ? false
+            : awakeningEclipseTimer > 0,
         speakerRole: speakerKey,
         partnerRole: partnerKey,
         knightHp: combatHeroes.Knight.hp,
@@ -1499,14 +1548,21 @@ export function createCampaignLoop({
       partnerEntity.praying = false;
     }
 
+    enemyManager?.blastEnemiesFromPoint?.(verdictSequence.midX, verdictSequence.midZ, 12.5, 12.5);
+    const domeCenter = {
+      x: verdictSequence.midX,
+      y: walkableHeightAt(verdictSequence.midX, verdictSequence.midZ),
+      z: verdictSequence.midZ,
+    };
+
     if (verdict === 'heal') {
       vfxKit?.artoriousVfx?.triggerHeal?.(speakerPos, partnerPos);
       addResonance(25);
     } else if (verdict === 'miracle') {
-      vfxKit?.artoriousVfx?.triggerMiracle?.(speakerPos, partnerPos);
+      vfxKit?.artoriousVfx?.triggerMiracle?.(domeCenter, partnerPos);
       heartResonance = 100;
     } else {
-      vfxKit?.artoriousVfx?.triggerBlessing?.(speakerPos, partnerPos);
+      vfxKit?.artoriousVfx?.triggerBlessing?.(domeCenter, partnerPos);
       addResonance(50);
     }
 
@@ -1957,6 +2013,10 @@ export function createCampaignLoop({
 
     let hits = [];
     if (enemyManager) {
+      const canApplyRimeMark =
+        getUnlockedStage() >= 1 ||
+        (getStonesSolvedMask() & 1) !== 0 ||
+        (!getProgressionState && manualUnlockedStage === null);
       if (ascendedActive || comboIndex === 3) {
         hits = enemyManager.applyAreaOrLineHit({
           origin: softTarget || targetPos,
@@ -1968,7 +2028,7 @@ export function createCampaignLoop({
             baseDmg: ascendedActive
               ? (HERO_STATS.Mage.heavyNovaDmg || 42) + (HERO_STATS.Mage.boltDmg[2] || 30)
               : HERO_STATS.Mage.heavyNovaDmg || 42,
-            applyMark: 'rime',
+            applyMark: canApplyRimeMark ? 'rime' : null,
             detonatesMark: true,
             empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
             partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
@@ -1985,7 +2045,7 @@ export function createCampaignLoop({
           hitSpec: {
             source: 'mage_attack3',
             baseDmg: HERO_STATS.Mage.boltDmg[2] || 30,
-            applyMark: 'rime',
+            applyMark: canApplyRimeMark ? 'rime' : null,
             empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
             partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
             attackerPos: mageState,
@@ -2789,7 +2849,7 @@ export function createCampaignLoop({
       { archetype: 'skeleton_warrior', x: Number((cx - 2.4).toFixed(2)), z: Number(clamp(cz - 2.2, 96.0, 104.0).toFixed(2)) },
       { archetype: 'skeleton_warrior', x: Number((cx + 2.4).toFixed(2)), z: Number(clamp(cz - 1.8, 96.0, 104.0).toFixed(2)) },
       { archetype: 'skeleton_rogue', x: Number((cx - 3.2).toFixed(2)), z: Number(clamp(cz + 1.4, 96.0, 104.0).toFixed(2)) },
-      { archetype: 'orc_raider', x: Number((cx + 3.2).toFixed(2)), z: Number(clamp(cz + 1.8, 96.0, 104.0).toFixed(2)) },
+      { archetype: 'skeleton_minion', x: Number((cx + 3.2).toFixed(2)), z: Number(clamp(cz + 1.8, 96.0, 104.0).toFixed(2)) },
     ];
     const spawned = [];
     for (let i = 0; i < vanguardSpecs.length; i++) {
@@ -2806,6 +2866,11 @@ export function createCampaignLoop({
 
   function startExpedition(centerPos = { x: 0, z: 102 }) {
     survivalWaveTimer = 6.0;
+    activeStrongholdIds.clear();
+    strongholdClearedMask = 0;
+    for (const k of Object.keys(strongholdWaveIndex)) {
+      strongholdWaveIndex[k] = -1;
+    }
     return spawnRoadVanguardPack(centerPos);
   }
 
@@ -2927,6 +2992,26 @@ export function createCampaignLoop({
         const targetKZ = verdictSequence.midZ - sepDz * halfSpan;
         const targetMX = verdictSequence.midX + sepDx * halfSpan;
         const targetMZ = verdictSequence.midZ + sepDz * halfSpan;
+        const pullU = clamp(t / 1.20, 0, 1);
+
+        if (knight) {
+          knight.x =
+            verdictSequence.startKnightX +
+            (targetKX - verdictSequence.startKnightX) * pullU;
+          knight.z =
+            verdictSequence.startKnightZ +
+            (targetKZ - verdictSequence.startKnightZ) * pullU;
+          knight.y = walkableHeightAt(knight.x, knight.z);
+        }
+        if (mage) {
+          mage.x =
+            verdictSequence.startMageX +
+            (targetMX - verdictSequence.startMageX) * pullU;
+          mage.z =
+            verdictSequence.startMageZ +
+            (targetMZ - verdictSequence.startMageZ) * pullU;
+          mage.y = walkableHeightAt(mage.x, mage.z);
+        }
 
         if (t < 2.10) {
           verdictSequence.beat = 1;
@@ -2951,21 +3036,13 @@ export function createCampaignLoop({
           );
 
           if (knight) {
-            knight.x =
-              verdictSequence.startKnightX +
-              (targetKX - verdictSequence.startKnightX) * fillU;
-            knight.z =
-              verdictSequence.startKnightZ +
-              (targetKZ - verdictSequence.startKnightZ) * fillU;
+            knight.x = targetKX;
+            knight.z = targetKZ;
             knight.y = walkableHeightAt(knight.x, knight.z);
           }
           if (mage) {
-            mage.x =
-              verdictSequence.startMageX +
-              (targetMX - verdictSequence.startMageX) * fillU;
-            mage.z =
-              verdictSequence.startMageZ +
-              (targetMZ - verdictSequence.startMageZ) * fillU;
+            mage.x = targetMX;
+            mage.z = targetMZ;
             mage.y = walkableHeightAt(mage.x, mage.z);
           }
         } else if (t < 4.80) {
@@ -3067,6 +3144,9 @@ export function createCampaignLoop({
       }
       if (h.iframeTimer > 0) {
         h.iframeTimer = Math.max(0, h.iframeTimer - dt);
+      }
+      if (h.burstHitTimer > 0) {
+        h.burstHitTimer = Math.max(0, h.burstHitTimer - dt);
       }
       if (h.dashCd > 0) h.dashCd = Math.max(0, h.dashCd - dt);
       if (h.dodgeIcd > 0) h.dodgeIcd = Math.max(0, h.dodgeIcd - dt);
@@ -3349,8 +3429,9 @@ export function createCampaignLoop({
             ch.downed = false;
             ch.reviveProgress = 0;
             ch.reviveTimer = 0;
-            ch.hp = Math.round(ch.maxHp * PARTNER_REVIVE_HP);
-            ch.iframeTimer = Math.max(ch.iframeTimer, 1.0);
+            const reviveHpFrac = vfxKit ? PARTNER_REVIVE_HP : 0.35;
+            ch.hp = Math.round(ch.maxHp * reviveHpFrac);
+            ch.iframeTimer = Math.max(ch.iframeTimer, 2.0);
             downedSt.actionState = null;
             downedSt.actionTimer = 0;
             downedSt.char?.play?.('revive', { loop: false, fade: 0.1, force: true });
@@ -3369,7 +3450,7 @@ export function createCampaignLoop({
 
     // 3. Open-Valley Strongholds, Survival Waves & Legacy Act Trigger Progression
     const act = ACT_DEFINITIONS[currentActId];
-    const leaderPos = knight || mage;
+    const leaderPos = (activeHeroId === 'Mage' ? mage : knight) || knight || mage;
 
     if (openValleyMode && !indicatorsHiddenForShot && leaderPos) {
       if (!roadVanguardSpawned && leaderPos.z > 65) {
@@ -3603,7 +3684,7 @@ export function createCampaignLoop({
           ? Math.hypot(nearestEnemy.x - mage.x, nearestEnemy.z - mage.z)
           : Infinity;
 
-        if (wingmanCastTimer <= 0 && nearestEnemy && nearestDist <= 15.5) {
+        if (stage1Unlocked && wingmanCastTimer <= 0 && nearestEnemy && nearestDist <= 15.5) {
           wingmanCastTimer = 6.5;
           wingmanBoltTimer = 1.05;
           let nextSpellId;
@@ -3778,6 +3859,7 @@ export function createCampaignLoop({
     combatHeroes.Knight.shield = 0;
     combatHeroes.Knight.downed = false;
     combatHeroes.Knight.reviveProgress = 0;
+    combatHeroes.Knight.burstHitTimer = 0;
     combatHeroes.Knight.summonedElement = null;
     combatHeroes.Knight.qEnergy = 0;
     combatHeroes.Knight.qEnergyPct = 0;
@@ -3800,6 +3882,7 @@ export function createCampaignLoop({
     combatHeroes.Mage.shield = 0;
     combatHeroes.Mage.downed = false;
     combatHeroes.Mage.reviveProgress = 0;
+    combatHeroes.Mage.burstHitTimer = 0;
     combatHeroes.Mage.qEnergy = 0;
     combatHeroes.Mage.qEnergyPct = 0;
     combatHeroes.Mage.consecutiveChargedCount = 0;
@@ -3926,6 +4009,9 @@ export function createCampaignLoop({
     clearDivineBlessing,
     addResonance,
     addHeroQEnergy,
+    getUnlockedStage,
+    getStonesSolvedMask,
+    isStage3Unlocked,
     setUnlockedStage,
     setOpenValleyMode,
     awardKnightKillXp,

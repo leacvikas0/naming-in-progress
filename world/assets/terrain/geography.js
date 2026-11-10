@@ -589,10 +589,10 @@ export const TREES = [
   { kind: 'oak',      variant: 2, x: 38.5,  z: -33.0, scale: 0.90 },
 
   // Grove 8: Sacred Wisteria Grove around Stone (44, 16) (4 trees)
-  { id: 'wisteria_grove_n', kind: 'wisteria', variant: 0, x: 35.2,  z: 10.5,  scale: 1.26, label: 'Sacred Grove North Wisteria' },
-  { id: 'wisteria_grove_e', kind: 'wisteria', variant: 1, x: 53.5,  z: 16.5,  scale: 1.36, label: 'Sacred Grove East Wisteria' },
-  { id: 'wisteria_grove_s', kind: 'wisteria', variant: 2, x: 41.0,  z: 27.2,  scale: 1.26, label: 'Sacred Grove South Wisteria' },
-  { kind: 'sakura',   variant: 0, x: 33.8,  z: 22.8,  scale: 1.08 },
+  { id: 'wisteria_grove_n', kind: 'wisteria', variant: 0, x: 31.5,  z: 9.0,   scale: 1.26, label: 'Sacred Grove North Wisteria' },
+  { id: 'wisteria_grove_e', kind: 'wisteria', variant: 1, x: 56.5,  z: 16.5,  scale: 1.36, label: 'Sacred Grove East Wisteria' },
+  { id: 'wisteria_grove_s', kind: 'wisteria', variant: 2, x: 41.0,  z: 33.5,  scale: 1.26, label: 'Sacred Grove South Wisteria' },
+  { kind: 'sakura',   variant: 0, x: 31.0,  z: 26.5,  scale: 1.08 },
 
   // Grove 9: South-West Hamlet Approach Woodland Grove (4 trees)
   { kind: 'oak',      variant: 0, x: -26.0, z: 31.0,  scale: 1.24 },

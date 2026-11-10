@@ -611,6 +611,463 @@ const SCENARIOS = {
     await page.close();
     return errors;
   },
+
+  // 7. AGGRESSIVE AUDIT 1: Live Solo Start at (0, 124) -> Stage 0 Lock Check -> Road Vanguard Pack -> Parry/Block -> Alt+Tab Hero Swap
+  async 'aggr-1-spawn-and-road-vanguard'() {
+    const { page, errors } = await openWorldPage();
+    await page.evaluate(() => {
+      const w = window.__WORLD__;
+      w.setGameplayShot?.(null);
+      w.enemyManager.clearAllEnemies();
+      // Set exact Stage 0 progression (fresh game start)
+      const prog0 = w.coopClient.progression.setUnlocks({
+        communeDiscovered: false,
+        iceUnlocked: false,
+        fireUnlocked: false,
+        ultimateUnlocked: false,
+        stone1Solved: false,
+        stone2Solved: false,
+        stone3Solved: false,
+        stonesSolvedMask: 0,
+      });
+      w.coopSystem.setUnlockedStage(0);
+      w.campaignLoop.setUnlockedStage(0, 0);
+      w.sculptedHud?.setProgressionState(prog0);
+      w.campaignLoop.setOpenValleyMode(true);
+      w.coopSystem.teleportLeaderAndPartner(0.0, 114.0, Math.PI);
+      w.camState.mode = 'player';
+      w.camState.yaw = Math.PI;
+      w.camState.pitch = 0.2;
+      w.camState.dist = 6.8;
+    });
+    await stepFrames(page, 6);
+    await recordClip(page, 'aggr-1-spawn-and-road-vanguard', 6.0, async (t, pg) => {
+      // Beat 1 (t=0.2s..1.4s): Run North down the road from z=114 into the Road Vanguard Pack at z=102, testing locked E/Q/Tab keys at Stage 0
+      if (hitFrame(t, 0.15)) {
+        await keyAct(pg, 'w', true);
+        await keyAct(pg, 'Shift', true);
+      }
+      if (hitFrame(t, 0.35)) await keyAct(pg, 'e', true);
+      if (hitFrame(t, 0.45)) await keyAct(pg, 'e', false);
+      if (hitFrame(t, 1.35)) {
+        await keyAct(pg, 'Shift', false);
+        await keyAct(pg, 'w', false);
+      }
+      // Beat 2 (t=1.5s..3.2s): Engage Road Vanguard Pack (2 Skeleton_Warrior + 1 Rogue + 1 OrcRaider) with 4-hit combo + Shield Block
+      for (const tapT of [1.5, 1.95, 2.4, 2.85]) {
+        if (hitFrame(t, tapT)) {
+          await pg.evaluate(() => window.__WORLD__.coopSystem.triggerAction('attack'));
+        }
+      }
+      if (hitFrame(t, 3.35)) await keyAct(pg, 'f', true);
+      if (hitFrame(t, 3.85)) await keyAct(pg, 'f', false);
+      // Beat 3 (t=4.0s..5.8s): Swap to Mage mid-fight (Alt+Tab), fire 3-bolt combo + Hold-LMB Shatterlance
+      if (hitFrame(t, 4.0)) {
+        await pg.evaluate(() => window.__WORLD__.coopSystem.swapActiveHero());
+      }
+      for (const tapT of [4.2, 4.65, 5.1]) {
+        if (hitFrame(t, tapT)) {
+          await pg.evaluate(() => window.__WORLD__.coopSystem.triggerAction('attack'));
+        }
+      }
+      const eCount = await pg.evaluate(
+        () => window.__WORLD__?.enemyManager?.activeEnemies?.length || 0
+      );
+      return `Stage0-RoadPack enemies=${eCount}`;
+    });
+    await page.close();
+    return errors;
+  },
+
+  // 8. AGGRESSIVE AUDIT 2: Village Well Stronghold (0,0) -> 6-Enemy Ambush -> Stone 1 [G] Inspect Under Fire vs Clear -> [R] Stage 1 Awakening
+  async 'aggr-2-well-stronghold-and-stone1'() {
+    const { page, errors } = await openWorldPage();
+    await page.evaluate(() => {
+      const w = window.__WORLD__;
+      w.setGameplayShot?.(null);
+      w.enemyManager.clearAllEnemies();
+      w.campaignLoop.resetCampaign();
+      const prog0 = w.coopClient.progression.setUnlocks({
+        communeDiscovered: false,
+        iceUnlocked: false,
+        fireUnlocked: false,
+        ultimateUnlocked: false,
+        stone1Solved: false,
+        stone2Solved: false,
+        stone3Solved: false,
+        stonesSolvedMask: 0,
+      });
+      w.coopSystem.setUnlockedStage(0);
+      w.campaignLoop.setUnlockedStage(0, 0);
+      w.sculptedHud?.setProgressionState(prog0);
+      w.campaignLoop.setOpenValleyMode(true);
+      w.coopSystem.teleportLeaderAndPartner(0.0, 14.0, Math.PI);
+      w.camState.mode = 'player';
+      w.camState.yaw = Math.PI;
+      w.camState.pitch = 0.22;
+      w.camState.dist = 7.4;
+    });
+    await stepFrames(page, 6);
+    await recordClip(page, 'aggr-2-well-stronghold-and-stone1', 6.5, async (t, pg) => {
+      // Beat 1 (t=0.1s..1.1s): Walk up to Village Well (0,0) while 6-enemy Well Stronghold spawns around Plaza
+      if (hitFrame(t, 0.1)) await keyAct(pg, 'w', true);
+      if (hitFrame(t, 1.1)) await keyAct(pg, 'w', false);
+      // Beat 2 (t=1.2s..2.5s): Fight Well defenders right beside the Well
+      for (const tapT of [1.2, 1.65, 2.1]) {
+        if (hitFrame(t, tapT)) {
+          await pg.evaluate(() => window.__WORLD__.coopSystem.triggerAction('attack'));
+        }
+      }
+      // Beat 3 (t=2.7s): Clear remaining Well defenders & press [G] to inspect Stone 1 Well Inscription
+      if (hitFrame(t, 2.7)) {
+        await pg.evaluate(() => {
+          const w = window.__WORLD__;
+          w.enemyManager.clearAllEnemies();
+          w.enterStoneInspection();
+        });
+      }
+      // Beat 4 (t=4.2s): Exit Stone 1 inspection [G] & trigger Stage 1 Awakening Verdict [R]
+      if (hitFrame(t, 4.2)) {
+        await pg.evaluate(() => {
+          const w = window.__WORLD__;
+          w.exitStoneInspection();
+          const judgment = {
+            verdict: 'awakening',
+            prayerMode: 'awakening',
+            unlocksStage: true,
+            stageUnlocked: 1,
+            stoneSolvedId: 'stone_plaza',
+            hpDeltaPct: 0.6,
+            divine_quote:
+              'A thousand winters have buried this valley in silence... yet one tender vow wakes the frost beneath your feet.',
+          };
+          const updated = w.coopClient.progression.applyVerdictProgression(judgment);
+          w.sculptedHud?.setProgressionState(updated);
+          w.coopSystem.applyCommuneVerdict(judgment, 'Knight');
+        });
+      }
+      // Beat 5 (t=5.2s): Test newly unlocked Stage 1 Ice [E] Power Sword!
+      if (hitFrame(t, 5.2)) await keyAct(pg, 'e', true);
+      if (hitFrame(t, 5.3)) await keyAct(pg, 'e', false);
+
+      const info = await pg.evaluate(() => {
+        const w = window.__WORLD__;
+        return `stg=${w.campaignLoop.getUnlockedStage()} insp=${w.stoneGazeState.inspectActive ? 1 : 0} en=${w.enemyManager.activeEnemies.length}`;
+      });
+      return `Well-Stronghold ${info}`;
+    });
+    await page.close();
+    return errors;
+  },
+
+  // 9. AGGRESSIVE AUDIT 3: Whispering Grove (44, 16) -> Grove Necromancer Boss + PlantWarriors + Summons -> Stage 2 Awakening
+  async 'aggr-3-grove-necromancer-and-stone2'() {
+    const { page, errors } = await openWorldPage();
+    await page.evaluate(() => {
+      const w = window.__WORLD__;
+      w.setGameplayShot?.(null);
+      w.enemyManager.clearAllEnemies();
+      w.campaignLoop.resetCampaign();
+      const prog1 = w.coopClient.progression.setUnlocks({
+        communeDiscovered: true,
+        iceUnlocked: true,
+        fireUnlocked: false,
+        ultimateUnlocked: false,
+        stone1Solved: true,
+        stone2Solved: false,
+        stone3Solved: false,
+        stonesSolvedMask: 1,
+      });
+      w.coopSystem.setUnlockedStage(1);
+      w.campaignLoop.setUnlockedStage(1, 1);
+      w.sculptedHud?.setProgressionState(prog1);
+      w.campaignLoop.setOpenValleyMode(true);
+      if (w.coopSystem.player.activeHeroId !== 'Mage') {
+        w.coopSystem.swapActiveHero();
+      }
+      w.coopSystem.teleportLeaderAndPartner(44.0, 25.0, Math.PI);
+      w.camState.mode = 'player';
+      w.camState.yaw = Math.PI;
+      w.camState.pitch = 0.24;
+      w.camState.dist = 8.2;
+    });
+    await stepFrames(page, 6);
+    await recordClip(page, 'aggr-3-grove-necromancer-and-stone2', 6.5, async (t, pg) => {
+      // Beat 1 (t=0.2s..0.8s): Aim & cast Mage E Frost Lance (14.5m) into Grove Necromancer & PlantWarriors
+      if (hitFrame(t, 0.2)) {
+        await pg.evaluate(() => {
+          const w = window.__WORLD__;
+          w.coopSystem.startSkillAim({ yaw: Math.PI, pitch: 0.22, distance: 12.0 });
+        });
+      }
+      if (hitFrame(t, 0.55)) {
+        await pg.evaluate(() => {
+          const w = window.__WORLD__;
+          w.coopSystem.releaseSkillAim({ yaw: Math.PI, pitch: 0.22, distance: 12.0 });
+        });
+      }
+      // Beat 2 (t=1.2s..2.5s): Mage Hold-LMB Shatterlance + Dodge Left
+      if (hitFrame(t, 1.25)) {
+        await pg.evaluate(() => {
+          const w = window.__WORLD__;
+          w.coopSystem.triggerAction('shatterlance_aim_start', {
+            yaw: Math.PI,
+            pitch: 0.22,
+            distance: 9.5,
+          });
+        });
+      }
+      if (hitFrame(t, 1.55)) {
+        await pg.evaluate(() => {
+          const w = window.__WORLD__;
+          w.coopSystem.triggerAction('shatterlance_aim_release', {
+            yaw: Math.PI,
+            pitch: 0.22,
+            distance: 9.5,
+          });
+        });
+      }
+      if (hitFrame(t, 2.2)) await keyAct(pg, 'a', true);
+      if (hitFrame(t, 2.28)) await keyAct(pg, 'Shift', true);
+      if (hitFrame(t, 2.38)) await keyAct(pg, 'Shift', false);
+      if (hitFrame(t, 2.7)) await keyAct(pg, 'a', false);
+      // Beat 3 (t=2.9s..4.2s): Swap to Knight, ignite Ice Sword [E], slash Necromancer
+      if (hitFrame(t, 2.9)) {
+        await pg.evaluate(() => window.__WORLD__.coopSystem.swapActiveHero());
+      }
+      if (hitFrame(t, 3.05)) await keyAct(pg, 'e', true);
+      if (hitFrame(t, 3.15)) await keyAct(pg, 'e', false);
+      for (const tapT of [3.3, 3.75, 4.2]) {
+        if (hitFrame(t, tapT)) {
+          await pg.evaluate(() => window.__WORLD__.coopSystem.triggerAction('attack'));
+        }
+      }
+      // Beat 4 (t=4.8s): Clear Grove, walk onto Medallion (44, 16), inspect Stone 2 [G]
+      if (hitFrame(t, 4.8)) {
+        await pg.evaluate(() => {
+          const w = window.__WORLD__;
+          w.enemyManager.clearAllEnemies();
+          w.coopSystem.teleportLeaderAndPartner(44.0, 17.2, Math.PI);
+          w.enterStoneInspection();
+        });
+      }
+      // Beat 5 (t=5.8s): Exit inspection & unlock Stage 2 (Fire [E] + [Tab])
+      if (hitFrame(t, 5.8)) {
+        await pg.evaluate(() => {
+          const w = window.__WORLD__;
+          w.exitStoneInspection();
+          const judgment = {
+            verdict: 'awakening',
+            prayerMode: 'awakening',
+            unlocksStage: true,
+            stageUnlocked: 2,
+            stoneSolvedId: 'stone_grove',
+            hpDeltaPct: 0.6,
+            divine_quote: 'Take the ember you asked for—let sunfire answer the frost.',
+          };
+          const updated = w.coopClient.progression.applyVerdictProgression(judgment);
+          w.sculptedHud?.setProgressionState(updated);
+          w.coopSystem.applyCommuneVerdict(judgment, 'Knight');
+        });
+      }
+      const bossInfo = await pg.evaluate(() => {
+        const w = window.__WORLD__;
+        const b = w.enemyManager.activeEnemies.find((e) => e && e.isBoss && !e.dead);
+        return b ? `boss=${b.archetype}(${b.hp}/${b.maxHp})` : `en=${w.enemyManager.activeEnemies.length}`;
+      });
+      return `Grove-Stronghold ${bossInfo}`;
+    });
+    await page.close();
+    return errors;
+  },
+
+  // 10. AGGRESSIVE AUDIT 4: West Cottage Wall (-21.6, 20.4) -> BlackKnight Shield + OrcBrute -> Cross-Element Detonation -> Downed & Proximity Revive -> Stage 3
+  async 'aggr-4-wall-blackknight-and-detonations'() {
+    const { page, errors } = await openWorldPage();
+    await page.evaluate(() => {
+      const w = window.__WORLD__;
+      w.setGameplayShot?.(null);
+      w.enemyManager.clearAllEnemies();
+      w.campaignLoop.resetCampaign();
+      const prog2 = w.coopClient.progression.setUnlocks({
+        communeDiscovered: true,
+        iceUnlocked: true,
+        fireUnlocked: true,
+        ultimateUnlocked: false,
+        stone1Solved: true,
+        stone2Solved: true,
+        stone3Solved: false,
+        stonesSolvedMask: 3,
+      });
+      w.coopSystem.setUnlockedStage(2);
+      w.campaignLoop.setUnlockedStage(2, 3);
+      w.sculptedHud?.setProgressionState(prog2);
+      w.campaignLoop.setOpenValleyMode(true);
+      if (w.coopSystem.player.activeHeroId !== 'Knight') {
+        w.coopSystem.swapActiveHero();
+      }
+      w.coopSystem.teleportLeaderAndPartner(-21.6, 25.0, Math.PI);
+      w.camState.mode = 'player';
+      w.camState.yaw = Math.PI;
+      w.camState.pitch = 0.24;
+      w.camState.dist = 7.6;
+    });
+    await stepFrames(page, 6);
+    await recordClip(page, 'aggr-4-wall-blackknight-and-detonations', 6.5, async (t, pg) => {
+      // Beat 1 (t=0.15s..2.0s): Toggle [Tab] to Fire, press [E] Hinokami Sunfire Sword, fight BlackKnight & OrcBrute (triggering cross-element detonations with Wingman Mage!)
+      if (hitFrame(t, 0.15)) await keyAct(pg, 'Tab', true);
+      if (hitFrame(t, 0.25)) await keyAct(pg, 'Tab', false);
+      if (hitFrame(t, 0.35)) await keyAct(pg, 'e', true);
+      if (hitFrame(t, 0.45)) await keyAct(pg, 'e', false);
+      for (const tapT of [0.6, 1.05, 1.5, 1.95]) {
+        if (hitFrame(t, tapT)) {
+          await pg.evaluate(() => window.__WORLD__.coopSystem.triggerAction('attack'));
+        }
+      }
+      // Beat 2 (t=2.4s..5.1s): Simulate Mage getting downed in combat and Knight reviving her by standing within 2.5m for 2.5s while holding Shield Block [F]!
+      if (hitFrame(t, 2.4)) {
+        await pg.evaluate(() => {
+          const w = window.__WORLD__;
+          const k = w.coopSystem.heroStates.Knight;
+          const m = w.coopSystem.heroStates.Mage;
+          m.x = k.x + 1.2;
+          m.z = k.z + 0.4;
+          m.char.group.position.set(m.x, m.y, m.z);
+          w.campaignLoop.combatHeroes.Mage.hp = 0;
+          w.campaignLoop.combatHeroes.Mage.downed = true;
+          m.char.play('downed', { loop: true, fade: 0.08, force: true });
+        });
+        await keyAct(pg, 'f', true);
+      }
+      if (hitFrame(t, 5.05)) {
+        await keyAct(pg, 'f', false);
+      }
+      // Beat 3 (t=5.2s): Clear courtyard & inspect Stone 3 Wall (-21.6, 20.4) [G]
+      if (hitFrame(t, 5.2)) {
+        await pg.evaluate(() => {
+          const w = window.__WORLD__;
+          w.enemyManager.clearAllEnemies();
+          w.enterStoneInspection();
+        });
+      }
+      const revInfo = await pg.evaluate(() => {
+        const w = window.__WORLD__;
+        const m = w.campaignLoop.combatHeroes.Mage;
+        return `M_down=${m.downed ? 1 : 0} rev=${(m.reviveProgress || 0).toFixed(2)} M_hp=${m.hp}`;
+      });
+      return `Wall-Stronghold ${revInfo}`;
+    });
+    await page.close();
+    return errors;
+  },
+
+  // 11. AGGRESSIVE AUDIT 5: Apex Finale Golems (FrostGolem + Skeleton_Golem) -> Mode A Field Heal -> Mode B 4.8s Eclipse Blessing -> Divine Smite Rose Dissolve
+  async 'aggr-5-apex-golems-ultimates-and-commune'() {
+    const { page, errors } = await openWorldPage();
+    await page.evaluate(() => {
+      const w = window.__WORLD__;
+      w.setGameplayShot?.(null);
+      w.enemyManager.clearAllEnemies();
+      w.campaignLoop.resetCampaign();
+      const prog3 = w.coopClient.progression.setUnlocks({
+        communeDiscovered: true,
+        iceUnlocked: true,
+        fireUnlocked: true,
+        ultimateUnlocked: true,
+        stone1Solved: true,
+        stone2Solved: true,
+        stone3Solved: true,
+        stonesSolvedMask: 7,
+      });
+      w.coopSystem.setUnlockedStage(3);
+      w.campaignLoop.setUnlockedStage(3, 7);
+      w.sculptedHud?.setProgressionState(prog3);
+      w.campaignLoop.setOpenValleyMode(true);
+      if (w.coopSystem.player.activeHeroId !== 'Knight') {
+        w.coopSystem.swapActiveHero();
+      }
+      w.coopSystem.teleportLeaderAndPartner(0.0, -4.5, Math.PI);
+      w.camState.mode = 'player';
+      w.camState.yaw = Math.PI;
+      w.camState.pitch = 0.24;
+      w.camState.dist = 8.8;
+    });
+    await stepFrames(page, 6);
+    await recordClip(page, 'aggr-5-apex-golems-ultimates-and-commune', 7.0, async (t, pg) => {
+      // Beat 1 (t=0.2s): Knight [Q] Twin-Dragon Awakening against FrostGolem & Skeleton_Golem!
+      if (hitFrame(t, 0.2)) await keyAct(pg, 'q', true);
+      if (hitFrame(t, 0.3)) await keyAct(pg, 'q', false);
+      // Beat 2 (t=1.4s): Test Mode A In-Place Field Heal (+60% Max HP, zero cutscene lock)
+      if (hitFrame(t, 1.4)) {
+        await pg.evaluate(() => {
+          const w = window.__WORLD__;
+          w.campaignLoop.combatHeroes.Knight.hp = 95;
+          w.campaignLoop.combatHeroes.Mage.hp = 50;
+          w.coopSystem.applyCommuneVerdict(
+            {
+              verdict: 'heal',
+              prayerMode: 'field_heal',
+              hpDeltaPct: 0.6,
+              divine_quote: 'A warm golden breeze mends your wounds in place.',
+            },
+            'Knight'
+          );
+        });
+      }
+      // Beat 3 (t=2.2s..4.8s): Drop Knight to 25% HP & trigger Mode B Divine Miracle (Eclipse + Briar Dome Resurrection)
+      if (hitFrame(t, 2.2)) {
+        await pg.evaluate(() => {
+          const w = window.__WORLD__;
+          w.campaignLoop.combatHeroes.Knight.hp = 45;
+          w.campaignLoop.combatHeroes.Mage.downed = true;
+          w.campaignLoop.combatHeroes.Mage.hp = 0;
+          w.coopSystem.applyCommuneVerdict(
+            {
+              verdict: 'miracle',
+              prayerMode: 'divine_miracle',
+              divine_quote: 'Stand, then—the thorns shall hold the sky until your song is finished.',
+            },
+            'Knight'
+          );
+        });
+      }
+      // Beat 4 (t=5.2s..6.9s): Trigger Divine Smite (`rose_gommage`) B&W monochrome + crimson petal dissolve!
+      if (hitFrame(t, 5.2)) {
+        await pg.evaluate(() => {
+          const w = window.__WORLD__;
+          w.campaignLoop.verdictSequence.active = false;
+          const k = w.coopSystem.heroStates.Knight;
+          const m = w.coopSystem.heroStates.Mage;
+          if (k) {
+            k.x = 0.0;
+            k.z = -4.5;
+            k.char.group.position.set(k.x, k.y, k.z);
+          }
+          if (m) {
+            m.x = 1.35;
+            m.z = -4.2;
+            m.char.group.position.set(m.x, m.y, m.z);
+          }
+          w.coopSystem.applyCommuneVerdict(
+            {
+              verdict: 'smite',
+              prayerMode: 'smite',
+              divine_quote: 'Watch how swiftly a mortal bloom unravels into ash.',
+            },
+            'Knight'
+          );
+        });
+      }
+      const vState = await pg.evaluate(() => {
+        const w = window.__WORLD__;
+        const vs = w.campaignLoop.verdictSequence;
+        return `vSeq=${vs.active ? `${vs.kind}(b${vs.beat},${vs.elapsed.toFixed(1)}s)` : 'idle'} bless=${w.campaignLoop.isDivineBlessingActive() ? 1 : 0}`;
+      });
+      return `Apex-Commune ${vState}`;
+    });
+    await page.close();
+    return errors;
+  },
 };
 
 const listToRun = specFile

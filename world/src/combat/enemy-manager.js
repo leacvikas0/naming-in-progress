@@ -2490,6 +2490,30 @@ export async function createEnemyManager({
         }
       }
 
+      if (!e.isStationary && e.char?.group) {
+        const heroList = [knight, mage];
+        for (let hIdx = 0; hIdx < heroList.length; hIdx++) {
+          const h = heroList[hIdx];
+          if (!h || h.downed) continue;
+          const hdx = e.x - h.x;
+          const hdz = e.z - h.z;
+          const minHeroSep = (e.radius || 0.5) + 0.52;
+          const hd = Math.hypot(hdx, hdz);
+          if (hd < minHeroSep) {
+            const push = minHeroSep - hd;
+            const nx = hd > 1e-4 ? hdx / hd : Math.sin(e.yaw || 0);
+            const nz = hd > 1e-4 ? hdz / hd : Math.cos(e.yaw || 0);
+            const clampedH = applyEnemySpatialConstraints(
+              e.x + nx * push,
+              e.z + nz * push,
+              e.radius
+            );
+            e.x = clampedH.x;
+            e.z = clampedH.z;
+          }
+        }
+      }
+
       const finalClamped = applyEnemySpatialConstraints(e.x, e.z, e.radius);
       e.x = finalClamped.x;
       e.z = finalClamped.z;
@@ -2683,9 +2707,10 @@ export async function createEnemyManager({
         e.hasAttackToken = false;
 
         if (!e.isStationary) {
+          const minBlastOut = Math.max(dist + 7.5, 11.2, targetPush * 0.9);
           const pushedPos = applyEnemySpatialConstraints(
-            cx + nx * Math.max(dist + 3.5, targetPush * 0.65),
-            cz + nz * Math.max(dist + 3.5, targetPush * 0.65),
+            cx + nx * minBlastOut,
+            cz + nz * minBlastOut,
             e.radius
           );
           e.x = pushedPos.x;
@@ -2732,14 +2757,15 @@ export async function createEnemyManager({
     for (let i = 0; i < activeEnemies.length; i++) {
       const e = activeEnemies[i];
       if (!e || e.dead || !e.active) continue;
-      if (!e.grounded || e.isStationary) continue;
+      if (e.isStationary) continue;
       const dx = e.x - cx;
       const dz = e.z - cz;
       const d = Math.hypot(dx, dz);
-      if (d < wardRadius) {
+      const minDist = Math.max(wardRadius, 8.5) + (e.radius || 0.5);
+      if (d < minDist) {
         const nx = d > 1e-4 ? dx / d : 1.0;
         const nz = d > 1e-4 ? dz / d : 0.0;
-        const targetDist = wardRadius + 0.35;
+        const targetDist = minDist + 0.35;
         const nextPos = applyEnemySpatialConstraints(
           cx + nx * targetDist,
           cz + nz * targetDist,

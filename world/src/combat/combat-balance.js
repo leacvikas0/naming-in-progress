@@ -782,14 +782,13 @@ export const STONE_STRONGHOLDS = Object.freeze({
       Object.freeze({ archetype: 'skeleton_minion', x: -5.5, z: 7.5 }),
       Object.freeze({ archetype: 'skeleton_minion', x: 5.5, z: 7.5 }),
       Object.freeze({ archetype: 'skeleton_warrior', x: 0.0, z: 9.2 }),
+      Object.freeze({ archetype: 'skeleton_rogue', x: -6.8, z: 3.4 }),
     ]),
     spawns: Object.freeze([
-      Object.freeze({ archetype: 'skeleton_warrior', x: -7.2, z: -5.8 }),
-      Object.freeze({ archetype: 'skeleton_warrior', x: 7.2, z: -5.8 }),
-      Object.freeze({ archetype: 'skeleton_rogue', x: -8.6, z: 2.4 }),
-      Object.freeze({ archetype: 'skeleton_rogue', x: 8.2, z: 3.4 }),
-      Object.freeze({ archetype: 'orc_raider', x: 0.0, z: 8.8 }),
-      Object.freeze({ archetype: 'skeleton_mage', x: 8.6, z: -3.2 }),
+      Object.freeze({ archetype: 'skeleton_minion', x: -5.5, z: 7.5 }),
+      Object.freeze({ archetype: 'skeleton_minion', x: 5.5, z: 7.5 }),
+      Object.freeze({ archetype: 'skeleton_warrior', x: 0.0, z: 9.2 }),
+      Object.freeze({ archetype: 'skeleton_rogue', x: -6.8, z: 3.4 }),
     ]),
   }),
   site2_platform: Object.freeze({
@@ -820,12 +819,12 @@ export const STONE_STRONGHOLDS = Object.freeze({
     center: Object.freeze({ x: -21.6, z: 20.4, y: 0.0 }),
     triggerRadius: 20.0,
     spawns: Object.freeze([
-      Object.freeze({ archetype: 'black_knight', x: -19.8, z: 17.8, isElite: true }),
-      Object.freeze({ archetype: 'orc_brute', x: -23.4, z: 18.0, isBoss: true }),
-      Object.freeze({ archetype: 'skeleton_rogue', x: -17.2, z: 21.6 }),
-      Object.freeze({ archetype: 'skeleton_rogue', x: -25.6, z: 21.6 }),
-      Object.freeze({ archetype: 'orc_raider', x: -21.6, z: 15.6 }),
-      Object.freeze({ archetype: 'skeleton_mage', x: -18.5, z: 24.2 }),
+      Object.freeze({ archetype: 'black_knight', x: -19.8, z: 22.4, isElite: true }),
+      Object.freeze({ archetype: 'orc_brute', x: -23.4, z: 22.8, isBoss: true }),
+      Object.freeze({ archetype: 'skeleton_rogue', x: -17.5, z: 21.8 }),
+      Object.freeze({ archetype: 'skeleton_rogue', x: -24.2, z: 23.6 }),
+      Object.freeze({ archetype: 'orc_raider', x: -21.6, z: 24.4 }),
+      Object.freeze({ archetype: 'skeleton_mage', x: -18.5, z: 25.6 }),
     ]),
   }),
   apex_finale: Object.freeze({
@@ -894,7 +893,7 @@ export const SURVIVAL_WAVE_POOLS = Object.freeze({
     minCount: 4,
     maxCount: 7,
     isApexFinale: true,
-    pool: Object.freeze(['frost_golem', 'skeleton_golem', 'orc_raider', 'werewolf']),
+    pool: Object.freeze(['black_knight', 'plant_warrior', 'orc_raider', 'werewolf']),
   }),
 });
 

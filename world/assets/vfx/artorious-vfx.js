@@ -806,7 +806,7 @@ function createPrismsAndDebrisMaterial(noiseAtlas, sharedUniforms, config) {
     transparent: false,
     depthWrite: true,
     depthTest: true,
-    side: THREE.FrontSide,
+    side: THREE.DoubleSide,
     uniforms: {
       uNoiseAtlas: { value: noiseAtlas },
       uTime: sharedUniforms.uTime,
@@ -863,7 +863,7 @@ function createPrismsAndDebrisMaterial(noiseAtlas, sharedUniforms, config) {
         float isForegroundLens = step(1.5, vMeta.y);
         float dissolveProgress = clamp(vMeta.z, 0.0, 1.0);
 
-        vec3 N = normalize(vWorldNormal);
+        vec3 N = gl_FrontFacing ? normalize(vWorldNormal) : -normalize(vWorldNormal);
         vec3 V = normalize(cameraPosition - vWorldPos);
         vec3 L = normalize(vec3(uSunDir.x, max(0.48, uSunDir.y), uSunDir.z));
         float ndl = dot(N, L) * 0.5 + 0.5;
@@ -2434,20 +2434,22 @@ export class ArtoriousVfxSystem {
 
     const dissProg = this._characterDissolveProgress;
 
-    // DC 3: All 240 instances are Body-to-Wind Crimson Petals (ZERO stationary camera-border petals, ZERO whole roses!)
+    // DC 3: All 240 instances are Body-to-Wind Crimson Petals & Blossoms
     let dSlot = 0;
     const worldPetalCount = MAX_PRISMS_AND_DEBRIS; // 240
+    const emergeFactor = smoothstep(0.0, 0.18, t);
+
     for (let i = 0; i < worldPetalCount; i++) {
       const rec = this.debrisRecords[i];
 
       // Stratified birth coordinates across the dying character's 3D silhouette:
-      // uBodyX: 0.0 (far-left edge, -0.74m) -> 1.0 (far-right edge, +0.62m)
+      // uBodyX: 0.0 (far-left edge, -0.68m) -> 1.0 (far-right edge, +0.62m)
       // uBodyY: 0.04 (boots) -> 0.98 (helmet/head)
       const uBodyX = (i * 0.61803398875 + hash11(rec.seed * 1.9 + i) * 0.08) % 1.0;
       const uBodyY = clamp((i / worldPetalCount) * 0.88 + (hash11(rec.seed * 3.1 + i) - 0.35) * 0.18, 0.03, 0.98);
-      const bodyLocalX = -0.74 + uBodyX * 1.36;
-      const bodyLocalY = 0.05 + uBodyY * 1.56;
-      const bodyLocalZ = (hash11(rec.seed * 7.3 + i) - 0.5) * 0.42;
+      const bodyLocalX = -0.68 + uBodyX * 1.30;
+      const bodyLocalY = 0.06 + uBodyY * 1.56;
+      const bodyLocalZ = (hash11(rec.seed * 7.3 + i) - 0.5) * 0.44;
 
       // Exact left-to-right wind erosion threshold matching toon-skin.js (`leftToRight * 0.78 + (1 - hNorm) * 0.08`)
       const erodeThreshold = clamp(
@@ -2455,22 +2457,20 @@ export class ArtoriousVfxSystem {
         0.02,
         0.96
       );
-      const deltaProg = dissProg * 1.06 - erodeThreshold;
 
-      // Real-time detachment timestamp `tDetach` (0.12s..1.60s) so `windAge` advances continuously with `t`
-      // and NEVER stops or parks on the right side!
-      const tDetach = 0.10 + 1.50 * clamp(erodeThreshold / 1.02, 0.0, 1.0);
+      // From t = 0.02s .. 0.45s, sprout crimson rose clusters all over the victim's body,
+      // then peel them into the wind vortex from t = 0.20s .. 2.60s!
+      const tDetach = 0.20 + 1.15 * clamp(erodeThreshold / 0.98, 0.0, 1.0);
       const windAge = Math.max(0.0, t - tDetach);
 
-      // Each petal has a staggered wind-flight lifespan (0.48s..0.92s) over which it runs away to the right,
-      // smoothly tapers in size, and erodes from its outer rim inward so you cannot tell when it disappeared!
-      const petalLife = 0.48 + 0.44 * hash11(rec.seed * 13.7 + i * 3.1);
+      // Long wind-flight lifespan (1.35s..1.95s) so all 240 petals remain unmistakably visible through t = 2.60s
+      const petalLife = 1.35 + 0.60 * hash11(rec.seed * 13.7 + i * 3.1);
       const uLife = windAge > 0.0 ? clamp(windAge / petalLife, 0.0, 1.0) : 0.0;
-      const dissolveProgress = smoothstep(0.18, 0.96, uLife);
-      if (dissolveProgress >= 0.992 || uLife >= 0.992) continue;
+      const dissolveProgress = smoothstep(0.55, 0.99, uLife);
+      if (dissolveProgress >= 0.995 || uLife >= 0.995 || emergeFactor <= 0.001) continue;
 
-      // Larger individual 3D rose petals (1.68x base size) so each petal reads clearly!
-      const basePetalSize = rec.size * 1.68;
+      // 1.35x larger 3D rose petals so each petal reads clearly against the stark B&W world!
+      const basePetalSize = rec.size * 1.68 * 1.35;
 
       let localRight;
       let localUp;
@@ -2481,46 +2481,44 @@ export class ArtoriousVfxSystem {
       let sc = basePetalSize;
 
       if (windAge <= 0.0) {
-        // Active Wind-Transformation Seam: petals remain invisible (sc = 0) until the left-to-right
-        // wind seam comes within 0.18 of their exact body coordinate (bodyLocalX, bodyLocalY),
-        // then bud directly out of the character's dissolving armor/flesh right before peeling away!
-        const emergeFactor = smoothstep(-0.18, -0.005, deltaProg);
-        if (emergeFactor <= 0.001) continue;
-        const flutter = Math.sin(t * 9.0 + i * 1.7) * 0.025 * emergeFactor;
-        localRight = bodyLocalX + flutter;
-        localUp = bodyLocalY + Math.cos(t * 7.5 + i * 2.1) * 0.025 * emergeFactor;
-        localDepth = bodyLocalZ;
+        // Sprout crimson rose clusters all over the victim's body (t = 0.02s .. tDetach)
+        const clusterAng = (i % 6) * (TAU / 6) + rec.seed;
+        const clusterRad = 0.045 * emergeFactor;
+        const flutter = Math.sin(t * 9.0 + i * 1.7) * 0.028 * emergeFactor;
+        localRight = bodyLocalX + Math.cos(clusterAng) * clusterRad + flutter;
+        localUp = bodyLocalY + Math.cos(t * 7.5 + i * 2.1) * 0.028 * emergeFactor;
+        localDepth = bodyLocalZ + Math.sin(clusterAng) * clusterRad;
         rotX = 0.55 + Math.sin(t * 4.5 + i) * 0.35;
-        rotY = 0.25 + (i % 7) * 0.42 + t * 0.8;
+        rotY = clusterAng + t * 0.8;
         rotZ = -0.38 + Math.cos(t * 5.0 + i) * 0.28;
-        sc = basePetalSize * 1.12 * emergeFactor;
+        sc = basePetalSize * (0.95 + 0.28 * Math.sin(emergeFactor * Math.PI * 0.65)) * emergeFactor;
       } else {
-        // Detached & Running Away Fast in the Left-to-Right Wind (`+windRight`):
-        // Accelerates briskly rightward across the plaza while subtly shrinking and dissolving into thin air!
-        const windSpeed = 3.65 + rec.burstSpeed * 1.85;
-        const distRight = windSpeed * Math.pow(windAge, 1.24);
-        localRight = bodyLocalX + distRight;
+        // Peel into a sweeping crimson wind stream & vortex (t = 0.20s .. 2.60s)
+        const windSpeed = 1.65 + rec.burstSpeed * 0.62;
+        const rawRight = windSpeed * Math.pow(windAge, 1.08);
+        const swirlPhase = windAge * 3.2 + rec.seed * 1.7 + (i % 7) * 0.85;
+        const swirlR = (0.18 + 0.52 * Math.min(1.4, windAge)) * (i % 3 === 0 ? -1.0 : 1.0);
+        // Keep the wind stream sweeping visibly across the victim and mid-screen rather than flying off-screen
+        localRight = bodyLocalX + rawRight * 0.68 + Math.cos(swirlPhase) * swirlR;
 
         const ribbonSign = i % 2 === 0 ? 1.0 : -1.0;
         const gustWaveY =
-          Math.sin(distRight * 1.05 - t * 4.2 + rec.seed * 0.7) *
-          (0.12 + 0.24 * Math.min(1.5, windAge)) *
+          Math.sin(rawRight * 1.15 - t * 4.2 + rec.seed * 0.7) *
+          (0.16 + 0.28 * Math.min(1.5, windAge)) *
           ribbonSign;
-        const gustLiftY = (0.24 + (i % 5) * 0.09) * windAge;
+        const gustLiftY = (0.28 + (i % 5) * 0.11) * windAge;
         localUp = Math.max(0.08, bodyLocalY + gustLiftY + gustWaveY);
         localDepth =
           bodyLocalZ +
-          Math.cos(distRight * 0.90 - t * 3.1 + rec.seed) * (0.14 + 0.22 * Math.min(1.4, windAge));
+          Math.sin(swirlPhase) * (0.22 + 0.38 * Math.min(1.4, windAge));
 
-        // Petals bank and tumble in the left-to-right wind current
+        // Petals bank and tumble in the wind current
         rotX = 0.62 + windAge * rec.spinX * 0.85;
         rotY = 0.40 + windAge * rec.spinY * 0.75;
         rotZ = -0.52 + windAge * rec.spinZ * 0.80;
 
-        // Whisper-subtle continuous scale-down taper combined with edge-to-core shader dissolve
-        // so petals never stay parked on the right and you cannot tell the exact frame they vanish!
-        const subtleScaleFade = Math.pow(1.0 - smoothstep(0.12, 0.98, uLife), 1.35);
-        sc = basePetalSize * 1.15 * subtleScaleFade;
+        const subtleScaleFade = Math.pow(1.0 - smoothstep(0.45, 0.99, uLife), 1.15);
+        sc = basePetalSize * 1.22 * subtleScaleFade;
       }
 
       const dx = ox + windRightX * localRight + windDepthX * localDepth;
@@ -2543,8 +2541,22 @@ export class ArtoriousVfxSystem {
     this.prismsAndDebrisMesh.instanceMatrix.needsUpdate = true;
     this.debrisMetaAttr.needsUpdate = true;
 
-    // DC 4: Strictly ZERO whole roses in Smite (`groundSigilMesh.count = 0` — only loose petals!)
-    this.groundSigilMesh.count = 0;
+    // DC 4: Blooming crimson rose bed at victim's feet from t = 0.02s .. 2.60s
+    const slumpReach = smoothstep(0.02, 0.24, t) * 1.28;
+    const slumpDissolve = smoothstep(1.95, 2.72, t);
+    if (slumpReach > 0.02 && slumpDissolve < 0.99) {
+      _dummy.position.set(ox, oy + 0.015, oz);
+      _dummy.quaternion.setFromAxisAngle(UP, 0.25);
+      _dummy.scale.set(1.15, 1.15, 1.15);
+      _dummy.updateMatrix();
+      this.groundSigilMesh.setMatrixAt(0, _dummy.matrix);
+      this.sigilMetaAttr.setXYZW(0, slumpDissolve, slumpReach, 0.37, 1.0);
+      this.groundSigilMesh.count = 1;
+      this.groundSigilMesh.instanceMatrix.needsUpdate = true;
+      this.sigilMetaAttr.needsUpdate = true;
+    } else {
+      this.groundSigilMesh.count = 0;
+    }
   }
 
   update(dt, options = null) {

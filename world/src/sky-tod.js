@@ -352,7 +352,7 @@ const SKY_FRAG = /* glsl */ `
       vec2 ecLocal = vec2(dot(d, ecRight), dot(d, ecUp));
 
       float angEclipse = acos(clamp(dot(d, ecDir), -1.0, 1.0));
-      float ecRadius = 0.315 * max(uEclipseScale, 0.05);
+      float ecRadius = 0.088 * max(uEclipseScale, 0.05);
       float polarAng = atan(ecLocal.y, ecLocal.x);
       float coronaDim = 1.0 - uVerdictDim * 0.6;
       // Blessing: corona turns ivory-gold from the top of the ring downward
@@ -1699,15 +1699,19 @@ export function createTimeOfDaySky({
   let steppedThisFrame = false;
 
   function applyEclipseProgressToVectors() {
-    const smoothProg = smoothstep01(0.0, 1.0, clamp01(state.eclipseProgress));
-    state.eclipseWeight = state.targetEclipseWeight * smoothProg;
-    state.eclipseCompression = state.targetEclipseCompression * smoothProg;
+    const descendAlpha = smoothstep01(
+      0.0,
+      1.0,
+      clamp01(Math.max(state.eclipseProgress, state.targetEclipseWeight * 0.85))
+    );
+    state.eclipseWeight = state.targetEclipseWeight * descendAlpha;
+    state.eclipseCompression = state.targetEclipseCompression * descendAlpha;
 
     // World-fixed Northern sky anchor (never glued to camera.getWorldDirection!):
-    // Slowly descends from high overhead (elevY = 0.72) down to northern horizon-mid (elevY = 0.32, z = -0.75)
-    const elevY = THREE.MathUtils.lerp(0.72, 0.32, smoothProg);
+    // Framed inside the 50-deg gameplay camera sky band (~10.9 deg -> 7.2 deg above horizon, z = -0.75)
+    const elevY = 0.145 - 0.05 * descendAlpha;
     if (customEclipseHoriz) {
-      const horizScale = Math.sqrt(Math.max(0, 1.0 - elevY * elevY));
+      const horizScale = 0.75;
       state.eclipseDir
         .set(customEclipseHoriz.x * horizScale, elevY, customEclipseHoriz.z * horizScale)
         .normalize();

@@ -664,6 +664,8 @@ function updateCombatHud(snapshot) {
       activeSwordBuffElement,
       qEnergyPct: activeQEnergyPct,
       miracleReady: Boolean(snapshot.miracleReady),
+      communeChannelActive: Boolean(snapshot.communeChannelActive),
+      verdictSequenceActive: Boolean(snapshot.verdictSequence?.active),
       knight: k
         ? {
             level: k.level || 1,
@@ -862,16 +864,13 @@ const SPOILER_SAFE_STONE_POEMS = Object.freeze({
     ]),
   }),
   stone_pier: Object.freeze({
-    title: 'III · The Manner of Invocation',
+    name: "Hidden Lovers' Wall of the Mill Courtyard",
+    title: "III · The Hidden Lovers' Wall",
     lines: Object.freeze([
-      'Where silver waters kiss the timber pier,',
-      'Speak truth of what thy spirit holds most dear.',
-      'Confess with tender warmth the human grace,',
-      'That winter’s rime may wake within this place.',
-      'Come not with hollow flatteries or pride,',
-      'For He who hears walks at thy lover’s side;',
-      'Mock His high throne and watch thy partner fall,',
-      'Ask with a gentle heart and He grants all.',
+      'Behind the quiet eaves where ivy climbs the stone,',
+      'Two halves of one horizon never walk alone.',
+      'Speak first the Ancient Name carved at the plaza well,',
+      'Then swear how frost and sunfire inside your partner dwell.',
     ]),
     secondStanza: Object.freeze([
       'Come not with hollow flatteries or pride,',
@@ -2775,12 +2774,13 @@ function resetVerdictSky() {
   sky.setVerdictSky?.(null);
 }
 
-function applyVerdictSky(out) {
+function applyVerdictSky(out, dt = 0) {
   sky.setEclipseState?.({
     weight: out.weight,
     compression: out.compression,
     windTimeScale: out.windTimeScale,
     camera,
+    dt,
   });
   sky.setVerdictSky?.(out);
   post.setSmiteMonochrome?.(out.monochrome);
@@ -2806,7 +2806,7 @@ function syncPrayerEclipseAndMonochrome(dt = 0) {
   if (c.preview) {
     const out = evalVerdictSky(c.preview.kind, c.preview.t, c.preview.kind === 'channel' ? 0 : 1);
     out.boltSeed = c.boltSeed;
-    applyVerdictSky(out);
+    applyVerdictSky(out, dt);
     syncEnvironmentPolarity();
     return;
   }
@@ -2864,7 +2864,7 @@ function syncPrayerEclipseAndMonochrome(dt = 0) {
   else out = idleVerdictSky();
   out.boltSeed = c.boltSeed;
   c.out = out;
-  applyVerdictSky(out);
+  applyVerdictSky(out, dt);
   syncEnvironmentPolarity();
 }
 
@@ -4067,6 +4067,13 @@ function updateSacredStoneGaze(dt) {
   const nearStone = coopSystem.getNearestInscriptionStone(5.5);
   stoneGazeState.nearbyStone = nearStone;
 
+  if (nearStone && camState.mode === 'player') {
+    if (!coopSystem.coopClient.getProgressionState()?.communeDiscovered) {
+      const updated = coopSystem.coopClient.progression.setUnlocks({ communeDiscovered: true });
+      sculptedHud?.setProgressionState(updated);
+    }
+  }
+
   const activeEnemies = coopSystem?.enemyManager?.activeEnemies || [];
   const inActiveMeleeDanger = activeEnemies.some((e) => {
     if (!e || e.dead || !e.active || (e.hp !== undefined && e.hp <= 0)) return false;
@@ -4084,10 +4091,11 @@ function updateSacredStoneGaze(dt) {
     camState.mode === 'player' &&
       nearStone &&
       !stoneGazeState.inspectActive &&
-      stoneGazeState.inspectBlend < 0.15 &&
+      stoneGazeState.inspectBlend <= 0.02 &&
       !inActiveMeleeDanger &&
       !isUiOverlayBlockingInput() &&
-      !coopSystem?.campaignLoop?.isControlLocked?.()
+      !coopSystem?.campaignLoop?.isControlLocked?.() &&
+      !coopSystem?.campaignLoop?.verdictSequence?.active
   );
 
   if (stoneWorldReadBtn) {

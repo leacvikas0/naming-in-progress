@@ -1012,6 +1012,15 @@ export function buildBotanicalTrees(opts = {}) {
       varying float vViewDist;
 
       void main() {
+        float ditherStart = vCardMode < 0.5 ? 3.6 : 6.8;
+        float ditherInner = vCardMode < 0.5 ? 1.2 : 2.6;
+        if (vViewDist < ditherStart) {
+          float camFade = clamp((vViewDist - ditherInner) / (ditherStart - ditherInner), 0.0, 1.0);
+          vec2 bayerCoord = floor(gl_FragCoord.xy);
+          float bayer = fract(dot(bayerCoord, vec2(0.5, 0.25)) + fract(bayerCoord.x * 0.125 + bayerCoord.y * 0.375));
+          if (camFade < 0.18 || camFade < bayer) discard;
+        }
+
         vec3 proxyN = normalize(vNormal);
         vec3 trunkN = gl_FrontFacing ? proxyN : -proxyN;
         vec3 L = normalize(uSunDir);
@@ -1063,7 +1072,7 @@ export function buildBotanicalTrees(opts = {}) {
   treesMesh.receiveShadow = true;
   root.add(treesMesh);
 
-  // Mesh 2: Global 2026-10-18_dense-31M 3D Sculpted Leaflet & Crown-Blossom Puff InstancedMesh (1 Draw Call, 0 discard)
+  // Mesh 2: Global 2026-10-18_dense-31M 3D Sculpted Leaflet & Crown-Blossom Puff InstancedMesh (1 Draw Call, near-camera dither cutout)
   const puffGeo = getShared3DCanopyPuffGeometry().clone();
   const puffMetaAttr = new THREE.InstancedBufferAttribute(new Float32Array(totalMaxPuffs * 4), 4);
   puffGeo.setAttribute('aPuffMeta', puffMetaAttr);
@@ -1135,6 +1144,13 @@ export function buildBotanicalTrees(opts = {}) {
       varying float vViewDist;
 
       void main() {
+        if (vViewDist < 6.8) {
+          float camFade = clamp((vViewDist - 2.6) / 4.2, 0.0, 1.0);
+          vec2 bayerCoord = floor(gl_FragCoord.xy);
+          float bayer = fract(dot(bayerCoord, vec2(0.5, 0.25)) + fract(bayerCoord.x * 0.125 + bayerCoord.y * 0.375));
+          if (camFade < 0.18 || camFade < bayer) discard;
+        }
+
         vec3 proxyN = normalize(vNormal);
         vec3 crownDir = normalize(vWorldPos - vCrownCenter + vec3(0.0, 0.85, 0.0));
         vec3 N = normalize(mix(proxyN, crownDir, 0.44));
