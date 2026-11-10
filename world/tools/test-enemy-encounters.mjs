@@ -171,13 +171,14 @@ check('7. Crowd: max 3 tokens; at most 2 windups per hero within 0.4 s; ineligib
   assert.equal(log.length, 2, 'entry at t=0 pruned, t=0.1 kept');
 });
 
-check('8. Stride-matched locomotion timeScale = ground speed / native stride', () => {
-  near(strideTimeScale('Running_A', 4.2), 1.0);
-  near(strideTimeScale('Walking_A', 0.75), 0.5);
-  near(strideTimeScale('Running_Strafe_Left', 1.8), 0.5);
-  near(strideTimeScale('Running_A', 4.2, { scale: 1.18 }), 4.2 / (4.2 * 1.18));
-  near(strideTimeScale('Running_A', 4.6, { rig: 'large' }), 1.0);
+check('8. Stride-matched locomotion timeScale = ground speed / native stride (measured on the KayKit rigs)', () => {
+  near(strideTimeScale('Running_A', 1.75), 1.0);
+  near(strideTimeScale('Walking_A', 0.25), 0.5);
+  near(strideTimeScale('Running_Strafe_Left', 0.94), 0.5);
+  near(strideTimeScale('Running_A', 1.75, { scale: 1.18 }), 1 / 1.18);
+  near(strideTimeScale('Running_A', 1.56, { rig: 'large' }), 1.0);
   assert.equal(strideTimeScale('Running_A', 50), 2.2, 'clamped');
+  assert.equal(strideTimeScale('Running_A', 50, { max: 2.4 }), 2.4, 'hero cap');
   assert.equal(strideTimeScale('Idle_A', 3), 1.0, 'non-locomotion clips untouched');
 });
 

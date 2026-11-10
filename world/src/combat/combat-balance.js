@@ -1170,27 +1170,30 @@ export function recordWindup(log, heroId, now, window = WINDUP_STAGGER_WINDOW) {
   return log;
 }
 
-// Native ground speed (m/s at timeScale 1.0) of each locomotion clip for the rig's own height.
+// Native ground speed (m/s at timeScale 1.0, group scale 1) of each locomotion clip, measured on the
+// live KayKit rigs as the planted foot's slide speed (chibi legs: medium hips sit ~0.28 m off the ground).
 export const NATIVE_STRIDE_SPEED = {
   medium: {
-    Walking_A: 1.5,
-    Walking_B: 1.5,
-    Walking_C: 1.5,
-    Skeletons_Walking: 1.2,
-    Running_A: 4.2,
-    Running_B: 4.2,
-    Running_Strafe_Left: 3.6,
-    Running_Strafe_Right: 3.6,
-    Walking_Backwards: 1.3,
+    Walking_A: 0.5,
+    Walking_B: 0.52,
+    Walking_C: 0.37,
+    Skeletons_Walking: 0.43,
+    Running_A: 1.75,
+    Running_B: 1.3,
+    Running_HoldingBow: 1.3,
+    Running_HoldingRifle: 1.3,
+    Running_Strafe_Left: 1.88,
+    Running_Strafe_Right: 1.88,
+    Walking_Backwards: 0.52,
   },
-  large: { Walking_A: 2.0, Running_A: 4.6 },
+  large: { Walking_A: 1.16, Walking_B: 1.16, Walking_C: 1.16, Running_A: 1.56, Running_B: 1.56 },
 };
 
 /** timeScale that makes the clip's feet match `groundSpeed` (scale = extra group scale). */
-export function strideTimeScale(clipName, groundSpeed, { rig = 'medium', scale = 1.0 } = {}) {
+export function strideTimeScale(clipName, groundSpeed, { rig = 'medium', scale = 1.0, max = 2.2 } = {}) {
   const native = NATIVE_STRIDE_SPEED[rig]?.[clipName];
   if (!native) return 1.0;
-  return clamp(groundSpeed / (native * Math.max(0.2, scale)), 0.35, 2.2);
+  return clamp(groundSpeed / (native * Math.max(0.2, scale)), 0.35, max);
 }
 
 export function bossPhaseFor(hpRatio, aegisTriggered = false) {

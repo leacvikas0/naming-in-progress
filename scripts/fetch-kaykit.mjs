@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Downloads the KayKit v2 character packs used by world/assets/characters/index.js
 // (Adventurers 2.0, Skeletons 1.1, Character Animations 1.1 — all CC0) into
-// library/kaykit-v2/ via a shallow sparse git clone. No npm dependencies.
+// library/kaykit-v2/, plus the six Mystery Monthly enemies into library/enemy-candidates/,
+// via a shallow sparse git clone. No npm dependencies.
 //
 //   npm run fetch:kaykit            # fetch / refresh
 //   node scripts/fetch-kaykit.mjs --ref main --keep-temp
@@ -39,6 +40,20 @@ const REQUIRED = [
   ['character-animations-1.1', 'Animations', 'gltf', 'Rig_Medium', 'Rig_Medium_General.glb'],
   ['character-animations-1.1', 'Animations', 'gltf', 'Rig_Medium', 'Rig_Medium_CombatMelee.glb'],
   ['character-animations-1.1', 'Animations', 'gltf', 'Rig_Large', 'Rig_Large_General.glb'],
+];
+
+// Mystery Monthly enemies, copied flat into library/enemy-candidates/ (the roster's ENEMY_CANDIDATES_BASE).
+const MM = 'assets/kaykit/mystery-monthly-series-';
+const ENEMY_CANDIDATES_DEST = path.join(ROOT, 'library', 'enemy-candidates');
+const ENEMY_FILES = [
+  `${MM}4/1 - July 2023 - Orc Raider/character/OrcRaider.glb`,
+  `${MM}4/1 - July 2023 - Orc Raider/textures/orc_texture_A.png`,
+  `${MM}6/5 - November 2025 - Plant Warrior/characters/PlantWarrior.glb`,
+  `${MM}4/4 - October 2023 - Werewolf/characters/gltf/Werewolf_Wolf.glb`,
+  `${MM}4/4 - October 2023 - Werewolf/characters/gltf/werewolf_A.png`,
+  `${MM}5/3 - September 2024 - Black Knight/characters/BlackKnight.glb`,
+  `${MM}6/2 - August 2025 - Orc Brute/characters/OrcBrute.glb`,
+  `${MM}5/7 - January 2025 - FrostGolem/characters/FrostGolem.glb`,
 ];
 
 function parseArgs(argv) {
@@ -88,7 +103,7 @@ function main() {
   try {
     console.log(`[fetch:kaykit] Cloning ${REPO_URL} (${args.ref}, sparse) ...`);
     git(['clone', '--depth', '1', '--filter=blob:none', '--sparse', '--branch', args.ref, REPO_URL, clone]);
-    git(['sparse-checkout', 'set', ...FOLDERS.map(([src]) => src)], clone);
+    git(['sparse-checkout', 'set', '--no-cone', ...FOLDERS.map(([src]) => `/${src}/`), ...ENEMY_FILES.map((f) => `/${f}`)], clone);
 
     for (const [src, destParts] of FOLDERS) {
       const from = path.join(clone, ...src.split('/'));
@@ -98,6 +113,14 @@ function main() {
       fs.cpSync(from, to, { recursive: true, force: true });
       console.log(`[fetch:kaykit]   ${src} -> ${path.relative(ROOT, to)} (${fs.readdirSync(from).length} entries)`);
     }
+
+    fs.mkdirSync(ENEMY_CANDIDATES_DEST, { recursive: true });
+    for (const src of ENEMY_FILES) {
+      const from = path.join(clone, ...src.split('/'));
+      if (!fs.existsSync(from)) throw new Error(`Upstream enemy file missing: ${src}`);
+      fs.copyFileSync(from, path.join(ENEMY_CANDIDATES_DEST, path.basename(src)));
+    }
+    console.log(`[fetch:kaykit]   ${ENEMY_FILES.length} enemy files -> ${path.relative(ROOT, ENEMY_CANDIDATES_DEST)}`);
 
     const missing = REQUIRED.map((parts) => path.join(DEST, ...parts)).filter((file) => !fs.existsSync(file));
     if (missing.length) {

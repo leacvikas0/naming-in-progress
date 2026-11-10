@@ -25,7 +25,10 @@ import {
   composeMageSkillAim,
   desktopPitchAimDistance,
   createCombatActionAimController,
+  MAGE_AIM_HOLD_SPEC,
+  mageAimDirectionalSpeed,
 } from '../src/combat/combat-action-aim.js';
+import { strideTimeScale as _stride, NATIVE_STRIDE_SPEED } from '../src/combat/combat-balance.js';
 import { FROST_LANCE_AIM_LENGTH, CINDER_FALL_MIN_DISTANCE, CINDER_FALL_MAX_DISTANCE } from '../src/terrain-scalar.js';
 import { AimArrowSystem } from '../assets/vfx/aim-arrow.js';
 import { MageBoltSystem } from '../assets/vfx/mage-bolt.js';
@@ -358,6 +361,25 @@ await check('11. Bolt homing eases the impact point toward a moving target, capp
   for (let i = 0; i < 6; i++) bolts.update(1 / 60);
   assert.ok(volley.end.x <= 2.5 + 1e-6, 'never curves more than 2.5 m (not auto-play)');
   bolts.dispose();
+});
+
+await check('12. Aim-walk: directional speed and every directional clip is stride-matchable within the hero cap', () => {
+  assert.ok(Math.abs(mageAimDirectionalSpeed(0) - 1.0) < 1e-9);
+  assert.ok(Math.abs(mageAimDirectionalSpeed(Math.PI / 2) - 0.85) < 1e-9);
+  assert.ok(Math.abs(mageAimDirectionalSpeed(-Math.PI / 2) - 0.85) < 1e-9);
+  assert.ok(Math.abs(mageAimDirectionalSpeed(Math.PI) - 0.5) < 1e-9);
+  const base = 7.5 * MAGE_AIM_HOLD_SPEC.moveSpeedMult;
+  const cases = { forward: 0, left: Math.PI / 2, right: Math.PI / 2, backward: Math.PI };
+  for (const [dir, rel] of Object.entries(cases)) {
+    const clip = MAGE_AIM_HOLD_SPEC.locomotion[dir][0];
+    const speed = base * mageAimDirectionalSpeed(rel);
+    const rate = _stride(clip, speed, { max: 2.4 });
+    const native = NATIVE_STRIDE_SPEED.medium[clip];
+    assert.ok(native > 0, `${clip} must be in the stride table`);
+    // Residual foot slip after the playback-rate cap stays under 0.45 m/s in every direction.
+    const slip = Math.abs(speed - rate * native);
+    assert.ok(slip < 0.45, `${dir}: speed ${speed.toFixed(2)} rate ${rate.toFixed(2)} slip ${slip.toFixed(2)}`);
+  }
 });
 
 if (process.exitCode) {

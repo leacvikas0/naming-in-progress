@@ -62,6 +62,7 @@ import {
   DASH_COOLDOWN,
   DASH_IFRAMES,
   PERFECT_DODGE_ICD,
+  strideTimeScale,
 } from './combat/combat-balance.js';
 import {
   KNIGHT_COMBO_SPECS,
@@ -70,6 +71,7 @@ import {
   MAGE_E_CAST_SPECS,
   MAGE_AIM_HOLD_SPEC,
   MAGE_AIM_ASSIST,
+  mageAimDirectionalSpeed,
   composeMageSkillAim,
   createCombatActionAimController,
 } from './combat/combat-action-aim.js';
@@ -1759,22 +1761,27 @@ export async function createCoopPlayerSystem({
     return true;
   }
 
-  // Strafe/back-pedal clips while aiming so feet match the slowed movement.
+  // Strafe/back-pedal clips while aiming; playback rate is stride-matched per frame in stepLocomotionRates.
   function playMageAimLocomotion(st, moveX, moveZ, moving) {
     const spec = MAGE_AIM_HOLD_SPEC;
     let key;
-    let timeScale = 1.0;
     let loop = true;
     if (!moving) {
       key = pickHeroClip(st, spec.nativeClip, spec.fallbackClip, 'idle');
       loop = false;
+      st.mageAimDir = null;
     } else {
       const fwd = moveX * Math.sin(st.yaw) + moveZ * Math.cos(st.yaw);
       const right = -moveX * Math.cos(st.yaw) + moveZ * Math.sin(st.yaw);
-      const dir =
-        Math.abs(fwd) >= Math.abs(right) ? (fwd >= 0 ? 'forward' : 'backward') : right >= 0 ? 'right' : 'left';
-      key = pickHeroClip(st, spec.locomotion[dir], 'walk');
-      if (dir === 'left' || dir === 'right') timeScale = 0.75;
+      const a = Math.atan2(right, fwd);
+      const CENTER = { forward: 0, right: Math.PI / 2, backward: Math.PI, left: -Math.PI / 2 };
+      // Keep the current clip until the input is 15° past the sector edge, so diagonals don't flicker.
+      const cur = st.mageAimDir;
+      if (!cur || Math.abs(shortestAngleDiff(a, CENTER[cur])) > Math.PI / 4 + (15 * Math.PI) / 180) {
+        const af = Math.abs(a);
+        st.mageAimDir = af <= Math.PI / 4 ? 'forward' : af >= (3 * Math.PI) / 4 ? 'backward' : a > 0 ? 'right' : 'left';
+      }
+      key = pickHeroClip(st, spec.locomotion[st.mageAimDir], 'run');
     }
     if (!key) return;
     const loco = `mage_aim:${key}`;
@@ -1785,8 +1792,30 @@ export async function createCoopPlayerSystem({
       clampWhenFinished: !loop,
       fade: loop ? 0.16 : spec.fade,
       startTime: 0,
-      timeScale,
     });
+  }
+
+  // Feet-to-ground matching for every hero (leader, remote peer, wingman): measured ground speed /
+  // the clip's native stride. Capped so fast movement reads as a quick chibi scurry, not a blur.
+  const HERO_STRIDE_MAX_RATE = 2.4;
+  function stepLocomotionRates(dt) {
+    for (const st of [heroStates.Knight, heroStates.Mage]) {
+      if (!st?.char?.anim) continue;
+      const px = st._strideX ?? st.x;
+      const pz = st._strideZ ?? st.z;
+      st._strideX = st.x;
+      st._strideZ = st.z;
+      const inst = dt > 1e-4 ? Math.hypot(st.x - px, st.z - pz) / dt : 0;
+      // Ignore teleports/respawns.
+      const v = inst > 30 ? 0 : inst;
+      st.groundSpeed = (st.groundSpeed ?? v) + (v - (st.groundSpeed ?? v)) * (1 - Math.exp(-12 * dt));
+      if (st.actionState || !st.grounded) continue;
+      const clipName = st.char.anim.currentClipName;
+      const action = st.char.anim.rawActions?.get(clipName);
+      if (!action || action.loop !== THREE.LoopRepeat) continue;
+      const ts = strideTimeScale(clipName, st.groundSpeed, { rig: 'medium', max: HERO_STRIDE_MAX_RATE });
+      if (ts !== 1.0) action.setEffectiveTimeScale(ts);
+    }
   }
 
   function stepMageActionRuntime(dt, controlLocked) {
@@ -3054,7 +3083,9 @@ export async function createCoopPlayerSystem({
       // Damp WASD movement to 0.18x during active melee attacks so feet stay planted and never skate!
       const blockMult = leader.shieldBlocking ? 0.35 : 1.0;
       const actionMult = leader.actionState && !leader.shieldBlocking && !mageAiming ? 0.18 : 1.0;
-      const aimMult = mageAiming ? MAGE_AIM_HOLD_SPEC.moveSpeedMult : 1.0;
+      const aimMult = mageAiming
+        ? MAGE_AIM_HOLD_SPEC.moveSpeedMult * mageAimDirectionalSpeed(shortestAngleDiff(leader.moveInputYaw, leader.yaw))
+        : 1.0;
       const spd =
         player.speed *
         (isSprinting && !mageAiming ? player.sprintMult : moveMag < 0.55 ? 0.56 : 1.0) *
@@ -3150,9 +3181,8 @@ export async function createCoopPlayerSystem({
         playHeroLocomotionClip(leader, 'idle');
       } else if (isSprinting) {
         playHeroLocomotionClip(leader, 'sprint');
-      } else if (moveMag < 0.55) {
-        playHeroLocomotionClip(leader, 'walk');
       } else {
+        // Partial stick still moves at ~4 m/s, so it uses the run cycle (stride-matched) rather than an 8x walk.
         playHeroLocomotionClip(leader, 'run');
       }
     }
@@ -3365,6 +3395,7 @@ export async function createCoopPlayerSystem({
       });
     }
 
+    stepLocomotionRates(dt);
     stepCameraImpact(dt);
   }
 

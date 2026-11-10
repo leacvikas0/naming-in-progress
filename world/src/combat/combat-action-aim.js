@@ -223,14 +223,24 @@ export const MAGE_AIM_HOLD_SPEC = {
   nativeClip: 'Ranged_1H_Aiming',
   fallbackClip: 'cast_spell',
   fade: 0.12,
-  moveSpeedMult: 0.55,
+  moveSpeedMult: 0.42,
+  // Aim-walk is a commitment: strafing stays quick, back-pedalling is slow (dodge to disengage).
+  directionalSpeed: { forward: 1.0, side: 0.85, backward: 0.5 },
   locomotion: {
-    forward: ['Walking_A', 'walk'],
+    // HoldingRifle keeps the staff raised like the aim pose; Running_A would swing it low.
+    forward: ['Running_HoldingRifle', 'run'],
     backward: ['Walking_Backwards', 'walk'],
-    left: ['Running_Strafe_Left', 'walk'],
-    right: ['Running_Strafe_Right', 'walk'],
+    left: ['Running_Strafe_Left', 'run'],
+    right: ['Running_Strafe_Right', 'run'],
   },
 };
+
+/** Aim-walk speed factor for a move direction `rel` radians off the facing (0 = forward). */
+export function mageAimDirectionalSpeed(rel) {
+  const d = MAGE_AIM_HOLD_SPEC.directionalSpeed;
+  const c = Math.cos(rel);
+  return c >= 0 ? d.side + (d.forward - d.side) * c : d.side + (d.backward - d.side) * -c;
+}
 
 /** Aim assist for E: magnet radii with hysteresis so the reticle never flickers. */
 export const MAGE_AIM_ASSIST = {
