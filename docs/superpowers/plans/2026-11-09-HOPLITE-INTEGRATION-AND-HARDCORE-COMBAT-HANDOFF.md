@@ -95,3 +95,20 @@ Take the foundation you built in `_kranioi_work_to_integrate/world/src/combat/{c
    - **Left/right strafe (`Running_Strafe_Left` / `Running_Strafe_Right`) and 4-way dodge directions (`Dodge_Left` / `Dodge_Right` / `Dodge_Backward` / `Dodge_Forward`)** in live play.
    - **The Golem Boss's stand-up from its down pose** (`Death_A` reversed with `action.reset()` before `setEffectiveTimeScale`), plus intense Act 1 / Act 2 / Act 3 combat encounters.
 3. Remove `_kranioi_work_to_integrate/` and `BRANCH_CANARY_TRUE_MASTER_2026_11_09.md` once integration is verified and committed, or keep the repo clean on `main`.
+
+---
+
+## Status — 2026-11-10 (branch `hoplite/kleitor-6a38e401`)
+
+Done:
+- `5f45ef2`: real 3-way git merge of `kranioi-reference` onto the modern master (merge base `fc41024`), conflicts resolved by hand. Modern HUD/onboarding/damage numbers/monuments/Storm Cataclysm/cinder-fall/aim-arrow kept. Bug #1 (`play()` reset before timescale) and Bug #2 (`thinkOrbit` early return) fixed.
+- `6a1425e`: hardcore coordination — 3 pincer attack tokens, mash punisher, 0.16 s contact beat gap, parry ±0.15 s → stagger + 40% poise, caster/shield-wall behaviours, harder Act 1–3 wave tables.
+- Tests: combat-sim 16/16, enemy-encounters 20/20, mage-aim 11/11, coop-room 100%, character-animations 3/3. `test-divine-verdict-sim.mjs` does not exist in this repo.
+- Live (SwiftShader, 560×316) in `world/shots/combat-pass-2026-11-09/`: HUD + chibi portraits intact (`a-hud-*`); Cinder Fall preset shows the bow-shock meteor (`b-cinder-fall-preset.png`); Golem reverse-`Death_A` stand-up measured (timescale −1.667, clip 1.5→0 s, hips 0.385→0.626 m, back to orbit; `d-golem-*`).
+
+Not yet verified live (software GL on 2 vCPU renders ~5 s/frame):
+- Strafe and 4-way dodge clips, live Cinder Fall cast, full Act 1–3 play feel. Run `node world/tools/capture-combat-pass.mjs dodge cinder` on a GPU machine and watch the output.
+- `library/enemy-candidates/` is absent here: OrcRaider, PlantWarrior, Werewolf_Wolf, BlackKnight, OrcBrute and FrostGolem fall back to same-rig KayKit skeleton models (console warning). Add the folder to restore them.
+- Commune/tether distances stay at 6.0 m (modern code + tests); the 4.0/5.0 m value above was not applied.
+- Win rate without the God (target 35–50%) is a design estimate, not playtested.
+- The 26 older images in `world/shots/combat-pass-2026-11-09/` (`a-arena-act1.png`, `c1-*`…`wsb-*`) came from the kranioi branch and show the old Nov 6 base.

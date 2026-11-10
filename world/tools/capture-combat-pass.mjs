@@ -1,5 +1,5 @@
 // Deterministic gameplay capture for headless/software-GL machines.
-// Time is virtualised (performance.now + requestAnimationFrame are stepped at a fixed 30 fps),
+// Time is virtualised (performance.now + requestAnimationFrame are stepped at a fixed FPS, default 15),
 // so slow SwiftShader frames still produce real-time-correct motion in the encoded video.
 //
 //   node world/tools/capture-combat-pass.mjs [scene ...]     scenes: hud cinder dodge golem
@@ -11,9 +11,9 @@ import { pathToFileURL } from 'node:url';
 import { startServer } from './serve.mjs';
 
 const OUT = process.env.OUT || 'world/shots/combat-pass-2026-11-09';
-const W = Number(process.env.W || 800);
-const H = Number(process.env.H || 450);
-const FPS = 30;
+const W = Number(process.env.W || 560);
+const H = Number(process.env.H || 316);
+const FPS = Number(process.env.FPS || 15);
 const scenes = process.argv.slice(2).length ? process.argv.slice(2) : ['hud', 'cinder', 'dodge', 'golem'];
 
 async function loadChromium() {
@@ -28,13 +28,13 @@ async function loadChromium() {
   throw new Error('playwright-core not found (set PLAYWRIGHT=...)');
 }
 
-const VIRTUAL_TIME = () => {
+const VIRTUAL_TIME = (frameMs) => {
   let vt = 0;
   let queue = [];
   performance.now = () => vt;
   window.requestAnimationFrame = (cb) => { queue.push(cb); return queue.length; };
   window.cancelAnimationFrame = () => {};
-  window.__vt = { grab() { return window.__WORLD__.renderer.domElement.toDataURL('image/jpeg', 0.9); }, step(ms) { vt += ms; const q = queue; queue = []; for (const cb of q) { try { cb(vt); } catch (e) { console.error(e); } } } };
+  window.__vt = { grab() { return window.__WORLD__.renderer.domElement.toDataURL('image/jpeg', 0.9); }, step(ms = frameMs) { vt += ms; const q = queue; queue = []; for (const cb of q) { try { cb(vt); } catch (e) { console.error(e); } } } };
 };
 
 fs.mkdirSync(OUT, { recursive: true });
@@ -50,20 +50,20 @@ async function openWorld() {
   const page = await browser.newPage({ viewport: { width: W, height: H } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.addInitScript(VIRTUAL_TIME);
+  await page.addInitScript(VIRTUAL_TIME, 1000 / FPS);
   await page.goto(base);
   for (let i = 0; i < 4000; i++) {
     if (await page.evaluate(() => Boolean(window.__WORLD__?.ready))) break;
-    await page.evaluate(() => window.__vt.step(1000 / 30));
+    await page.evaluate(() => window.__vt.step());
     await page.waitForTimeout(25);
   }
   console.log('[capture] world ready');
-  await step(page, 45); // let shaders compile and HUD settle
+  await step(page, 12); // let shaders compile and HUD settle
   return { page, errors };
 }
 
 async function step(page, frames = 1) {
-  for (let i = 0; i < frames; i++) await page.evaluate(() => window.__vt.step(1000 / 30));
+  for (let i = 0; i < frames; i++) await page.evaluate(() => window.__vt.step());
 }
 
 // Records `seconds` of play; `script(t, page)` runs before each frame for input.
@@ -76,13 +76,13 @@ async function record(page, name, seconds, script, { every = 1 } = {}) {
   for (let f = 0; f < total; f++) {
     await script?.(f / FPS, page);
     // Step + readback in one task: the drawing buffer is not preserved across tasks.
-    const url = await page.evaluate((grab) => { window.__vt.step(1000 / 30); return grab ? window.__vt.grab() : null; }, f % every === 0);
-    if (f % 30 === 0) console.log(`[capture] ${name} frame ${f}/${total}`);
+    const url = await page.evaluate((grab) => { window.__vt.step(); return grab ? window.__vt.grab() : null; }, f % every === 0);
+    if (f % 10 === 0) console.log(`[capture] ${name} frame ${f}/${total} ${new Date().toISOString().slice(11, 19)}`);
     if (url) fs.writeFileSync(path.join(dir, `${String(n++).padStart(4, '0')}.jpg`), Buffer.from(url.split(',')[1], 'base64'));
   }
   const mp4 = path.join(OUT, `${name}.mp4`);
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS / every), '-i', path.join(dir, '%04d.jpg'),
-    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '23', mp4]);
+    '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '23', mp4]);
   // Contact sheet for quick review.
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', mp4, '-vf', `fps=${Math.max(1, Math.round(6 / seconds * 2))},scale=400:-1,tile=4x3`, '-frames:v', '1',
     path.join(OUT, `${name}-sheet.jpg`)]);
@@ -90,6 +90,7 @@ async function record(page, name, seconds, script, { every = 1 } = {}) {
   console.log(`[capture] ${mp4}`);
 }
 
+const hit = (t, at) => t >= at - 1e-6 && t < at + 1 / FPS - 1e-6;
 const key = (page, k, down) => (down ? page.keyboard.down(k) : page.keyboard.up(k));
 
 const SCENES = {
@@ -124,9 +125,9 @@ const SCENES = {
     });
     await step(page, 30);
     await record(page, 'b-cinder-fall-live', 4.0, async (t, pg) => {
-      if (Math.abs(t - 0.3) < 0.017) { await key(pg, 'Tab', true); await key(pg, 'Tab', false); }
-      if (Math.abs(t - 0.6) < 0.017) await key(pg, 'e', true);
-      if (Math.abs(t - 1.3) < 0.017) await key(pg, 'e', false);
+      if (hit(t, 0.3)) { await key(pg, 'Tab', true); await key(pg, 'Tab', false); }
+      if (hit(t, 0.6)) await key(pg, 'e', true);
+      if (hit(t, 1.3)) await key(pg, 'e', false);
     });
     return errors;
   },
@@ -139,30 +140,30 @@ const SCENES = {
     ];
     await record(page, 'c-knight-4way-dodge', 5.2, async (t, pg) => {
       for (const [k, at] of plan) {
-        if (Math.abs(t - at) < 0.017) await key(pg, k, true);
-        if (Math.abs(t - (at + 0.1)) < 0.017) { await key(pg, 'Shift', true); }
-        if (Math.abs(t - (at + 0.2)) < 0.017) { await key(pg, 'Shift', false); }
-        if (Math.abs(t - (at + 0.9)) < 0.017) await key(pg, k, false);
+        if (hit(t, at)) await key(pg, k, true);
+        if (hit(t, at + 0.1)) { await key(pg, 'Shift', true); }
+        if (hit(t, at + 0.2)) { await key(pg, 'Shift', false); }
+        if (hit(t, at + 0.9)) await key(pg, k, false);
       }
     });
     await page.evaluate(() => { const w = window.__WORLD__; if (w.coopSystem.player.activeHeroId !== 'Mage') w.coopSystem.swapActiveHero(); });
     await step(page, 20);
     await page.mouse.move(W / 2, H / 2);
     await record(page, 'c-mage-aim-strafe-dodge', 6.0, async (t, pg) => {
-      if (Math.abs(t - 0.1) < 0.017) await pg.mouse.down({ button: 'right' });
-      if (Math.abs(t - 0.4) < 0.017) await key(pg, 'a', true);
-      if (Math.abs(t - 1.6) < 0.017) await key(pg, 'a', false);
-      if (Math.abs(t - 1.7) < 0.017) await key(pg, 'd', true);
-      if (Math.abs(t - 2.9) < 0.017) await key(pg, 'd', false);
-      if (Math.abs(t - 3.0) < 0.017) await key(pg, 's', true);
-      if (Math.abs(t - 3.8) < 0.017) await key(pg, 's', false);
+      if (hit(t, 0.1)) await pg.mouse.down({ button: 'right' });
+      if (hit(t, 0.4)) await key(pg, 'a', true);
+      if (hit(t, 1.6)) await key(pg, 'a', false);
+      if (hit(t, 1.7)) await key(pg, 'd', true);
+      if (hit(t, 2.9)) await key(pg, 'd', false);
+      if (hit(t, 3.0)) await key(pg, 's', true);
+      if (hit(t, 3.8)) await key(pg, 's', false);
       // Dodges while aiming: left then right.
-      if (Math.abs(t - 4.0) < 0.017) { await key(pg, 'a', true); await key(pg, 'Shift', true); }
-      if (Math.abs(t - 4.15) < 0.017) { await key(pg, 'Shift', false); }
-      if (Math.abs(t - 4.7) < 0.017) { await key(pg, 'a', false); }
-      if (Math.abs(t - 5.0) < 0.017) { await key(pg, 'd', true); await key(pg, 'Shift', true); }
-      if (Math.abs(t - 5.15) < 0.017) { await key(pg, 'Shift', false); }
-      if (Math.abs(t - 5.7) < 0.017) { await key(pg, 'd', false); await pg.mouse.up({ button: 'right' }); }
+      if (hit(t, 4.0)) { await key(pg, 'a', true); await key(pg, 'Shift', true); }
+      if (hit(t, 4.15)) { await key(pg, 'Shift', false); }
+      if (hit(t, 4.7)) { await key(pg, 'a', false); }
+      if (hit(t, 5.0)) { await key(pg, 'd', true); await key(pg, 'Shift', true); }
+      if (hit(t, 5.15)) { await key(pg, 'Shift', false); }
+      if (hit(t, 5.7)) { await key(pg, 'd', false); await pg.mouse.up({ button: 'right' }); }
     });
     return errors;
   },
@@ -176,7 +177,7 @@ const SCENES = {
       const x = k.x ?? 0, z = k.z ?? 0, yaw = k.yaw ?? 0;
       w.__golem = w.enemyManager.spawnImmediateFromSpec({ archetype: 'boss_sovereign', x: x + Math.sin(yaw) * 7, z: z + Math.cos(yaw) * 7, rotY: yaw + Math.PI });
     });
-    await step(page, 75);
+    await step(page, 36);
     await page.evaluate(() => {
       const e = window.__WORLD__.__golem;
       if (!e) throw new Error('boss did not spawn');
