@@ -123,8 +123,8 @@ export const KNIGHT_GUARD_REGEN_DELAY = 1.0;
 export const KNIGHT_GUARD_BREAK_STUN = 1.2;
 export const SHIELD_COVER_RADIUS = 6.0; // Mage must be this close to be covered
 export const SHIELD_ARC_COS = 0.5; // +-60 deg frontal block/cover arc
-export const DASH_COOLDOWN = 0.9;
-export const DASH_IFRAMES = 0.22;
+export const DASH_COOLDOWN = 0.58;
+export const DASH_IFRAMES = 0.30;
 export const PERFECT_DODGE_ICD = 4.0;
 // Live enemy HP escalation per act (archetype base values stay as authored).
 export const ACT_HP_SCALE = { act1_arena: 1.0, act2_plaza: 1.2, act3_shrine: 1.35 };

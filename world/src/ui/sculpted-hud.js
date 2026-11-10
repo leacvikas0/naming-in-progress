@@ -550,7 +550,7 @@ const SCULPTED_HUD_CSS = `
     position: absolute;
     right: 0;
     top: 72px;
-    width: 56vw;
+    width: 34vw;
     height: calc(100vh - 72px);
     pointer-events: auto;
     touch-action: none;
@@ -560,6 +560,89 @@ const SCULPTED_HUD_CSS = `
 
   #sculpted-hud-root.profile-tablet #sculpted-orbit-zone {
     display: block;
+  }
+
+  /* Center-Screen On-Character 360° Swipe-to-Dodge Zone (Tablet/Mobile) */
+  #sculpted-center-dodge-zone {
+    position: absolute;
+    left: 26vw;
+    top: 18vh;
+    width: 48vw;
+    height: 68vh;
+    pointer-events: auto;
+    touch-action: none;
+    z-index: 26;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #sculpted-hud-root.profile-tablet #sculpted-center-dodge-zone {
+    display: flex;
+  }
+
+  #sculpted-dodge-aid-ring {
+    position: relative;
+    width: 112px;
+    height: 112px;
+    margin-top: 10vh;
+    border-radius: 50%;
+    border: 1.5px dashed rgba(255, 255, 255, 0.55);
+    box-shadow: inset 0 0 18px rgba(255, 255, 255, 0.08);
+    pointer-events: none;
+    opacity: 0;
+    transition: transform 140ms ease-out, border-color 140ms ease-out, opacity 140ms ease-out;
+  }
+
+  #sculpted-center-dodge-zone.is-touching #sculpted-dodge-aid-ring {
+    opacity: 0.65;
+    border-color: rgba(255, 255, 255, 0.82);
+    transform: scale(1.08);
+  }
+
+  #sculpted-dodge-ripple {
+    position: fixed;
+    left: 50vw;
+    top: 54vh;
+    width: 68px;
+    height: 68px;
+    margin-left: -34px;
+    margin-top: -34px;
+    border-radius: 50%;
+    border: 2.5px solid rgba(255, 255, 255, 0.92);
+    box-shadow: 0 0 18px rgba(125, 211, 252, 0.72);
+    pointer-events: none;
+    z-index: 29;
+    opacity: 0;
+    transform: scale(0.5);
+  }
+
+  #sculpted-dodge-ripple::after {
+    content: "";
+    position: absolute;
+    right: -10px;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    margin-top: -7px;
+    border-top: 3px solid #ffffff;
+    border-right: 3px solid #ffffff;
+    transform: rotate(45deg);
+  }
+
+  @keyframes shDodgeRippleAnim {
+    0% {
+      opacity: 0.95;
+      transform: rotate(var(--dodge-angle, 0deg)) translate3d(0px, 0px, 0px) scale(0.72);
+    }
+    100% {
+      opacity: 0;
+      transform: rotate(var(--dodge-angle, 0deg)) translate3d(44px, 0px, 0px) scale(1.22);
+    }
+  }
+
+  #sculpted-dodge-ripple.is-active {
+    animation: shDodgeRippleAnim 260ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
 
   /* ----------------------------------------------------------------------- */
@@ -1308,12 +1391,17 @@ export function createSculptedHud({
       </span>
     </button>
 
-    <!-- 4. LEFT HAND: Floating Movement Thumbstick (Tablet Only) & Right Orbit Zone -->
+    <!-- 4. LEFT HAND: Floating Movement Thumbstick (Tablet Only), Center Swipe-to-Dodge & Right Orbit Zone -->
     <div id="sculpted-joystick-zone">
       <div class="sh-joy-ring" id="sh-joy-ring">
         <div class="sh-joy-puck" id="sh-joy-puck"></div>
       </div>
     </div>
+
+    <div id="sculpted-center-dodge-zone" title="Swipe in any direction on your character to dodge">
+      <div id="sculpted-dodge-aid-ring" aria-hidden="true"></div>
+    </div>
+    <div id="sculpted-dodge-ripple" aria-hidden="true"></div>
 
     <div id="sculpted-orbit-zone"></div>
 
@@ -1973,6 +2061,113 @@ export function createSculptedHud({
     joyZone.addEventListener('pointercancel', endJoy);
   }
 
+  const centerDodgeZone = root.querySelector('#sculpted-center-dodge-zone');
+  const dodgeRippleEl = root.querySelector('#sculpted-dodge-ripple');
+  let dodgeRippleTimer = null;
+
+  function triggerDodgeRipple(dx, dy, clientX = null, clientY = null) {
+    if (!dodgeRippleEl) return;
+    const angDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+    dodgeRippleEl.style.setProperty('--dodge-angle', `${angDeg.toFixed(1)}deg`);
+    if (typeof clientX === 'number' && typeof clientY === 'number') {
+      dodgeRippleEl.style.left = `${clientX.toFixed(0)}px`;
+      dodgeRippleEl.style.top = `${clientY.toFixed(0)}px`;
+    } else {
+      dodgeRippleEl.style.left = '50vw';
+      dodgeRippleEl.style.top = '54vh';
+    }
+    dodgeRippleEl.classList.remove('is-active');
+    void dodgeRippleEl.offsetWidth;
+    dodgeRippleEl.classList.add('is-active');
+    if (dodgeRippleTimer) clearTimeout(dodgeRippleTimer);
+    dodgeRippleTimer = setTimeout(() => {
+      dodgeRippleEl.classList.remove('is-active');
+      dodgeRippleTimer = null;
+    }, 280);
+  }
+
+  // Center-Screen On-Character 360° Swipe-to-Dodge (Swipe Left / Right / Back / Forward)
+  let centerPointerId = null;
+  let centerStartX = 0;
+  let centerStartY = 0;
+  let centerLastX = 0;
+  let centerLastY = 0;
+  let centerStartAt = 0;
+  let centerDodgeFired = false;
+
+  if (centerDodgeZone) {
+    centerDodgeZone.addEventListener('pointerdown', (e) => {
+      if (centerPointerId !== null) return;
+      centerPointerId = e.pointerId;
+      centerStartX = e.clientX;
+      centerStartY = e.clientY;
+      centerLastX = e.clientX;
+      centerLastY = e.clientY;
+      centerStartAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      centerDodgeFired = false;
+      centerDodgeZone.classList.add('is-touching');
+      try {
+        centerDodgeZone.setPointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+    });
+
+    centerDodgeZone.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== centerPointerId) return;
+      const totalDx = e.clientX - centerStartX;
+      const totalDy = e.clientY - centerStartY;
+      const dist = Math.hypot(totalDx, totalDy);
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const elapsedMs = now - centerStartAt;
+
+      if (!centerDodgeFired && dist >= 18 && elapsedMs <= 340) {
+        centerDodgeFired = true;
+        cancelSlotEAim();
+        triggerDodgeRipple(totalDx, totalDy, centerStartX, centerStartY);
+        if (typeof onAction === 'function') {
+          onAction('dash', {
+            role: state.activeRole,
+            swipeDx: totalDx,
+            swipeDy: totalDy,
+          });
+        }
+      } else if (!centerDodgeFired && elapsedMs > 340) {
+        const stepDx = e.clientX - centerLastX;
+        const stepDy = e.clientY - centerLastY;
+        if (typeof onCameraOrbit === 'function') {
+          onCameraOrbit(stepDx, stepDy);
+        }
+      }
+      centerLastX = e.clientX;
+      centerLastY = e.clientY;
+    });
+
+    const endCenterDodge = (e) => {
+      if (e.pointerId !== centerPointerId) return;
+      if (!centerDodgeFired) {
+        const totalDx = (e.clientX ?? centerLastX) - centerStartX;
+        const totalDy = (e.clientY ?? centerStartY) - centerStartY;
+        if (Math.hypot(totalDx, totalDy) >= 14) {
+          centerDodgeFired = true;
+          cancelSlotEAim();
+          triggerDodgeRipple(totalDx, totalDy, centerStartX, centerStartY);
+          if (typeof onAction === 'function') {
+            onAction('dash', {
+              role: state.activeRole,
+              swipeDx: totalDx,
+              swipeDy: totalDy,
+            });
+          }
+        }
+      }
+      centerPointerId = null;
+      centerDodgeZone.classList.remove('is-touching');
+    };
+    centerDodgeZone.addEventListener('pointerup', endCenterDodge);
+    centerDodgeZone.addEventListener('pointercancel', endCenterDodge);
+  }
+
   // Right-side Touch Camera Orbit
   let orbitPointerId = null;
   let lastOrbitX = 0;
@@ -2128,11 +2323,62 @@ export function createSculptedHud({
   }
 
   if (dashBtn) {
+    let dashPtrId = null;
+    let dashStartX = 0;
+    let dashStartY = 0;
+    let dashSwiped = false;
+
+    dashBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      dashPtrId = e.pointerId;
+      dashStartX = e.clientX;
+      dashStartY = e.clientY;
+      dashSwiped = false;
+      try {
+        dashBtn.setPointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+    });
+
+    dashBtn.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== dashPtrId || dashSwiped) return;
+      const dx = e.clientX - dashStartX;
+      const dy = e.clientY - dashStartY;
+      if (Math.hypot(dx, dy) >= 14) {
+        dashSwiped = true;
+        cancelSlotEAim();
+        triggerDodgeRipple(dx, dy);
+        if (typeof onAction === 'function') {
+          onAction('dash', { role: state.activeRole, swipeDx: dx, swipeDy: dy });
+        }
+      }
+    });
+
+    const releaseDashBtn = (e) => {
+      if (e.pointerId !== dashPtrId) return;
+      dashPtrId = null;
+      if (!dashSwiped) {
+        cancelSlotEAim();
+        if (typeof onAction === 'function') {
+          onAction('dash', { role: state.activeRole });
+        }
+      }
+      dashSwiped = false;
+    };
+    dashBtn.addEventListener('pointerup', releaseDashBtn);
+    dashBtn.addEventListener('pointercancel', () => {
+      dashPtrId = null;
+      dashSwiped = false;
+    });
     dashBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      cancelSlotEAim();
-      if (typeof onAction === 'function') {
-        onAction('dash', { role: state.activeRole });
+      // Support synthetic .click() in tests when pointerdown/up wasn't used
+      if (e.detail === 0) {
+        cancelSlotEAim();
+        if (typeof onAction === 'function') {
+          onAction('dash', { role: state.activeRole });
+        }
       }
     });
   }

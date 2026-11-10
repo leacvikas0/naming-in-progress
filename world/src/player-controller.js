@@ -2674,6 +2674,34 @@ export async function createCoopPlayerSystem({
       }
       if (leader.actionState === 'dash') return { onDashCooldown: true };
 
+      const refYaw =
+        typeof actionOptions?.camYaw === 'number'
+          ? actionOptions.camYaw
+          : typeof lastKnownCamYaw === 'number'
+            ? lastKnownCamYaw
+            : leader.yaw;
+      let chosenDodgeYaw = null;
+      if (typeof actionOptions?.dodgeYaw === 'number' && Number.isFinite(actionOptions.dodgeYaw)) {
+        chosenDodgeYaw = actionOptions.dodgeYaw;
+      } else if (
+        typeof actionOptions?.swipeDx === 'number' &&
+        typeof actionOptions?.swipeDy === 'number' &&
+        Math.hypot(actionOptions.swipeDx, actionOptions.swipeDy) > 1e-3
+      ) {
+        const sLen = Math.hypot(actionOptions.swipeDx, actionOptions.swipeDy) || 1;
+        const fwd = -actionOptions.swipeDy / sLen;
+        const right = actionOptions.swipeDx / sLen;
+        const fx = Math.sin(refYaw);
+        const fz = Math.cos(refYaw);
+        const rx = -fz;
+        const rz = fx;
+        const wx = fx * fwd + rx * right;
+        const wz = fz * fwd + rz * right;
+        chosenDodgeYaw = Math.atan2(wx, wz);
+      } else if (leader.moveInputYaw !== null && leader.moveInputYaw !== undefined) {
+        chosenDodgeYaw = leader.moveInputYaw;
+      }
+
       let dodgeClip = 'dash';
       if (leader.id === 'Mage') {
         // Dash never eats a release frame: queue it through the wind-up, then cut recovery.
@@ -2684,26 +2712,34 @@ export async function createCoopPlayerSystem({
         actionAim.cancelRecovery('Mage');
         mageRt.recoveryOpen = false;
         mageRt.chargedSwap = null;
-        const hasInput = leader.moveInputYaw !== null && leader.moveInputYaw !== undefined;
-        if (hasInput && actionAim.aimState.active) {
-          // Aiming keeps the body on the reticle: dodge toward the input with the matching 4-way clip.
-          const rel = shortestAngleDiff(leader.moveInputYaw, leader.yaw);
+        if (chosenDodgeYaw !== null) {
+          const baseYaw = actionAim.aimState.active ? leader.yaw : refYaw;
+          const rel = shortestAngleDiff(chosenDodgeYaw, baseYaw);
           const a = Math.abs(rel);
-          const key = a < Math.PI * 0.25 ? 'Dodge_Forward' : a > Math.PI * 0.75 ? 'Dodge_Backward' : rel > 0 ? 'Dodge_Left' : 'Dodge_Right';
+          const key =
+            a < Math.PI * 0.28
+              ? 'Dodge_Forward'
+              : a > Math.PI * 0.72
+                ? 'Dodge_Backward'
+                : rel > 0
+                  ? 'Dodge_Left'
+                  : 'Dodge_Right';
           dodgeClip = pickHeroClip(leader, key, 'dash') || 'dash';
-          leader.dashDirX = Math.sin(leader.moveInputYaw);
-          leader.dashDirZ = Math.cos(leader.moveInputYaw);
-        } else if (hasInput) {
-          leader.yaw = leader.moveInputYaw;
+          leader.dashDirX = Math.sin(chosenDodgeYaw);
+          leader.dashDirZ = Math.cos(chosenDodgeYaw);
+          if (!actionAim.aimState.active) {
+            leader.yaw = key === 'Dodge_Forward' ? chosenDodgeYaw : refYaw;
+          }
+        } else {
+          dodgeClip = pickHeroClip(leader, 'Dodge_Backward', 'dash') || 'dash';
+          leader.dashDirX = -Math.sin(leader.yaw);
+          leader.dashDirZ = -Math.cos(leader.yaw);
         }
-        if (dodgeClip === 'dash') {
-          leader.dashDirX = Math.sin(leader.yaw);
-          leader.dashDirZ = Math.cos(leader.yaw);
-        }
-        startOneShotAction(leader, dodgeClip, 0.30, {
-          startTime: 0.04,
-          timeScale: 1.25,
-          fade: 0.06,
+        leader.dashDuration = 0.38;
+        startOneShotAction(leader, dodgeClip, 0.38, {
+          startTime: 0.02,
+          timeScale: 1.45,
+          fade: 0.05,
         });
         leader.actionState = 'dash';
       } else {
@@ -2713,24 +2749,22 @@ export async function createCoopPlayerSystem({
         knightRt.recoveryOpen = false;
         knightRt.pendingUltSlam = 0;
         knightRt.pendingUltCross2 = 0;
-        const hasInput = leader.moveInputYaw !== null && leader.moveInputYaw !== undefined;
-        if (hasInput) {
-          const refYaw = typeof lastKnownCamYaw === 'number' ? lastKnownCamYaw : leader.yaw;
-          const rel = shortestAngleDiff(leader.moveInputYaw, refYaw);
+        if (chosenDodgeYaw !== null) {
+          const rel = shortestAngleDiff(chosenDodgeYaw, refYaw);
           const a = Math.abs(rel);
           const key =
-            a < Math.PI * 0.25
+            a < Math.PI * 0.28
               ? 'Dodge_Forward'
-              : a > Math.PI * 0.75
+              : a > Math.PI * 0.72
                 ? 'Dodge_Backward'
                 : rel > 0
                   ? 'Dodge_Left'
                   : 'Dodge_Right';
           dodgeClip = pickHeroClip(leader, key, 'dash') || 'dash';
-          leader.dashDirX = Math.sin(leader.moveInputYaw);
-          leader.dashDirZ = Math.cos(leader.moveInputYaw);
+          leader.dashDirX = Math.sin(chosenDodgeYaw);
+          leader.dashDirZ = Math.cos(chosenDodgeYaw);
           if (key === 'Dodge_Forward') {
-            leader.yaw = leader.moveInputYaw;
+            leader.yaw = chosenDodgeYaw;
           } else {
             leader.yaw = refYaw;
           }
@@ -2739,10 +2773,11 @@ export async function createCoopPlayerSystem({
           leader.dashDirX = Math.sin(leader.yaw);
           leader.dashDirZ = Math.cos(leader.yaw);
         }
-        startOneShotAction(leader, dodgeClip, 0.48, {
+        leader.dashDuration = 0.44;
+        startOneShotAction(leader, dodgeClip, 0.44, {
           startTime: 0,
           timeScale: 1.85,
-          fade: 0.06,
+          fade: 0.05,
         });
         leader.actionState = 'dash';
       }
@@ -3247,7 +3282,8 @@ export async function createCoopPlayerSystem({
     if (leader.actionTimer > 0 && !leader.shieldBlocking) {
       leader.actionTimer = Math.max(0, leader.actionTimer - dt);
       if (leader.actionState === 'dash' && !controlLocked) {
-        const dashSpeed = player.speed * (leader.actionTimer > 0.14 ? 2.05 : 0.85);
+        const dashProg = clamp(leader.actionTimer / (leader.dashDuration || 0.42), 0, 1);
+        const dashSpeed = player.speed * (0.95 + 1.55 * Math.sin(dashProg * Math.PI * 0.5));
         let next = resolveCollisions(
           leader.x + leader.dashDirX * dashSpeed * dt,
           leader.z + leader.dashDirZ * dashSpeed * dt,

@@ -1157,6 +1157,96 @@ const SCENARIOS = {
     await page.close();
     return errors;
   },
+
+  // 13. Center-Screen 4-Way Swipe Dodge (Left / Right / Back / Forward) + Tudor House Wall Camera Spring-Arm & Dither Audit
+  async 'dodge-and-house-camera-audit'() {
+    const { page, errors } = await openWorldPage();
+    await page.evaluate(() => {
+      const w = window.__WORLD__;
+      w.setGameplayShot?.(null);
+      w.enemyManager.clearAllEnemies();
+      w.campaignLoop.resetCampaign();
+      w.campaignLoop.setOpenValleyMode(false);
+      w.setProfile('tablet');
+      if (w.coopSystem.player.activeHeroId !== 'Knight') {
+        w.coopSystem.swapActiveHero();
+      }
+      w.coopSystem.teleportLeaderAndPartner(0.0, 12.0, Math.PI);
+      w.camState.mode = 'player';
+      w.camState.yaw = Math.PI;
+      w.camState.pitch = 0.22;
+      w.camState.dist = 6.8;
+    });
+    await stepFrames(page, 6);
+    await recordClip(page, 'dodge-and-house-camera-audit', 6.2, async (t, pg) => {
+      // Beat 1 (0.2s..3.2s): Simulate Center-Screen Character Swipes in all 4 directions:
+      // Left (0.25s), Right (1.0s), Back (1.75s), Forward (2.5s) via #sculpted-center-dodge-zone pointer events!
+      const triggerCenterSwipe = async (dx, dy) => {
+        await pg.evaluate(
+          ({ sdx, sdy }) => {
+            const z = document.getElementById('sculpted-center-dodge-zone');
+            if (!z) return;
+            const cx = window.innerWidth * 0.5;
+            const cy = window.innerHeight * 0.52;
+            z.dispatchEvent(
+              new PointerEvent('pointerdown', {
+                pointerId: 41,
+                clientX: cx,
+                clientY: cy,
+                bubbles: true,
+              })
+            );
+            z.dispatchEvent(
+              new PointerEvent('pointermove', {
+                pointerId: 41,
+                clientX: cx + sdx,
+                clientY: cy + sdy,
+                bubbles: true,
+              })
+            );
+            z.dispatchEvent(
+              new PointerEvent('pointerup', {
+                pointerId: 41,
+                clientX: cx + sdx,
+                clientY: cy + sdy,
+                bubbles: true,
+              })
+            );
+          },
+          { sdx: dx, sdy: dy }
+        );
+      };
+      if (hitFrame(t, 0.25)) await triggerCenterSwipe(-75, 0); // Swipe Left -> Dodge_Left
+      if (hitFrame(t, 1.0)) await triggerCenterSwipe(75, 0); // Swipe Right -> Dodge_Right
+      if (hitFrame(t, 1.75)) await triggerCenterSwipe(0, 75); // Swipe Back -> Dodge_Backward
+      if (hitFrame(t, 2.5)) await triggerCenterSwipe(0, -75); // Swipe Forward -> Dodge_Forward
+
+      // Beat 2 (3.3s..6.1s): Teleport right beside Crossroads Inn wall (-10.8, -10.2) and rotate camera so the Tudor house is directly behind the camera!
+      if (hitFrame(t, 3.3)) {
+        await pg.evaluate(() => {
+          const w = window.__WORLD__;
+          w.coopSystem.teleportLeaderAndPartner(-10.8, -10.2, 0.82);
+          w.camState.yaw = 0.82;
+          w.camState.pitch = 0.18;
+          w.camState.dist = 7.8;
+        });
+      }
+      if (t >= 3.4) {
+        await pg.evaluate(() => {
+          const w = window.__WORLD__;
+          w.camState.yaw += 0.045;
+        });
+      }
+      const diag = await pg.evaluate(() => {
+        const w = window.__WORLD__;
+        const frac = (w.camState.springArmFrac ?? 1.0).toFixed(2);
+        return `armFrac=${frac}`;
+      });
+      return `Dodge&HouseCam ${diag}`;
+    });
+    await page.close();
+    return errors;
+  },
 };
 
 const listToRun = specFile

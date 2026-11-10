@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createTextures } from './textures.js';
-import { createMaterials } from './materials.js';
+import { createMaterials, setHouseCutoutPlayerPos } from './materials.js';
+export { setHouseCutoutPlayerPos };
 import {
   buildFrontSteps,
   computeDormerSpec,

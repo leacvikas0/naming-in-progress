@@ -25,7 +25,7 @@ import {
   createTerrainAndLandmarks,
 } from '../assets/terrain/index.js';
 import { INSCRIPTION_STONES } from '../assets/terrain/geography.js';
-import { createHousesKit } from '../assets/houses/index.js';
+import { createHousesKit, setHouseCutoutPlayerPos } from '../assets/houses/index.js';
 import {
   createToroidalMeadow,
   MEADOW_PROFILES,
@@ -2077,11 +2077,37 @@ function tryRaycastFlowerLobbyHero(clientX, clientY) {
   return bestRole;
 }
 
+function getLiveDodgeInputOptions(extraOpts = {}) {
+  if (
+    typeof extraOpts?.swipeDx === 'number' &&
+    typeof extraOpts?.swipeDy === 'number' &&
+    Math.hypot(extraOpts.swipeDx, extraOpts.swipeDy) > 1e-3
+  ) {
+    return { ...extraOpts, camYaw: camState.yaw };
+  }
+  let dx = 0;
+  let dy = 0;
+  if (keys.has('d') || keys.has('arrowright')) dx += 1;
+  if (keys.has('a') || keys.has('arrowleft')) dx -= 1;
+  if (keys.has('s') || keys.has('arrowdown')) dy += 1;
+  if (keys.has('w') || keys.has('arrowup')) dy -= 1;
+  const activeJoy =
+    sculptedHud?.joyState?.magnitude > 0.08 ? sculptedHud.joyState : touchHud?.joyState;
+  if (activeJoy && activeJoy.magnitude > 0.08) {
+    dx += activeJoy.x;
+    dy -= activeJoy.y;
+  }
+  if (Math.hypot(dx, dy) > 1e-3) {
+    return { ...extraOpts, swipeDx: dx, swipeDy: dy, camYaw: camState.yaw };
+  }
+  return { ...extraOpts, camYaw: camState.yaw };
+}
+
 sculptedHud = createSculptedHud({
   container: document.getElementById('hud'),
   initialProfile: activeProfile,
   initialRole: coopSystem.player.activeHeroId || 'Knight',
-  onAction: (actionName) => {
+  onAction: (actionName, actionOpts = {}) => {
     if (camState.mode === 'vista') {
       camState.mode = 'player';
       updateViewButtons();
@@ -2101,7 +2127,7 @@ sculptedHud = createSculptedHud({
         pitch: camState.pitch,
       });
     } else if (actionName === 'dash') {
-      coopSystem.triggerAction('dash');
+      coopSystem.triggerAction('dash', getLiveDodgeInputOptions(actionOpts));
     } else if (actionName === 'jump') {
       coopSystem.triggerAction('jump');
     } else if (actionName === 'skill_e') {
@@ -3047,6 +3073,7 @@ function updateCamera() {
   }
 
   if (camState.mode === 'player') {
+    setHouseCutoutPlayerPos(player.x, player.y + 1.15, player.z);
     const isMageAim = Boolean(
       coopSystem?.player?.activeHeroId === 'Mage' &&
         coopSystem?.actionAim?.aimState?.active
@@ -3063,9 +3090,13 @@ function updateCamera() {
     const flat = Math.cos(camState.pitch) * (camState.dist - sb * 0.65);
     const basePosX =
       player.x - Math.sin(camState.yaw) * flat + sideX * 0.72 * sb + _camShake.x + _camImpactPos.x;
-    const basePosY = player.y + h + _camShake.y + _camImpactPos.y;
     const basePosZ =
       player.z - Math.cos(camState.yaw) * flat + sideZ * 0.72 * sb + _camShake.z + _camImpactPos.z;
+    const groundAtCam = walkableHeightAt(basePosX, basePosZ);
+    const basePosY = Math.max(
+      groundAtCam + 0.48,
+      player.y + h + _camShake.y + _camImpactPos.y
+    );
 
     const baseLookX =
       player.x + Math.sin(camState.yaw) * 6.0 + sideX * 0.48 * sb + _camShake.x * 0.6 + _camImpactLook.x;
@@ -3100,6 +3131,7 @@ function updateCamera() {
       }
     }
   } else {
+    setHouseCutoutPlayerPos(0, 9999, 0);
     camera.position.copy(camState.vistaPos).add(_camShake).add(_camImpactPos);
     camera.lookAt(
       camState.vistaTarget.x + _camShake.x * 0.5 + _camImpactLook.x,
@@ -3629,7 +3661,7 @@ window.addEventListener('keydown', (e) => {
       clearTimeout(lmbHoldTimer);
       lmbHoldTimer = null;
     }
-    coopSystem.triggerAction('dash');
+    coopSystem.triggerAction('dash', getLiveDodgeInputOptions());
   } else if (devKeys && k === 't') {
     autoCycleTod = false;
     const order = ['day', 'evening', 'twilight', 'night'];
