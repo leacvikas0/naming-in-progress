@@ -1321,10 +1321,9 @@ export async function createCoopPlayerSystem({
       st.bufferedAttack = hCtrl.bufferedAttack;
 
       // Soft-lock orientation at swing start so the character faces the target
-      const partner = heroStates[swing.heroId === 'Knight' ? 'Mage' : 'Knight'];
       const maxRange =
         swing.heroId === 'Knight'
-          ? 7.5
+          ? 5.5
           : swing.kind === 'charged'
             ? SPELLS.shatterlance.range
             : HERO_STATS.Mage.boltRange;
@@ -1337,12 +1336,11 @@ export async function createCoopPlayerSystem({
           st,
           st.yaw,
           enemyManager.activeEnemies,
-          { maxRange, partnerPos: partner }
+          { maxRange: 5.5, partnerPos: heroStates.Mage }
         );
         st.lastSwingTarget = softTarget || null;
-        if (softTarget) {
-          st.yaw = Math.atan2(softTarget.x - st.x, softTarget.z - st.z);
-        }
+        knightRt.faceYaw = softTarget ? Math.atan2(softTarget.x - st.x, softTarget.z - st.z) : null;
+        knightRt.recoveryOpen = false;
       }
 
       // Smooth per-frame lunge velocity up to contactTime (replaces frame-0 teleport snap!)
@@ -1361,10 +1359,11 @@ export async function createCoopPlayerSystem({
       if (swing.heroId === 'Mage') {
         startMageSwingClip(st, swing);
       } else {
-        startOneShotAction(st, swing.clip, swing.duration, {
-          startTime: swing.animStartTime ?? swing.startTime ?? 0,
+        const clipToPlay = pickHeroClip(st, swing.nativeClip, swing.clip) || swing.clip;
+        startOneShotAction(st, clipToPlay, swing.visualDuration ?? swing.duration, {
+          startTime: 0,
           timeScale: swing.animTimeScale ?? swing.timeScale,
-          fade: 0.06,
+          fade: 0.08,
         });
       }
 
@@ -1377,7 +1376,7 @@ export async function createCoopPlayerSystem({
         vfxKit.swordVfx?.triggerSwing?.(
           swing.clip,
           { x: st.x, y: st.y, z: st.z },
-          st.yaw,
+          knightRt.faceYaw ?? st.yaw,
           activeStyle,
           { duration: swing.duration }
         );
@@ -1400,6 +1399,7 @@ export async function createCoopPlayerSystem({
       st.mashTimeScale = hCtrl.mashTimeScale;
 
       if (swing.heroId === 'Knight') {
+        knightRt.recoveryOpen = true;
         const swingRes = campaignLoop.performKnightSwing(
           swing.clip,
           st,
@@ -1555,10 +1555,15 @@ export async function createCoopPlayerSystem({
   });
 
   // ---------------------------------------------------------------------------
-  // Mage aim / cast runtime: sticky soft-lock, animated turn-to-target, native
-  // 1.1 clip choice, release-frame spell spawning and dash/move cancel windows.
+  // Knight & Mage aim / cast runtime: sticky soft-lock, animated turn-to-target,
+  // native 1.1 clip choice, release-frame spell spawning and dash/move cancel windows.
   // ---------------------------------------------------------------------------
   let lastKnownCamYaw = 0;
+  const knightRt = {
+    faceYaw: null,
+    recoveryOpen: false,
+    pendingUltSlam: 0,
+  };
   const mageRt = {
     faceYaw: null, // facing goal while an attack owns the Mage's orientation
     pendingCast: null, // { payload, spec, timer, target } until the E clip's release frame
@@ -1761,6 +1766,25 @@ export async function createCoopPlayerSystem({
     return true;
   }
 
+  function stepKnightFacing(st, dt) {
+    if (st.actionState === 'dash') return false;
+    const sw = actionAim.heroes.Knight.activeSwing;
+    let goal = null;
+    if (sw && !sw.contactFired) {
+      const t = st.lastSwingTarget;
+      if (t && isSoftLockable(t)) knightRt.faceYaw = Math.atan2(t.x - st.x, t.z - st.z);
+      goal = knightRt.faceYaw;
+    } else if (sw) {
+      goal = knightRt.faceYaw;
+    }
+    if (goal === null || goal === undefined) {
+      knightRt.faceYaw = null;
+      return false;
+    }
+    st.yaw += shortestAngleDiff(goal, st.yaw) * (1 - Math.exp(-22 * dt));
+    return true;
+  }
+
   // Strafe/back-pedal clips while aiming; playback rate is stride-matched per frame in stepLocomotionRates.
   function playMageAimLocomotion(st, moveX, moveZ, moving) {
     const spec = MAGE_AIM_HOLD_SPEC;
@@ -1815,6 +1839,39 @@ export async function createCoopPlayerSystem({
       if (!action || action.loop !== THREE.LoopRepeat) continue;
       const ts = strideTimeScale(clipName, st.groundSpeed, { rig: 'medium', max: HERO_STRIDE_MAX_RATE });
       if (ts !== 1.0) action.setEffectiveTimeScale(ts);
+    }
+  }
+
+  function stepKnightActionRuntime(dt, controlLocked) {
+    if (controlLocked || campaignLoop.combatHeroes.Knight.downed) {
+      knightRt.pendingUltSlam = 0;
+      knightRt.recoveryOpen = false;
+      return;
+    }
+    if (knightRt.pendingUltSlam > 0) {
+      knightRt.pendingUltSlam -= dt;
+      if (knightRt.pendingUltSlam <= 0) {
+        knightRt.pendingUltSlam = 0;
+        const slamClip =
+          pickHeroClip(
+            heroStates.Knight,
+            'Melee_1H_Attack_Jump_Chop',
+            'Melee_1H_Attack_Chop',
+            'combo4'
+          ) || 'combo4';
+        startOneShotAction(heroStates.Knight, slamClip, 0.72, {
+          startTime: 0,
+          timeScale: 1.38,
+          fade: 0.06,
+        });
+        vfxKit.swordVfx?.triggerSwing?.(
+          'combo4',
+          { x: heroStates.Knight.x, y: heroStates.Knight.y, z: heroStates.Knight.z },
+          heroStates.Knight.yaw,
+          'eclipse',
+          { duration: 0.68 }
+        );
+      }
     }
   }
 
@@ -2598,22 +2655,55 @@ export async function createCoopPlayerSystem({
         } else if (hasInput) {
           leader.yaw = leader.moveInputYaw;
         }
-      } else {
-        actionAim.cancelSwing(leader.id);
-        if (leader.id === 'Knight') {
-          vfxKit.swordVfx?.endSwing?.();
+        if (dodgeClip === 'dash') {
+          leader.dashDirX = Math.sin(leader.yaw);
+          leader.dashDirZ = Math.cos(leader.yaw);
         }
+        startOneShotAction(leader, dodgeClip, 0.30, {
+          startTime: 0.04,
+          timeScale: 1.25,
+          fade: 0.06,
+        });
+        leader.actionState = 'dash';
+      } else {
+        actionAim.cancelSwing('Knight');
+        vfxKit.swordVfx?.endSwing?.();
         leader.lungeRemaining = 0;
+        knightRt.recoveryOpen = false;
+        knightRt.pendingUltSlam = 0;
+        const hasInput = leader.moveInputYaw !== null && leader.moveInputYaw !== undefined;
+        if (hasInput) {
+          const refYaw = typeof lastKnownCamYaw === 'number' ? lastKnownCamYaw : leader.yaw;
+          const rel = shortestAngleDiff(leader.moveInputYaw, refYaw);
+          const a = Math.abs(rel);
+          const key =
+            a < Math.PI * 0.25
+              ? 'Dodge_Forward'
+              : a > Math.PI * 0.75
+                ? 'Dodge_Backward'
+                : rel > 0
+                  ? 'Dodge_Left'
+                  : 'Dodge_Right';
+          dodgeClip = pickHeroClip(leader, key, 'dash') || 'dash';
+          leader.dashDirX = Math.sin(leader.moveInputYaw);
+          leader.dashDirZ = Math.cos(leader.moveInputYaw);
+          if (key === 'Dodge_Forward') {
+            leader.yaw = leader.moveInputYaw;
+          } else {
+            leader.yaw = refYaw;
+          }
+        } else {
+          dodgeClip = pickHeroClip(leader, 'Dodge_Forward', 'dash') || 'dash';
+          leader.dashDirX = Math.sin(leader.yaw);
+          leader.dashDirZ = Math.cos(leader.yaw);
+        }
+        startOneShotAction(leader, dodgeClip, 0.48, {
+          startTime: 0,
+          timeScale: 1.85,
+          fade: 0.06,
+        });
+        leader.actionState = 'dash';
       }
-      if (dodgeClip === 'dash') {
-        leader.dashDirX = Math.sin(leader.yaw);
-        leader.dashDirZ = Math.cos(leader.yaw);
-      }
-      startOneShotAction(leader, dodgeClip, 0.30, {
-        startTime: 0.04,
-        timeScale: 1.25,
-        fade: 0.06,
-      });
       dashHero.iframeTimer = DASH_IFRAMES;
       dashHero.dashCd = DASH_COOLDOWN;
 
@@ -2673,17 +2763,20 @@ export async function createCoopPlayerSystem({
           actionAim.releaseHeavy('Knight');
         }
         actionAim.cancelSwing('Knight');
+        knightRt.recoveryOpen = false;
         const res = campaignLoop.performPartnerSkill('Knight', heroStates, actionOptions);
         if (res && !res.onCooldown) {
-          startOneShotAction(leader, 'combo1', 0.46, {
-            startTime: 0.04,
-            timeScale: 1.25,
-            fade: 0.06,
+          const eClip =
+            pickHeroClip(leader, 'Melee_1H_Attack_Slice_Diagonal', 'combo2') || 'combo1';
+          startOneShotAction(leader, eClip, 0.68, {
+            startTime: 0,
+            timeScale: 1.35,
+            fade: 0.07,
           });
           applyTransform(leader);
           leader.char.update(0);
           vfxKit.swordVfx.triggerSwing(
-            'combo1',
+            'combo2',
             leader,
             leader.yaw,
             campaignLoop.combatHeroes.Knight.breathingStyle
@@ -2728,14 +2821,18 @@ export async function createCoopPlayerSystem({
           actionAim.releaseHeavy('Knight');
         }
         actionAim.cancelSwing('Knight');
+        knightRt.recoveryOpen = false;
         vfxKit.swordVfx?.endSwing?.();
         const res = campaignLoop.performKnightUltimate(heroStates, { requireEnergy: true });
         if (res && !res.onCooldown && !res.notEnoughEnergy) {
-          startOneShotAction(heroStates.Knight, 'pray_channel', 0.68, {
+          const raiseClip =
+            pickHeroClip(heroStates.Knight, 'Ranged_Magic_Raise', 'pray_channel') || 'pray_channel';
+          startOneShotAction(heroStates.Knight, raiseClip, 0.60, {
             startTime: 0,
-            timeScale: 1.05,
+            timeScale: 1.15,
             fade: 0.08,
           });
+          knightRt.pendingUltSlam = 0.60;
           triggerCameraImpulse({
             intensity: 0.24,
             dirX: Math.sin(leader.yaw),
@@ -2854,6 +2951,8 @@ export async function createCoopPlayerSystem({
     actionAim.cancelSwing(leader.id, { resetCombo: true });
     if (leader.id === 'Knight') {
       vfxKit.swordVfx?.endSwing?.();
+      knightRt.recoveryOpen = false;
+      knightRt.pendingUltSlam = 0;
     }
     leader.actionState = null;
     leader.actionTimer = 0;
@@ -2936,6 +3035,7 @@ export async function createCoopPlayerSystem({
       }
     }
     lastKnownCamYaw = camYaw;
+    stepKnightActionRuntime(dt, controlLocked);
     stepMageActionRuntime(dt, controlLocked);
 
     if (localHitstopTimer > 0) {
@@ -2991,6 +3091,23 @@ export async function createCoopPlayerSystem({
 
     let didWrap = false;
 
+    // Knight: movement after a swing's chain window cuts the tail recovery cleanly without skating.
+    if (
+      leader.id === 'Knight' &&
+      !controlLocked &&
+      moveMag > 0.12 &&
+      knightRt.recoveryOpen &&
+      leader.actionState &&
+      leader.actionState !== 'dash' &&
+      !leader.shieldBlocking &&
+      !actionAim.heroes.Knight.bufferedAttack &&
+      !actionAim.heroes.Knight.activeSwing
+    ) {
+      leader.actionState = null;
+      leader.actionTimer = 0;
+      knightRt.recoveryOpen = false;
+    }
+
     // Mage: movement cuts an already-released attack/cast's recovery (never the wind-up).
     if (
       leader.id === 'Mage' &&
@@ -3009,6 +3126,7 @@ export async function createCoopPlayerSystem({
       leader.actionState = null;
       leader.actionTimer = 0;
     }
+    const knightOwnsFacing = leader.id === 'Knight' && !controlLocked && stepKnightFacing(leader, dt);
     const mageOwnsFacing = leader.id === 'Mage' && !controlLocked && stepMageFacing(leader, dt);
     const mageAiming = leader.id === 'Mage' && actionAim.aimState.active;
     leader.moveInputYaw = null;
@@ -3030,7 +3148,7 @@ export async function createCoopPlayerSystem({
     if (leader.actionTimer > 0 && !leader.shieldBlocking) {
       leader.actionTimer = Math.max(0, leader.actionTimer - dt);
       if (leader.actionState === 'dash' && !controlLocked) {
-        const dashSpeed = player.speed * 2.05;
+        const dashSpeed = player.speed * (leader.actionTimer > 0.14 ? 2.05 : 0.85);
         let next = resolveCollisions(
           leader.x + leader.dashDirX * dashSpeed * dt,
           leader.z + leader.dashDirZ * dashSpeed * dt,
@@ -3049,7 +3167,7 @@ export async function createCoopPlayerSystem({
         leader.z = next.z;
         didWrap = next.wrapped;
       }
-      if (leader.actionTimer <= 0 && !campaignLoop.combatHeroes.Mage.stormCataclysmActive) {
+      if (leader.actionTimer <= 0) {
         leader.actionState = null;
         leader.lungeRemaining = 0;
       }
@@ -3123,7 +3241,7 @@ export async function createCoopPlayerSystem({
           pitch: lastKnownCamPitch,
         });
       }
-      if (!mageOwnsFacing && !lockYawForStrike) {
+      if (!mageOwnsFacing && !knightOwnsFacing && !lockYawForStrike) {
         const targetYaw = Math.atan2(moveX, moveZ);
         leader.yaw += shortestAngleDiff(targetYaw, leader.yaw) * Math.min(1, 14 * dt);
       }

@@ -164,7 +164,7 @@ export const LEGACY_CLIP_ALIASES = {
   Running_C: ['Running_B', 'Running_A'], // sub: Running_C removed
   Dodge_Backward: ['Dodge_Backward', 'Dodge_Backwards'],
   // Melee
-  Idle_Combat: ['Melee_2H_Idle', 'Idle_A'], // sub: Idle_Combat removed; weapon-ready guard stance
+  Idle_Combat: ['Idle_A', 'Melee_2H_Idle'], // sub: Idle_Combat removed; 1H/shield stance stays upright in Idle_A
   '2H_Melee_Idle': ['Melee_2H_Idle'],
   '1H_Melee_Attack_Slice_Horizontal': ['Melee_1H_Attack_Slice_Horizontal', 'Melee_1H_Slash'],
   '1H_Melee_Attack_Slice_Diagonal': ['Melee_1H_Attack_Slice_Diagonal', 'Melee_1H_Slash'],
@@ -226,9 +226,9 @@ export const SEMANTIC_ANIMATIONS = {
   idle: {
     candidates: ['Idle_Combat', 'Idle_A', 'Melee_2H_Idle', 'Idle_B'],
     byStyle: {
-      '2h': ['Melee_2H_Idle', 'Idle_Combat', 'Idle_A'],
-      dual: ['Idle_Combat', 'Idle_A'],
-      '1h': ['Idle_Combat', 'Idle_A'],
+      '2h': ['Melee_2H_Idle', 'Idle_A'],
+      dual: ['Idle_A'],
+      '1h': ['Idle_A'],
       magic: ['Idle_A'], // Idle_Combat is a 2H guard stance in 1.1; casters stay relaxed
       unarmed: ['Melee_Unarmed_Idle', 'Idle_A'],
     },

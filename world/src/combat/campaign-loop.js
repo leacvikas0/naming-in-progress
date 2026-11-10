@@ -241,6 +241,7 @@ export function createCampaignLoop({
   onDetonation = null,
   onInfusionChanged = null,
   onHudStateChanged = null,
+  onFriendlyFireHit = null,
 } = {}) {
   const indicatorGroup = new THREE.Group();
   indicatorGroup.name = 'combatSharedIndicatorsGroup';
@@ -357,6 +358,11 @@ export function createCampaignLoop({
   let wingmanBoltIdx = 0;
   let bothDownedTimer = 0;
   let lastHeroStates = null;
+  let lastCamera = null;
+  let friendlyFireCallback = typeof onFriendlyFireHit === 'function' ? onFriendlyFireHit : null;
+  function setOnFriendlyFireHit(fn) {
+    friendlyFireCallback = typeof fn === 'function' ? fn : null;
+  }
   const PARTNER_REVIVE_RADIUS = 2.5;
   const PARTNER_REVIVE_SECONDS = 2.5;
   const PARTNER_REVIVE_HP = 0.35;
@@ -1106,6 +1112,18 @@ export function createCampaignLoop({
         'Stand beside your beloved to lift them back up, or pray.',
         'warning'
       );
+    } else if (hitOptions?.friendlyFire && rem > 0) {
+      if (targetHeroState && typeof targetHeroState === 'object') {
+        targetHeroState.actionState = 'hit_A';
+        targetHeroState.actionTimer = Math.max(targetHeroState.actionTimer || 0, 0.48);
+      }
+      targetHeroState?.char?.play?.('hit_A', { loop: false, fade: 0.06, force: true });
+      friendlyFireCallback?.(targetHeroState, {
+        heroId,
+        damageDealt: rem,
+        source: hitOptions.source || 'friendly_fire',
+        element: hitOptions.element || 'fire',
+      });
     }
     return {
       absorbed,
@@ -1724,6 +1742,31 @@ export function createCampaignLoop({
       }
     }
 
+    // Friendly-Fire Roast: when live 3D player Mage casts Cinder Fall directly on the Knight
+    if (
+      spell.id === 'cinder_fall' &&
+      !options.fromWingmanAi &&
+      partnerPos &&
+      typeof partnerPos.char === 'object'
+    ) {
+      const dPartner = Math.hypot(partnerPos.x - targetPos.x, partnerPos.z - targetPos.z);
+      if (dPartner <= (spell.radius || 3.35) && !combatHeroes.Knight.downed) {
+        const roastDmg = 24;
+        if (!partnerPos.id) partnerPos.id = 'Knight';
+        handlePlayerHit(partnerPos, null, roastDmg, {
+          alreadyReduced: true,
+          friendlyFire: true,
+          source: 'cinder_fall',
+          element: 'fire',
+        });
+        emitBanner(
+          'FRIENDLY FIRE · CINDER FALL ROAST!',
+          'The Mage dropped a volcanic meteor right on the Knight!',
+          'warning'
+        );
+      }
+    }
+
     return {
       spell,
       distance: effectiveRange,
@@ -2215,61 +2258,99 @@ export function createCampaignLoop({
     const maxHitsPerTarget = HERO_STATS.Mage.maxMeteorHitsPerTarget || 3;
     const hitCounts = combatHeroes.Mage.stormCataclysmHitCounts;
 
-    // Distribute meteors strictly inside the annular ring around the Mage (2.65m .. 7.85m)
-    // in the visible forward & lateral hemisphere so meteors NEVER fly close to the camera lens behind the Mage!
-    const angle = meteorIndex * 2.39996;
-    const ringU = (meteorIndex * 0.6180339887) % 1.0;
-    const strikeR = 2.65 + ringU * (zoneRadius - 0.55 - 2.65);
-    const rawDx = Math.cos(angle) * strikeR;
-    let rawDz = Math.sin(angle) * strikeR;
-    if (rawDz > -0.8) {
-      rawDz = -1.2 - Math.abs(rawDz) * 0.78;
+    // Camera-to-center forward vector & screen-plane lateral vector so meteors streak across the screen at ~72 deg
+    const camPos = lastCamera?.position || null;
+    let fwdX = 0.0;
+    let fwdZ = -1.0;
+    if (camPos && Number.isFinite(camPos.x) && Number.isFinite(camPos.z)) {
+      const cdx = center.x - camPos.x;
+      const cdz = center.z - camPos.z;
+      const cLen = Math.hypot(cdx, cdz);
+      if (cLen > 1e-3) {
+        fwdX = cdx / cLen;
+        fwdZ = cdz / cLen;
+      }
     }
-    const strikeX = center.x + rawDx;
-    const strikeZ = center.z + rawDz;
+    const rightX = -fwdZ;
+    const rightZ = fwdX;
+    const sideSign = meteorIndex % 3 === 0 ? -1.0 : 1.0;
+    const rawDirX = rightX * (0.94 * sideSign) + fwdX * 0.34;
+    const rawDirZ = rightZ * (0.94 * sideSign) + fwdZ * 0.34;
+    const dirNorm = Math.hypot(rawDirX, rawDirZ) || 1.0;
+    const dirX = rawDirX / dirNorm;
+    const dirZ = rawDirZ / dirNorm;
+
+    // Distribute meteors strictly across the full 360-degree annular ring around the Mage (2.65m .. 7.65m),
+    // rotating away if a candidate strike or sky trajectory falls within 4.2m of the camera lens!
+    const clampAwayFromCameraCorridor = (candAngle, r, dX, dZ) => {
+      let a = candAngle;
+      let sx = center.x + Math.cos(a) * r;
+      let sz = center.z + Math.sin(a) * r;
+      if (camPos && Number.isFinite(camPos.x) && Number.isFinite(camPos.z)) {
+        const cLen = Math.hypot(center.x - camPos.x, center.z - camPos.z);
+        const alongFwd = (sx - camPos.x) * fwdX + (sz - camPos.z) * fwdZ;
+        const lateral = Math.abs((sx - camPos.x) * rightX + (sz - camPos.z) * rightZ);
+        const dStrikeCam = Math.hypot(sx - camPos.x, sz - camPos.z);
+        const dStartCam = Math.hypot(sx - dX * 4.8 - camPos.x, sz - dZ * 4.8 - camPos.z);
+        if (dStrikeCam < 5.5 || dStartCam < 5.8 || (alongFwd < cLen - 1.2 && lateral < 4.5)) {
+          a += Math.PI;
+          sx = center.x + Math.cos(a) * r;
+          sz = center.z + Math.sin(a) * r;
+        }
+      }
+      return { a, sx, sz };
+    };
+
+    let angle = meteorIndex * 2.39996;
+    const ringU = (meteorIndex * 0.6180339887) % 1.0;
+    const maxRingR = Math.min(7.65, zoneRadius - 0.75);
+    const strikeR = 2.65 + ringU * (maxRingR - 2.65);
+    const pClamped = clampAwayFromCameraCorridor(angle, strikeR, dirX, dirZ);
+    angle = pClamped.a;
+    const strikeX = pClamped.sx;
+    const strikeZ = pClamped.sz;
     const strikeY = walkableHeightAt(strikeX, strikeZ);
     const strikePos = { x: strikeX, y: strikeY, z: strikeZ };
 
     if (vfxKit?.cinderFall?.cast) {
-      // Primary meteor streaking diagonally across the sky plane (~38 deg lateral sweep)
-      const dirX = meteorIndex % 3 === 0 ? -0.74 : 0.74;
-      const dirZ = -0.22;
+      // Primary meteor streaking diagonally down from the sky at ~72 deg (skyHeight 14.5, range 4.8)
       vfxKit.cinderFall.cast(
-        { x: strikeX - dirX * 9.5, y: strikeY, z: strikeZ - dirZ * 9.5 },
+        { x: strikeX - dirX * 4.8, y: strikeY, z: strikeZ - dirZ * 4.8 },
         { x: dirX, y: 0, z: dirZ },
         {
           fromSky: true,
-          skyHeight: 13.0,
-          range: 9.5,
-          distance: 9.5,
+          skyHeight: 14.5,
+          range: 4.8,
+          distance: 4.8,
           targetPos: strikePos,
           initialAge: 0.0,
           seed: 1.0 + meteorIndex * 0.73,
         }
       );
 
-      // Staggered chaser meteor inside the annulus (2.75m .. 7.85m), offset laterally so meteors never overlap on screen!
-      const chaserAng = angle + 2.2;
+      // Staggered chaser meteor inside the 360-degree annulus (2.75m .. 7.65m), offset around the ring
+      let chaserAng = angle + 2.2;
       const chaserU = (ringU + 0.47) % 1.0;
-      const chaserR = 2.75 + chaserU * (zoneRadius - 0.55 - 2.75);
-      const chDx = Math.cos(chaserAng) * chaserR;
-      let chDz = Math.sin(chaserAng) * chaserR;
-      if (chDz > -0.8) {
-        chDz = -1.4 - Math.abs(chDz) * 0.78;
-      }
-      const chaserX = center.x + chDx;
-      const chaserZ = center.z + chDz;
+      const chaserR = 2.75 + chaserU * (maxRingR - 2.75);
+      const chaserSideSign = -sideSign;
+      const chRawDirX = rightX * (0.94 * chaserSideSign) + fwdX * 0.34;
+      const chRawDirZ = rightZ * (0.94 * chaserSideSign) + fwdZ * 0.34;
+      const chDirNorm = Math.hypot(chRawDirX, chRawDirZ) || 1.0;
+      const chaserDirX = chRawDirX / chDirNorm;
+      const chaserDirZ = chRawDirZ / chDirNorm;
+      const cClamped = clampAwayFromCameraCorridor(chaserAng, chaserR, chaserDirX, chaserDirZ);
+      chaserAng = cClamped.a;
+      const chaserX = cClamped.sx;
+      const chaserZ = cClamped.sz;
       const chaserY = walkableHeightAt(chaserX, chaserZ);
-      const chaserDirX = dirX * 0.92;
-      const chaserDirZ = -0.26;
       vfxKit.cinderFall.cast(
-        { x: chaserX - chaserDirX * 9.2, y: chaserY, z: chaserZ - chaserDirZ * 9.2 },
+        { x: chaserX - chaserDirX * 4.8, y: chaserY, z: chaserZ - chaserDirZ * 4.8 },
         { x: chaserDirX, y: 0, z: chaserDirZ },
         {
           fromSky: true,
-          skyHeight: 13.6,
-          range: 9.2,
-          distance: 9.2,
+          skyHeight: 14.5,
+          range: 4.8,
+          distance: 4.8,
           targetPos: { x: chaserX, y: chaserY, z: chaserZ },
           initialAge: -0.09,
           seed: 2.3 + meteorIndex * 1.19,
@@ -2291,7 +2372,13 @@ export function createCampaignLoop({
       if (mEntity && !combatHeroes.Mage.downed && typeof mEntity.x === 'number') {
         const dMage = Math.hypot(mEntity.x - center.x, mEntity.z - center.z);
         if (dMage > innerSafeRadius + 0.12 && dMage <= zoneRadius) {
-          handlePlayerHit(mEntity, null, meteorDmg);
+          if (!mEntity.id) mEntity.id = 'Mage';
+          handlePlayerHit(mEntity, null, meteorDmg, {
+            alreadyReduced: true,
+            friendlyFire: true,
+            source: 'storm_cataclysm',
+            element: 'fire',
+          });
           emitBanner(
             'METEOR HAZARD · STAY IN THE EYE!',
             'Moving outside the inner circle exposes the Mage to falling meteors!',
@@ -2303,7 +2390,13 @@ export function createCampaignLoop({
       if (kEntity && !combatHeroes.Knight.downed && typeof kEntity.x === 'number') {
         const dKnight = Math.hypot(kEntity.x - center.x, kEntity.z - center.z);
         if (dKnight > innerSafeRadius && dKnight <= zoneRadius) {
-          handlePlayerHit(kEntity, null, meteorDmg, { alreadyReduced: true });
+          if (!kEntity.id) kEntity.id = 'Knight';
+          handlePlayerHit(kEntity, null, meteorDmg, {
+            alreadyReduced: true,
+            friendlyFire: true,
+            source: 'storm_cataclysm',
+            element: 'fire',
+          });
           emitBanner(
             'METEOR BOMBARDMENT · EVACUATE THE CIRCLE!',
             'Knight must run outside the 8.4m golden circle or be crushed by meteors!',
@@ -2803,6 +2896,7 @@ export function createCampaignLoop({
     const knight = heroStates?.Knight;
     const mage = heroStates?.Mage;
     if (knight && mage) lastHeroStates = heroStates;
+    if (camera) lastCamera = camera;
 
     // 0. Advance Divine Verdict Sequence (4.80s 4-Beat Blessing/Resurrection OR 2.80s Smite)
     let blessingActivatedThisFrame = false;
@@ -3849,6 +3943,7 @@ export function createCampaignLoop({
     applyRemoteStateSync,
     resetCampaign,
     setIndicatorsHiddenForShot,
+    setOnFriendlyFireHit,
     updateIndicatorsInstancedMeshes,
     update,
   };

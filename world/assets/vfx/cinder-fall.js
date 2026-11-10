@@ -678,10 +678,10 @@ function createCraterDecalMaterial(noiseAtlas, sharedUniforms, config) {
 /* 3. Pooled, Deterministic CinderFallSystem (<= 4 Draw Calls)               */
 /* ------------------------------------------------------------------------- */
 
-const MAX_ASTEROID_CORES = 20; // Supports up to 5 overlapping sky-barrage meteors + 4 shattered boulder fragments each!
-const MAX_FIRE_TONGUES = 140; // Wake plumes (in-flight) + roaring crater eruption fire tongues across overlapping meteors
-const MAX_CRATER_ROCKS = 140; // Crater rim basalt monoliths + ballistic cinder chunks across overlapping meteors
-const MAX_CRATER_DECALS = 6;
+const MAX_ASTEROID_CORES = 64; // Supports up to 16 overlapping sky-barrage meteors + 4 shattered boulder fragments each!
+const MAX_FIRE_TONGUES = 320; // Wake plumes (in-flight) + roaring crater eruption fire tongues across overlapping meteors
+const MAX_CRATER_ROCKS = 320; // Crater rim basalt monoliths + ballistic cinder chunks across overlapping meteors
+const MAX_CRATER_DECALS = 18;
 
 const BALLISTIC_GRAVITY = -22.0;
 const BALLISTIC_RESTITUTION = 0.32;
@@ -728,6 +728,8 @@ export class CinderFallSystem {
     this.fromSky = false;
     this.skyStartHeight = 15.0;
     this.skyBarrageList = [];
+    this.singleCastActive = false;
+    this.singleCastAge = 0;
     this.active = false;
     this.age = 0;
 
@@ -858,7 +860,7 @@ export class CinderFallSystem {
     const boulderVys = [4.6, 5.5, 6.4, 7.6]; // vy in 4.2..8.5 m/s
     const boulderSpeeds = [2.6, 3.1, 3.4, 3.9];
     this.shatteredBoulderRecords = [];
-    for (let b = 0; b < MAX_ASTEROID_CORES; b++) {
+    for (let b = 0; b < boulderAngles.length; b++) {
       const s = seed * 11.3 + b * 23.7;
       const ang = boulderAngles[b];
       const spd = boulderSpeeds[b];
@@ -931,19 +933,8 @@ export class CinderFallSystem {
   }
 
   cast(origin, direction, options = {}) {
-    this.fromSky = Boolean(options.fromSky || options.skyFall);
-    this.skyStartHeight = Number(options.skyHeight) > 0 ? Number(options.skyHeight) : 15.0;
-
-    if (origin) {
-      this.origin.set(origin.x ?? origin[0] ?? 0, origin.y ?? origin[1] ?? 0, origin.z ?? origin[2] ?? 0);
-    }
-    if (direction) {
-      const dx = direction.x ?? direction[0] ?? 1;
-      const dz = direction.z ?? direction[2] ?? 0;
-      const len = Math.hypot(dx, dz) || 1;
-      this.direction.set(dx / len, 0, dz / len);
-    }
-    this.side.set(-this.direction.z, 0, this.direction.x);
+    const isSkyCast = Boolean(options.fromSky || options.skyFall);
+    const skyStartHeight = Number(options.skyHeight) > 0 ? Number(options.skyHeight) : 15.0;
     const c = this.config;
     const rawDist =
       options.distance ??
@@ -952,35 +943,58 @@ export class CinderFallSystem {
       options.length ??
       c.length ??
       c.range;
-    this.castLength = clamp(rawDist, c.minDistance ?? 3.0, c.maxDistance ?? 16.0);
+    const castLength = clamp(rawDist, c.minDistance ?? 3.0, c.maxDistance ?? 16.0);
+
+    let dirX = this.direction.x;
+    let dirZ = this.direction.z;
+    if (direction) {
+      const dx = direction.x ?? direction[0] ?? 1;
+      const dz = direction.z ?? direction[2] ?? 0;
+      const len = Math.hypot(dx, dz) || 1;
+      dirX = dx / len;
+      dirZ = dz / len;
+    }
+    const sideX = -dirZ;
+    const sideZ = dirX;
+
+    let origX = origin ? (origin.x ?? origin[0] ?? 0) : this.origin.x;
+    let origZ = origin ? (origin.z ?? origin[2] ?? 0) : this.origin.z;
     if (
-      this.fromSky &&
+      isSkyCast &&
       options.targetPos &&
       Number.isFinite(options.targetPos.x) &&
       Number.isFinite(options.targetPos.z)
     ) {
-      this.origin.x = options.targetPos.x - this.direction.x * this.castLength;
-      this.origin.z = options.targetPos.z - this.direction.z * this.castLength;
+      origX = options.targetPos.x - dirX * castLength;
+      origZ = options.targetPos.z - dirZ * castLength;
     }
-    this.origin.y = this.getGroundHeight(this.origin.x, this.origin.z);
+    const origY = this.getGroundHeight(origX, origZ);
 
-    if (this.fromSky) {
+    if (isSkyCast) {
+      this.fromSky = true;
+      this.skyStartHeight = skyStartHeight;
+      if (!this.singleCastActive) {
+        this.origin.set(origX, origY, origZ);
+        this.direction.set(dirX, 0, dirZ);
+        this.side.set(sideX, 0, sideZ);
+        this.castLength = castLength;
+      }
       const seedVal = options.seed ?? 1.0 + this.skyBarrageList.length * 0.73;
-      const impactTime = 0.32;
-      const postDuration = 0.88;
-      if (this.skyBarrageList.length >= 6) {
+      const impactTime = 0.28;
+      const postDuration = 0.56;
+      if (this.skyBarrageList.length >= 16) {
         this.skyBarrageList.shift();
       }
       this.skyBarrageList.push({
-        originX: this.origin.x,
-        originY: this.origin.y,
-        originZ: this.origin.z,
-        dirX: this.direction.x,
-        dirZ: this.direction.z,
-        sideX: this.side.x,
-        sideZ: this.side.z,
-        castLength: this.castLength,
-        skyStartHeight: this.skyStartHeight,
+        originX: origX,
+        originY: origY,
+        originZ: origZ,
+        dirX,
+        dirZ,
+        sideX,
+        sideZ,
+        castLength,
+        skyStartHeight,
         age: Number(options.initialAge) || 0.0,
         impactTime,
         postDuration,
@@ -988,14 +1002,24 @@ export class CinderFallSystem {
         seed: seedVal,
       });
       this.active = true;
-      this.age = 0;
       this.group.visible = true;
-      this._renderSkyBarrage();
+      if (this.singleCastActive) {
+        this.seek(this.singleCastAge);
+      } else {
+        this._renderSkyBarrage();
+      }
       return this;
     }
 
-    this.skyBarrageList.length = 0;
+    this.fromSky = false;
+    this.skyStartHeight = skyStartHeight;
+    this.origin.set(origX, origY, origZ);
+    this.direction.set(dirX, 0, dirZ);
+    this.side.set(sideX, 0, sideZ);
+    this.castLength = castLength;
     this._seedRecords(options.seed ?? 1.0);
+    this.singleCastActive = true;
+    this.singleCastAge = 0;
     this.active = true;
     this.age = 0;
     this.group.visible = true;
@@ -1003,12 +1027,12 @@ export class CinderFallSystem {
     return this;
   }
 
-  _renderSkyBarrage() {
+  _renderSkyBarrage(startSlots = null) {
     const c = this.config;
-    let astSlot = 0;
-    let wakeSlot = 0;
-    let rockSlot = 0;
-    let decalSlot = 0;
+    let astSlot = startSlots?.astSlot ?? 0;
+    let wakeSlot = startSlots?.wakeSlot ?? 0;
+    let rockSlot = startSlots?.rockSlot ?? 0;
+    let decalSlot = startSlots?.decalSlot ?? 0;
     let maxShakeEnv = 0;
     let maxShakeAge = 0;
 
@@ -1037,7 +1061,7 @@ export class CinderFallSystem {
 
       const popIn = smoothstep(0.0, 0.08, flightU);
 
-      // 1. Asteroid Core in flight (oriented along flight vector so local -Y is the front leading face!) OR 3 shattered boulders on impact
+      // 1. Asteroid Core in flight (oriented along flight vector so local -Y is the front leading face!) OR 2 shattered boulders on impact
       if (impactElapsed < 0) {
         evalBarragePos(flightU, _pos);
         evalBarragePos(Math.max(0.0, flightU - 0.08), _nextPos);
@@ -1051,34 +1075,35 @@ export class CinderFallSystem {
           _euler.set(0, timeSeconds * c.spin * 1.35 + m.seed, 0);
           _dummy.quaternion.setFromEuler(_euler);
           _dummy.quaternion.premultiply(_quat);
-          _dummy.scale.set(c.radius * 0.72 * popIn, c.radius * 0.88 * popIn, c.radius * 0.72 * popIn);
+          _dummy.scale.set(c.radius * 0.52 * popIn, c.radius * 0.64 * popIn, c.radius * 0.52 * popIn);
           _dummy.updateMatrix();
           this.asteroidMesh.setMatrixAt(astSlot, _dummy.matrix);
           this.asteroidMetaAttr.setXYZW(astSlot, m.seed, 1.85, 0.0, 0.0);
           astSlot++;
         }
       } else {
-        for (let b = 0; b < 3 && astSlot < MAX_ASTEROID_CORES; b++) {
+        for (let b = 0; b < 2 && astSlot < MAX_ASTEROID_CORES; b++) {
           const bRec = this.shatteredBoulderRecords[b];
-          const dissolveProgress = smoothstep(0.38, 0.96, postImpactU + bRec.stagger);
+          const dissolveProgress = smoothstep(0.28, 0.92, postImpactU + bRec.stagger);
           if (dissolveProgress >= 0.995) continue;
           const rockHeat = 1.22 * (1.0 - smoothstep(0.08, 0.45, postImpactU + bRec.stagger));
-          const approxX = impX + bRec.startOffsetX + bRec.vx * 0.42;
-          const approxZ = impZ + bRec.startOffsetZ + bRec.vz * 0.42;
-          const floorY = this.getGroundHeight(approxX, approxZ) + bRec.scale * 0.44;
+          const approxX = impX + bRec.startOffsetX * 0.6 + bRec.vx * 0.28;
+          const approxZ = impZ + bRec.startOffsetZ * 0.6 + bRec.vz * 0.28;
+          const bScale = bRec.scale * 0.56;
+          const floorY = this.getGroundHeight(approxX, approxZ) + bScale * 0.44;
           evalOneBounceBallistic(
             impactElapsed,
-            impY + 0.58,
-            bRec.vy,
+            impY + 0.38,
+            bRec.vy * 0.75,
             BALLISTIC_GRAVITY,
             BALLISTIC_RESTITUTION,
             floorY,
             _bounceState
           );
           _dummy.position.set(
-            impX + bRec.startOffsetX + bRec.vx * _bounceState.horizT,
+            impX + bRec.startOffsetX * 0.6 + bRec.vx * _bounceState.horizT * 0.65,
             _bounceState.y,
-            impZ + bRec.startOffsetZ + bRec.vz * _bounceState.horizT
+            impZ + bRec.startOffsetZ * 0.6 + bRec.vz * _bounceState.horizT * 0.65
           );
           _euler.set(
             0.4 + bRec.spinX * _bounceState.spinT,
@@ -1086,7 +1111,7 @@ export class CinderFallSystem {
             0.25 + bRec.spinZ * _bounceState.spinT
           );
           _dummy.quaternion.setFromEuler(_euler);
-          _dummy.scale.set(bRec.scale * 0.95, bRec.scale * 0.85, bRec.scale * 0.95);
+          _dummy.scale.set(bScale * 0.95, bScale * 0.85, bScale * 0.95);
           _dummy.updateMatrix();
           this.asteroidMesh.setMatrixAt(astSlot, _dummy.matrix);
           this.asteroidMetaAttr.setXYZW(astSlot, bRec.seed + m.seed, rockHeat, dissolveProgress, 0.0);
@@ -1103,10 +1128,10 @@ export class CinderFallSystem {
         _tangent.normalize();
         _quat.setFromUnitVectors(UP, _tangent);
 
-        for (let i = 0; i < 5 && wakeSlot < MAX_FIRE_TONGUES; i++) {
+        for (let i = 0; i < 4 && wakeSlot < MAX_FIRE_TONGUES; i++) {
           const rec = this.fireTongueRecords[i];
           const isFrontSheath = i === 0;
-          const behindDist = (isFrontSheath ? -0.34 : -0.22 + (i - 1) * 0.12) * popIn;
+          const behindDist = (isFrontSheath ? -0.24 : -0.16 + (i - 1) * 0.09) * popIn;
           const wx = _pos.x + _tangent.x * behindDist;
           const wy = _pos.y + _tangent.y * behindDist;
           const wz = _pos.z + _tangent.z * behindDist;
@@ -1116,8 +1141,8 @@ export class CinderFallSystem {
           _dummy.quaternion.setFromEuler(_euler);
           _dummy.quaternion.premultiply(_quat);
 
-          const widthScale = (isFrontSheath ? 1.56 : 1.48 - (i - 1) * 0.06) * popIn;
-          const lenScale = (isFrontSheath ? 3.25 : 4.05 + (i - 1) * 0.35) * popIn;
+          const widthScale = (isFrontSheath ? 1.08 : 1.02 - (i - 1) * 0.05) * popIn;
+          const lenScale = (isFrontSheath ? 2.35 : 2.95 + (i - 1) * 0.25) * popIn;
           _dummy.scale.set(widthScale, lenScale, widthScale);
           _dummy.updateMatrix();
           this.fireWakeMesh.setMatrixAt(wakeSlot, _dummy.matrix);
@@ -1130,21 +1155,21 @@ export class CinderFallSystem {
           );
           wakeSlot++;
         }
-      } else if (postImpactU < 0.85) {
-        for (let i = 14; i < 24 && wakeSlot < MAX_FIRE_TONGUES; i++) {
+      } else if (postImpactU < 0.78) {
+        for (let i = 14; i < 20 && wakeSlot < MAX_FIRE_TONGUES; i++) {
           const rec = this.fireTongueRecords[i];
           const tCol = Math.max(0.01, impactElapsed + 0.02);
-          const colFade = 1.0 - smoothstep(0.32, 0.85, postImpactU);
+          const colFade = 1.0 - smoothstep(0.24, 0.78, postImpactU);
           const horseshoeAng = rec.ang + m.seed;
-          const rDist = (0.95 + rec.radial * 1.15) * smoothstep(0.0, 0.14, tCol);
+          const rDist = (0.55 + rec.radial * 0.65) * smoothstep(0.0, 0.12, tCol);
           const fx = impX + Math.cos(horseshoeAng) * rDist;
           const fz = impZ + Math.sin(horseshoeAng) * rDist;
-          const fy = this.getGroundHeight(fx, fz) + 0.05;
+          const fy = this.getGroundHeight(fx, fz) + 0.04;
           _dummy.position.set(fx, fy, fz);
           _pos.set(Math.cos(horseshoeAng) * 0.32, 1.0, Math.sin(horseshoeAng) * 0.32).normalize();
           _dummy.quaternion.setFromUnitVectors(UP, _pos);
-          const hScale = rec.scale * (1.45 + 0.85 * (1.0 - rec.radial)) * outQuint(Math.min(1.0, tCol * 5.2)) * colFade;
-          const rScale = rec.scale * 0.75 * colFade;
+          const hScale = rec.scale * (0.95 + 0.55 * (1.0 - rec.radial)) * outQuint(Math.min(1.0, tCol * 5.2)) * colFade;
+          const rScale = rec.scale * 0.52 * colFade;
           _dummy.scale.set(rScale, hScale, rScale);
           _dummy.updateMatrix();
           this.fireWakeMesh.setMatrixAt(wakeSlot, _dummy.matrix);
@@ -1153,22 +1178,22 @@ export class CinderFallSystem {
         }
       }
 
-      // 3. Crater Rim Monoliths & Ballistic Cinders on Impact
+      // 3. Compact Starfall Crater Rim Slabs & Ballistic Cinders on Impact
       if (impactElapsed >= -0.01) {
         const tImp = Math.max(0.0, impactElapsed + 0.01);
-        for (let i = 0; i < 8 && rockSlot < MAX_CRATER_ROCKS; i++) {
-          const slab = this.rimSlabRecords[i * 2];
+        for (let i = 0; i < 5 && rockSlot < MAX_CRATER_ROCKS; i++) {
+          const slab = this.rimSlabRecords[i * 3];
           if (!slab) continue;
           const tSlab = tImp - slab.stagger;
           if (tSlab < 0) continue;
-          const dissolveProgress = smoothstep(0.38, 0.95, postImpactU + slab.dissolveStagger);
+          const dissolveProgress = smoothstep(0.28, 0.90, postImpactU + slab.dissolveStagger);
           if (dissolveProgress >= 0.995) continue;
           const slabHeat = 1.24 * (1.0 - smoothstep(0.10, 0.48, postImpactU + slab.dissolveStagger));
-          const emerge = outQuint(Math.min(1.0, tSlab / 0.12));
+          const emerge = outQuint(Math.min(1.0, tSlab / 0.10));
           const ang = slab.ang + m.seed;
-          const sx = impX + Math.cos(ang) * slab.radial * 0.78;
-          const sz = impZ + Math.sin(ang) * slab.radial * 0.78;
-          const sy = this.getGroundHeight(sx, sz) - 0.14;
+          const sx = impX + Math.cos(ang) * slab.radial * 0.44;
+          const sz = impZ + Math.sin(ang) * slab.radial * 0.44;
+          const sy = this.getGroundHeight(sx, sz) - 0.08;
           _dummy.position.set(sx, sy, sz);
           _pos.set(
             Math.cos(ang) * Math.sin(slab.lean),
@@ -1176,35 +1201,36 @@ export class CinderFallSystem {
             Math.sin(ang) * Math.sin(slab.lean)
           ).normalize();
           _dummy.quaternion.setFromUnitVectors(UP, _pos);
-          _dummy.scale.set(slab.radius * 0.78 * emerge, slab.height * 0.72 * emerge, slab.radius * 0.78 * emerge);
+          _dummy.scale.set(slab.radius * 0.45 * emerge, slab.height * 0.38 * emerge, slab.radius * 0.45 * emerge);
           _dummy.updateMatrix();
           this.craterRocksMesh.setMatrixAt(rockSlot, _dummy.matrix);
           this.rocksMetaAttr.setXYZW(rockSlot, slab.seed + m.seed, slabHeat, dissolveProgress, 1.0);
           rockSlot++;
         }
 
-        for (let i = 0; i < 10 && rockSlot < MAX_CRATER_ROCKS; i++) {
-          const cin = this.cinderRockRecords[i * 2];
+        for (let i = 0; i < 6 && rockSlot < MAX_CRATER_ROCKS; i++) {
+          const cin = this.cinderRockRecords[i * 3];
           if (!cin) continue;
-          const dissolveProgress = smoothstep(0.38, 0.95, postImpactU + cin.dissolveStagger);
+          const dissolveProgress = smoothstep(0.28, 0.90, postImpactU + cin.dissolveStagger);
           if (dissolveProgress >= 0.995) continue;
           const cinHeat = 1.15 * (1.0 - smoothstep(0.08, 0.42, postImpactU + cin.dissolveStagger));
-          const approxX = impX + cin.vx * 0.38;
-          const approxZ = impZ + cin.vz * 0.38;
-          const floorY = this.getGroundHeight(approxX, approxZ) + cin.size * 0.40;
+          const approxX = impX + cin.vx * 0.25;
+          const approxZ = impZ + cin.vz * 0.25;
+          const sc = cin.size * 0.58;
+          const floorY = this.getGroundHeight(approxX, approxZ) + sc * 0.40;
           evalOneBounceBallistic(
             tImp,
-            impY + 0.44,
-            cin.vy,
+            impY + 0.32,
+            cin.vy * 0.72,
             BALLISTIC_GRAVITY,
             BALLISTIC_RESTITUTION,
             floorY,
             _bounceState
           );
           _dummy.position.set(
-            impX + cin.vx * _bounceState.horizT * 0.85,
+            impX + cin.vx * _bounceState.horizT * 0.55,
             _bounceState.y,
-            impZ + cin.vz * _bounceState.horizT * 0.85
+            impZ + cin.vz * _bounceState.horizT * 0.55
           );
           _euler.set(
             cin.spinX * _bounceState.spinT,
@@ -1212,8 +1238,7 @@ export class CinderFallSystem {
             cin.spinZ * _bounceState.spinT
           );
           _dummy.quaternion.setFromEuler(_euler);
-          const sc = cin.size * 0.88;
-          _dummy.scale.set(sc * 0.95, sc * 1.35, sc * 0.95);
+          _dummy.scale.set(sc * 0.95, sc * 1.25, sc * 0.95);
           _dummy.updateMatrix();
           this.craterRocksMesh.setMatrixAt(rockSlot, _dummy.matrix);
           this.rocksMetaAttr.setXYZW(rockSlot, cin.seed + m.seed, cinHeat, dissolveProgress, 0.4);
@@ -1221,15 +1246,15 @@ export class CinderFallSystem {
         }
       }
 
-      // 4. Crater Lava Decal on Ground
+      // 4. Compact Starfall Crater Lava Decal on Ground
       if (impactElapsed >= -0.02 && decalSlot < MAX_CRATER_DECALS) {
         const tCrater = Math.max(0.01, impactElapsed + 0.02);
-        const reach = smoothstep(0.0, 0.14, tCrater);
-        const decalHeat = 1.22 * (1.0 - smoothstep(0.30, 0.85, postImpactU));
+        const reach = smoothstep(0.0, 0.12, tCrater);
+        const decalHeat = 1.22 * (1.0 - smoothstep(0.24, 0.80, postImpactU));
         const castYaw = Math.atan2(m.dirX, m.dirZ) + m.seed * 0.5;
         _dummy.position.set(impX, impY + 0.042 + decalSlot * 0.003, impZ);
         _dummy.quaternion.setFromAxisAngle(UP, castYaw);
-        const fRad = c.fissureRadius * 0.72;
+        const fRad = c.fissureRadius * 0.34;
         _dummy.scale.set(fRad, 1.0, fRad);
         _dummy.updateMatrix();
         this.craterDecalMesh.setMatrixAt(decalSlot, _dummy.matrix);
@@ -1268,10 +1293,12 @@ export class CinderFallSystem {
         Math.abs(Math.cos(maxShakeAge * 60.0)) * maxShakeEnv,
         Math.cos(maxShakeAge * 46.0) * maxShakeEnv * 0.7
       );
-    } else {
+    } else if (!startSlots) {
       this._shakeOffset.set(0, 0, 0);
     }
-    this._hitstopScale = 1.0;
+    if (!startSlots) {
+      this._hitstopScale = 1.0;
+    }
     return this;
   }
 
@@ -1290,12 +1317,18 @@ export class CinderFallSystem {
 
   seek(timeSeconds) {
     if (timeSeconds < 0 || timeSeconds > this.totalDuration + 0.1) {
+      if (this.skyBarrageList.length > 0) {
+        this.singleCastActive = false;
+        this._renderSkyBarrage();
+        return this;
+      }
       this.clear();
       return this;
     }
 
     this.active = true;
     this.age = timeSeconds;
+    this.singleCastAge = timeSeconds;
     this.group.visible = true;
     this.sharedUniforms.uTime.value = timeSeconds;
 
@@ -1559,14 +1592,16 @@ export class CinderFallSystem {
       this._shakeOffset.set(0, 0, 0);
     }
 
+    if (this.skyBarrageList.length > 0) {
+      this._renderSkyBarrage({ astSlot, wakeSlot, rockSlot, decalSlot });
+    }
+
     return this;
   }
 
   update(dt) {
     if (!this.active) return;
     if (this.skyBarrageList.length > 0) {
-      this.age += dt;
-      this.sharedUniforms.uTime.value = this.age;
       for (let i = this.skyBarrageList.length - 1; i >= 0; i--) {
         const m = this.skyBarrageList[i];
         m.age += dt;
@@ -1574,19 +1609,25 @@ export class CinderFallSystem {
           this.skyBarrageList.splice(i, 1);
         }
       }
-      if (this.skyBarrageList.length === 0) {
-        this.clear();
-        return;
+    }
+    if (this.singleCastActive) {
+      this.singleCastAge += dt;
+      this.age = this.singleCastAge;
+      if (this.singleCastAge > this.totalDuration) {
+        this.singleCastActive = false;
       }
+    }
+    if (this.singleCastActive) {
+      this.seek(this.singleCastAge);
+      return;
+    }
+    if (this.skyBarrageList.length > 0) {
+      this.age += dt;
+      this.sharedUniforms.uTime.value = this.age;
       this._renderSkyBarrage();
       return;
     }
-    const nextAge = this.age + dt;
-    if (nextAge > this.totalDuration) {
-      this.clear();
-      return;
-    }
-    this.seek(nextAge);
+    this.clear();
   }
 
   getStats() {
@@ -1619,6 +1660,8 @@ export class CinderFallSystem {
   clear() {
     this.active = false;
     this.age = 0;
+    this.singleCastActive = false;
+    this.singleCastAge = 0;
     this.skyBarrageList.length = 0;
     this._shakeOffset.set(0, 0, 0);
     this._hitstopScale = 1.0;

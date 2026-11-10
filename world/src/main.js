@@ -1677,6 +1677,29 @@ if (coopSystem?.enemyManager) {
   }
 }
 
+coopSystem?.campaignLoop?.setOnFriendlyFireHit?.((targetHeroState, info = {}) => {
+  if (damageNumbers && targetHeroState && info.damageDealt > 0) {
+    damageNumbers.spawnDamageNumber({
+      amount: info.damageDealt,
+      element: info.element || 'fire',
+      source: info.source || 'friendly_fire',
+      isCrit: true,
+      label: 'ROASTED!',
+      mergeKey: `friendly_fire_${info.heroId || 'Knight'}_${Date.now()}`,
+      duration: 1.05,
+      worldPos: {
+        x: targetHeroState.x ?? 0,
+        y: targetHeroState.y ?? 0,
+        z: targetHeroState.z ?? 0,
+        heightOffset: 1.85,
+      },
+    });
+  }
+  if (coopSystem?.campaignLoop && coopSystem?.heroStates) {
+    updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
+  }
+});
+
 /* ------------------------------------------------------------------------- */
 /* 7B. Wave 3 30s Commune Client (with 3D Crimson Rose Ring Timer)           */
 /* ------------------------------------------------------------------------- */
