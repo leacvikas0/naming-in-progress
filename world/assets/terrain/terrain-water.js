@@ -892,13 +892,17 @@ function createGouacheTerrainMaterial(worldMaskTex, bakedShadowAOTex = getShared
        * Hero Duo (Knight + Mage) & All 8 Pooled Enemies (uCharShadows[10]).
        */
       float evalCharacterShadow(vec2 xz, vec3 sunDir) {
+        if (vViewDist > 68.0) return 0.0;
         vec2 shadowDir = getAnimeShadowDir(sunDir);
         vec2 perpDir = vec2(-shadowDir.y, shadowDir.x);
         float shd = 0.0;
 
         for (int c = 0; c < 10; c++) {
           vec4 ch = uCharShadows[c];
-          if (ch.w < 0.02) continue;
+          if (ch.w < 0.02) {
+            if (c >= 2) break;
+            continue;
+          }
           float wWeight = clamp(ch.w, 0.0, 1.0);
           vec2 rel = xz - ch.xy;
           float r = ch.z;

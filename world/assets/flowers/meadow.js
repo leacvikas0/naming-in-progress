@@ -264,8 +264,11 @@ export function createGouacheMaterial({
           cellDist = max(abs(relXZ.x), abs(relXZ.y));
           basePos.xz = uPlayerPos.xz + relXZ;
 
-          // Early Behind-Camera Frustum Return before 4-tap texture relocation on unseen back-half instances
-          if (uUseCamCull > 0.5 && dot(basePos.xz - uCamPosXZ, uCamForward) < -4.5) {
+          // Early Behind-Camera & Horizontal Frustum Cone Return before 4-tap texture relocation on unseen instances
+          vec2 toCamXZ = basePos.xz - uCamPosXZ;
+          float fwdCam = dot(toCamXZ, uCamForward);
+          float sideCam = abs(toCamXZ.x * uCamForward.y - toCamXZ.y * uCamForward.x);
+          if (uUseCamCull > 0.5 && (fwdCam < -4.5 || sideCam > max(0.0, fwdCam) * 1.42 + 6.0)) {
             gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
             return;
           }
@@ -308,7 +311,10 @@ export function createGouacheMaterial({
             basePos.y = uHeightMin + hNorm * uHeightSpan;
           }
         } else {
-          if (uUseCamCull > 0.5 && dot(basePos.xz - uCamPosXZ, uCamForward) < -4.5) {
+          vec2 toCamXZ = basePos.xz - uCamPosXZ;
+          float fwdCam = dot(toCamXZ, uCamForward);
+          float sideCam = abs(toCamXZ.x * uCamForward.y - toCamXZ.y * uCamForward.x);
+          if (uUseCamCull > 0.5 && (fwdCam < -4.5 || sideCam > max(0.0, fwdCam) * 1.42 + 6.0)) {
             gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
             return;
           }
@@ -438,7 +444,10 @@ export function createGouacheMaterial({
 
         for (int c = 0; c < 10; c++) {
           vec4 ch = uCharShadows[c];
-          if (ch.w < 0.02) continue;
+          if (ch.w < 0.02) {
+            if (c >= 2) break;
+            continue;
+          }
           float wWeight = clamp(ch.w, 0.0, 1.0);
           vec2 rel = xz - ch.xy;
           float r = ch.z;

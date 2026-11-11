@@ -41,10 +41,8 @@ const DAMAGE_NUMBERS_CSS = `
     white-space: nowrap;
     padding: 3px 8px;
     border-radius: 999px;
-    background: rgba(15, 19, 26, 0.36);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    background: rgba(15, 19, 26, 0.68);
+    border: 1px solid rgba(255, 255, 255, 0.18);
     will-change: transform, opacity;
   }
 
@@ -72,7 +70,7 @@ const DAMAGE_NUMBERS_CSS = `
   .am-dmg-pop.is-crit {
     font-size: 1.28rem;
     color: #fef3c7;
-    background: rgba(18, 22, 30, 0.52);
+    background: rgba(18, 22, 30, 0.78);
     border-color: rgba(253, 224, 71, 0.34);
     text-shadow: 0 1.5px 4px rgba(24, 14, 8, 0.92);
   }

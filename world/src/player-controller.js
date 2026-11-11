@@ -2682,13 +2682,9 @@ export async function createCoopPlayerSystem({
 
     if (actionType === 'dash') {
       const dashHero = campaignLoop.combatHeroes[activeHeroId];
-      if (dashHero.downed || dashHero.dashCd > 0) {
-        return { blocked: true, cooldown: dashHero.dashCd };
-      }
       if (leader.id === 'Knight' && leader.shieldBlocking) {
         actionAim.releaseHeavy('Knight');
       }
-      if (leader.actionState === 'dash') return { onDashCooldown: true };
 
       const refYaw =
         typeof actionOptions?.camYaw === 'number'
@@ -2716,6 +2712,22 @@ export async function createCoopPlayerSystem({
         chosenDodgeYaw = Math.atan2(wx, wz);
       } else if (leader.moveInputYaw !== null && leader.moveInputYaw !== undefined) {
         chosenDodgeYaw = leader.moveInputYaw;
+      }
+
+      if (leader.actionState === 'dash') {
+        if (actionOptions?.steerActiveDash && chosenDodgeYaw !== null) {
+          leader.dashDirX = Math.sin(chosenDodgeYaw);
+          leader.dashDirZ = Math.cos(chosenDodgeYaw);
+          const rel = shortestAngleDiff(chosenDodgeYaw, refYaw);
+          if (Math.abs(rel) < Math.PI * 0.28) {
+            leader.yaw = chosenDodgeYaw;
+          }
+          return { steered: true };
+        }
+        return { onDashCooldown: true };
+      }
+      if (dashHero.downed || dashHero.dashCd > 0) {
+        return { blocked: true, cooldown: dashHero.dashCd };
       }
 
       let dodgeClip = 'dash';

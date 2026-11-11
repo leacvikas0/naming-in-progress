@@ -417,7 +417,7 @@ export function createWorldPost({
   let degraded = false;
   let degradedReason = '';
 
-  const aaCount =
+  let aaCount =
     aaSamples === null || aaSamples === undefined
       ? isWebGL2
         ? 4
@@ -436,12 +436,14 @@ export function createWorldPost({
     }
   );
   renderTarget.texture.name = 'worldPostHdrTarget';
-  // Resolved scene depth for the grade pass atmosphere (MSAA depth is blitted on resolve).
-  renderTarget.depthTexture = new THREE.DepthTexture(
+  // Resolved scene depth for the grade pass atmosphere (only attached when aaCount > 0 on desktop;
+  // on mobile TBDR aaCount === 0 keeps the 24-bit depth buffer 100% inside on-chip Tile SRAM!).
+  const desktopDepthTexture = new THREE.DepthTexture(
     Math.max(1, Math.round(w * pixelRatio)),
     Math.max(1, Math.round(h * pixelRatio))
   );
-  renderTarget.depthTexture.type = THREE.UnsignedIntType;
+  desktopDepthTexture.type = THREE.UnsignedIntType;
+  renderTarget.depthTexture = aaCount > 0 ? desktopDepthTexture : null;
 
   let composer = null;
   let renderPass = null;
@@ -550,11 +552,15 @@ export function createWorldPost({
   function syncCameraUniforms() {
     if (!gradePass) return;
     const u = gradePass.uniforms;
-    u.tDepth.value = composer?.readBuffer?.depthTexture || renderTarget.depthTexture || null;
-    u.uAtmosphere.value = atmosphereEnabled && u.tDepth.value ? 1.0 : 0.0;
-    u.uInvProj.value.copy(camera.projectionMatrixInverse);
-    u.uCamWorld.value.copy(camera.matrixWorld);
-    camera.getWorldPosition(u.uCamPos.value);
+    const activeDepthTex =
+      aaCount > 0 ? composer?.readBuffer?.depthTexture || renderTarget.depthTexture || null : null;
+    u.tDepth.value = activeDepthTex;
+    u.uAtmosphere.value = atmosphereEnabled && activeDepthTex ? 1.0 : 0.0;
+    if (activeDepthTex) {
+      u.uInvProj.value.copy(camera.projectionMatrixInverse);
+      u.uCamWorld.value.copy(camera.matrixWorld);
+      camera.getWorldPosition(u.uCamPos.value);
+    }
   }
 
   setTimeOfDayGrade('day');
@@ -605,8 +611,21 @@ export function createWorldPost({
   }
 
   function setQuality({ aaSamples: nextAa } = {}) {
-    if (gradePass?.uniforms?.uAoTaps && Number.isFinite(nextAa)) {
-      gradePass.uniforms.uAoTaps.value = nextAa <= 2 ? 4.0 : 8.0;
+    if (Number.isFinite(nextAa)) {
+      const nextCount = Math.max(0, Math.min(8, Math.floor(Number(nextAa) || 0)));
+      if (nextCount !== aaCount) {
+        aaCount = nextCount;
+        for (const rt of [renderTarget, composer?.renderTarget1, composer?.renderTarget2]) {
+          if (!rt) continue;
+          rt.samples = aaCount;
+          rt.depthTexture = aaCount > 0 ? desktopDepthTexture : null;
+          rt.dispose();
+        }
+        applyIntegerTargetSizes();
+      }
+      if (gradePass?.uniforms?.uAoTaps) {
+        gradePass.uniforms.uAoTaps.value = aaCount <= 2 ? 4.0 : 8.0;
+      }
     }
   }
 

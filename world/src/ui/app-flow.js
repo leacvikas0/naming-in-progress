@@ -398,10 +398,15 @@ const APP_FLOW_CSS = `
     image-rendering: auto;
   }
 
+  #haru-app-flow-root[data-step="in_game"] {
+    display: none !important;
+  }
+
   #af-pixel-veil.is-resolved {
     opacity: 0;
-    backdrop-filter: blur(0px);
-    -webkit-backdrop-filter: blur(0px);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    display: none;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -2350,10 +2355,45 @@ export function createAppFlow({
     });
   });
 
+  function tryRequestMobileFullscreenAndLandscape() {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    if (typeof navigator !== 'undefined' && navigator.webdriver) return;
+    const isTouch =
+      (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) ||
+      window.matchMedia?.('(pointer: coarse)')?.matches ||
+      /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(navigator?.userAgent || '');
+    if (!isTouch) return;
+    try {
+      const docEl = document.documentElement;
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        const req =
+          docEl.requestFullscreen ||
+          docEl.webkitRequestFullscreen ||
+          docEl.msRequestFullscreen;
+        if (typeof req === 'function') {
+          const p = req.call(docEl, { navigationUI: 'hide' });
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        }
+      }
+    } catch {
+      // ignore fullscreen restrictions on iOS Safari tab
+    }
+    try {
+      const lockFn = window.screen?.orientation?.lock;
+      if (typeof lockFn === 'function') {
+        const p = lockFn.call(window.screen.orientation, 'landscape');
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      }
+    } catch {
+      // ignore orientation lock restrictions
+    }
+  }
+
   // Screen 1 -> Screen 2 (straight to CREATE_JOIN, no separate loading screen)
   if (enterBtn) {
     enterBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      tryRequestMobileFullscreenAndLandscape();
       setStep(FLOW_STEPS.CREATE_JOIN);
     });
   }
@@ -2361,6 +2401,7 @@ export function createAppFlow({
   if (createBtn) {
     createBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      tryRequestMobileFullscreenAndLandscape();
       setErrorMessage('');
       state.roomPhrase = state.roomPhrase || generateRomanticRoomPhrase(0);
       state.isHost = true;
@@ -2378,6 +2419,7 @@ export function createAppFlow({
   }
 
   function submitJoinWorld() {
+    tryRequestMobileFullscreenAndLandscape();
     setErrorMessage('');
     const typed = phraseInput?.value?.trim();
     state.roomPhrase = typed || state.roomPhrase || 'Rain on warm limestone';
@@ -2419,6 +2461,7 @@ export function createAppFlow({
    *   once both seats are claimed & named.
    */
   function triggerEnterValleyFromLobby(forceSoloStart = false) {
+    tryRequestMobileFullscreenAndLandscape();
     if (nameInput && nameInput.value.trim()) {
       state.playerName = nameInput.value.trim();
     }

@@ -202,30 +202,15 @@ function appendStemMesh(arrays, pts, radiusBase, radiusTip, colBase, colTip, rad
 function finalizeGeometry(id, arrays) {
   const { pos, norm, uv, col, idx } = arrays;
   const triCount = idx.length / 3;
-  const outPos = new Float32Array(triCount * 9);
-  const outNorm = new Float32Array(triCount * 9);
-  const outUv = new Float32Array(triCount * 6);
-  const outCol = new Float32Array(triCount * 9);
-
-  for (let i = 0; i < idx.length; i++) {
-    const vi = idx[i];
-    outPos[i * 3] = pos[vi * 3];
-    outPos[i * 3 + 1] = pos[vi * 3 + 1];
-    outPos[i * 3 + 2] = pos[vi * 3 + 2];
-
-    outNorm[i * 3] = norm[vi * 3];
-    outNorm[i * 3 + 1] = norm[vi * 3 + 1];
-    outNorm[i * 3 + 2] = norm[vi * 3 + 2];
-
-    outUv[i * 2] = uv[vi * 2];
-    outUv[i * 2 + 1] = uv[vi * 2 + 1];
-
-    outCol[i * 3] = col[vi * 3];
-    outCol[i * 3 + 1] = col[vi * 3 + 1];
-    outCol[i * 3 + 2] = col[vi * 3 + 2];
-  }
+  const outPos = new Float32Array(pos);
+  const outNorm = new Float32Array(norm);
+  const outUv = new Float32Array(uv);
+  const outCol = new Float32Array(col);
+  const outIdx =
+    pos.length / 3 < 65535 ? new Uint16Array(idx) : new Uint32Array(idx);
 
   const geo = new THREE.BufferGeometry();
+  geo.setIndex(new THREE.BufferAttribute(outIdx, 1));
   geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
   geo.setAttribute('normal', new THREE.BufferAttribute(outNorm, 3));
   geo.setAttribute('uv', new THREE.BufferAttribute(outUv, 2));

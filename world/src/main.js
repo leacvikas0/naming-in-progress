@@ -136,8 +136,11 @@ const PROFILES = {
   tablet: {
     id: 'tablet',
     label: 'Tablet (Xiaomi Pad 7)',
-    dpr: 1.0,
-    aaSamples: 2,
+    dpr:
+      typeof window !== 'undefined'
+        ? Math.min(Math.max(window.devicePixelRatio || 1, 1.35), 1.65)
+        : 1.5,
+    aaSamples: 0,
     meadowProfile: 'tablet',
     maxGrassTufts: 17000,
   },
@@ -1552,6 +1555,45 @@ coopSystem = await createCoopPlayerSystem({
 });
 
 const player = coopSystem.player;
+
+function prewarmAllVfxAndSceneShaders() {
+  const savedVis = [];
+  const savedCounts = [];
+  const savedCull = [];
+  scene.traverse((obj) => {
+    if (!obj.visible) {
+      savedVis.push(obj);
+      obj.visible = true;
+    }
+    if (obj.isInstancedMesh && obj.count === 0) {
+      const cap = obj.instanceMatrix?.count ?? 1;
+      if (cap > 0) {
+        savedCounts.push(obj);
+        obj.count = 1;
+      }
+    }
+    if (obj.isMesh && obj.frustumCulled) {
+      savedCull.push(obj);
+      obj.frustumCulled = false;
+    }
+  });
+  const prevTarget = renderer.getRenderTarget();
+  try {
+    if (post?.composer?.renderTarget1) {
+      renderer.setRenderTarget(post.composer.renderTarget1);
+    }
+    renderer.compile(scene, camera);
+  } catch {
+    // ignore prewarm errors on restricted WebGL contexts
+  } finally {
+    renderer.setRenderTarget(prevTarget);
+    for (let i = 0; i < savedCull.length; i++) savedCull[i].frustumCulled = true;
+    for (let i = 0; i < savedCounts.length; i++) savedCounts[i].count = 0;
+    for (let i = 0; i < savedVis.length; i++) savedVis[i].visible = false;
+  }
+}
+
+prewarmAllVfxAndSceneShaders();
 
 /* ------------------------------------------------------------------------- */
 /* 7A. Wire 3D Floating Genshin Damage Numbers (`damage-numbers.js`)         */
@@ -3907,15 +3949,31 @@ canvas.addEventListener(
   { passive: true }
 );
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+function syncViewportDimensions() {
+  const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+  const w = Math.max(1, Math.round(vv?.width || window.innerWidth || 1280));
+  const h = Math.max(1, Math.round(vv?.height || window.innerHeight || 720));
+  if (typeof document !== 'undefined' && document.documentElement) {
+    document.documentElement.style.setProperty('--app-vw', `${w}px`);
+    document.documentElement.style.setProperty('--app-vh', `${h}px`);
+  }
+  camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  post.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(w, h);
+  post.setSize(w, h);
   if (appFlow && appFlow.getStep?.() === FLOW_STEPS.FLOWER_LOBBY) {
     updateFlowerLobbyHeroProjections();
   }
+}
+
+window.addEventListener('resize', syncViewportDimensions);
+window.addEventListener('orientationchange', () => {
+  setTimeout(syncViewportDimensions, 80);
+  setTimeout(syncViewportDimensions, 260);
 });
+if (typeof window !== 'undefined' && window.visualViewport) {
+  window.visualViewport.addEventListener('resize', syncViewportDimensions);
+}
 
 /* ------------------------------------------------------------------------- */
 /* 12. Main Loop, Performance Measurement & Telemetry API                     */

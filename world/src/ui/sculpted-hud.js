@@ -499,18 +499,41 @@ const SCULPTED_HUD_CSS = `
     background: #ffffff;
   }
 
+  #sculpted-fullscreen-btn {
+    top: max(16px, env(safe-area-inset-top, 0px));
+    right: calc(max(18px, env(safe-area-inset-right, 0px)) + 54px);
+    width: 44px;
+    height: 44px;
+    z-index: 28;
+    display: none;
+  }
+
+  #sculpted-hud-root.profile-tablet #sculpted-fullscreen-btn {
+    display: inline-flex;
+  }
+
+  .sh-fullscreen-svg {
+    width: 20px;
+    height: 20px;
+    stroke: #ffffff;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+  }
+
   /* ----------------------------------------------------------------------- */
-  /* 4. Left Hand Floating Thumbstick (Tablet Only: 38px, 36px, 148x148px)   */
+  /* 4. Genshin-Style Dynamic Left Hand Floating Thumbstick (44vw x 68vh)    */
   /* ----------------------------------------------------------------------- */
   #sculpted-joystick-zone {
     position: absolute;
-    left: 38px;
-    bottom: 36px;
-    width: 148px;
-    height: 148px;
+    left: 0;
+    bottom: 0;
+    width: 44vw;
+    height: 68vh;
     pointer-events: auto;
     touch-action: none;
-    z-index: 28;
+    z-index: 27;
     display: none;
   }
 
@@ -519,16 +542,30 @@ const SCULPTED_HUD_CSS = `
   }
 
   .sh-joy-ring {
-    position: relative;
+    position: fixed;
+    left: max(38px, env(safe-area-inset-left, 38px));
+    bottom: max(36px, env(safe-area-inset-bottom, 36px));
     width: 148px;
     height: 148px;
     border-radius: 50%;
-    background: rgba(34, 38, 46, 0.22);
-    border: 1.8px solid rgba(255, 255, 255, 0.65);
+    background: rgba(34, 38, 46, 0.24);
+    border: 1.8px solid rgba(255, 255, 255, 0.68);
     box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.14);
     display: flex;
     align-items: center;
     justify-content: center;
+    pointer-events: none;
+    transition: opacity 140ms ease-out, border-color 140ms ease-out;
+  }
+
+  .sh-joy-ring.is-floating {
+    left: 0 !important;
+    bottom: auto !important;
+    top: 0 !important;
+    margin-left: -74px;
+    margin-top: -74px;
+    border-color: rgba(255, 255, 255, 0.92);
+    background: rgba(34, 38, 46, 0.34);
   }
 
   .sh-joy-ring.is-sprinting {
@@ -539,19 +576,20 @@ const SCULPTED_HUD_CSS = `
     width: 54px;
     height: 54px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.38);
+    background: rgba(255, 255, 255, 0.42);
     border: 2px solid #ffffff;
-    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.25);
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.28);
     transform: translate3d(0px, 0px, 0px);
     pointer-events: none;
   }
 
+  /* Pure Right-Side & Upper-Screen Camera Orbit Zone */
   #sculpted-orbit-zone {
     position: absolute;
-    left: 20vw;
+    left: 44vw;
     right: 0;
     top: 0;
-    width: 80vw;
+    width: 56vw;
     height: 100vh;
     pointer-events: auto;
     touch-action: none;
@@ -563,7 +601,7 @@ const SCULPTED_HUD_CSS = `
     display: block;
   }
 
-  /* Center-Screen On-Character 360° Fast-Flick Dodge Zone (22vw x 34vh over Hero) */
+  /* Center-Screen Zone (kept in DOM for compatibility; passes slow drags to camera orbit) */
   #sculpted-center-dodge-zone {
     position: absolute;
     left: 39vw;
@@ -571,7 +609,7 @@ const SCULPTED_HUD_CSS = `
     width: 22vw;
     height: 34vh;
     border-radius: 28px;
-    pointer-events: auto;
+    pointer-events: none;
     touch-action: none;
     z-index: 26;
     display: none;
@@ -773,21 +811,22 @@ const SCULPTED_HUD_CSS = `
     display: none;
   }
 
-  /* --- TABLET GENSHIN BOTTOM-RIGHT ACTION CLUSTER (Matches 1000373930.jpg & 1000373931.webp) --- */
-  /* Normal Attack (Large Middle Circle): right: 112px, bottom: 52px */
+  /* --- TABLET GENSHIN BOTTOM-RIGHT ACTION CLUSTER (Enlarged Ergonomic Dodge Button) --- */
+  /* Normal Attack (Large Middle Circle): right: 118px, bottom: 48px */
   #sculpted-hud-root.profile-tablet #sculpted-attack-btn {
-    right: 108px;
+    right: 118px;
     bottom: 48px;
     width: 104px;
     height: 104px;
   }
 
-  /* Dash/Sprint (Bottom-Right Corner Circle): right: 24px, bottom: 22px */
+  /* Enlarged Ergonomic Dash/Dodge (Bottom-Right Corner Circle): right: 20px, bottom: 20px, 82x82px */
   #sculpted-hud-root.profile-tablet #sculpted-dash-btn {
-    right: 24px;
-    bottom: 22px;
-    width: 72px;
-    height: 72px;
+    right: 20px;
+    bottom: 20px;
+    width: 82px;
+    height: 82px;
+    border-color: rgba(255, 255, 255, 0.92);
   }
 
   /* Jump (Top-Right Circle above Dash): right: 24px, bottom: 132px */
@@ -798,17 +837,17 @@ const SCULPTED_HUD_CSS = `
     height: 72px;
   }
 
-  /* Elemental Skill [E] (Bottom-Left of Normal Attack): right: 228px, bottom: 24px */
+  /* Elemental Skill [E] (Bottom-Left of Normal Attack): right: 236px, bottom: 24px */
   #sculpted-hud-root.profile-tablet #sculpted-slot-e {
-    right: 228px;
+    right: 236px;
     bottom: 24px;
     width: 76px;
     height: 76px;
   }
 
-  /* Elemental Burst [Q] (Left of E): right: 320px, bottom: 28px */
+  /* Elemental Burst [Q] (Left of E): right: 328px, bottom: 28px */
   #sculpted-hud-root.profile-tablet #sculpted-slot-q {
-    right: 320px;
+    right: 328px;
     bottom: 28px;
     width: 80px;
     height: 80px;
@@ -822,7 +861,7 @@ const SCULPTED_HUD_CSS = `
     height: 68px;
   }
 
-  /* --- COMPACT MOBILE / NORMAL iPHONE (Landscape <= 932x520 or Portrait <= 680px) --- */
+  /* --- COMPACT MOBILE / NORMAL PHONE (Realme 11 Pro / iPhone Landscape <= 932x520 or Portrait <= 680px) --- */
   @media (max-width: 932px) and (max-height: 520px), (max-width: 680px) {
     #sculpted-party-bars {
       top: max(10px, env(safe-area-inset-top, 10px));
@@ -869,21 +908,35 @@ const SCULPTED_HUD_CSS = `
       height: 38px;
     }
 
+    #sculpted-fullscreen-btn {
+      top: max(10px, env(safe-area-inset-top, 10px));
+      right: calc(max(12px, env(safe-area-inset-right, 12px)) + 46px);
+      width: 38px;
+      height: 38px;
+    }
+
     #sculpted-joystick-zone {
-      left: max(18px, env(safe-area-inset-left, 18px));
-      bottom: max(18px, env(safe-area-inset-bottom, 18px));
-      width: 112px;
-      height: 112px;
+      left: 0;
+      bottom: 0;
+      width: 44vw;
+      height: 70vh;
     }
 
     .sh-joy-ring {
-      width: 112px;
-      height: 112px;
+      left: max(18px, env(safe-area-inset-left, 18px));
+      bottom: max(18px, env(safe-area-inset-bottom, 18px));
+      width: 116px;
+      height: 116px;
+    }
+
+    .sh-joy-ring.is-floating {
+      margin-left: -58px;
+      margin-top: -58px;
     }
 
     .sh-joy-puck {
-      width: 42px;
-      height: 42px;
+      width: 44px;
+      height: 44px;
     }
 
     #sculpted-hud-root.profile-tablet .sh-keycap-badge {
@@ -891,46 +944,50 @@ const SCULPTED_HUD_CSS = `
     }
 
     #sculpted-hud-root.profile-tablet #sculpted-attack-btn {
-      right: max(76px, calc(env(safe-area-inset-right, 0px) + 72px));
-      bottom: max(26px, calc(env(safe-area-inset-bottom, 0px) + 22px));
-      width: 76px;
-      height: 76px;
+      right: max(86px, calc(env(safe-area-inset-right, 0px) + 82px));
+      bottom: max(24px, calc(env(safe-area-inset-bottom, 0px) + 20px));
+      width: 78px;
+      height: 78px;
     }
 
     #sculpted-hud-root.profile-tablet #sculpted-attack-btn .sh-action-icon-svg {
-      width: 44px;
-      height: 44px;
+      width: 46px;
+      height: 46px;
     }
 
     #sculpted-hud-root.profile-tablet #sculpted-dash-btn {
       right: max(14px, env(safe-area-inset-right, 14px));
       bottom: max(14px, env(safe-area-inset-bottom, 14px));
-      width: 54px;
-      height: 54px;
+      width: 64px;
+      height: 64px;
     }
 
     #sculpted-hud-root.profile-tablet #sculpted-jump-btn {
       right: max(14px, env(safe-area-inset-right, 14px));
-      bottom: max(80px, calc(env(safe-area-inset-bottom, 0px) + 76px));
+      bottom: max(88px, calc(env(safe-area-inset-bottom, 0px) + 84px));
       width: 54px;
       height: 54px;
     }
 
-    #sculpted-hud-root.profile-tablet #sculpted-dash-btn .sh-action-icon-svg,
+    #sculpted-hud-root.profile-tablet #sculpted-dash-btn .sh-action-icon-svg {
+      width: 34px;
+      height: 34px;
+    }
+
     #sculpted-hud-root.profile-tablet #sculpted-jump-btn .sh-action-icon-svg {
       width: 30px;
       height: 30px;
     }
 
     #sculpted-hud-root.profile-tablet #sculpted-slot-e {
-      right: max(162px, calc(env(safe-area-inset-right, 0px) + 158px));
+      right: max(172px, calc(env(safe-area-inset-right, 0px) + 168px));
       bottom: max(16px, env(safe-area-inset-bottom, 16px));
       width: 56px;
       height: 56px;
     }
 
     #sculpted-hud-root.profile-tablet #sculpted-slot-q {
-      right: max(226px, calc(env(safe-area-inset-right, 0px) + 222px));
+      right: max(236px, calc(env(safe-area-inset-right, 0px) + 232px));
       bottom: max(18px, env(safe-area-inset-bottom, 18px));
       width: 58px;
       height: 58px;
@@ -938,7 +995,7 @@ const SCULPTED_HUD_CSS = `
 
     #sculpted-hud-root.profile-tablet #sculpted-commune-btn {
       right: max(16px, env(safe-area-inset-right, 16px));
-      bottom: max(146px, calc(env(safe-area-inset-bottom, 0px) + 142px));
+      bottom: max(152px, calc(env(safe-area-inset-bottom, 0px) + 148px));
       width: 50px;
       height: 50px;
     }
@@ -1515,7 +1572,19 @@ export function createSculptedHud({
       </div>
     </div>
 
-    <!-- 3. TOP-RIGHT: Minimal Translucent Pause Ring -->
+    <!-- 3. TOP-RIGHT: Minimal Translucent Fullscreen & Pause Rings -->
+    <button
+      type="button"
+      class="sh-open-ring"
+      id="sculpted-fullscreen-btn"
+      aria-label="Toggle Fullscreen Landscape"
+      title="Fullscreen"
+    >
+      <svg class="sh-fullscreen-svg" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+      </svg>
+    </button>
+
     <button
       type="button"
       class="sh-open-ring"
@@ -2166,12 +2235,63 @@ export function createSculptedHud({
     if (joyPuck) {
       joyPuck.style.transform = 'translate3d(0px, 0px, 0px)';
     }
-    joyRing?.classList.remove('is-sprinting');
+    if (joyRing) {
+      joyRing.classList.remove('is-sprinting', 'is-floating');
+      joyRing.style.transform = '';
+    }
+  }
+
+  function tryEnterMobileFullscreen() {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    if (typeof navigator !== 'undefined' && navigator.webdriver) return;
+    if (state.profile !== 'tablet') return;
+    try {
+      const docEl = document.documentElement;
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        const req =
+          docEl.requestFullscreen ||
+          docEl.webkitRequestFullscreen ||
+          docEl.msRequestFullscreen;
+        if (typeof req === 'function') {
+          const p = req.call(docEl, { navigationUI: 'hide' });
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        }
+      }
+    } catch {
+      // ignore
+    }
+    try {
+      const lockFn = window.screen?.orientation?.lock;
+      if (typeof lockFn === 'function') {
+        const p = lockFn.call(window.screen.orientation, 'landscape');
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const fullscreenBtn = root.querySelector('#sculpted-fullscreen-btn');
+  if (fullscreenBtn) {
+    fullscreenBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (typeof document === 'undefined') return;
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        const exitFn = document.exitFullscreen || document.webkitExitFullscreen;
+        if (typeof exitFn === 'function') {
+          const p = exitFn.call(document);
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        }
+      } else {
+        tryEnterMobileFullscreen();
+      }
+    });
   }
 
   if (joyZone && joyRing) {
     joyZone.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
+      tryEnterMobileFullscreen();
       try {
         joyZone.setPointerCapture(e.pointerId);
       } catch {
@@ -2179,9 +2299,26 @@ export function createSculptedHud({
       }
       joyState.active = true;
       joyState.pointerId = e.pointerId;
-      const rect = joyRing.getBoundingClientRect();
-      joyState.originX = rect.left + rect.width * 0.5;
-      joyState.originY = rect.top + rect.height * 0.5;
+      const ringRect = joyRing.getBoundingClientRect();
+      const ringCx = ringRect.left + ringRect.width * 0.5;
+      const ringCy = ringRect.top + ringRect.height * 0.5;
+      const distFromRestingCenter = Math.hypot(e.clientX - ringCx, e.clientY - ringCy);
+
+      // Genshin Dynamic Floating Joystick: if thumb lands outside the inner resting ring (> 42px),
+      // teleport the joystick ring center directly under the user's thumb!
+      if (distFromRestingCenter > 42 && e.clientX > 0 && e.clientY > 0) {
+        const vw = window.innerWidth || 844;
+        const vh = window.innerHeight || 390;
+        const clampedX = clamp(e.clientX, 64, vw * 0.42);
+        const clampedY = clamp(e.clientY, vh * 0.32, vh - 64);
+        joyState.originX = clampedX;
+        joyState.originY = clampedY;
+        joyRing.classList.add('is-floating');
+        joyRing.style.transform = `translate3d(${clampedX.toFixed(1)}px, ${clampedY.toFixed(1)}px, 0px)`;
+      } else {
+        joyState.originX = ringCx;
+        joyState.originY = ringCy;
+      }
       updateJoystickFromPoint(e.clientX, e.clientY);
     });
 
@@ -2381,6 +2518,7 @@ export function createSculptedHud({
   if (attackBtn) {
     attackBtn.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
+      tryEnterMobileFullscreen();
       try {
         attackBtn.setPointerCapture(e.pointerId);
       } catch {
@@ -2492,6 +2630,7 @@ export function createSculptedHud({
 
     dashBtn.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
+      tryEnterMobileFullscreen();
       dashPtrId = e.pointerId;
       dashStartX = e.clientX;
       dashStartY = e.clientY;
@@ -2500,6 +2639,11 @@ export function createSculptedHud({
         dashBtn.setPointerCapture(e.pointerId);
       } catch {
         // ignore
+      }
+      // 0ms Instant-Response Dodge on press (uses current left joystick direction immediately!)
+      cancelSlotEAim();
+      if (typeof onAction === 'function') {
+        onAction('dash', { role: state.activeRole });
       }
     });
 
@@ -2512,7 +2656,12 @@ export function createSculptedHud({
         cancelSlotEAim();
         triggerDodgeRipple(dx, dy);
         if (typeof onAction === 'function') {
-          onAction('dash', { role: state.activeRole, swipeDx: dx, swipeDy: dy });
+          onAction('dash', {
+            role: state.activeRole,
+            swipeDx: dx,
+            swipeDy: dy,
+            steerActiveDash: true,
+          });
         }
       }
     });
@@ -2520,12 +2669,6 @@ export function createSculptedHud({
     const releaseDashBtn = (e) => {
       if (e.pointerId !== dashPtrId) return;
       dashPtrId = null;
-      if (!dashSwiped) {
-        cancelSlotEAim();
-        if (typeof onAction === 'function') {
-          onAction('dash', { role: state.activeRole });
-        }
-      }
       dashSwiped = false;
     };
     dashBtn.addEventListener('pointerup', releaseDashBtn);
