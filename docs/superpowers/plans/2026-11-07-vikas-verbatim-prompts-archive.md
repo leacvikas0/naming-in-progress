@@ -791,3 +791,57 @@ Get it ??
 Now do your best to plan and criwie your plan and theooifhyl make something without logical holes obviously redudsnt things
 ```
 
+### Step 3301 (2026-11-11T02:15:00Z)
+
+```text
+Remove these floating bitch3 to mark the riddles bruh 😂 completely remove and remove the fallback gemini 3.5 flash lite is the best option
+```
+
+### Step 3310 (2026-11-11T03:30:00Z)
+
+```text
+Bug 
+I'm able to use the e like externately just appears of the of the Mage. The ice attack. At the same time, the charge attack, only unlocks after the E even though basically it should be The expected. Behaviour is the charger deck. Works like from the get go actually has that power. And good work expanding the map. It's very, very cool right now. It's pretty good. Also, you should and can Um, basically, the screen area, which it responds to dodging the middle area centre here. It make it a little bit more smaller and show me in a picture like the ratio of it. Okay. Because it's a little too much right now, so she is not gonna be able to pan properly. La, make sure. It's like you can tell, like it's like a very fast swipe. It's generally for Dodge very slow. So moving the camera So built. A more proper system. So but it's like not over. Engineering yourself. Proper logical system that works. And then we need to test out mobile. Also, make sure it is compatible with smaller mobiles like a normal iPhone and stuff like that. Okay. Very good. Very good actually. See you test a performance. If it actually works on a mobile, I think the only way to do that is a better way is just let me play on my mobile. So give me a network URL. And a generally I'm not able to use it directly. I don't know what happened. So use Cloud fared. Cloud Fair to like the URL goes to my phone. Basically. Yeah.tunrl it first do this quick
+```
+
+### Step 3320 (2026-11-11T03:55:00Z)
+
+```text
+The browser basically makies it impossible to actually play againnit doesn't dover tht screen the control not fun show options
+```
+
+### Step 3325 (2026-11-11T04:05:00Z)
+
+```text
+Im on realme 11 pro it does work 😂 but it's soo laggy 😭 ans resolution did drop quite some is it my phone and all like will it work fine on her what can we do
+```
+
+### Step 3330 (2026-11-11T04:12:00Z)
+
+```text
+drop everything else and just educate me on this topic so I can I can understand thoroughly and like build a good intuition what can be done on a mobile what can be done on a GPU on an integrated GPU and all and all and all and what is the problem with that like explain it damn well like really really well use visuals and whatever the fuck you have
+```
+
+### Step 3335 (2026-11-11T04:28:00Z)
+
+```text
+How would you make the game work on the my mobile? Okay, if it works on my mobile it works on over completely completely fine How would you make it genuinely work like same quality no reduction in density no reduction anything else and No lag when things are firing when their attacks are happening Show me your plan do your research online for a really good setup and commit our curre
+```
+
+### Step 3345 (2026-11-11T08:44:53Z)
+
+```text
+It is better yet it still lags a lot. Lag a lot. It is much better than before and it's not consistent high FPS at all. And at the same time the colors look different. They look more darker. That might be because of my AMOLED screen but we need to verify that. We can't just accept it. So what do you say?
+```
+
+### Step 3350 (2026-11-11T08:55:08Z)
+
+```text
+can we genuinely emulate the actual can we genuinely emulate the actual GPU like as best as you can by building almost a well constrained model of it in realistic conditions and then use a a conservative model to better get there. What do you say? Let's talk first. Research online too. Like there might be an approach.
+```
+
+### Step 3355 (2026-11-11T08:57:45Z)
+
+```text
+git commit and then write down all your like organize your shit your workspace and then basically I'm gonna hand it to another agent to do the work so we're gonna change it okay come handoffs delete useless shit and yeah then we can get to work
+```

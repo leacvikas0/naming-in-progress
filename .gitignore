@@ -24,3 +24,6 @@ final-upgrades.png
 title-two-pick.png
 aistudio-signin-state.png
 resume.html
+
+cloudflared.log
+.playwright-mcp/
