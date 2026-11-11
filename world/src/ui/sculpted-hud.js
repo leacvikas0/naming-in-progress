@@ -548,10 +548,11 @@ const SCULPTED_HUD_CSS = `
 
   #sculpted-orbit-zone {
     position: absolute;
+    left: 20vw;
     right: 0;
-    top: 72px;
-    width: 34vw;
-    height: calc(100vh - 72px);
+    top: 0;
+    width: 80vw;
+    height: 100vh;
     pointer-events: auto;
     touch-action: none;
     z-index: 25;
@@ -562,13 +563,14 @@ const SCULPTED_HUD_CSS = `
     display: block;
   }
 
-  /* Center-Screen On-Character 360° Swipe-to-Dodge Zone (Tablet/Mobile) */
+  /* Center-Screen On-Character 360° Fast-Flick Dodge Zone (22vw x 34vh over Hero) */
   #sculpted-center-dodge-zone {
     position: absolute;
-    left: 26vw;
-    top: 18vh;
-    width: 48vw;
-    height: 68vh;
+    left: 39vw;
+    top: 40vh;
+    width: 22vw;
+    height: 34vh;
+    border-radius: 28px;
     pointer-events: auto;
     touch-action: none;
     z-index: 26;
@@ -583,9 +585,9 @@ const SCULPTED_HUD_CSS = `
 
   #sculpted-dodge-aid-ring {
     position: relative;
-    width: 112px;
-    height: 112px;
-    margin-top: 10vh;
+    width: 88px;
+    height: 88px;
+    margin-top: 2vh;
     border-radius: 50%;
     border: 1.5px dashed rgba(255, 255, 255, 0.55);
     box-shadow: inset 0 0 18px rgba(255, 255, 255, 0.08);
@@ -603,7 +605,7 @@ const SCULPTED_HUD_CSS = `
   #sculpted-dodge-ripple {
     position: fixed;
     left: 50vw;
-    top: 54vh;
+    top: 50vh;
     width: 68px;
     height: 68px;
     margin-left: -34px;
@@ -818,6 +820,142 @@ const SCULPTED_HUD_CSS = `
     bottom: 224px;
     width: 68px;
     height: 68px;
+  }
+
+  /* --- COMPACT MOBILE / NORMAL iPHONE (Landscape <= 932x520 or Portrait <= 680px) --- */
+  @media (max-width: 932px) and (max-height: 520px), (max-width: 680px) {
+    #sculpted-party-bars {
+      top: max(10px, env(safe-area-inset-top, 10px));
+      left: max(12px, env(safe-area-inset-left, 12px));
+      gap: 6px;
+    }
+
+    .sh-emblem-ring {
+      width: 38px;
+      height: 38px;
+    }
+
+    .sh-life-row.is-leader .sh-emblem-ring {
+      width: 42px;
+      height: 42px;
+    }
+
+    .sh-player-name-lbl {
+      font-size: 0.82rem;
+    }
+
+    .sh-life-row.is-leader .sh-player-name-lbl {
+      font-size: 0.88rem;
+    }
+
+    .sh-hp-num-inline {
+      font-size: 0.68rem;
+    }
+
+    .sh-hp-channel {
+      width: 112px;
+      height: 7px;
+    }
+
+    .sh-life-row.is-leader .sh-hp-channel {
+      width: 128px;
+      height: 8px;
+    }
+
+    #sculpted-pause-btn {
+      top: max(10px, env(safe-area-inset-top, 10px));
+      right: max(12px, env(safe-area-inset-right, 12px));
+      width: 38px;
+      height: 38px;
+    }
+
+    #sculpted-joystick-zone {
+      left: max(18px, env(safe-area-inset-left, 18px));
+      bottom: max(18px, env(safe-area-inset-bottom, 18px));
+      width: 112px;
+      height: 112px;
+    }
+
+    .sh-joy-ring {
+      width: 112px;
+      height: 112px;
+    }
+
+    .sh-joy-puck {
+      width: 42px;
+      height: 42px;
+    }
+
+    #sculpted-hud-root.profile-tablet .sh-keycap-badge {
+      display: none;
+    }
+
+    #sculpted-hud-root.profile-tablet #sculpted-attack-btn {
+      right: max(76px, calc(env(safe-area-inset-right, 0px) + 72px));
+      bottom: max(26px, calc(env(safe-area-inset-bottom, 0px) + 22px));
+      width: 76px;
+      height: 76px;
+    }
+
+    #sculpted-hud-root.profile-tablet #sculpted-attack-btn .sh-action-icon-svg {
+      width: 44px;
+      height: 44px;
+    }
+
+    #sculpted-hud-root.profile-tablet #sculpted-dash-btn {
+      right: max(14px, env(safe-area-inset-right, 14px));
+      bottom: max(14px, env(safe-area-inset-bottom, 14px));
+      width: 54px;
+      height: 54px;
+    }
+
+    #sculpted-hud-root.profile-tablet #sculpted-jump-btn {
+      right: max(14px, env(safe-area-inset-right, 14px));
+      bottom: max(80px, calc(env(safe-area-inset-bottom, 0px) + 76px));
+      width: 54px;
+      height: 54px;
+    }
+
+    #sculpted-hud-root.profile-tablet #sculpted-dash-btn .sh-action-icon-svg,
+    #sculpted-hud-root.profile-tablet #sculpted-jump-btn .sh-action-icon-svg {
+      width: 30px;
+      height: 30px;
+    }
+
+    #sculpted-hud-root.profile-tablet #sculpted-slot-e {
+      right: max(162px, calc(env(safe-area-inset-right, 0px) + 158px));
+      bottom: max(16px, env(safe-area-inset-bottom, 16px));
+      width: 56px;
+      height: 56px;
+    }
+
+    #sculpted-hud-root.profile-tablet #sculpted-slot-q {
+      right: max(226px, calc(env(safe-area-inset-right, 0px) + 222px));
+      bottom: max(18px, env(safe-area-inset-bottom, 18px));
+      width: 58px;
+      height: 58px;
+    }
+
+    #sculpted-hud-root.profile-tablet #sculpted-commune-btn {
+      right: max(16px, env(safe-area-inset-right, 16px));
+      bottom: max(146px, calc(env(safe-area-inset-bottom, 0px) + 142px));
+      width: 50px;
+      height: 50px;
+    }
+
+    #sculpted-hud-root.profile-tablet .sh-skill-glyph-svg,
+    #sculpted-hud-root.profile-tablet .sh-lotus-svg {
+      width: 30px;
+      height: 30px;
+    }
+
+    #sculpted-slot-tab,
+    #sculpted-hud-root.profile-tablet #sculpted-slot-tab {
+      left: max(12px, env(safe-area-inset-left, 12px));
+      top: 28vh;
+      height: 32px;
+      padding: 3px 6px;
+    }
   }
 
   /* --- DESKTOP GENSHIN BOTTOM-RIGHT ACTION CLUSTER --- */
@@ -2086,25 +2224,30 @@ export function createSculptedHud({
     }, 280);
   }
 
-  // Center-Screen On-Character 360° Swipe-to-Dodge (Swipe Left / Right / Back / Forward)
+  // Center-Screen On-Character 360° Fast-Flick Dodge vs. Slow-Drag Camera Pan
+  // - Fast flick (>= 0.48 px/ms across >= 22px within <= 165ms) -> Dodge in swipe direction
+  // - Slow drag (< 0.40 px/ms or > 165ms) -> Smoothly pans camera (onCameraOrbit)
   let centerPointerId = null;
   let centerStartX = 0;
   let centerStartY = 0;
   let centerLastX = 0;
   let centerLastY = 0;
   let centerStartAt = 0;
-  let centerDodgeFired = false;
+  let centerLastAt = 0;
+  let centerGestureMode = 'idle'; // 'idle' | 'undecided' | 'dodge' | 'orbit'
 
   if (centerDodgeZone) {
     centerDodgeZone.addEventListener('pointerdown', (e) => {
       if (centerPointerId !== null) return;
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
       centerPointerId = e.pointerId;
       centerStartX = e.clientX;
       centerStartY = e.clientY;
       centerLastX = e.clientX;
       centerLastY = e.clientY;
-      centerStartAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      centerDodgeFired = false;
+      centerStartAt = now;
+      centerLastAt = now;
+      centerGestureMode = 'undecided';
       centerDodgeZone.classList.add('is-touching');
       try {
         centerDodgeZone.setPointerCapture(e.pointerId);
@@ -2115,41 +2258,59 @@ export function createSculptedHud({
 
     centerDodgeZone.addEventListener('pointermove', (e) => {
       if (e.pointerId !== centerPointerId) return;
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const totalDx = e.clientX - centerStartX;
       const totalDy = e.clientY - centerStartY;
       const dist = Math.hypot(totalDx, totalDy);
-      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      const elapsedMs = now - centerStartAt;
+      const stepDx = e.clientX - centerLastX;
+      const stepDy = e.clientY - centerLastY;
+      const stepDist = Math.hypot(stepDx, stepDy);
+      const elapsedMs = Math.max(1, now - centerStartAt);
+      const stepDt = Math.max(1, now - centerLastAt);
+      const avgVel = dist / elapsedMs; // px/ms (0.48 px/ms = 480 px/s)
+      const instVel = stepDist / stepDt;
 
-      if (!centerDodgeFired && dist >= 18 && elapsedMs <= 340) {
-        centerDodgeFired = true;
-        cancelSlotEAim();
-        triggerDodgeRipple(totalDx, totalDy, centerStartX, centerStartY);
-        if (typeof onAction === 'function') {
-          onAction('dash', {
-            role: state.activeRole,
-            swipeDx: totalDx,
-            swipeDy: totalDy,
-          });
-        }
-      } else if (!centerDodgeFired && elapsedMs > 340) {
-        const stepDx = e.clientX - centerLastX;
-        const stepDy = e.clientY - centerLastY;
+      if (centerGestureMode === 'orbit') {
         if (typeof onCameraOrbit === 'function') {
           onCameraOrbit(stepDx, stepDy);
         }
+      } else if (centerGestureMode === 'undecided') {
+        if (elapsedMs <= 165 && dist >= 22 && (avgVel >= 0.48 || instVel >= 0.62)) {
+          centerGestureMode = 'dodge';
+          cancelSlotEAim();
+          triggerDodgeRipple(totalDx, totalDy, centerStartX, centerStartY);
+          if (typeof onAction === 'function') {
+            onAction('dash', {
+              role: state.activeRole,
+              swipeDx: totalDx,
+              swipeDy: totalDy,
+            });
+          }
+        } else if (elapsedMs > 165 || (dist >= 10 && avgVel < 0.40 && instVel < 0.48)) {
+          centerGestureMode = 'orbit';
+          centerDodgeZone.classList.remove('is-touching');
+          if (typeof onCameraOrbit === 'function') {
+            onCameraOrbit(stepDx, stepDy);
+          }
+        }
       }
+
       centerLastX = e.clientX;
       centerLastY = e.clientY;
+      centerLastAt = now;
     });
 
     const endCenterDodge = (e) => {
       if (e.pointerId !== centerPointerId) return;
-      if (!centerDodgeFired) {
+      if (centerGestureMode === 'undecided') {
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const elapsedMs = Math.max(1, now - centerStartAt);
         const totalDx = (e.clientX ?? centerLastX) - centerStartX;
         const totalDy = (e.clientY ?? centerStartY) - centerStartY;
-        if (Math.hypot(totalDx, totalDy) >= 14) {
-          centerDodgeFired = true;
+        const dist = Math.hypot(totalDx, totalDy);
+        const avgVel = dist / elapsedMs;
+        if (dist >= 18 && elapsedMs <= 185 && avgVel >= 0.42) {
+          centerGestureMode = 'dodge';
           cancelSlotEAim();
           triggerDodgeRipple(totalDx, totalDy, centerStartX, centerStartY);
           if (typeof onAction === 'function') {
@@ -2162,6 +2323,7 @@ export function createSculptedHud({
         }
       }
       centerPointerId = null;
+      centerGestureMode = 'idle';
       centerDodgeZone.classList.remove('is-touching');
     };
     centerDodgeZone.addEventListener('pointerup', endCenterDodge);
@@ -2857,7 +3019,7 @@ export function createSculptedHud({
     root,
     joyState,
     get isOrbitDragging() {
-      return orbitPointerId !== null;
+      return orbitPointerId !== null || centerGestureMode === 'orbit';
     },
     getState: () => ({
       ...state,

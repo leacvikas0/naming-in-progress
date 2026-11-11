@@ -614,6 +614,9 @@ function createRoomManager() {
         }
         room.expeditionStarted = true;
         room.expeditionStartedAt = Date.now();
+        if (msg.resetProgression) {
+          room.progression = createRoomProgressionState();
+        }
         broadcastToRoom(room.code, {
           type: 'expedition_started',
           ok: true,

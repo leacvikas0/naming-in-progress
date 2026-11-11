@@ -1655,7 +1655,11 @@ export async function createCoopPlayerSystem({
   function beginMageSkillCast(payload) {
     const mage = heroStates.Mage;
     const combat = campaignLoop.combatHeroes.Mage;
-    if (combat.downed || combat.skillCd > 0.05) {
+    const isShatter = payload?.spellId === 'shatterlance';
+    if (!isShatter && !isAbilityUnlocked('skillE')) {
+      return { locked: true };
+    }
+    if (combat.downed || (!isShatter && combat.skillCd > 0.05)) {
       vfxKit?.shatterlance?.cancelCharge?.();
       return combat.downed
         ? { blocked: true }
@@ -2519,7 +2523,7 @@ export async function createCoopPlayerSystem({
 
   function startSkillAim(opts = {}) {
     if (isPlayerControlLocked()) return { blockedByControlLock: true };
-    if (!isAbilityUnlocked('skillE')) return { locked: true };
+    if (opts.spellId !== 'shatterlance' && !isAbilityUnlocked('skillE')) return { locked: true };
     const mageState = heroStates.Mage;
     const legacyParams =
       opts.yaw !== undefined || opts.distance !== undefined || opts.touchTarget || opts.origin;

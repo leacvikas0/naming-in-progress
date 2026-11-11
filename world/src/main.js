@@ -143,7 +143,32 @@ const PROFILES = {
   },
 };
 
-let activeProfile = 'desktop';
+function detectInitialDeviceProfile() {
+  if (typeof window === 'undefined') return 'desktop';
+  const params = new URLSearchParams(window.location?.search || '');
+  const explicit = params.get('profile');
+  if (explicit === 'tablet' || explicit === 'desktop') return explicit;
+  const ua = typeof navigator !== 'undefined' ? String(navigator.userAgent || '') : '';
+  const isMobileUa = /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(ua);
+  const isTouchScreen =
+    typeof navigator !== 'undefined' &&
+    !navigator.webdriver &&
+    (navigator.maxTouchPoints > 0 || window.matchMedia?.('(pointer: coarse)')?.matches) &&
+    window.innerWidth <= 1366;
+  return isMobileUa || isTouchScreen ? 'tablet' : 'desktop';
+}
+
+let activeProfile = detectInitialDeviceProfile();
+if (typeof window !== 'undefined') {
+  const onFirstTouchAutoSwitch = () => {
+    const params = new URLSearchParams(window.location?.search || '');
+    if (params.get('profile') !== 'desktop' && activeProfile !== 'tablet') {
+      setProfile('tablet');
+    }
+    window.removeEventListener('touchstart', onFirstTouchAutoSwitch);
+  };
+  window.addEventListener('touchstart', onFirstTouchAutoSwitch, { passive: true });
+}
 renderer.setPixelRatio(PROFILES[activeProfile].dpr);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -1459,7 +1484,25 @@ appFlow = createAppFlow({
       localRole: activeRole,
     });
 
-    coopSystem.coopClient.startExpedition();
+    if (devStageOverride === null) {
+      coopSystem.setUnlockedStage?.(0);
+      coopSystem.campaignLoop?.setUnlockedStage?.(0, 0);
+      coopSystem.coopClient.startExpedition({ resetProgression: true });
+      sculptedHud?.setProgressionState?.({
+        communeDiscovered: false,
+        iceUnlocked: false,
+        fireUnlocked: false,
+        ultimateUnlocked: false,
+        unlockedStage: 0,
+        stonesSolved: 0,
+        stonesSolvedMask: 0,
+        stone1Solved: false,
+        stone2Solved: false,
+        stone3Solved: false,
+      });
+    } else {
+      coopSystem.coopClient.startExpedition();
+    }
     coopSystem.teleportLeaderAndPartner(0.0, 124.0, Math.PI);
     camState.mode = 'player';
     camState.yaw = Math.PI;

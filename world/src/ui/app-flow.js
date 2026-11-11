@@ -1401,6 +1401,48 @@ const APP_FLOW_CSS = `
       top: 64%;
     }
   }
+
+  @media (max-width: 932px) and (max-height: 520px), (max-width: 660px) {
+    .af-scene-create-join {
+      padding-top: max(12px, env(safe-area-inset-top, 12px));
+      padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
+      gap: 10px;
+      overflow-y: auto;
+      max-height: 100dvh;
+    }
+
+    .af-create-join-header {
+      font-size: clamp(1.55rem, 3.4vw, 2.1rem);
+    }
+
+    .af-tablets-grid {
+      gap: 12px;
+      margin-top: 2px;
+    }
+
+    .af-world-tablet {
+      min-height: 176px;
+      padding: 14px 18px;
+      gap: 8px;
+    }
+
+    .af-tablet-heading {
+      font-size: 1.12rem;
+    }
+
+    .af-active-phrase-display,
+    .af-phrase-input {
+      height: 36px;
+      font-size: 0.86rem;
+      margin: 4px 0 2px 0;
+    }
+
+    .af-domain-action-btn {
+      min-height: 38px;
+      padding: 6px 16px;
+      font-size: 0.9rem;
+    }
+  }
 `;
 
 /**

@@ -544,10 +544,25 @@ export function createCoopClient(options = {}) {
     return true;
   }
 
-  function startExpedition() {
+  function startExpedition(opts = {}) {
+    if (opts && opts.resetProgression) {
+      progression.setUnlocks({
+        communeDiscovered: false,
+        trueNameDiscovered: false,
+        iceUnlocked: false,
+        fireUnlocked: false,
+        ultimateUnlocked: false,
+        stone1Solved: false,
+        stone2Solved: false,
+        stone3Solved: false,
+        stonesSolvedMask: 0,
+      });
+      state.progression = progression.getState();
+    }
     if (ws && ws.readyState === 1) {
       return sendRaw({
         type: 'start_expedition',
+        resetProgression: Boolean(opts?.resetProgression),
         timestamp: Date.now(),
       });
     }

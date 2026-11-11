@@ -911,11 +911,14 @@ export function createCombatActionAimController({
    * Releasing while `lockState === 'cancel'` cancels instead of casting.
    */
   function releaseSkillAim(overrideParams = null) {
+    const wasActive = aimState.active;
+    if (!wasActive) {
+      return { cancelled: true, spellId: aimState.spellId, wasAiming: false, castResult: null };
+    }
     if (overrideParams && typeof overrideParams === 'object') {
       updateSkillAim(overrideParams);
     }
-    const wasActive = aimState.active;
-    if (wasActive && aimState.lockState === 'cancel') {
+    if (aimState.lockState === 'cancel') {
       cancelSkillAim();
       return { cancelled: true, spellId: aimState.spellId, wasAiming: true, castResult: null };
     }
