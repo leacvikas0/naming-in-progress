@@ -1031,9 +1031,25 @@ export function createWorldServer() {
       return;
     }
 
-    // 4. Static file serving (with path traversal, dotfile protection, and worktree asset fallback)
-    const relUrlPath = urlPath === '/' ? 'world/index.html' : urlPath.replace(/^\/+/, '');
+    // 4. Static file serving (redirect bare `/` or `/world` to `/world/index.html` so `./src/main.js` & `../node_modules/*` resolve cleanly)
+    if (urlPath === '/' || urlPath === '/index.html' || urlPath === '/world' || urlPath === '/world/') {
+      const targetLocation = `/world/index.html${parsedUrl.search || ''}`;
+      res.writeHead(302, {
+        Location: targetLocation,
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      });
+      res.end();
+      return;
+    }
+
+    const relUrlPath = urlPath.replace(/^\/+/, '');
     let filePath = path.resolve(repoRoot, relUrlPath);
+    if (!fs.existsSync(filePath) && !relUrlPath.startsWith('world/')) {
+      const worldSubPath = path.resolve(repoRoot, 'world', relUrlPath);
+      if (fs.existsSync(worldSubPath)) {
+        filePath = worldSubPath;
+      }
+    }
     const relPath = path.relative(repoRoot, filePath);
     if (
       relPath.startsWith('..') ||
