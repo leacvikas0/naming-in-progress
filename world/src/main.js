@@ -1076,45 +1076,9 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
       mountTargets.push(cottageWallGroup);
     }
 
-    // Distant Wayfinding: 3D Ghibli Sky-Pillar & Floating Starlight Crest above unawakened Sacred Stones
-    const beaconGroup = new THREE.Group();
-    beaconGroup.name = `stoneSkyBeacon_${st.id}`;
-    if (st.id === 'stone_plaza') {
-      beaconGroup.position.set(0 - st.x, 0 - sy, 0 - st.z);
-    }
-    const beaconColor =
-      st.id === 'stone_plaza'
-        ? new THREE.Color(0x7ceeff)
-        : st.id === 'stone_grove'
-          ? new THREE.Color(0xffb84d)
-          : new THREE.Color(0xf472b6);
-    const pillarGeo = new THREE.CylinderGeometry(0.08, 0.28, 16.0, 12, 1, true);
-    const pillarMat = new THREE.MeshBasicMaterial({
-      color: beaconColor,
-      transparent: true,
-      opacity: 0.24,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const pillarMesh = new THREE.Mesh(pillarGeo, pillarMat);
-    pillarMesh.position.y = 10.2;
-    beaconGroup.add(pillarMesh);
-
-    const crestGeo = new THREE.OctahedronGeometry(0.32, 0);
-    crestGeo.scale(0.85, 1.45, 0.85);
-    const crestMat = new THREE.MeshBasicMaterial({
-      color: beaconColor,
-    });
-    const crestMesh = new THREE.Mesh(crestGeo, crestMat);
-    crestMesh.position.y = 3.2;
-    beaconGroup.add(crestMesh);
-    holder.add(beaconGroup);
-
     const entry = {
       id: st.id,
       holder,
-      beaconGroup,
-      crestMesh,
       mountTargets,
       materials: [],
       title: fallbackVerse.title,
@@ -4215,26 +4179,6 @@ export function exitStoneInspection() {
 }
 
 function updateSacredStoneGaze(dt) {
-  // 0. Update 3D Sanctuary Sky-Beacons above unawakened stones (hidden when solved or inspecting)
-  const progNow = coopSystem?.coopClient?.getProgressionState?.();
-  const maskNow = progNow?.stonesSolvedMask ?? 0;
-  if (stoneDecals?.entries) {
-    const solvedMap = {
-      stone_plaza: Boolean(progNow?.stone1Solved || (maskNow & 1)),
-      stone_grove: Boolean(progNow?.stone2Solved || (maskNow & 2)),
-      stone_pier: Boolean(progNow?.stone3Solved || (maskNow & 4)),
-    };
-    for (const [stId, entry] of Object.entries(stoneDecals.entries)) {
-      if (entry?.beaconGroup) {
-        entry.beaconGroup.visible = !solvedMap[stId] && !stoneGazeState.inspectActive;
-        if (entry.crestMesh && entry.beaconGroup.visible) {
-          entry.crestMesh.rotation.y += dt * 1.4;
-          entry.crestMesh.position.y = 3.2 + Math.sin(elapsed * 2.2) * 0.18;
-        }
-      }
-    }
-  }
-
   // 1. Advance smooth camera inspection blend (0 -> 1 on inspect, 1 -> 0 on exit)
   const targetBlend = stoneGazeState.inspectActive ? 1.0 : 0.0;
   const blendStep = 1.0 - Math.exp(-8.5 * Math.max(0.001, dt));

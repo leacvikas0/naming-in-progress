@@ -1206,23 +1206,20 @@ export async function evaluatePrayerWithGemini({
       if (typeof geminiCaller === 'function') {
         rawModelJson = await geminiCaller(requestBody);
       } else if (apiKey && typeof fetch === 'function') {
-        for (const candidateModel of [GEMINI_MODEL, 'gemini-2.5-flash']) {
-          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${candidateModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
-          const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            const textPart = data?.candidates?.[0]?.content?.parts
-              ?.map((p) => p.text || '')
-              .join('')
-              .trim();
-            if (textPart) {
-              rawModelJson = JSON.parse(textPart);
-              break;
-            }
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const textPart = data?.candidates?.[0]?.content?.parts
+            ?.map((p) => p.text || '')
+            .join('')
+            .trim();
+          if (textPart) {
+            rawModelJson = JSON.parse(textPart);
           }
         }
       }
@@ -1263,17 +1260,8 @@ export async function evaluatePrayerWithGemini({
     }
   }
 
-  // If a real browser microphone recording (>= 1200 base64 chars) reached fallback because
-  // Gemini API was offline/unreachable and no SpeechRecognition transcriptHint was available,
-  // provide a heartfelt fallback transcript so network hiccups never punish the player.
-  const effectiveFallbackTranscript =
-    decodedHint ||
-    (cleanB64 && cleanB64.length >= 1200
-      ? 'Artorious my beloved partner I cherish your honest spark and vow to stand by you through every storm forever'
-      : '');
-
   const fallback = evaluatePrayerDeterministic({
-    transcript: effectiveFallbackTranscript,
+    transcript: decodedHint,
     audioBase64: cleanB64,
     speakerRole,
     partnerRole,

@@ -655,8 +655,6 @@ export function createCommuneClient({
   let elapsed = 0;
   let activeStream = null;
   let activeRecorder = null;
-  let activeSpeechRec = null;
-  let liveSpeechTranscript = '';
   let recordedChunks = [];
   let recordedMimeType = 'audio/webm';
   let autoSendTimeoutId = null;
@@ -786,21 +784,6 @@ export function createCommuneClient({
     return null;
   }
 
-  function stopBrowserSpeechRecognition() {
-    if (activeSpeechRec) {
-      const rec = activeSpeechRec;
-      activeSpeechRec = null;
-      try {
-        rec.onresult = null;
-        rec.onerror = null;
-        rec.onend = null;
-        rec.stop?.();
-      } catch {
-        // ignore speech recognition stop error
-      }
-    }
-  }
-
   /**
    * Immediately stops every `MediaStreamTrack` on the active microphone stream
    * BEFORE network I/O so Bluetooth headsets never remain stuck in call mode.
@@ -810,7 +793,6 @@ export function createCommuneClient({
       clearTimeout(autoSendTimeoutId);
       autoSendTimeoutId = null;
     }
-    stopBrowserSpeechRecognition();
     disconnectMicAnalyser();
     if (activeStream) {
       const stream = activeStream;
@@ -854,7 +836,6 @@ export function createCommuneClient({
     explicitWordCount = typeof options.wordCount === 'number' ? options.wordCount : null;
     elapsed = 0;
     recordedChunks = [];
-    liveSpeechTranscript = '';
     pendingTranscriptHint = options.transcriptHint ?? '';
     pendingAudioBase64 = options.audioBase64 ?? '';
 
@@ -885,43 +866,6 @@ export function createCommuneClient({
           stopAndSendCommune({ autoTriggeredByTimeout: true });
         }
       }, MAX_COMMUNE_SECONDS * 1000);
-    }
-
-    // Start parallel browser SpeechRecognition (if available in Chrome/Edge/Desktop/Android)
-    // so live spoken prayers also provide an instant, resilient transcriptHint alongside MediaRecorder audio.
-    if (
-      !pendingTranscriptHint &&
-      typeof window !== 'undefined' &&
-      (window.SpeechRecognition || window.webkitSpeechRecognition)
-    ) {
-      try {
-        const SpeechRecClass = window.SpeechRecognition || window.webkitSpeechRecognition;
-        const rec = new SpeechRecClass();
-        rec.continuous = true;
-        rec.interimResults = true;
-        rec.lang = 'en-US';
-        rec.onresult = (ev) => {
-          if (state !== 'listening' || sessionSeq !== mySeq) return;
-          let combined = '';
-          const results = ev?.results || [];
-          for (let i = 0; i < results.length; i++) {
-            const seg = results[i]?.[0]?.transcript || '';
-            if (seg) combined += `${seg} `;
-          }
-          const clean = combined.trim();
-          if (clean) {
-            liveSpeechTranscript = clean;
-            if (countSpokenWords(clean) >= 1) {
-              hasSpokenWords = true;
-            }
-          }
-        };
-        rec.onerror = () => {};
-        rec.start();
-        activeSpeechRec = rec;
-      } catch {
-        activeSpeechRec = null;
-      }
     }
 
     // Acquire microphone if available
@@ -999,7 +943,6 @@ export function createCommuneClient({
     }
     activeRecorder = null;
     recordedChunks = [];
-    liveSpeechTranscript = '';
     pendingTranscriptHint = '';
     pendingAudioBase64 = '';
     pressHeld = false;
@@ -1088,16 +1031,9 @@ export function createCommuneClient({
     const hasExplicitTranscript =
       options.transcriptHint !== undefined ||
       (typeof pendingTranscriptHint === 'string' && pendingTranscriptHint.length > 0);
-    const liveSpeechClean =
-      countSpokenWords(liveSpeechTranscript) >= MIN_SAFE_WORD_COUNT
-        ? liveSpeechTranscript.trim()
-        : '';
     const transcriptHint = String(
-      options.transcriptHint !== undefined
-        ? options.transcriptHint
-        : pendingTranscriptHint || liveSpeechClean || ''
+      options.transcriptHint !== undefined ? options.transcriptHint : pendingTranscriptHint || ''
     );
-    liveSpeechTranscript = '';
     const audioBase64Override = options.audioBase64 ?? pendingAudioBase64 ?? '';
     const forceVerdict = Boolean(options.forceVerdict || lastOptions?.forceVerdict);
 
