@@ -1979,21 +1979,33 @@ export async function createCoopPlayerSystem({
         ...SACRED_INSCRIPTION_STONES[0],
         siteKey: 'well',
         rotY: 0.0,
-        position: { x: 0.0, y: 0.0, z: 0.0 },
+        position: {
+          x: SACRED_INSCRIPTION_STONES[0]?.x ?? 0.0,
+          y: 0.0,
+          z: SACRED_INSCRIPTION_STONES[0]?.z ?? 0.0,
+        },
       },
-      // Site 2: Whispering Grove Circular Floor Medallion at (44, 16)
+      // Site 2: Whispering Grove Circular Floor Medallion at (114, 32)
       {
         ...SACRED_INSCRIPTION_STONES[1],
         siteKey: 'grove',
         rotY: 0.0,
-        position: { x: 44.0, y: 0.42, z: 16.0 },
+        position: {
+          x: SACRED_INSCRIPTION_STONES[1]?.x ?? 114.0,
+          y: 0.42,
+          z: SACRED_INSCRIPTION_STONES[1]?.z ?? 32.0,
+        },
       },
-      // Site 3: Secluded Cottage Ornamental Wall at (-21.6, 20.4, rotY = 0.45)
+      // Site 3: Southwest Hidden Lovers' Wall at (-92.0, 64.0, rotY = 0.45)
       {
         ...SACRED_INSCRIPTION_STONES[2],
         siteKey: 'cottage_wall',
         rotY: 0.45,
-        position: { x: -21.6, y: 0.0, z: 20.4 },
+        position: {
+          x: SACRED_INSCRIPTION_STONES[2]?.x ?? -92.0,
+          y: 0.65,
+          z: SACRED_INSCRIPTION_STONES[2]?.z ?? 64.0,
+        },
       },
     ];
 

@@ -153,17 +153,17 @@ export const INSCRIPTION_STONES = [
   },
   {
     id: 'stone_pier',
-    name: 'Secluded Cottage Wall Sacred Inscription Stone',
-    x: -21.6,
-    z: 20.4,
-    y: 0.0,
+    name: 'Southwest Cliffside Lovers Wall Sacred Inscription Stone',
+    x: -92.0,
+    z: 64.0,
+    y: 0.65,
     rotY: 0.45,
   },
   {
     id: 'stone_grove',
-    name: 'Wisteria Grove Sacred Inscription Stone',
-    x: 44.0,
-    z: 16.0,
+    name: 'Far East Wisteria Grove Sacred Inscription Stone',
+    x: 114.0,
+    z: 32.0,
     y: 0.42,
     rotY: -0.38,
   },
@@ -424,12 +424,27 @@ export const ROADS = [
   {
     id: 'wisteria_grove_path',
     name: 'Sacred Wisteria Grove Trail',
-    width: 3.2,
+    width: 3.4,
     surface: 'dirt',
     points: [
       [36.0, -3.2],
-      [40.2, 6.5],
-      [44.0, 16.0],
+      [44.0, 12.0],
+      [68.0, 24.0],
+      [92.0, 29.0],
+      [114.0, 32.0],
+    ],
+  },
+  {
+    id: 'west_lovers_wall_trail',
+    name: "Southwest Lovers' Wall Trail",
+    width: 3.4,
+    surface: 'dirt',
+    points: [
+      [-26.5, 7.2],
+      [-34.0, 22.0],
+      [-52.0, 38.0],
+      [-72.0, 52.0],
+      [-92.0, 64.0],
     ],
   },
   {
@@ -588,11 +603,11 @@ export const TREES = [
   { kind: 'sakura',   variant: 1, x: 50.5,  z: -31.0, scale: 1.02 },
   { kind: 'oak',      variant: 2, x: 38.5,  z: -33.0, scale: 0.90 },
 
-  // Grove 8: Sacred Wisteria Grove around Stone (44, 16) (4 trees)
-  { id: 'wisteria_grove_n', kind: 'wisteria', variant: 0, x: 31.5,  z: 9.0,   scale: 1.26, label: 'Sacred Grove North Wisteria' },
-  { id: 'wisteria_grove_e', kind: 'wisteria', variant: 1, x: 56.5,  z: 16.5,  scale: 1.36, label: 'Sacred Grove East Wisteria' },
-  { id: 'wisteria_grove_s', kind: 'wisteria', variant: 2, x: 41.0,  z: 33.5,  scale: 1.26, label: 'Sacred Grove South Wisteria' },
-  { kind: 'sakura',   variant: 0, x: 31.0,  z: 26.5,  scale: 1.08 },
+  // Grove 8: Sacred Wisteria Grove around Stone 2 (114.0, 32.0) (4 trees)
+  { id: 'wisteria_grove_n', kind: 'wisteria', variant: 0, x: 103.5, z: 20.0,  scale: 1.28, label: 'Sacred Grove North Wisteria' },
+  { id: 'wisteria_grove_e', kind: 'wisteria', variant: 1, x: 126.5, z: 32.5,  scale: 1.36, label: 'Sacred Grove East Wisteria' },
+  { id: 'wisteria_grove_s', kind: 'wisteria', variant: 2, x: 125.0, z: 45.5,  scale: 1.28, label: 'Sacred Grove South Wisteria' },
+  { kind: 'sakura',   variant: 0, x: 101.0, z: 42.5,  scale: 1.12 },
 
   // Grove 9: South-West Hamlet Approach Woodland Grove (4 trees)
   { kind: 'oak',      variant: 0, x: -26.0, z: 31.0,  scale: 1.24 },
@@ -650,10 +665,10 @@ export const TREES = [
   { kind: 'sakura',   variant: 0, x: -46.0, z: 108.0, scale: 1.18 },
   { kind: 'oak',      variant: 2, x: 46.0,  z: 106.0, scale: 1.20 },
 
-  // Grove 18: Lakeside South Shore & Causeway Overlook Grove (3 trees)
-  { id: 'wisteria_pier_s',   kind: 'wisteria', variant: 0, x: -31.5, z: 28.5,  scale: 1.26, label: 'Lakeside South Wisteria' },
-  { kind: 'sakura',   variant: 1, x: -42.5, z: 36.0,  scale: 1.14 },
-  { kind: 'oak',      variant: 0, x: -58.0, z: 46.0,  scale: 1.22 },
+  // Grove 18: Southwest Lovers' Wall Sanctuary Grove around (-92.0, 64.0) (3 trees)
+  { id: 'wisteria_pier_s',   kind: 'wisteria', variant: 0, x: -82.0, z: 74.5,  scale: 1.28, label: 'Lovers Wall East Wisteria' },
+  { kind: 'sakura',   variant: 1, x: -103.5, z: 56.0, scale: 1.18 },
+  { kind: 'wisteria', variant: 2, x: -102.0, z: 73.5, scale: 1.26 },
 ];
 
 // 52 Multi-Faceted Chiseled Limestone Boulders (moss-topped, warm limestone sides, slate base AO)
@@ -789,9 +804,9 @@ export function streamCenterX(z) {
 export function terrainHeightAt(x, z) {
   const distFromOrigin = Math.hypot(x, z);
 
-  // Outer valley basin rise & mountain ridge cradle beyond r = 118m
+  // Outer valley basin rise & mountain ridge cradle beyond r = 136m (expanded so distant stones sit in open valley)
   let rimLift = 0.0;
-  if (distFromOrigin > 118.0) {
+  if (distFromOrigin > 136.0) {
     const angle = Math.atan2(z, x);
     const ridgeWave =
       distFromOrigin > 165.0
@@ -801,7 +816,7 @@ export function terrainHeightAt(x, z) {
           0.15 * (fbm2(x * 0.012, z * 0.012, 91) - 0.5)
         : 0.65;
     rimLift =
-      smoothstep(118, 190, distFromOrigin) * 8.5 +
+      smoothstep(136, 195, distFromOrigin) * 8.5 +
       smoothstep(168, 330, distFromOrigin) * 36.0 * ridgeWave;
   }
 
@@ -835,9 +850,9 @@ export function terrainHeightAt(x, z) {
     }
   }
 
-  // East foothills behind the Arena
-  if (x > 96.0) {
-    h += smoothstep(96, 155, x) * 7.5;
+  // East foothills behind the Far East Wisteria Grove (x > 134m)
+  if (x > 134.0) {
+    h += smoothstep(134, 168, x) * 7.5;
   }
 
   // Zone A: Central Hamlet flat terrace (y = 0.0)
@@ -852,12 +867,21 @@ export function terrainHeightAt(x, z) {
     h = lerp(h, ZONES.arena.y, wArena);
   }
 
-  // Sacred Wisteria Grove Stone Terrace at (44.0, 16.0, y = 0.42)
-  if (x > 34.0 && x < 54.0 && z > 6.0 && z < 26.0) {
-    const dGroveStone = Math.hypot(x - 44.0, z - 16.0);
-    const wGroveStone = 1.0 - smoothstep(4.5, 8.5, dGroveStone);
+  // Far East Sacred Wisteria Grove Sanctuary Terrace at (114.0, 32.0, y = 0.42)
+  if (x > 90.0 && x < 138.0 && z > 8.0 && z < 56.0) {
+    const dGroveStone = Math.hypot(x - 114.0, z - 32.0);
+    const wGroveStone = 1.0 - smoothstep(12.5, 22.0, dGroveStone);
     if (wGroveStone > 0) {
       h = lerp(h, 0.42, wGroveStone);
+    }
+  }
+
+  // Southwest Hidden Lovers' Wall Sanctuary Terrace at (-92.0, 64.0, y = 0.65)
+  if (x > -116.0 && x < -68.0 && z > 40.0 && z < 88.0) {
+    const dWallStone = Math.hypot(x - (-92.0), z - 64.0);
+    const wWallStone = 1.0 - smoothstep(12.5, 22.0, dWallStone);
+    if (wWallStone > 0) {
+      h = lerp(h, 0.65, wWallStone);
     }
   }
 
@@ -1119,8 +1143,8 @@ export function sampleWorld(x, z) {
       }
     }
 
-    // Secluded Cottage Alley Lovers Wall Courtyard Apron at (-21.6, 20.4)
-    const dLoversWall = Math.hypot(x - (-21.6), z - 20.4);
+    // Southwest Lovers' Wall Courtyard Apron at (-92.0, 64.0)
+    const dLoversWall = Math.hypot(x - (-92.0), z - 64.0);
     if (dLoversWall < 4.5) {
       roadFoliageClear = true;
       cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(3.0, 4.5, dLoversWall));
@@ -1268,9 +1292,11 @@ export function createWorldMaskTexture(size = 512) {
       const inBldgX = inBldgZ && wx > -53.0 && wx < 26.0;
       const inArenaX = inArenaZ && wx > 45.0 && wx < 91.0;
       const inShrineX = inShrineZ && Math.abs(wx) < 17.5;
-      const inRoadX = activeSegs.length > 0 && wx > -56.0 && wx < 56.0;
+      const inRoadX = activeSegs.length > 0 && wx > -102.0 && wx < 124.0;
       const inClearX = inClearZ && wx > -26.0 && wx < 28.0;
-      const inGroveDais = wz > 10.0 && wz < 22.0 && wx > 38.0 && wx < 50.0;
+      const inGroveDais =
+        (wz > 26.0 && wz < 38.0 && wx > 108.0 && wx < 120.0) ||
+        (wz > 58.0 && wz < 70.0 && wx > -98.0 && wx < -86.0);
 
       if (
         !inPondX &&
@@ -1395,15 +1421,15 @@ export function createWorldMaskTexture(size = 512) {
         }
       }
 
-      // Grove Medallion Dais (44, 16) & Secluded Cottage Wall (-21.6, 20.4) foliage exclusion
-      const dGroveDais = Math.hypot(wx - 44.0, wz - 16.0);
+      // Far East Grove Medallion Dais (114, 32) & Southwest Lovers' Wall (-92, 64) foliage exclusion
+      const dGroveDais = Math.hypot(wx - 114.0, wz - 32.0);
       if (dGroveDais < 4.55) {
         roadFoliageClear = true;
         if (dGroveDais < 4.25) {
           cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(3.75, 4.25, dGroveDais));
         }
       }
-      const dCottageWall = Math.hypot(wx - (-21.6), wz - 20.4);
+      const dCottageWall = Math.hypot(wx - (-92.0), wz - 64.0);
       if (dCottageWall < 4.5) {
         roadFoliageClear = true;
         cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(3.0, 4.5, dCottageWall));

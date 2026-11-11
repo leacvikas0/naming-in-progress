@@ -2992,8 +2992,8 @@ export function createCampaignLoop({
 
     let archetypes = [];
     if (Array.isArray(poolDef.pool) && poolDef.pool.length > 0) {
-      const minC = poolDef.minCount || 4;
-      const maxC = poolDef.maxCount || 7;
+      const minC = vfxKit ? 3 : poolDef.minCount || 4;
+      const maxC = vfxKit ? 4 : poolDef.maxCount || 7;
       const count = minC + (survivalWaveSeed % Math.max(1, maxC - minC + 1));
       let eliteAdded = 0;
       const maxElites = poolDef.maxElites ?? 2;
@@ -3015,10 +3015,10 @@ export function createCampaignLoop({
     if (archetypes.length === 0) return null;
 
     survivalWaveSeed += 1;
-    survivalWaveTimer = 22.0 + (survivalWaveSeed % 3) * 3.0; // 22..28s
+    survivalWaveTimer = 22.0 + (survivalWaveSeed % 3) * 3.0; // 22..28s (88..112s in live 3D play)
 
-    const rMin = poolDef.spawnRadiusMin || 14.0;
-    const rMax = poolDef.spawnRadiusMax || 20.0;
+    const rMin = vfxKit ? 24.0 : poolDef.spawnRadiusMin || 14.0;
+    const rMax = vfxKit ? 32.0 : poolDef.spawnRadiusMax || 20.0;
     const spawns = archetypes.map((archetype, idx, arr) => {
       const angle = (idx / Math.max(1, arr.length)) * Math.PI * 2 + survivalWaveSeed * 0.85;
       const dist = rMin + (idx % 3) * ((rMax - rMin) * 0.5);
@@ -3563,10 +3563,13 @@ export function createCampaignLoop({
     const leaderPos = (activeHeroId === 'Mage' ? mage : knight) || knight || mage;
 
     if (openValleyMode && !indicatorsHiddenForShot && leaderPos) {
-      if (!roadVanguardSpawned && leaderPos.z > 65) {
+      const inRoadTriggerZone = vfxKit
+        ? leaderPos.z <= 106.0 && leaderPos.z > 65.0
+        : leaderPos.z > 65.0;
+      if (!roadVanguardSpawned && inRoadTriggerZone) {
         spawnRoadVanguardPack({
           x: clamp(leaderPos.x, -3.5, 3.5),
-          z: clamp(leaderPos.z - 22.0, 96.0, 104.0),
+          z: clamp(leaderPos.z - (vfxKit ? 10.0 : 22.0), 96.0, 104.0),
         });
       }
       checkStrongholdTriggers(leaderPos);
@@ -3627,6 +3630,7 @@ export function createCampaignLoop({
               activeStrongholdIds.delete(shKey);
               strongholdWaveIndex[shKey] = -1;
               strongholdClearedMask |= STRONGHOLD_BITS[shKey] || 0;
+              survivalWaveTimer = 28.0; // Grant ~112s of calm sanctuary time after clearing a stronghold
               reviveAllInstant();
               if (shKey === 'apex_finale') {
                 transitionToAct('victory_dawn');
@@ -3649,7 +3653,7 @@ export function createCampaignLoop({
           !isControlLocked() &&
           currentActId !== 'victory_dawn' &&
           leaderPos &&
-          enemyManager.activeEnemies.length < 3 &&
+          enemyManager.activeEnemies.length < (vfxKit ? 1 : 3) &&
           enemyManager.spawnQueue.length === 0
         ) {
           const nearestHaven = selectNearestSafeHavenWaypoint(leaderPos);
@@ -3657,8 +3661,14 @@ export function createCampaignLoop({
             leaderPos.x - nearestHaven.x,
             leaderPos.z - nearestHaven.z
           );
-          if (distHaven > 8.5) {
-            survivalWaveTimer -= dt;
+          const nearSacredStone = vfxKit
+            ? ['site1_well', 'site2_platform', 'site3_wall'].some((sk) => {
+                const c = STONE_STRONGHOLDS[sk]?.center;
+                return c && Math.hypot(leaderPos.x - c.x, leaderPos.z - c.z) <= 18.0;
+              })
+            : false;
+          if (distHaven > 8.5 && !nearSacredStone) {
+            survivalWaveTimer -= vfxKit ? dt * 0.25 : dt;
             if (survivalWaveTimer <= 0) {
               triggerSurvivalWave(leaderPos);
             }

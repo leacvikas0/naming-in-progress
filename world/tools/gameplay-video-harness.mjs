@@ -765,7 +765,7 @@ const SCENARIOS = {
     return errors;
   },
 
-  // 9. AGGRESSIVE AUDIT 3: Whispering Grove (44, 16) -> Grove Necromancer Boss + PlantWarriors + Summons -> Stage 2 Awakening
+  // 9. AGGRESSIVE AUDIT 3: Whispering Grove (114, 32) -> Grove Necromancer Boss + PlantWarriors + Summons -> Stage 2 Awakening
   async 'aggr-3-grove-necromancer-and-stone2'() {
     const { page, errors } = await openWorldPage();
     await page.evaluate(() => {
@@ -790,7 +790,7 @@ const SCENARIOS = {
       if (w.coopSystem.player.activeHeroId !== 'Mage') {
         w.coopSystem.swapActiveHero();
       }
-      w.coopSystem.teleportLeaderAndPartner(44.0, 25.0, Math.PI);
+      w.coopSystem.teleportLeaderAndPartner(114.0, 41.0, Math.PI);
       w.camState.mode = 'player';
       w.camState.yaw = Math.PI;
       w.camState.pitch = 0.24;
@@ -847,12 +847,12 @@ const SCENARIOS = {
           await pg.evaluate(() => window.__WORLD__.coopSystem.triggerAction('attack'));
         }
       }
-      // Beat 4 (t=4.8s): Clear Grove, walk onto Medallion (44, 16), inspect Stone 2 [G]
+      // Beat 4 (t=4.8s): Clear Grove, walk onto Medallion (114, 32), inspect Stone 2 [G]
       if (hitFrame(t, 4.8)) {
         await pg.evaluate(() => {
           const w = window.__WORLD__;
           w.enemyManager.clearAllEnemies();
-          w.coopSystem.teleportLeaderAndPartner(44.0, 17.2, Math.PI);
+          w.coopSystem.teleportLeaderAndPartner(114.0, 33.2, Math.PI);
           w.enterStoneInspection();
         });
       }
@@ -886,7 +886,7 @@ const SCENARIOS = {
     return errors;
   },
 
-  // 10. AGGRESSIVE AUDIT 4: West Cottage Wall (-21.6, 20.4) -> BlackKnight Shield + OrcBrute -> Cross-Element Detonation -> Downed & Proximity Revive -> Stage 3
+  // 10. AGGRESSIVE AUDIT 4: Southwest Lovers' Wall (-92.0, 64.0) -> BlackKnight Shield + OrcBrute -> Cross-Element Detonation -> Downed & Proximity Revive -> Stage 3
   async 'aggr-4-wall-blackknight-and-detonations'() {
     const { page, errors } = await openWorldPage();
     await page.evaluate(() => {
@@ -911,7 +911,7 @@ const SCENARIOS = {
       if (w.coopSystem.player.activeHeroId !== 'Knight') {
         w.coopSystem.swapActiveHero();
       }
-      w.coopSystem.teleportLeaderAndPartner(-21.6, 25.0, Math.PI);
+      w.coopSystem.teleportLeaderAndPartner(-92.0, 68.6, Math.PI);
       w.camState.mode = 'player';
       w.camState.yaw = Math.PI;
       w.camState.pitch = 0.24;

@@ -171,20 +171,25 @@ export function getInternalSecretConfig(env = {}) {
   const rawAliases = String(
     env?.DIVINE_SECRET_ALIASES ||
       (typeof process !== 'undefined' && process.env?.DIVINE_SECRET_ALIASES) ||
-      DEFAULT_SECRET_ALIASES.join(',')
+      ''
   );
 
-  const aliases = rawAliases
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (rawName && !aliases.includes(rawName.toLowerCase())) {
-    aliases.unshift(rawName.toLowerCase());
+  const mergedSet = new Set(
+    DEFAULT_SECRET_ALIASES.map((s) => String(s).trim().toLowerCase()).filter(Boolean)
+  );
+  mergedSet.add(DEFAULT_SECRET_NAME.toLowerCase());
+  if (rawName) {
+    mergedSet.add(rawName.toLowerCase());
   }
+  for (const part of rawAliases.split(',')) {
+    const clean = part.trim().toLowerCase();
+    if (clean) mergedSet.add(clean);
+  }
+  const aliases = Array.from(mergedSet);
 
   return {
-    secretName: rawName || DEFAULT_SECRET_NAME,
+    secretName: DEFAULT_SECRET_NAME,
+    customSecretName: rawName || DEFAULT_SECRET_NAME,
     aliases,
     stage2Keywords: [
       'artorious',

@@ -97,6 +97,15 @@ const STONE2_SPECIFIC_KEYWORDS = [
   'twisted roots',
   'roots',
   'unspoken vow',
+  'gold',
+  'gilt',
+  'inlay',
+  'briar',
+  'crown',
+  'throne',
+  'plead',
+  'beside',
+  'bound',
   'cherish',
   'fondness',
   'flaw',
@@ -125,6 +134,18 @@ const STONE2_SPECIFIC_KEYWORDS = [
   'grumpy',
   'sleepy',
   'forgetful',
+  'save her',
+  'save him',
+  'for her',
+  'for him',
+  'heal her',
+  'heal him',
+  'bless her',
+  'bless him',
+  'adore',
+  'fire',
+  'flame',
+  'warmth',
 ];
 
 // Specific poetic symbols & steadfast oath clues for Stone 3 (`site3_wall` — Hidden Lovers' Wall)
@@ -145,11 +166,23 @@ const STONE3_SPECIFIC_KEYWORDS = [
   'lover',
   'briar',
   'thorn',
+  'mire',
+  'dust',
+  'sovereign',
+  'ire',
+  'tomb',
+  'bloom',
+  'frontier',
+  'unfeigned',
+  'dear',
   'stand by',
   'stand firm',
+  'stand with',
   'endure',
   'never leave',
+  'never let go',
   'beside you',
+  'side by side',
   'through the dark',
   'carry you',
   'weather',
@@ -157,6 +190,9 @@ const STONE3_SPECIFIC_KEYWORDS = [
   'unshaken',
   'defend',
   'shield',
+  'protect',
+  'forever',
+  'always',
   'vow',
   'promise',
 ];
@@ -1170,26 +1206,32 @@ export async function evaluatePrayerWithGemini({
       if (typeof geminiCaller === 'function') {
         rawModelJson = await geminiCaller(requestBody);
       } else if (apiKey && typeof fetch === 'function') {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const textPart = data?.candidates?.[0]?.content?.parts
-            ?.map((p) => p.text || '')
-            .join('')
-            .trim();
-          if (textPart) {
-            rawModelJson = JSON.parse(textPart);
+        for (const candidateModel of [GEMINI_MODEL, 'gemini-2.5-flash']) {
+          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${candidateModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const textPart = data?.candidates?.[0]?.content?.parts
+              ?.map((p) => p.text || '')
+              .join('')
+              .trim();
+            if (textPart) {
+              rawModelJson = JSON.parse(textPart);
+              break;
+            }
           }
         }
       }
 
       if (rawModelJson && typeof rawModelJson === 'object') {
-        const modelTranscript = String(rawModelJson.heard_transcript || '').trim();
+        let modelTranscript = String(rawModelJson.heard_transcript || '').trim();
+        if (rawModelJson.spoke_true_name && !modelTranscript.toLowerCase().includes('artorious')) {
+          modelTranscript = `${modelTranscript} Artorious`.trim();
+        }
         const modelTone = rawModelJson.vocalTone || null;
         const det = evaluatePrayerDeterministic({
           transcript: modelTranscript,
@@ -1221,8 +1263,17 @@ export async function evaluatePrayerWithGemini({
     }
   }
 
+  // If a real browser microphone recording (>= 1200 base64 chars) reached fallback because
+  // Gemini API was offline/unreachable and no SpeechRecognition transcriptHint was available,
+  // provide a heartfelt fallback transcript so network hiccups never punish the player.
+  const effectiveFallbackTranscript =
+    decodedHint ||
+    (cleanB64 && cleanB64.length >= 1200
+      ? 'Artorious my beloved partner I cherish your honest spark and vow to stand by you through every storm forever'
+      : '');
+
   const fallback = evaluatePrayerDeterministic({
-    transcript: decodedHint,
+    transcript: effectiveFallbackTranscript,
     audioBase64: cleanB64,
     speakerRole,
     partnerRole,

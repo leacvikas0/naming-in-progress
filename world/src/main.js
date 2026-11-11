@@ -1058,27 +1058,63 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
       wellWaterMesh.position.set(0, 0.38, 0);
       wellGroup.add(wellWaterMesh);
     } else if (st.id === 'stone_grove') {
-      // Site 2: Mounted atop the Whispering Grove Sanctuary Dais (44, sy, 16)
+      // Site 2: Mounted atop the Far East Whispering Grove Sanctuary Dais (114, sy, 32)
       const groveGroup = new THREE.Group();
       groveGroup.position.set(0, 0, 0);
       groveGroup.rotation.y = -(st.rotY || 0);
       holder.add(groveGroup);
       mountTargets.push(groveGroup);
     } else if (st.id === 'stone_pier') {
-      // Site 3: Mounted strictly at the Secluded Cottage Ornamental Wall (-21.6, sy, 20.4, rotY = 0.45)
+      // Site 3: Mounted at the Southwest Lovers' Wall Sanctuary (-92.0, sy, 64.0, rotY = 0.45)
       const cottageWallGroup = new THREE.Group();
-      const cwX = -21.6;
-      const cwZ = 20.4;
+      const cwX = st.x;
+      const cwZ = st.z;
       const cwY = sampleGroundY(cwX, cwZ);
       holder.position.set(cwX, cwY, cwZ);
-      holder.rotation.y = 0.45;
+      holder.rotation.y = st.rotY ?? 0.45;
       holder.add(cottageWallGroup);
       mountTargets.push(cottageWallGroup);
     }
 
+    // Distant Wayfinding: 3D Ghibli Sky-Pillar & Floating Starlight Crest above unawakened Sacred Stones
+    const beaconGroup = new THREE.Group();
+    beaconGroup.name = `stoneSkyBeacon_${st.id}`;
+    if (st.id === 'stone_plaza') {
+      beaconGroup.position.set(0 - st.x, 0 - sy, 0 - st.z);
+    }
+    const beaconColor =
+      st.id === 'stone_plaza'
+        ? new THREE.Color(0x7ceeff)
+        : st.id === 'stone_grove'
+          ? new THREE.Color(0xffb84d)
+          : new THREE.Color(0xf472b6);
+    const pillarGeo = new THREE.CylinderGeometry(0.08, 0.28, 16.0, 12, 1, true);
+    const pillarMat = new THREE.MeshBasicMaterial({
+      color: beaconColor,
+      transparent: true,
+      opacity: 0.24,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const pillarMesh = new THREE.Mesh(pillarGeo, pillarMat);
+    pillarMesh.position.y = 10.2;
+    beaconGroup.add(pillarMesh);
+
+    const crestGeo = new THREE.OctahedronGeometry(0.32, 0);
+    crestGeo.scale(0.85, 1.45, 0.85);
+    const crestMat = new THREE.MeshBasicMaterial({
+      color: beaconColor,
+    });
+    const crestMesh = new THREE.Mesh(crestGeo, crestMat);
+    crestMesh.position.y = 3.2;
+    beaconGroup.add(crestMesh);
+    holder.add(beaconGroup);
+
     const entry = {
       id: st.id,
       holder,
+      beaconGroup,
+      crestMesh,
       mountTargets,
       materials: [],
       title: fallbackVerse.title,
@@ -4093,14 +4129,16 @@ export function enterStoneInspection(stone = null) {
     stoneGazeState.inspectFov = 42;
   } else if (siteKey === 'grove') {
     // High-angle close-up over the 4.30m Whispering Grove circular floor medallion (Hero Rose at North 12 o'clock + 8 heavy floor lines)
-    const sy = terrainHeightAt(44.0, 16.0);
-    stoneGazeState.inspectPos.set(44.0, sy + 3.62, 18.02);
-    stoneGazeState.inspectTarget.set(44.0, sy + 0.16, 15.88);
+    const gx = targetStone.position?.x ?? 114.0;
+    const gz = targetStone.position?.z ?? 32.0;
+    const sy = terrainHeightAt(gx, gz);
+    stoneGazeState.inspectPos.set(gx, sy + 3.62, gz + 2.02);
+    stoneGazeState.inspectTarget.set(gx, sy + 0.16, gz - 0.12);
     stoneGazeState.inspectFov = 44;
   } else {
-    // Close-up framing of the 3.35m Secluded Ornamental Wall at (-21.6, 20.4, rotY = 0.45)
-    const wx = targetStone.position?.x ?? -21.6;
-    const wz = targetStone.position?.z ?? 20.4;
+    // Close-up framing of the 3.35m Southwest Lovers' Wall at (-92.0, 64.0, rotY = 0.45)
+    const wx = targetStone.position?.x ?? -92.0;
+    const wz = targetStone.position?.z ?? 64.0;
     const wy = terrainHeightAt(wx, wz);
     const rotY = targetStone.rotY ?? 0.45;
     const nx = Math.sin(rotY);
@@ -4129,6 +4167,39 @@ export function enterStoneInspection(stone = null) {
     stoneGazeState.stones[targetStone.id].gazeElapsed = 3.0;
     stoneGazeState.stones[targetStone.id].unlocked = true;
   }
+
+  if (siteKey === 'well') {
+    showCombatBanner(
+      {
+        title: 'I · THE IRON RIM OF THE WELL',
+        subtitle:
+          "Click to step back, press [R], and speak the God's True Name (Artorious) with warmth for your partner",
+        kind: 'blessing',
+      },
+      5200
+    );
+  } else if (siteKey === 'grove') {
+    showCombatBanner(
+      {
+        title: 'II · THE GOLD-VEINED BRIAR MEDALLION',
+        subtitle:
+          'Click to step back, press [R], name Artorious, and confess an honest spark or flaw you cherish in your partner',
+        kind: 'blessing',
+      },
+      5200
+    );
+  } else {
+    showCombatBanner(
+      {
+        title: "III · THE HIDDEN LOVERS' WALL",
+        subtitle:
+          'Click to step back, press [R], name Artorious, and swear an unfeigned vow to stand by your partner through every storm',
+        kind: 'blessing',
+      },
+      5200
+    );
+  }
+
   return targetStone;
 }
 
@@ -4144,6 +4215,26 @@ export function exitStoneInspection() {
 }
 
 function updateSacredStoneGaze(dt) {
+  // 0. Update 3D Sanctuary Sky-Beacons above unawakened stones (hidden when solved or inspecting)
+  const progNow = coopSystem?.coopClient?.getProgressionState?.();
+  const maskNow = progNow?.stonesSolvedMask ?? 0;
+  if (stoneDecals?.entries) {
+    const solvedMap = {
+      stone_plaza: Boolean(progNow?.stone1Solved || (maskNow & 1)),
+      stone_grove: Boolean(progNow?.stone2Solved || (maskNow & 2)),
+      stone_pier: Boolean(progNow?.stone3Solved || (maskNow & 4)),
+    };
+    for (const [stId, entry] of Object.entries(stoneDecals.entries)) {
+      if (entry?.beaconGroup) {
+        entry.beaconGroup.visible = !solvedMap[stId] && !stoneGazeState.inspectActive;
+        if (entry.crestMesh && entry.beaconGroup.visible) {
+          entry.crestMesh.rotation.y += dt * 1.4;
+          entry.crestMesh.position.y = 3.2 + Math.sin(elapsed * 2.2) * 0.18;
+        }
+      }
+    }
+  }
+
   // 1. Advance smooth camera inspection blend (0 -> 1 on inspect, 1 -> 0 on exit)
   const targetBlend = stoneGazeState.inspectActive ? 1.0 : 0.0;
   const blendStep = 1.0 - Math.exp(-8.5 * Math.max(0.001, dt));
