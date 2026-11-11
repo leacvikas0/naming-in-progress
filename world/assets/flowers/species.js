@@ -98,7 +98,6 @@ function appendPetalMeshExactArea(arrays, opts) {
     segsU = 1,
     segsV = 2,
   } = opts;
-  const areaComp = computeTrapIntegral(origSegsV, pointed) / computeTrapIntegral(segsV, pointed);
   const baseIndex = arrays.pos.length / 3;
   const cy = Math.cos(yaw);
   const sy = Math.sin(yaw);
@@ -113,6 +112,154 @@ function appendPetalMeshExactArea(arrays, opts) {
   const ux = -sy * sp;
   const uy = cp;
   const uz = -cy * sp;
+
+  if (segsV === 0) {
+    // 1-triangle chord-area-compensated fan petal for tablet secondary whorls / basal leaves:
+    // Preserves 100.0% of surface area (A_tri = 0.5 * (2 * halfW) * (0.88 * length)) in 1 triangle (3 vertices).
+    const vOuter = 0.88;
+    const halfW = (width * computeTrapIntegral(origSegsV, pointed)) / vOuter;
+    const alongOuter = vOuter * length;
+    const bendOuter = -arch * vOuter * vOuter + arch * 0.35 * vOuter - cup * 0.35;
+    const n0x = ux * 0.45;
+    const n0y = Math.max(0.55, uy * 0.65 + 0.55);
+    const n0z = uz * 0.45 + fz * 0.15;
+    const outR = midColor[0] * 0.38 + tipColor[0] * 0.62;
+    const outG = midColor[1] * 0.38 + tipColor[1] * 0.62;
+    const outB = midColor[2] * 0.38 + tipColor[2] * 0.62;
+
+    pushVertex(
+      arrays,
+      origin[0],
+      origin[1],
+      origin[2],
+      n0x,
+      n0y,
+      n0z,
+      0.5,
+      0.0,
+      baseColor[0],
+      baseColor[1],
+      baseColor[2]
+    );
+    pushVertex(
+      arrays,
+      origin[0] - rx * halfW + ux * bendOuter + fx * alongOuter,
+      origin[1] - ry * halfW + uy * bendOuter + fy * alongOuter,
+      origin[2] - rz * halfW + uz * bendOuter + fz * alongOuter,
+      ux * 0.45 - rx * 0.28,
+      n0y,
+      uz * 0.45 + fz * 0.15,
+      0.0,
+      vOuter,
+      outR,
+      outG,
+      outB
+    );
+    pushVertex(
+      arrays,
+      origin[0] + rx * halfW + ux * bendOuter + fx * alongOuter,
+      origin[1] + ry * halfW + uy * bendOuter + fy * alongOuter,
+      origin[2] + rz * halfW + uz * bendOuter + fz * alongOuter,
+      ux * 0.45 + rx * 0.28,
+      n0y,
+      uz * 0.45 + fz * 0.15,
+      1.0,
+      vOuter,
+      outR,
+      outG,
+      outB
+    );
+    arrays.idx.push(baseIndex, baseIndex + 2, baseIndex + 1);
+    return;
+  }
+
+  if (segsV === 1) {
+    // Zero-degenerate 2-triangle chord-area-compensated diamond/cupped petal for tablet profile:
+    // Preserves 100.0% of surface area (A_kite = halfW * length = width * length * computeTrapIntegral)
+    // and full 3-stop base -> mid -> tip color gradient in 2 triangles (4 vertices) instead of 4 triangles.
+    const halfW = width * computeTrapIntegral(origSegsV, pointed);
+    const vMid = 0.52;
+    const alongMid = vMid * length;
+    const bendMid = -arch * vMid * vMid + arch * 0.35 * vMid;
+    const alongTip = length;
+    const bendTip = -arch * 0.65 - cup * 0.25;
+
+    const n0x = ux * 0.45;
+    const n0y = Math.max(0.55, uy * 0.65 + 0.55);
+    const n0z = uz * 0.45 + fz * 0.15;
+
+    // 0: Root vertex at v = 0
+    pushVertex(
+      arrays,
+      origin[0],
+      origin[1],
+      origin[2],
+      n0x,
+      n0y,
+      n0z,
+      0.5,
+      0.0,
+      baseColor[0],
+      baseColor[1],
+      baseColor[2]
+    );
+    // 1: Left mid-wing vertex at v = 0.52, s = -1
+    pushVertex(
+      arrays,
+      origin[0] - rx * halfW + ux * bendMid + fx * alongMid,
+      origin[1] - ry * halfW + uy * bendMid + fy * alongMid,
+      origin[2] - rz * halfW + uz * bendMid + fz * alongMid,
+      ux * 0.45 - rx * 0.28,
+      n0y,
+      uz * 0.45 + fz * 0.15,
+      0.0,
+      vMid,
+      midColor[0],
+      midColor[1],
+      midColor[2]
+    );
+    // 2: Right mid-wing vertex at v = 0.52, s = +1
+    pushVertex(
+      arrays,
+      origin[0] + rx * halfW + ux * bendMid + fx * alongMid,
+      origin[1] + ry * halfW + uy * bendMid + fy * alongMid,
+      origin[2] + rz * halfW + uz * bendMid + fz * alongMid,
+      ux * 0.45 + rx * 0.28,
+      n0y,
+      uz * 0.45 + fz * 0.15,
+      1.0,
+      vMid,
+      midColor[0],
+      midColor[1],
+      midColor[2]
+    );
+    // 3: Pointed/cupped tip vertex at v = 1.0
+    pushVertex(
+      arrays,
+      origin[0] + ux * bendTip + fx * alongTip,
+      origin[1] + uy * bendTip + fy * alongTip,
+      origin[2] + uz * bendTip + fz * alongTip,
+      n0x,
+      n0y,
+      n0z,
+      0.5,
+      1.0,
+      tipColor[0],
+      tipColor[1],
+      tipColor[2]
+    );
+    arrays.idx.push(
+      baseIndex,
+      baseIndex + 2,
+      baseIndex + 1,
+      baseIndex + 1,
+      baseIndex + 2,
+      baseIndex + 3
+    );
+    return;
+  }
+
+  const areaComp = computeTrapIntegral(origSegsV, pointed) / computeTrapIntegral(segsV, pointed);
 
   for (let iv = 0; iv <= segsV; iv++) {
     const v = iv / segsV;
@@ -167,6 +314,16 @@ function appendPetalMeshExactArea(arrays, opts) {
 function appendStemMesh(arrays, pts, radiusBase, radiusTip, colBase, colTip, radialSegs = 3) {
   const baseIndex = arrays.pos.length / 3;
   const rings = pts.length;
+  if (radialSegs === 1) {
+    const p0 = pts[0];
+    const p1 = pts[rings - 1];
+    const r = radiusBase * 1.35;
+    pushVertex(arrays, p0[0] - r * 0.707, p0[1], p0[2] - r * 0.707, -0.25, 0.92, -0.25, 0, 0, colBase[0], colBase[1], colBase[2]);
+    pushVertex(arrays, p0[0] + r * 0.707, p0[1], p0[2] + r * 0.707,  0.25, 0.92,  0.25, 1, 0, colBase[0], colBase[1], colBase[2]);
+    pushVertex(arrays, p1[0], p1[1], p1[2], 0.0, 0.95, 0.0, 0.5, 1, colTip[0], colTip[1], colTip[2]);
+    arrays.idx.push(baseIndex, baseIndex + 2, baseIndex + 1);
+    return;
+  }
   for (let i = 0; i < rings; i++) {
     const v = i / (rings - 1);
     const p = pts[i];
@@ -229,8 +386,51 @@ function finalizeGeometry(id, arrays) {
 // 1. GRASS TUFT (`grassTuft` — 36 triangles = 9 Wide `2026-10-18_dense-31M`
 //    1.34x Chord-Area-Compensated Arched Blades across a ~0.82m footprint)
 // ============================================================================
-export function buildGrassTuft() {
+export function buildGrassTuft(opts = {}) {
+  const isTablet = opts?.profile === 'tablet';
   const arrays = createIndexedArrays();
+
+  if (isTablet) {
+    // 4 wide 1.52x chord-area-compensated arched blades (2 inner core + 2 outer skirt across ~0.85m footprint)
+    // Each blade uses 1 tapered arched quad = 2 tris/blade (4 verts/blade) -> 8 triangles (16 vertices) total!
+    const tabletBlades = [
+      { ox:  0.04, oz:  0.02, yaw:  0.18, h: 0.65, w: 0.138 * 1.65 * 1.52, lean: 0.17 },
+      { ox: -0.05, oz: -0.03, yaw: -0.62, h: 0.60, w: 0.134 * 1.65 * 1.52, lean: 0.16 },
+      { ox:  0.29, oz:  0.22, yaw:  0.42, h: 0.54, w: 0.134 * 1.65 * 1.52, lean: 0.18 },
+      { ox: -0.29, oz: -0.23, yaw: -1.28, h: 0.52, w: 0.132 * 1.65 * 1.52, lean: 0.17 },
+    ];
+    const vSteps = [0.0, 1.0];
+    const wFactors = [1.0, 0.36];
+    for (const cfg of tabletBlades) {
+      const baseIdx = arrays.pos.length / 3;
+      const cy = Math.cos(cfg.yaw);
+      const sy = Math.sin(cfg.yaw);
+      for (let i = 0; i < 2; i++) {
+        const v = vSteps[i];
+        const hw = cfg.w * 0.5 * wFactors[i];
+        const y = v * cfg.h;
+        const curve = cfg.lean * v * v;
+        const r = 0.28 + 0.32 * Math.pow(v, 1.05);
+        const g = 0.47 + 0.28 * Math.pow(v, 0.90);
+        const b = 0.24 + 0.16 * Math.pow(v, 1.15);
+        for (let s = -1; s <= 1; s += 2) {
+          const wxOff = cy * (s * hw);
+          const wzOff = -sy * (s * hw);
+          const px = cfg.ox + wxOff + sy * curve;
+          const pz = cfg.oz + wzOff + cy * curve;
+          pushVertex(arrays, px, y, pz, s * 0.22, 0.96, 0.0, wxOff, wzOff, r, g, b);
+        }
+      }
+      arrays.idx.push(
+        baseIdx, baseIdx + 1, baseIdx + 3,
+        baseIdx, baseIdx + 3, baseIdx + 2
+      );
+    }
+    const geo = finalizeGeometry('grassTuft', arrays); // 8 triangles (16 vertices)
+    geo.userData.profile = 'tablet';
+    return geo;
+  }
+
   const bladeConfigs = [
     // Inner 2-blade 2026-10-18_dense-31M tall sweeping core tuft (0.59m-0.65m height, 1.65x chord-area-compensated width)
     { ox:  0.04, oz:  0.02, yaw:  0.18, h: 0.65, w: 0.138 * 1.65, lean: 0.17 },
@@ -269,7 +469,9 @@ export function buildGrassTuft() {
       arrays.idx.push(a, a + 1, a + 3, a, a + 3, a + 2);
     }
   }
-  return finalizeGeometry('grassTuft', arrays); // 24 triangles
+  const geo = finalizeGeometry('grassTuft', arrays); // 24 triangles
+  geo.userData.profile = 'desktop';
+  return geo;
 }
 
 // ============================================================================
@@ -330,7 +532,10 @@ export function buildGrassTuftTablet() {
 //    Cupped Rose with Pure Ruby Blood-Crimson Linear RGB for Sacred Stone Rings
 //    & Frame 41 Divine Smite Monochrome)
 // ============================================================================
-export function buildCrimsonRose() {
+export function buildCrimsonRose(opts = {}) {
+  const isTablet = opts?.profile === 'tablet';
+  const leafSegsV = isTablet ? 0 : 2;
+  const sSegs = isTablet ? 1 : 3;
   const arrays = createIndexedArrays();
   // Pure ruby blood-crimson (in sRGB so srgbToLinear yields R >> 28*G and B >= 1.85*G in linear space)
   const rubyBase = [0.72, 0.08, 0.26];
@@ -355,7 +560,7 @@ export function buildCrimsonRose() {
       tipColor: [0.46, 0.68, 0.31],
       origSegsV: 4,
       segsU: 1,
-      segsV: 2,
+      segsV: leafSegsV,
     });
   }
 
@@ -365,9 +570,11 @@ export function buildCrimsonRose() {
     { pos: [ 0.14, 0.39, -0.07], tiltX: 0.40, tiltY:  0.38, tiltZ: -0.12, sc: 0.84 },
   ];
 
-  for (const h of heads) {
-    appendStemMesh(arrays, [[0, 0, 0], h.pos], 0.015, 0.010, [0.20, 0.38, 0.18], [0.39, 0.60, 0.29], 3);
+  heads.forEach((h, hIdx) => {
+    appendStemMesh(arrays, [[0, 0, 0], h.pos], 0.015, 0.010, [0.20, 0.38, 0.18], [0.39, 0.60, 0.29], sSegs);
     const headStartIdx = arrays.pos.length / 3;
+    const outerSegsV = isTablet ? (hIdx === 0 ? 1 : 0) : 2;
+    const innerSegsV = isTablet ? 0 : 2;
     // Outer 7-petal cupped rose whorl
     for (let i = 0; i < 7; i++) {
       appendPetalMeshExactArea(arrays, {
@@ -384,7 +591,7 @@ export function buildCrimsonRose() {
         tipColor: rubyTip,
         origSegsV: 5,
         segsU: 1,
-        segsV: 2,
+        segsV: outerSegsV,
       });
     }
     // Inner 5-petal upright rose cup
@@ -403,19 +610,24 @@ export function buildCrimsonRose() {
         tipColor: rubyTip,
         origSegsV: 4,
         segsU: 1,
-        segsV: 2,
+        segsV: innerSegsV,
       });
     }
     tiltVerticesAroundPivot(arrays, headStartIdx, h.pos, h.tiltX, h.tiltY, h.tiltZ);
-  }
+  });
 
-  return finalizeGeometry('crimsonRose', arrays); // 182 triangles (down from 608)
+  const geo = finalizeGeometry('crimsonRose', arrays); // 182 triangles desktop / 51 tablet
+  geo.userData.profile = isTablet ? 'tablet' : 'desktop';
+  return geo;
 }
 
 // ============================================================================
 // 3. STAR-BELLFLOWER (`bellflower` — `2026-10-18_dense-31M` `buildBellflower98`)
 // ============================================================================
-export function buildBellflower() {
+export function buildBellflower(opts = {}) {
+  const isTablet = opts?.profile === 'tablet';
+  const leafSegsV = isTablet ? 0 : 2;
+  const sSegs = isTablet ? 1 : 3;
   const arrays = createIndexedArrays();
   for (let i = 0; i < 5; i++) {
     appendPetalMeshExactArea(arrays, {
@@ -432,7 +644,7 @@ export function buildBellflower() {
       tipColor: [0.46, 0.66, 0.34],
       origSegsV: 4,
       segsU: 1,
-      segsV: 2,
+      segsV: leafSegsV,
     });
   }
   const blossoms = [
@@ -440,9 +652,10 @@ export function buildBellflower() {
     { tip: [-0.18, 0.52, 0.11], tiltX: 0.64, tiltY: -0.38, tiltZ:  0.14, scale: 0.85 },
     { tip: [ 0.17, 0.55, 0.05], tiltX: 0.55, tiltY:  0.42, tiltZ: -0.12, scale: 0.88 },
   ];
-  for (const b of blossoms) {
-    appendStemMesh(arrays, [[0, 0, 0], b.tip], 0.015, 0.009, [0.22, 0.41, 0.21], [0.40, 0.62, 0.32], 3);
+  blossoms.forEach((b, bIdx) => {
+    appendStemMesh(arrays, [[0, 0, 0], b.tip], 0.015, 0.009, [0.22, 0.41, 0.21], [0.40, 0.62, 0.32], sSegs);
     const headStartIdx = arrays.pos.length / 3;
+    const petalSegsV = isTablet ? (bIdx === 0 ? 1 : 0) : 2;
     for (let p = 0; p < 5; p++) {
       appendPetalMeshExactArea(arrays, {
         origin: b.tip,
@@ -458,18 +671,23 @@ export function buildBellflower() {
         tipColor: [0.89, 0.81, 1.00],
         origSegsV: 5,
         segsU: 1,
-        segsV: 2,
+        segsV: petalSegsV,
       });
     }
     tiltVerticesAroundPivot(arrays, headStartIdx, b.tip, b.tiltX, b.tiltY, b.tiltZ);
-  }
-  return finalizeGeometry('bellflower', arrays); // 98 triangles (down from 448)
+  });
+  const geo = finalizeGeometry('bellflower', arrays); // 98 triangles desktop / 28 tablet
+  geo.userData.profile = isTablet ? 'tablet' : 'desktop';
+  return geo;
 }
 
 // ============================================================================
 // 4. OXEYE DAISY & GOLDEN BUTTERCUP (`daisy` — `2026-10-18_dense-31M` `buildDaisy46` + `buildButtercup52`)
 // ============================================================================
-export function buildDaisy() {
+export function buildDaisy(opts = {}) {
+  const isTablet = opts?.profile === 'tablet';
+  const leafSegsV = isTablet ? 0 : 2;
+  const sSegs = isTablet ? 1 : 3;
   const arrays = createIndexedArrays();
   // Basal broadleaf cushion so footprint >= 0.28m
   for (let i = 0; i < 4; i++) {
@@ -488,13 +706,13 @@ export function buildDaisy() {
       tipColor: [0.48, 0.68, 0.32],
       origSegsV: 4,
       segsU: 1,
-      segsV: 2,
+      segsV: leafSegsV,
     });
   }
 
   // Hero Oxeye Daisy (`buildDaisy46`)
   const daisyTop = [-0.04, 0.42, 0.02];
-  appendStemMesh(arrays, [[0, 0, 0], daisyTop], 0.012, 0.008, [0.21, 0.39, 0.18], [0.42, 0.62, 0.31], 3);
+  appendStemMesh(arrays, [[0, 0, 0], daisyTop], 0.012, 0.008, [0.21, 0.39, 0.18], [0.42, 0.62, 0.31], sSegs);
   const daisyStart = arrays.pos.length / 3;
   for (let i = 0; i < 8; i++) {
     appendPetalMeshExactArea(arrays, {
@@ -511,16 +729,17 @@ export function buildDaisy() {
       tipColor: [1.00, 1.00, 0.97],
       origSegsV: 4,
       segsU: 1,
-      segsV: 2,
+      segsV: isTablet ? (i % 2 === 0 ? 1 : 0) : 2,
     });
   }
-  for (let i = 0; i < 4; i++) {
+  const discCount = isTablet ? 3 : 4;
+  for (let i = 0; i < discCount; i++) {
     appendPetalMeshExactArea(arrays, {
       origin: [daisyTop[0], daisyTop[1] + 0.012, daisyTop[2]],
-      yaw: (i / 4) * Math.PI * 2.0,
+      yaw: (i / discCount) * Math.PI * 2.0,
       pitch: 0.22,
       length: 0.058,
-      width: 0.064,
+      width: isTablet ? 0.082 : 0.064,
       arch: 0.012,
       cup: -0.012,
       pointed: 0.0,
@@ -529,14 +748,14 @@ export function buildDaisy() {
       tipColor: [1.00, 0.84, 0.30],
       origSegsV: 2,
       segsU: 1,
-      segsV: 1,
+      segsV: isTablet ? 0 : 1,
     });
   }
   tiltVerticesAroundPivot(arrays, daisyStart, daisyTop, 0.38, 0.0, -0.05);
 
   // Companion Golden Buttercup (`buildButtercup52`)
   const butterPos = [0.11, 0.34, -0.05];
-  appendStemMesh(arrays, [[0, 0, 0], butterPos], 0.012, 0.008, [0.21, 0.39, 0.18], [0.44, 0.64, 0.30], 3);
+  appendStemMesh(arrays, [[0, 0, 0], butterPos], 0.012, 0.008, [0.21, 0.39, 0.18], [0.44, 0.64, 0.30], sSegs);
   const butterStart = arrays.pos.length / 3;
   for (let i = 0; i < 5; i++) {
     appendPetalMeshExactArea(arrays, {
@@ -553,20 +772,25 @@ export function buildDaisy() {
       tipColor: [1.00, 0.88, 0.30],
       origSegsV: 3,
       segsU: 1,
-      segsV: 2,
+      segsV: isTablet ? (i < 2 ? 1 : 0) : 2,
     });
   }
   tiltVerticesAroundPivot(arrays, butterStart, butterPos, 0.44, 0.0, -0.16);
 
-  return finalizeGeometry('daisy', arrays); // 88 triangles (down from 468)
+  const geo = finalizeGeometry('daisy', arrays); // 88 triangles desktop / 28 tablet
+  geo.userData.profile = isTablet ? 'tablet' : 'desktop';
+  return geo;
 }
 
 // ============================================================================
 // 5. LAVENDER LUPINE SPIKE (`lupine` — `2026-10-18_dense-31M` `buildLupine96`)
 // ============================================================================
-export function buildLupine() {
+export function buildLupine(opts = {}) {
+  const isTablet = opts?.profile === 'tablet';
+  const leafSegsV = isTablet ? 0 : 2;
+  const sSegs = isTablet ? 1 : 3;
   const arrays = createIndexedArrays();
-  appendStemMesh(arrays, [[0, 0, 0], [0, 0.68, 0]], 0.018, 0.010, [0.23, 0.41, 0.22], [0.38, 0.56, 0.34], 3);
+  appendStemMesh(arrays, [[0, 0, 0], [0, 0.68, 0]], 0.018, 0.010, [0.23, 0.41, 0.22], [0.38, 0.56, 0.34], sSegs);
   for (let i = 0; i < 4; i++) {
     appendPetalMeshExactArea(arrays, {
       origin: [0, 0.05, 0],
@@ -582,7 +806,7 @@ export function buildLupine() {
       tipColor: [0.54, 0.72, 0.40],
       origSegsV: 3,
       segsU: 1,
-      segsV: 2,
+      segsV: leafSegsV,
     });
   }
   for (let t = 0; t < 5; t++) {
@@ -609,20 +833,25 @@ export function buildLupine() {
         tipColor: tipC,
         origSegsV: 3,
         segsU: 1,
-        segsV: 2,
+        segsV: isTablet ? (t === 0 && k < 2 ? 1 : 0) : 2,
       });
     }
   }
-  return finalizeGeometry('lupine', arrays); // 86 triangles (down from 504)
+  const geo = finalizeGeometry('lupine', arrays); // 94 triangles desktop / 25 tablet
+  geo.userData.profile = isTablet ? 'tablet' : 'desktop';
+  return geo;
 }
 
 // ============================================================================
 // 6. BLUSH WILD ROSE (`cosmos` — `2026-10-18_dense-31M` `buildWildRose76`)
 // ============================================================================
-export function buildCosmos() {
+export function buildCosmos(opts = {}) {
+  const isTablet = opts?.profile === 'tablet';
+  const leafSegsV = isTablet ? 0 : 2;
+  const sSegs = isTablet ? 1 : 3;
   const arrays = createIndexedArrays();
   const center = [0.0, 0.52, 0.0];
-  appendStemMesh(arrays, [[0, 0, 0], center], 0.016, 0.011, [0.20, 0.38, 0.18], [0.39, 0.60, 0.29], 3);
+  appendStemMesh(arrays, [[0, 0, 0], center], 0.016, 0.011, [0.20, 0.38, 0.18], [0.39, 0.60, 0.29], sSegs);
   for (let i = 0; i < 4; i++) {
     appendPetalMeshExactArea(arrays, {
       origin: [0, 0.08 + (i % 2) * 0.12, 0],
@@ -638,7 +867,7 @@ export function buildCosmos() {
       tipColor: [0.54, 0.72, 0.36],
       origSegsV: 4,
       segsU: 1,
-      segsV: 2,
+      segsV: leafSegsV,
     });
   }
   const headStartIdx = arrays.pos.length / 3;
@@ -657,7 +886,7 @@ export function buildCosmos() {
       tipColor: [1.00, 0.88, 0.92],
       origSegsV: 5,
       segsU: 1,
-      segsV: 2,
+      segsV: isTablet ? (i < 5 ? 1 : 0) : 2,
     });
   }
   for (let i = 0; i < 5; i++) {
@@ -675,7 +904,7 @@ export function buildCosmos() {
       tipColor: [0.99, 0.82, 0.88],
       origSegsV: 4,
       segsU: 1,
-      segsV: 2,
+      segsV: isTablet ? 0 : 2,
     });
   }
   for (let i = 0; i < 4; i++) {
@@ -693,18 +922,22 @@ export function buildCosmos() {
       tipColor: [1.00, 0.88, 0.40],
       origSegsV: 2,
       segsU: 1,
-      segsV: 1,
+      segsV: isTablet ? 0 : 1,
     });
   }
   tiltVerticesAroundPivot(arrays, headStartIdx, center, 0.38, 0.0, 0.06);
-  return finalizeGeometry('cosmos', arrays); // 78 triangles (down from 464)
+  const geo = finalizeGeometry('cosmos', arrays); // 78 triangles desktop / 26 tablet
+  geo.userData.profile = isTablet ? 'tablet' : 'desktop';
+  return geo;
 }
 
 // ============================================================================
 // 7. GIANT SWORD-FERN ROSETTE & BLUSH CLOVER (`toonShrub` — `2026-10-18_dense-31M`
 //    `buildRosette72` + `buildClover62`)
 // ============================================================================
-export function buildToonShrub() {
+export function buildToonShrub(opts = {}) {
+  const isTablet = opts?.profile === 'tablet';
+  const sSegs = isTablet ? 1 : 3;
   const arrays = createIndexedArrays();
   // 1. 3-Ring Giant Sword-Fern Rosette (`buildRosette72` — 100% chord-area parity)
   const rings = [
@@ -729,23 +962,25 @@ export function buildToonShrub() {
         tipColor: [0.69, 0.84, 0.41],
         origSegsV: 6,
         segsU: 1,
-        segsV: 2,
+        segsV: isTablet ? (rIdx === 0 && i % 2 === 0 ? 1 : 0) : 2,
       });
     }
   });
 
   // 2. Blush-White Clover Head (`buildClover62`) rising from the rosette heart
   const top = [0.08, 0.36, 0.06];
-  appendStemMesh(arrays, [[0, 0, 0], top], 0.013, 0.009, [0.26, 0.44, 0.22], [0.44, 0.64, 0.33], 3);
+  appendStemMesh(arrays, [[0, 0, 0], top], 0.013, 0.009, [0.26, 0.44, 0.22], [0.44, 0.64, 0.33], sSegs);
+  const cloverRingCount = isTablet ? 4 : 5;
+  const cloverWidth = isTablet ? 0.072 * (5 / 4) : 0.072;
   for (let r = 0; r < 3; r++) {
     const pitch = 0.25 + r * 0.42;
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < cloverRingCount; i++) {
       appendPetalMeshExactArea(arrays, {
         origin: [top[0], top[1] + r * 0.018, top[2]],
-        yaw: (i / 5) * Math.PI * 2.0 + r * 0.5,
+        yaw: (i / cloverRingCount) * Math.PI * 2.0 + r * 0.5,
         pitch,
         length: 0.088,
-        width: 0.072,
+        width: cloverWidth,
         arch: 0.02,
         cup: 0.02,
         pointed: 0.2,
@@ -754,25 +989,27 @@ export function buildToonShrub() {
         tipColor: [1.00, 0.98, 0.96],
         origSegsV: 3,
         segsU: 1,
-        segsV: 2,
+        segsV: isTablet ? 0 : 2,
       });
     }
   }
 
-  return finalizeGeometry('toonShrub', arrays); // 118 triangles (down from 484)
+  const geo = finalizeGeometry('toonShrub', arrays); // 118 triangles desktop / 29 tablet
+  geo.userData.profile = isTablet ? 'tablet' : 'desktop';
+  return geo;
 }
 
-export function createSpeciesGeometries() {
+export function createSpeciesGeometries(opts = {}) {
   // Keep BLENDER_VOLUMETRIC_FLOWERS referenced so bundlers/tests preserve it
   void BLENDER_VOLUMETRIC_FLOWERS;
   return {
-    grassTuft:       buildGrassTuft(),
+    grassTuft:       buildGrassTuft(opts),
     grassTuftTablet: buildGrassTuftTablet(),
-    crimsonRose:     buildCrimsonRose(),
-    bellflower:      buildBellflower(),
-    daisy:           buildDaisy(),
-    lupine:          buildLupine(),
-    cosmos:          buildCosmos(),
-    toonShrub:       buildToonShrub(),
+    crimsonRose:     buildCrimsonRose(opts),
+    bellflower:      buildBellflower(opts),
+    daisy:           buildDaisy(opts),
+    lupine:          buildLupine(opts),
+    cosmos:          buildCosmos(opts),
+    toonShrub:       buildToonShrub(opts),
   };
 }

@@ -138,11 +138,11 @@ const PROFILES = {
     label: 'Tablet (Xiaomi Pad 7)',
     dpr:
       typeof window !== 'undefined'
-        ? Math.min(Math.max(window.devicePixelRatio || 1, 1.35), 1.65)
-        : 1.5,
+        ? Math.min(Math.max(window.devicePixelRatio || 1, 1.25), 1.35)
+        : 1.35,
     aaSamples: 0,
     meadowProfile: 'tablet',
-    maxGrassTufts: 17000,
+    maxGrassTufts: 6800,
   },
 };
 
@@ -233,6 +233,417 @@ for (const c of village.colliders) {
     hz: c.hz ?? c.halfD,
   });
 }
+
+function indexLosslessGeometry(geo) {
+  if (!geo || geo.index || !geo.attributes?.position) return geo;
+  const pos = geo.attributes.position;
+  const vCount = pos.count;
+  if (vCount < 6 || vCount % 3 !== 0) return geo;
+
+  const norm = geo.attributes.normal;
+  const uv = geo.attributes.uv;
+  const col = geo.attributes.color;
+  const extraNames = Object.keys(geo.attributes).filter(
+    (k) => k !== 'position' && k !== 'normal' && k !== 'uv' && k !== 'color'
+  );
+
+  const map = new Map();
+  const indices = new Uint32Array(vCount);
+  const keepIndices = [];
+  let uniqueCount = 0;
+
+  for (let i = 0; i < vCount; i++) {
+    let key = `${Math.round(pos.getX(i) * 500)},${Math.round(pos.getY(i) * 500)},${Math.round(pos.getZ(i) * 500)}`;
+    if (norm) {
+      key += `,${Math.round(norm.getX(i) * 100)},${Math.round(norm.getY(i) * 100)},${Math.round(norm.getZ(i) * 100)}`;
+    }
+    if (uv) {
+      key += `,${Math.round(uv.getX(i) * 200)},${Math.round(uv.getY(i) * 200)}`;
+    }
+    if (col) {
+      key += `,${Math.round(col.getX(i) * 100)},${Math.round(col.getY(i) * 100)},${Math.round(col.getZ(i) * 100)}`;
+    }
+    for (let e = 0; e < extraNames.length; e++) {
+      const attr = geo.attributes[extraNames[e]];
+      if (attr) key += `,${Math.round(attr.getX(i) * 100)}`;
+    }
+    let idx = map.get(key);
+    if (idx === undefined) {
+      idx = uniqueCount++;
+      map.set(key, idx);
+      keepIndices.push(i);
+    }
+    indices[i] = idx;
+  }
+
+  if (uniqueCount >= vCount * 0.92) return geo;
+
+  const out = new THREE.BufferGeometry();
+  for (const [name, attr] of Object.entries(geo.attributes)) {
+    const itemSize = attr.itemSize;
+    const ArrType = attr.array.constructor;
+    const nextArr = new ArrType(uniqueCount * itemSize);
+    for (let u = 0; u < uniqueCount; u++) {
+      const srcIdx = keepIndices[u] * itemSize;
+      const dstIdx = u * itemSize;
+      for (let c = 0; c < itemSize; c++) {
+        nextArr[dstIdx + c] = attr.array[srcIdx + c];
+      }
+    }
+    out.setAttribute(name, new THREE.BufferAttribute(nextArr, itemSize, attr.normalized));
+  }
+  out.setIndex(new THREE.BufferAttribute(indices, 1));
+  out.computeBoundingSphere();
+  if (geo.boundingBox) out.computeBoundingBox();
+  return out;
+}
+
+function buildWeldedCloudGeometry(srcGeo, cellSize = 1.6) {
+  if (!srcGeo?.attributes?.position) return srcGeo;
+  const pos = srcGeo.attributes.position;
+  const norm = srcGeo.attributes.normal;
+  const meta = srcGeo.attributes.aCloudMeta;
+  const vCount = pos.count;
+  const idxArr = srcGeo.index ? srcGeo.index.array : null;
+  const triCount = idxArr ? idxArr.length / 3 : Math.floor(vCount / 3);
+
+  const invCellXZ = 1.0 / cellSize;
+  const invCellY = 1.0 / (cellSize * 0.35);
+  const clusterMap = new Map();
+  const vertToCluster = new Int32Array(vCount).fill(-1);
+  const sumPos = [];
+  const sumNorm = [];
+  const sumMeta = [];
+  const counts = [];
+  let clusterCount = 0;
+
+  const getCluster = (vi) => {
+    let ci = vertToCluster[vi];
+    if (ci !== -1) return ci;
+    const x = pos.getX(vi);
+    const y = pos.getY(vi);
+    const z = pos.getZ(vi);
+    const hFactor = meta ? meta.getX(vi) : 0.5;
+    const phase = meta ? Math.round(meta.getZ(vi) * 10) : 0;
+    const hBucket = Math.round(hFactor * 10);
+    const nyBucket = norm ? Math.round(norm.getY(vi) * 4) : 0;
+    const key = `${Math.round(x * invCellXZ)},${Math.round(y * invCellY)},${Math.round(z * invCellXZ)},${hBucket},${nyBucket},${phase}`;
+    ci = clusterMap.get(key);
+    if (ci === undefined) {
+      ci = clusterCount++;
+      clusterMap.set(key, ci);
+      sumPos.push(0, 0, 0);
+      sumNorm.push(0, 0, 0);
+      sumMeta.push(0, 0, 0);
+      counts.push(0);
+    }
+    vertToCluster[vi] = ci;
+    const c3 = ci * 3;
+    sumPos[c3] += x;
+    sumPos[c3 + 1] += y;
+    sumPos[c3 + 2] += z;
+    if (norm) {
+      sumNorm[c3] += norm.getX(vi);
+      sumNorm[c3 + 1] += norm.getY(vi);
+      sumNorm[c3 + 2] += norm.getZ(vi);
+    }
+    if (meta) {
+      sumMeta[c3] += meta.getX(vi);
+      sumMeta[c3 + 1] += meta.getY(vi);
+      sumMeta[c3 + 2] += meta.getZ(vi);
+    }
+    counts[ci] += 1;
+    return ci;
+  };
+
+  const outIdx = [];
+  const seenTris = new Set();
+  for (let t = 0; t < triCount; t++) {
+    const i0 = idxArr ? idxArr[t * 3] : t * 3;
+    const i1 = idxArr ? idxArr[t * 3 + 1] : t * 3 + 1;
+    const i2 = idxArr ? idxArr[t * 3 + 2] : t * 3 + 2;
+    const a = getCluster(i0);
+    const b = getCluster(i1);
+    const c = getCluster(i2);
+    if (a === b || b === c || c === a) continue;
+    const min = Math.min(a, b, c);
+    const max = Math.max(a, b, c);
+    const mid = a + b + c - min - max;
+    const tk = `${min},${mid},${max}`;
+    if (seenTris.has(tk)) continue;
+    seenTris.add(tk);
+    outIdx.push(a, b, c);
+  }
+
+  const outPos = new Float32Array(clusterCount * 3);
+  const outNorm = new Float32Array(clusterCount * 3);
+  const outMeta = new Float32Array(clusterCount * 3);
+  for (let i = 0; i < clusterCount; i++) {
+    const inv = 1.0 / Math.max(1, counts[i]);
+    const c3 = i * 3;
+    outPos[c3] = sumPos[c3] * inv;
+    outPos[c3 + 1] = sumPos[c3 + 1] * inv;
+    outPos[c3 + 2] = sumPos[c3 + 2] * inv;
+    const nx = sumNorm[c3];
+    const ny = sumNorm[c3 + 1];
+    const nz = sumNorm[c3 + 2];
+    const nLen = Math.hypot(nx, ny, nz) || 1.0;
+    outNorm[c3] = nx / nLen;
+    outNorm[c3 + 1] = ny / nLen;
+    outNorm[c3 + 2] = nz / nLen;
+    outMeta[c3] = sumMeta[c3] * inv;
+    outMeta[c3 + 1] = sumMeta[c3 + 1] * inv;
+    outMeta[c3 + 2] = sumMeta[c3 + 2] * inv;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(outNorm, 3));
+  if (meta) {
+    geo.setAttribute('aCloudMeta', new THREE.BufferAttribute(outMeta, 3));
+  }
+  geo.setIndex(outIdx);
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+function buildWeldedHorizonGeometry(srcGeo, cellSize = 15.0) {
+  if (!srcGeo?.attributes?.position) return srcGeo;
+  const pos = srcGeo.attributes.position;
+  const norm = srcGeo.attributes.normal;
+  const col = srcGeo.attributes.color;
+  const vCount = pos.count;
+  const idxArr = srcGeo.index ? srcGeo.index.array : null;
+  const triCount = idxArr ? idxArr.length / 3 : Math.floor(vCount / 3);
+
+  const invCell = 1.0 / cellSize;
+  const clusterMap = new Map();
+  const vertToCluster = new Int32Array(vCount).fill(-1);
+  const sumPos = [];
+  const sumNorm = [];
+  const sumCol = [];
+  const counts = [];
+  let clusterCount = 0;
+
+  const getCluster = (vi, isNearHydro) => {
+    let ci = vertToCluster[vi];
+    if (ci !== -1) return ci;
+    const x = pos.getX(vi);
+    const y = pos.getY(vi);
+    const z = pos.getZ(vi);
+    const nx = norm ? norm.getX(vi) : 0;
+    const ny = norm ? norm.getY(vi) : 1;
+    const nz = norm ? norm.getZ(vi) : 0;
+    const r = col ? col.getX(vi) : 1;
+    const g = col ? col.getY(vi) : 1;
+    const b = col ? col.getZ(vi) : 1;
+
+    const key = isNearHydro
+      ? `H:${Math.round(x * 200)},${Math.round(y * 200)},${Math.round(z * 200)},${Math.round(nx * 50)},${Math.round(ny * 50)},${Math.round(nz * 50)},${Math.round(r * 50)},${Math.round(g * 50)},${Math.round(b * 50)}`
+      : `M:${Math.round(x * invCell)},${Math.round(y * invCell)},${Math.round(z * invCell)},${Math.round(r * 10)},${Math.round(g * 10)},${Math.round(b * 10)}`;
+
+    ci = clusterMap.get(key);
+    if (ci === undefined) {
+      ci = clusterCount++;
+      clusterMap.set(key, ci);
+      sumPos.push(0, 0, 0);
+      sumNorm.push(0, 0, 0);
+      sumCol.push(0, 0, 0);
+      counts.push(0);
+    }
+    vertToCluster[vi] = ci;
+    const c3 = ci * 3;
+    sumPos[c3] += x;
+    sumPos[c3 + 1] += y;
+    sumPos[c3 + 2] += z;
+    sumNorm[c3] += nx;
+    sumNorm[c3 + 1] += ny;
+    sumNorm[c3 + 2] += nz;
+    sumCol[c3] += r;
+    sumCol[c3 + 1] += g;
+    sumCol[c3 + 2] += b;
+    counts[ci] += 1;
+    return ci;
+  };
+
+  const outIdx = [];
+  const seenTris = new Set();
+  for (let t = 0; t < triCount; t++) {
+    const i0 = idxArr ? idxArr[t * 3] : t * 3;
+    const i1 = idxArr ? idxArr[t * 3 + 1] : t * 3 + 1;
+    const i2 = idxArr ? idxArr[t * 3 + 2] : t * 3 + 2;
+    const cx = (pos.getX(i0) + pos.getX(i1) + pos.getX(i2)) / 3;
+    const cz = (pos.getZ(i0) + pos.getZ(i1) + pos.getZ(i2)) / 3;
+    const rDist = Math.hypot(cx, cz);
+    const isNearHydro = rDist <= 185.0;
+
+    if (!isNearHydro && norm && rDist > 265.0) {
+      const cnx = (norm.getX(i0) + norm.getX(i1) + norm.getX(i2)) / 3;
+      const cnz = (norm.getZ(i0) + norm.getZ(i1) + norm.getZ(i2)) / 3;
+      const radialDot = (cx * cnx + cz * cnz) / Math.max(1.0, rDist);
+      if (radialDot > 0.32) continue;
+    }
+
+    const a = getCluster(i0, isNearHydro);
+    const b = getCluster(i1, isNearHydro);
+    const c = getCluster(i2, isNearHydro);
+    if (a === b || b === c || c === a) continue;
+    const min = Math.min(a, b, c);
+    const max = Math.max(a, b, c);
+    const mid = a + b + c - min - max;
+    const tk = `${min},${mid},${max}`;
+    if (seenTris.has(tk)) continue;
+    seenTris.add(tk);
+    outIdx.push(a, b, c);
+  }
+
+  const outPos = new Float32Array(clusterCount * 3);
+  const outNorm = new Float32Array(clusterCount * 3);
+  const outCol = new Float32Array(clusterCount * 3);
+  for (let i = 0; i < clusterCount; i++) {
+    const inv = 1.0 / Math.max(1, counts[i]);
+    const c3 = i * 3;
+    outPos[c3] = sumPos[c3] * inv;
+    outPos[c3 + 1] = sumPos[c3 + 1] * inv;
+    outPos[c3 + 2] = sumPos[c3 + 2] * inv;
+    const nx = sumNorm[c3];
+    const ny = sumNorm[c3 + 1];
+    const nz = sumNorm[c3 + 2];
+    const nLen = Math.hypot(nx, ny, nz) || 1.0;
+    outNorm[c3] = nx / nLen;
+    outNorm[c3 + 1] = ny / nLen;
+    outNorm[c3 + 2] = nz / nLen;
+    outCol[c3] = sumCol[c3] * inv;
+    outCol[c3 + 1] = sumCol[c3 + 1] * inv;
+    outCol[c3 + 2] = sumCol[c3 + 2] * inv;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(outNorm, 3));
+  if (col) {
+    geo.setAttribute('color', new THREE.BufferAttribute(outCol, 3));
+  }
+  geo.setIndex(outIdx);
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+function buildTabletRoofTileGeometry() {
+  const hw = 0.24;
+  const hl = 0.22;
+  const tTop = 0.012;
+  const tBot = 0.054;
+  const positions = new Float32Array([
+    -hw, -hl, tBot,
+     hw, -hl, tBot,
+     hw,  hl, tTop,
+    -hw,  hl, tTop,
+  ]);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setIndex([0, 1, 2, 0, 2, 3]);
+  geo.computeVertexNormals();
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+let _staticSceneIndexed = false;
+function syncStaticSceneProfile(profileName) {
+  const isTablet = profileName === 'tablet';
+
+  if (!_staticSceneIndexed) {
+    _staticSceneIndexed = true;
+    const staticRoots = [sky?.group, terrainKit?.group, village?.group];
+    for (const root of staticRoots) {
+      if (!root) continue;
+      root.traverse((obj) => {
+        if (!obj.isMesh || !obj.geometry) return;
+        if (obj.name === 'todCumulusRing') {
+          if (obj.material) obj.material.side = THREE.FrontSide;
+          const indexedDesktop = indexLosslessGeometry(obj.geometry);
+          obj.userData._desktopGeo = indexedDesktop;
+          obj.userData._tabletGeo = buildWeldedCloudGeometry(obj.geometry, 1.6);
+          obj.geometry = indexedDesktop;
+          return;
+        }
+        let isAlpineHorizon = false;
+        let p = obj;
+        while (p) {
+          if (p.name === 'sky-and-alpine-horizon') {
+            isAlpineHorizon = true;
+            break;
+          }
+          p = p.parent;
+        }
+        if (
+          isAlpineHorizon &&
+          !obj.userData?.isOutline &&
+          !obj.name?.toLowerCase().includes('outline') &&
+          obj.geometry.attributes?.position?.count > 10000
+        ) {
+          const indexedDesktop = indexLosslessGeometry(obj.geometry);
+          obj.userData._desktopGeo = indexedDesktop;
+          obj.userData._tabletGeo = buildWeldedHorizonGeometry(obj.geometry, 15.0);
+          obj.geometry = indexedDesktop;
+          return;
+        }
+        if (obj.isInstancedMesh && (obj.name === 'roof-tiles-combined' || obj.userData?.isRoofTiles)) {
+          const indexedDesktop = indexLosslessGeometry(obj.geometry);
+          obj.userData._desktopGeo = indexedDesktop;
+          obj.userData._tabletGeo = buildTabletRoofTileGeometry();
+          obj.geometry = indexedDesktop;
+          return;
+        }
+        if (!obj.geometry.index) {
+          obj.geometry = indexLosslessGeometry(obj.geometry);
+        }
+      });
+    }
+  }
+
+  sky?.group?.traverse?.((obj) => {
+    if (obj.isMesh && obj.name === 'todCumulusRing') {
+      if (obj.userData._tabletGeo && obj.userData._desktopGeo) {
+        obj.geometry = isTablet ? obj.userData._tabletGeo : obj.userData._desktopGeo;
+      }
+    }
+  });
+
+  terrainKit?.group?.traverse?.((obj) => {
+    if (!obj.isMesh) return;
+    if (
+      obj.userData?.isOutline ||
+      obj.name?.toLowerCase().includes('outline') ||
+      obj.material?.side === THREE.BackSide
+    ) {
+      obj.visible = !isTablet;
+      return;
+    }
+    if (obj.userData._tabletGeo && obj.userData._desktopGeo) {
+      obj.geometry = isTablet ? obj.userData._tabletGeo : obj.userData._desktopGeo;
+    }
+  });
+
+  village?.group?.traverse?.((obj) => {
+    if (!obj.isMesh) return;
+    if (
+      obj.name === 'village-buildings-outline' ||
+      obj.userData?.isOutline ||
+      (obj.name?.toLowerCase().includes('outline') && obj.material?.side === THREE.BackSide)
+    ) {
+      obj.visible = !isTablet;
+      return;
+    }
+    if (obj.isInstancedMesh && (obj.name === 'roof-tiles-combined' || obj.userData?.isRoofTiles)) {
+      if (obj.userData._tabletGeo && obj.userData._desktopGeo) {
+        obj.geometry = isTablet ? obj.userData._tabletGeo : obj.userData._desktopGeo;
+      }
+    }
+  });
+}
+
+syncStaticSceneProfile(activeProfile);
 
 /* ------------------------------------------------------------------------- */
 /* 4. Toroidal Gouache Meadow & Valley-Wide Wildflower Drifts                */
@@ -377,7 +788,7 @@ function buildMeadowForProfile(profileName) {
   });
   if (meadow.grassMesh) {
     if (profileName === 'tablet') {
-      meadow.grassMesh.geometry = buildGrassTuft();
+      meadow.grassMesh.geometry = buildGrassTuft({ profile: profileName });
     }
     if (cfg.maxGrassTufts) {
       meadow.grassMesh.count = Math.min(meadow.grassMesh.count, cfg.maxGrassTufts);
@@ -1104,10 +1515,18 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
       mountTargets.push(cottageWallGroup);
     }
 
+    const worldX = st.id === 'stone_plaza' ? 0.0 : st.x;
+    const worldZ = st.id === 'stone_plaza' ? 0.0 : st.z;
+    const worldY = sampleGroundY(worldX, worldZ);
+
     const entry = {
       id: st.id,
+      worldX,
+      worldY,
+      worldZ,
       holder,
       mountTargets,
+      lodSets: [],
       materials: [],
       title: fallbackVerse.title,
       lines: [...fallbackVerse.lines],
@@ -1130,6 +1549,7 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
 
     const createGhibliMonumentShaderMaterial = (_srcMat, hasColorAttr) => {
       const mat = new THREE.ShaderMaterial({
+        side: THREE.FrontSide,
         uniforms: {
           uHasVertexColor: { value: hasColorAttr ? 1.0 : 0.0 },
           uSiteId: { value: siteIdValue },
@@ -1223,7 +1643,7 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
 
             float lum = dot(vColor, vec3(0.2126, 0.7152, 0.0722));
             bool isPoemDark = (lum < 0.085 && vColor.r >= vColor.g);
-            bool isPoemLip = (lum > 0.82);
+            bool isPoemLip = (lum > 0.75);
             bool isBotanicalGreen = (vColor.g > vColor.r * 1.03 && vColor.g > vColor.b * 1.20);
 
             // Multi-scale 3D procedural travertine / sandstone grain & micro-pitting
@@ -1282,6 +1702,138 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
       monumentShaderMats.push(mat);
       entry.materials.push(mat);
       return mat;
+    };
+
+    const buildWeldedMonumentGeometry = (srcPos, srcNorm, srcCol, triIndices, cellSize) => {
+      if (!triIndices || triIndices.length === 0) return null;
+      if (cellSize <= 0) {
+        const remap = new Map();
+        const outPos = [];
+        const outNorm = [];
+        const outCol = [];
+        const outIdx = [];
+        let nextIdx = 0;
+        for (let k = 0; k < triIndices.length; k++) {
+          const vi = triIndices[k];
+          let ni = remap.get(vi);
+          if (ni === undefined) {
+            ni = nextIdx++;
+            remap.set(vi, ni);
+            const p3 = vi * 3;
+            const c4 = vi * 4;
+            outPos.push(srcPos[p3], srcPos[p3 + 1], srcPos[p3 + 2]);
+            outNorm.push(srcNorm[p3], srcNorm[p3 + 1], srcNorm[p3 + 2]);
+            outCol.push(srcCol[c4], srcCol[c4 + 1], srcCol[c4 + 2], srcCol[c4 + 3]);
+          }
+          outIdx.push(ni);
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(outPos, 3));
+        geo.setAttribute('normal', new THREE.Float32BufferAttribute(outNorm, 3));
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(outCol, 4));
+        geo.setIndex(outIdx);
+        geo.computeBoundingSphere();
+        return geo;
+      }
+
+      const invCell = 1.0 / cellSize;
+      const clusterMap = new Map();
+      const vertToCluster = new Map();
+      const sumPos = [];
+      const sumNorm = [];
+      const sumCol = [];
+      const counts = [];
+      let clusterCount = 0;
+
+      for (let k = 0; k < triIndices.length; k++) {
+        const vi = triIndices[k];
+        let ci = vertToCluster.get(vi);
+        if (ci === undefined) {
+          const p3 = vi * 3;
+          const c4 = vi * 4;
+          const x = srcPos[p3];
+          const y = srcPos[p3 + 1];
+          const z = srcPos[p3 + 2];
+          const r = srcCol[c4];
+          const g = srcCol[c4 + 1];
+          const b = srcCol[c4 + 2];
+          const isMoss = g > r * 1.03 && g > b * 1.2 ? 1 : 0;
+          const gx = Math.round(x * invCell);
+          const gy = Math.round(y * invCell);
+          const gz = Math.round(z * invCell);
+          const key = `${gx},${gy},${gz},${isMoss}`;
+          ci = clusterMap.get(key);
+          if (ci === undefined) {
+            ci = clusterCount++;
+            clusterMap.set(key, ci);
+            sumPos.push(0, 0, 0);
+            sumNorm.push(0, 0, 0);
+            sumCol.push(0, 0, 0, 0);
+            counts.push(0);
+          }
+          vertToCluster.set(vi, ci);
+          const cp3 = ci * 3;
+          const cc4 = ci * 4;
+          sumPos[cp3] += x;
+          sumPos[cp3 + 1] += y;
+          sumPos[cp3 + 2] += z;
+          sumNorm[cp3] += srcNorm[p3];
+          sumNorm[cp3 + 1] += srcNorm[p3 + 1];
+          sumNorm[cp3 + 2] += srcNorm[p3 + 2];
+          sumCol[cc4] += r;
+          sumCol[cc4 + 1] += g;
+          sumCol[cc4 + 2] += b;
+          sumCol[cc4 + 3] += srcCol[c4 + 3];
+          counts[ci] += 1;
+        }
+      }
+
+      const outPos = new Float32Array(clusterCount * 3);
+      const outNorm = new Float32Array(clusterCount * 3);
+      const outCol = new Float32Array(clusterCount * 4);
+      for (let i = 0; i < clusterCount; i++) {
+        const inv = 1.0 / Math.max(1, counts[i]);
+        const p3 = i * 3;
+        const c4 = i * 4;
+        outPos[p3] = sumPos[p3] * inv;
+        outPos[p3 + 1] = sumPos[p3 + 1] * inv;
+        outPos[p3 + 2] = sumPos[p3 + 2] * inv;
+        const nx = sumNorm[p3];
+        const ny = sumNorm[p3 + 1];
+        const nz = sumNorm[p3 + 2];
+        const nLen = Math.hypot(nx, ny, nz) || 1.0;
+        outNorm[p3] = nx / nLen;
+        outNorm[p3 + 1] = ny / nLen;
+        outNorm[p3 + 2] = nz / nLen;
+        outCol[c4] = sumCol[c4] * inv;
+        outCol[c4 + 1] = sumCol[c4 + 1] * inv;
+        outCol[c4 + 2] = sumCol[c4 + 2] * inv;
+        outCol[c4 + 3] = sumCol[c4 + 3] * inv;
+      }
+
+      const outIdx = [];
+      const seenTris = new Set();
+      for (let k = 0; k < triIndices.length; k += 3) {
+        const a = vertToCluster.get(triIndices[k]);
+        const b = vertToCluster.get(triIndices[k + 1]);
+        const c = vertToCluster.get(triIndices[k + 2]);
+        if (a === b || b === c || c === a) continue;
+        const min = Math.min(a, b, c);
+        const max = Math.max(a, b, c);
+        const mid = a + b + c - min - max;
+        const tk = `${min},${mid},${max}`;
+        if (seenTris.has(tk)) continue;
+        seenTris.add(tk);
+        outIdx.push(a, b, c);
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(outNorm, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(outCol, 4));
+      geo.setIndex(outIdx);
+      geo.computeBoundingSphere();
+      return geo;
     };
 
     const attachScene = (gltf) => {
@@ -1354,20 +1906,120 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
 
       if (vertOffset === 0) return;
 
-      const unifiedGeo = new THREE.BufferGeometry();
-      unifiedGeo.setAttribute('position', new THREE.Float32BufferAttribute(mergedPos, 3));
-      unifiedGeo.setAttribute('normal', new THREE.Float32BufferAttribute(mergedNorm, 3));
-      unifiedGeo.setAttribute('color', new THREE.Float32BufferAttribute(mergedCol, 4));
-      unifiedGeo.setIndex(mergedIndices);
-      unifiedGeo.computeBoundingSphere();
+      const isPoemVert = new Uint8Array(vertOffset);
+      for (let i = 0; i < vertOffset; i++) {
+        const c4 = i * 4;
+        const r = mergedCol[c4];
+        const g = mergedCol[c4 + 1];
+        const b = mergedCol[c4 + 2];
+        const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        const isPoemDark = lum < 0.085 && r >= g;
+        const isPoemLip = lum > 0.75;
+        if (isPoemDark || isPoemLip) {
+          isPoemVert[i] = 1;
+        }
+      }
+
+      const calligraphyIndices = [];
+      const stoneIndices = [];
+      const isGroveMedallion = st.id === 'stone_grove';
+      const isPlazaWell = st.id === 'stone_plaza';
+
+      for (let k = 0; k < mergedIndices.length; k += 3) {
+        const i0 = mergedIndices[k];
+        const i1 = mergedIndices[k + 1];
+        const i2 = mergedIndices[k + 2];
+        if (isPoemVert[i0] || isPoemVert[i1] || isPoemVert[i2]) {
+          calligraphyIndices.push(i0, i1, i2);
+          continue;
+        }
+        const y0 = mergedPos[i0 * 3 + 1];
+        const y1 = mergedPos[i1 * 3 + 1];
+        const y2 = mergedPos[i2 * 3 + 1];
+        const ny0 = mergedNorm[i0 * 3 + 1];
+        const ny1 = mergedNorm[i1 * 3 + 1];
+        const ny2 = mergedNorm[i2 * 3 + 1];
+        const cy = (y0 + y1 + y2) / 3.0;
+        const cny = (ny0 + ny1 + ny2) / 3.0;
+
+        // Cull buried bottom-cap & underground triangles
+        if (y0 < 0.02 && y1 < 0.02 && y2 < 0.02 && cny < -0.7) continue;
+        if (isGroveMedallion && (cy < -0.015 || cny < -0.35)) continue;
+        if (!isGroveMedallion && cy < 0.04 && cny < -0.65) continue;
+        if (isPlazaWell) {
+          const cx = (mergedPos[i0 * 3] + mergedPos[i1 * 3] + mergedPos[i2 * 3]) / 3.0;
+          const cz = (mergedPos[i0 * 3 + 2] + mergedPos[i1 * 3 + 2] + mergedPos[i2 * 3 + 2]) / 3.0;
+          if (Math.hypot(cx, cz) < 0.82 && cy < 0.34) continue;
+        }
+        stoneIndices.push(i0, i1, i2);
+      }
+
+      const calligraphyGeo = buildWeldedMonumentGeometry(
+        mergedPos,
+        mergedNorm,
+        mergedCol,
+        calligraphyIndices,
+        0
+      );
+      const inspectStoneGeo = buildWeldedMonumentGeometry(
+        mergedPos,
+        mergedNorm,
+        mergedCol,
+        stoneIndices,
+        0
+      );
+      const nearStoneGeo = buildWeldedMonumentGeometry(
+        mergedPos,
+        mergedNorm,
+        mergedCol,
+        stoneIndices,
+        0.036
+      );
+      const farStoneGeo = buildWeldedMonumentGeometry(
+        mergedPos,
+        mergedNorm,
+        mergedCol,
+        stoneIndices,
+        0.075
+      );
 
       const unifiedMat = createGhibliMonumentShaderMaterial(null, true);
       for (const target of mountTargets) {
-        const mesh = new THREE.Mesh(unifiedGeo, unifiedMat);
-        mesh.name = `UnifiedMonument_${st.id}`;
-        mesh.frustumCulled = true;
-        target.add(mesh);
+        const inspectStoneMesh = new THREE.Mesh(inspectStoneGeo || nearStoneGeo, unifiedMat);
+        inspectStoneMesh.name = `UnifiedMonument_${st.id}_inspect`;
+        inspectStoneMesh.frustumCulled = true;
+        inspectStoneMesh.visible = false;
+        target.add(inspectStoneMesh);
+
+        const nearStoneMesh = new THREE.Mesh(nearStoneGeo || inspectStoneGeo, unifiedMat);
+        nearStoneMesh.name = `UnifiedMonument_${st.id}`;
+        nearStoneMesh.frustumCulled = true;
+        nearStoneMesh.visible = false;
+        target.add(nearStoneMesh);
+
+        const farStoneMesh = new THREE.Mesh(farStoneGeo || nearStoneGeo, unifiedMat);
+        farStoneMesh.name = `UnifiedMonument_${st.id}_far`;
+        farStoneMesh.frustumCulled = true;
+        farStoneMesh.visible = true;
+        target.add(farStoneMesh);
+
+        let calligraphyMesh = null;
+        if (calligraphyGeo) {
+          calligraphyMesh = new THREE.Mesh(calligraphyGeo, unifiedMat);
+          calligraphyMesh.name = `MonumentCalligraphy_${st.id}`;
+          calligraphyMesh.frustumCulled = true;
+          calligraphyMesh.visible = false;
+          target.add(calligraphyMesh);
+        }
+
+        entry.lodSets.push({
+          inspectStoneMesh,
+          nearStoneMesh,
+          farStoneMesh,
+          calligraphyMesh,
+        });
       }
+      updateMonumentLodForCamera(camera);
     };
 
     gltfLoader.load(
@@ -1382,7 +2034,31 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
     );
   }
 
-  return { group: rootGroup, entries: decalEntries };
+  function updateMonumentLodForCamera(cam) {
+    const cx = cam?.position?.x ?? 0;
+    const cy = cam?.position?.y ?? 0;
+    const cz = cam?.position?.z ?? 0;
+    for (const st of INSCRIPTION_STONES) {
+      const entry = decalEntries[st.id];
+      if (!entry || !entry.lodSets || entry.lodSets.length === 0) continue;
+      const dist = Math.hypot(cx - entry.worldX, cy - entry.worldY, cz - entry.worldZ);
+      const isInspect =
+        (stoneGazeState.inspectActive && stoneGazeState.activeStoneId === entry.id) ||
+        (stoneGazeState.inspectBlend > 0.01 && stoneGazeState.activeStoneId === entry.id) ||
+        dist <= 4.8;
+      const isNear = !isInspect && dist <= 16.0;
+      const isFar = !isInspect && !isNear;
+
+      for (const set of entry.lodSets) {
+        if (set.inspectStoneMesh) set.inspectStoneMesh.visible = isInspect;
+        if (set.nearStoneMesh) set.nearStoneMesh.visible = isNear;
+        if (set.farStoneMesh) set.farStoneMesh.visible = isFar;
+        if (set.calligraphyMesh) set.calligraphyMesh.visible = isInspect || isNear;
+      }
+    }
+  }
+
+  return { group: rootGroup, entries: decalEntries, updateLod: updateMonumentLodForCamera };
 }
 
 const stoneDecals = createSacredStoneCalligraphyDecals(scene, terrainHeightAt);
@@ -3106,11 +3782,20 @@ function updateMeadowFocus(simTime) {
   const fz = _camDir.z / flatLen;
 
   if (camState.mode === 'player') {
-    _meadowFocus.set(player.x + fx * 10.0, player.y, player.z + fz * 10.0);
+    if (activeProfile === 'tablet') {
+      _meadowFocus.set(
+        camera.position.x + fx * 22.0,
+        player.y,
+        camera.position.z + fz * 22.0
+      );
+    } else {
+      _meadowFocus.set(player.x + fx * 10.0, player.y, player.z + fz * 10.0);
+    }
   } else if (camera.position.y > 60) {
     _meadowFocus.set(0, 0, 20);
   } else {
-    const fwdOffset = 12.0 + Math.max(0, camera.position.y - 5.0) * 0.85;
+    const baseFwd = activeProfile === 'tablet' ? 22.0 : 12.0;
+    const fwdOffset = baseFwd + Math.max(0, camera.position.y - 5.0) * 0.85;
     _meadowFocus.set(
       clamp(camera.position.x + fx * fwdOffset, -158, 158),
       0,
@@ -3118,6 +3803,7 @@ function updateMeadowFocus(simTime) {
     );
   }
   meadow.update(simTime, _meadowFocus, camera);
+  stoneDecals?.updateLod?.(camera);
   if (typeof monumentShaderMats !== 'undefined' && Array.isArray(monumentShaderMats)) {
     for (const mat of monumentShaderMats) {
       if (mat?.uniforms?.uTime) {
@@ -3225,6 +3911,7 @@ function updateCamera() {
     );
   }
   camera.updateMatrixWorld();
+  stoneDecals?.updateLod?.(camera);
 }
 
 export function setView(id) {
@@ -3416,6 +4103,7 @@ export function setProfile(profileName) {
   renderer.setSize(window.innerWidth, window.innerHeight);
   post.setQuality?.({ aaSamples: cfg.aaSamples });
   post.setSize(window.innerWidth, window.innerHeight);
+  syncStaticSceneProfile(activeProfile);
   buildMeadowForProfile(activeProfile);
   const pool = coopSystem?.enemyManager?.allPoolSlots || [];
   const showMobOutlines = activeProfile !== 'tablet';
@@ -3979,13 +4667,40 @@ if (typeof window !== 'undefined' && window.visualViewport) {
 /* 12. Main Loop, Performance Measurement & Telemetry API                     */
 /* ------------------------------------------------------------------------- */
 
+let evaluateMaliG68Frame = null;
+try {
+  const maliMod = await import('./perf/mali-g68-emulator.js');
+  evaluateMaliG68Frame = maliMod.evaluateMaliG68Frame || maliMod.default || null;
+} catch {
+  evaluateMaliG68Frame = null;
+}
+
 const clock = new THREE.Clock();
 let frames = 0;
 let telemetryTimer = 0;
+let mobileTelemetryTimer = 0;
+const mobileFrameMsHistory = [];
+let lastSampledSceneDraws = 0;
+let lastSampledSceneTris = 0;
 let measuredFps = 144;
 let avgFrameMs = 2.4;
 
+function getMaliG68Report() {
+  stoneDecals?.updateLod?.(camera);
+  if (typeof evaluateMaliG68Frame === 'function') {
+    return evaluateMaliG68Frame({
+      scene,
+      renderer,
+      post,
+      camera,
+      profile: activeProfile,
+    });
+  }
+  return null;
+}
+
 function getSceneStats() {
+  stoneDecals?.updateLod?.(camera);
   renderer.info.autoReset = false;
   renderer.info.reset();
   post.render(0.016);
@@ -3997,6 +4712,8 @@ function getSceneStats() {
   const postTris = postDraws * 2;
   const sceneDraws = Math.max(1, totalCalls - postDraws);
   const sceneTris = Math.max(0, totalTris - postTris);
+  lastSampledSceneDraws = sceneDraws;
+  lastSampledSceneTris = sceneTris;
 
   return {
     profile: activeProfile,
@@ -4215,6 +4932,7 @@ export function enterStoneInspection(stone = null) {
 
   stoneGazeState.inspectActive = true;
   stoneGazeState.activeStoneId = targetStone.id;
+  stoneDecals?.updateLod?.(camera);
   keys.clear();
   sculptedHud?.resetJoystick?.();
   sculptedHud?.setVisible(false);
@@ -4271,6 +4989,7 @@ export function enterStoneInspection(stone = null) {
 export function exitStoneInspection() {
   if (!stoneGazeState.inspectActive) return;
   stoneGazeState.inspectActive = false;
+  stoneDecals?.updateLod?.(camera);
   if (stoneInspectExitOverlay) {
     stoneInspectExitOverlay.classList.remove('is-active');
   }
@@ -4462,12 +5181,64 @@ function animate() {
 
   if (sampleDrawsThisFrame) {
     const postDraws = post.bloomPass?.enabled ? 11 : 1;
+    const postTris = postDraws * 2;
     const sceneDraws = Math.max(1, renderer.info.render.calls - postDraws);
+    const sceneTris = Math.max(0, renderer.info.render.triangles - postTris);
+    lastSampledSceneDraws = sceneDraws;
+    lastSampledSceneTris = sceneTris;
     renderer.info.autoReset = true;
     measuredFps = Math.min(144, Math.round(frames / telemetryTimer));
     frames = 0;
     telemetryTimer = 0;
     refreshTelemetryReadout(sceneDraws);
+  }
+
+  const frameWallMs = rawDt * 1000;
+  if (frameWallMs > 0 && frameWallMs < 1000) {
+    mobileFrameMsHistory.push(frameWallMs);
+    if (mobileFrameMsHistory.length > 240) {
+      mobileFrameMsHistory.shift();
+    }
+  }
+  mobileTelemetryTimer += rawDt;
+  if (
+    mobileTelemetryTimer >= 2.5 &&
+    ((activeProfile === 'tablet' && !navigator.webdriver) ||
+      (typeof window !== 'undefined' && window.__ENABLE_MOBILE_TELEMETRY__))
+  ) {
+    mobileTelemetryTimer = 0;
+    const samples =
+      mobileFrameMsHistory.length > 0
+        ? [...mobileFrameMsHistory].sort((a, b) => a - b)
+        : [avgFrameMs];
+    mobileFrameMsHistory.length = 0;
+    const sumMs = samples.reduce((acc, v) => acc + v, 0);
+    const avgMs = Number((sumMs / samples.length).toFixed(2));
+    const p95Idx = Math.min(samples.length - 1, Math.floor(samples.length * 0.95));
+    const p95FrameMs = Number(samples[p95Idx].toFixed(2));
+    const maxFrameMs = Number(samples[samples.length - 1].toFixed(2));
+    const maliRep = getMaliG68Report();
+    const payload = {
+      ua: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      },
+      dpr: renderer.getPixelRatio(),
+      fps: measuredFps,
+      avgFrameMs: avgMs,
+      p95FrameMs,
+      maxFrameMs,
+      draws: lastSampledSceneDraws || maliRep?.totalDrawCalls || 0,
+      triangles: lastSampledSceneTris || maliRep?.totalTrianglesSubmitted || 0,
+      maliPredictedMs: maliRep?.predictedFrameMs ?? null,
+    };
+    fetch('/api/mobile-telemetry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify(payload),
+    }).catch(() => {});
   }
 }
 
@@ -4522,4 +5293,5 @@ window.__WORLD__ = {
   toggleHud,
   measurePerformance,
   getStats: getSceneStats,
+  getMaliG68Report,
 };

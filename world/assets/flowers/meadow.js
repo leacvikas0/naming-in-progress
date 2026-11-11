@@ -8,17 +8,17 @@ import {
 export const MEADOW_PROFILES = {
   tablet: {
     name: 'tablet',
-    grassRadius: 56,
-    grassCount: 17000,
+    grassRadius: 32,
+    grassCount: 6400,
     flowerRadius: 158,
-    flowerToroidRadius: 48,
+    flowerToroidRadius: 30,
     counts: {
-      bellflower: 1150,
-      daisy: 1300,
-      lupine: 1000,
-      cosmos: 1250,
-      crimsonRose: 140,
-      toonShrub: 800,
+      bellflower: 330,
+      daisy: 380,
+      lupine: 280,
+      cosmos: 350,
+      crimsonRose: 95,
+      toonShrub: 220,
     },
   },
   desktop: {
@@ -194,7 +194,11 @@ export function createGouacheMaterial({
     uIsToroidal: { value: isToroidal ? 1.0 : 0.0 },
     uIsGrass: { value: isGrass ? 1.0 : 0.0 },
     uToroidRadius: { value: toroidRadius },
-    uFadeStart: { value: isToroidal ? toroidRadius * (isGrass ? 0.62 : 0.68) : fadeRadius * 0.92 },
+    uFadeStart: {
+      value: isToroidal
+        ? toroidRadius * (toroidRadius <= 36 ? (isGrass ? 0.75 : 0.78) : isGrass ? 0.62 : 0.68)
+        : fadeRadius * 0.92,
+    },
     uFadeEnd: { value: isToroidal ? toroidRadius : fadeRadius },
     uWindFlex: { value: windFlex },
     uCamPosXZ: sharedUniforms?.uCamPosXZ || { value: new THREE.Vector2(0, 0) },
@@ -627,7 +631,7 @@ export function createToroidalMeadow({
     typeof profile === 'string'
       ? MEADOW_PROFILES[profile] || MEADOW_PROFILES.desktop
       : { ...MEADOW_PROFILES.desktop, ...profile };
-  const geos = geometries || createSpeciesGeometries();
+  const geos = geometries || createSpeciesGeometries({ profile: cfg.name });
   const maskTex = worldMaskTexture || createDefaultWorldMaskTexture(256, worldExtent);
   const shadowAOTex = bakedShadowAOTexture || getSharedBakedShadowAOTexture();
   const canvasTex = meadowCanvasTexture || getSharedMeadowCanvasTexture();
@@ -669,7 +673,7 @@ export function createToroidalMeadow({
   grassMesh.name = 'meadow_grassTuft_toroidal';
   grassMesh.frustumCulled = false;
   const diam = cfg.grassRadius * 2;
-  const profileHorizScale = cfg.name === 'tablet' ? 1.12 : 1.0;
+  const profileHorizScale = cfg.name === 'tablet' ? 1.24 : 1.0;
   for (let i = 0; i < cfg.grassCount; i++) {
     const ox = (hash(i * 3.1 + 1.7) - 0.5) * diam;
     const oz = (hash(i * 5.3 + 2.9) - 0.5) * diam;
@@ -684,6 +688,21 @@ export function createToroidalMeadow({
     grassMesh.setMatrixAt(i, dummy.matrix);
   }
   grassMesh.instanceMatrix.needsUpdate = true;
+  if (cfg.name === 'tablet') {
+    let _grassGeo = grassGeo;
+    Object.defineProperty(grassMesh, 'geometry', {
+      get() {
+        return _grassGeo;
+      },
+      set(g) {
+        if (g && g.userData?.profile === 'tablet') {
+          _grassGeo = g;
+        }
+      },
+      configurable: true,
+      enumerable: true,
+    });
+  }
   let _grassCount = cfg.grassCount;
   Object.defineProperty(grassMesh, 'count', {
     get() {
@@ -691,7 +710,7 @@ export function createToroidalMeadow({
     },
     set(v) {
       if (grassMesh.userData?.allowCountShrink || v >= cfg.grassCount) {
-        _grassCount = v;
+        _grassCount = cfg.name === 'tablet' ? Math.min(v, cfg.grassCount) : v;
       }
     },
     configurable: true,
@@ -1040,11 +1059,18 @@ export function createToroidalMeadow({
     worldMaskTexture: maskTex,
     rebuildFlowerSectors,
     update(arg1, arg2 = 0, cameraOrInfo = null) {
+      let argPos = null;
       if (typeof arg1 === 'number') {
         sharedUniforms.uTime.value = arg1;
-        if (arg2 && typeof arg2.x === 'number') sharedUniforms.uPlayerPos.value.copy(arg2);
+        if (arg2 && typeof arg2.x === 'number') {
+          argPos = arg2;
+          sharedUniforms.uPlayerPos.value.copy(arg2);
+        }
       } else {
-        if (arg1 && typeof arg1.x === 'number') sharedUniforms.uPlayerPos.value.copy(arg1);
+        if (arg1 && typeof arg1.x === 'number') {
+          argPos = arg1;
+          sharedUniforms.uPlayerPos.value.copy(arg1);
+        }
         sharedUniforms.uTime.value = typeof arg2 === 'number' ? arg2 : 0;
       }
       if (
@@ -1055,9 +1081,19 @@ export function createToroidalMeadow({
         cameraOrInfo.getWorldDirection(_camDirTmp);
         const flatLen = Math.hypot(_camDirTmp.x, _camDirTmp.z);
         if (flatLen > 1e-4 && cameraOrInfo.position.y < 60) {
+          const fx = _camDirTmp.x / flatLen;
+          const fz = _camDirTmp.z / flatLen;
           sharedUniforms.uCamPosXZ.value.set(cameraOrInfo.position.x, cameraOrInfo.position.z);
-          sharedUniforms.uCamForward.value.set(_camDirTmp.x / flatLen, _camDirTmp.z / flatLen);
+          sharedUniforms.uCamForward.value.set(fx, fz);
           sharedUniforms.uUseCamCull.value = 1.0;
+          if (cfg.name === 'tablet') {
+            const py = argPos ? argPos.y : sharedUniforms.uPlayerPos.value.y;
+            sharedUniforms.uPlayerPos.value.set(
+              THREE.MathUtils.clamp(cameraOrInfo.position.x + fx * 20.0, -158, 158),
+              py,
+              THREE.MathUtils.clamp(cameraOrInfo.position.z + fz * 20.0, -158, 158)
+            );
+          }
         } else {
           sharedUniforms.uUseCamCull.value = 0.0;
         }

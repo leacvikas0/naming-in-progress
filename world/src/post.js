@@ -24,6 +24,7 @@ export const GradeShader = {
     uLift: { value: 0.006 },
     uCavityStrength: { value: 0.0 },
     uAoTaps: { value: 8.0 },
+    uMobileFastSample: { value: 0.0 },
     uWarmHigh: { value: new THREE.Vector3(1.04, 1.00, 0.94) },
     uCoolShadow: { value: new THREE.Vector3(0.88, 0.94, 1.06) },
     uVignette: { value: 0.22 },
@@ -69,6 +70,7 @@ export const GradeShader = {
     uniform float uLift;
     uniform float uCavityStrength;
     uniform float uAoTaps;
+    uniform float uMobileFastSample;
     uniform vec3 uWarmHigh;
     uniform vec3 uCoolShadow;
     uniform float uVignette;
@@ -210,7 +212,12 @@ export const GradeShader = {
 
     void main() {
       float cavityAO = 0.0;
-      vec3 c = sampleFXAALinear(vUv, cavityAO);
+      vec3 c;
+      if (uMobileFastSample > 0.5) {
+        c = clamp(texture2D(tDiffuse, vUv).rgb, vec3(0.0), vec3(64.0));
+      } else {
+        c = sampleFXAALinear(vUv, cavityAO);
+      }
 
       vec3 bounded = clamp(c, vec3(0.0), vec3(64.0));
       c = all(equal(bounded, bounded)) ? bounded : vec3(0.0);
@@ -436,14 +443,12 @@ export function createWorldPost({
     }
   );
   renderTarget.texture.name = 'worldPostHdrTarget';
-  // Resolved scene depth for the grade pass atmosphere (only attached when aaCount > 0 on desktop;
-  // on mobile TBDR aaCount === 0 keeps the 24-bit depth buffer 100% inside on-chip Tile SRAM!).
-  const desktopDepthTexture = new THREE.DepthTexture(
-    Math.max(1, Math.round(w * pixelRatio)),
-    Math.max(1, Math.round(h * pixelRatio))
-  );
+  // Resolved scene depth for the grade pass atmosphere (attached on both desktop and mobile
+  // so applyAtmosphere preserves 100% color & luminance parity across profiles).
+  const initEw = Math.max(1, Math.round(w * pixelRatio));
+  const initEh = Math.max(1, Math.round(h * pixelRatio));
+  const desktopDepthTexture = new THREE.DepthTexture(initEw, initEh);
   desktopDepthTexture.type = THREE.UnsignedIntType;
-  renderTarget.depthTexture = aaCount > 0 ? desktopDepthTexture : null;
 
   let composer = null;
   let renderPass = null;
@@ -451,8 +456,13 @@ export function createWorldPost({
 
   try {
     composer = new EffectComposer(renderer, renderTarget);
-    composer.setPixelRatio(pixelRatio);
-    composer.setSize(w, h);
+    renderTarget.depthTexture = desktopDepthTexture;
+    if (composer.renderTarget1) {
+      composer.renderTarget1.depthTexture = desktopDepthTexture;
+    }
+    if (composer.renderTarget2) {
+      composer.renderTarget2.depthTexture = null;
+    }
 
     renderPass = new RenderPass(scene, camera);
 
@@ -461,6 +471,7 @@ export function createWorldPost({
     gradePass.uniforms.uToneMap.value = toneMapInput ? 1.0 : 0.0;
     gradePass.uniforms.uEncode.value = 1.0;
     gradePass.uniforms.uAoTaps.value = aaCount <= 2 ? 4.0 : 8.0;
+    gradePass.uniforms.uMobileFastSample.value = aaCount === 0 ? 1.0 : 0.0;
 
     composer.addPass(renderPass);
     composer.addPass(gradePass);
@@ -479,8 +490,32 @@ export function createWorldPost({
     const pr = Math.max(1, renderer.getPixelRatio() || 1);
     const ew = Math.max(1, Math.round(w * pr));
     const eh = Math.max(1, Math.round(h * pr));
-    if (composer.renderTarget1) composer.renderTarget1.setSize(ew, eh);
-    if (composer.renderTarget2) composer.renderTarget2.setSize(ew, eh);
+    const depthSizeChanged =
+      !desktopDepthTexture.image ||
+      desktopDepthTexture.image.width !== ew ||
+      desktopDepthTexture.image.height !== eh;
+    const rt1SizeChanged =
+      composer.renderTarget1 &&
+      (composer.renderTarget1.width !== ew || composer.renderTarget1.height !== eh);
+
+    if (desktopDepthTexture.image) {
+      desktopDepthTexture.image.width = ew;
+      desktopDepthTexture.image.height = eh;
+    }
+    if (depthSizeChanged || rt1SizeChanged) {
+      desktopDepthTexture.dispose();
+    }
+    if (composer.renderTarget1) {
+      composer.renderTarget1.depthTexture = desktopDepthTexture;
+      composer.renderTarget1.setSize(ew, eh);
+      if (depthSizeChanged || rt1SizeChanged) {
+        composer.renderTarget1.dispose();
+      }
+    }
+    if (composer.renderTarget2) {
+      composer.renderTarget2.depthTexture = null;
+      composer.renderTarget2.setSize(ew, eh);
+    }
     if (gradePass?.uniforms?.uTexelSize) {
       gradePass.uniforms.uTexelSize.value.set(1 / ew, 1 / eh);
     }
@@ -553,7 +588,7 @@ export function createWorldPost({
     if (!gradePass) return;
     const u = gradePass.uniforms;
     const activeDepthTex =
-      aaCount > 0 ? composer?.readBuffer?.depthTexture || renderTarget.depthTexture || null : null;
+      composer?.readBuffer?.depthTexture || renderTarget.depthTexture || desktopDepthTexture || null;
     u.tDepth.value = activeDepthTex;
     u.uAtmosphere.value = atmosphereEnabled && activeDepthTex ? 1.0 : 0.0;
     if (activeDepthTex) {
@@ -593,9 +628,6 @@ export function createWorldPost({
     w = Math.max(1, Math.floor(nw));
     h = Math.max(1, Math.floor(nh));
     if (!composer) return;
-    const pr = Math.max(1, renderer.getPixelRatio() || 1);
-    composer.setPixelRatio(pr);
-    composer.setSize(w, h);
     applyIntegerTargetSizes();
   }
 
@@ -615,16 +647,28 @@ export function createWorldPost({
       const nextCount = Math.max(0, Math.min(8, Math.floor(Number(nextAa) || 0)));
       if (nextCount !== aaCount) {
         aaCount = nextCount;
-        for (const rt of [renderTarget, composer?.renderTarget1, composer?.renderTarget2]) {
+        desktopDepthTexture.dispose();
+        for (const rt of [renderTarget, composer?.renderTarget1]) {
           if (!rt) continue;
           rt.samples = aaCount;
-          rt.depthTexture = aaCount > 0 ? desktopDepthTexture : null;
+          rt.depthTexture = desktopDepthTexture;
           rt.dispose();
+        }
+        if (composer?.renderTarget2) {
+          composer.renderTarget2.samples = aaCount;
+          composer.renderTarget2.depthTexture = null;
+          composer.renderTarget2.dispose();
         }
         applyIntegerTargetSizes();
       }
       if (gradePass?.uniforms?.uAoTaps) {
         gradePass.uniforms.uAoTaps.value = aaCount <= 2 ? 4.0 : 8.0;
+      }
+      if (gradePass?.uniforms?.uMobileFastSample) {
+        gradePass.uniforms.uMobileFastSample.value = aaCount === 0 ? 1.0 : 0.0;
+      }
+      if (GradeShader.uniforms?.uMobileFastSample) {
+        GradeShader.uniforms.uMobileFastSample.value = aaCount === 0 ? 1.0 : 0.0;
       }
     }
   }
@@ -649,6 +693,9 @@ export function createWorldPost({
 
   return {
     composer,
+    get gradePass() {
+      return gradePass;
+    },
     render,
     setSize,
     setEnabled,
@@ -668,7 +715,9 @@ export function createWorldPost({
       get bloomThreshold() {
         return glowThreshold;
       },
-      aaCount,
+      get aaCount() {
+        return aaCount;
+      },
       grade: gradePass ? gradePass.uniforms : GradeShader.uniforms,
     },
   };

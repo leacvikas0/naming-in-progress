@@ -831,6 +831,19 @@ function createRoomManager() {
 }
 
 /* ------------------------------------------------------------------------- */
+/* Live Mobile Phone Ground-Truth Telemetry Store (`/api/mobile-telemetry`)  */
+/* ------------------------------------------------------------------------- */
+
+const MAX_MOBILE_TELEMETRY_HISTORY = 50;
+const latestMobileTelemetryPath = path.join(
+  repoRoot,
+  'world',
+  'shots',
+  'latest-mobile-telemetry.json'
+);
+export const mobileTelemetryHistory = [];
+
+/* ------------------------------------------------------------------------- */
 /* HTTP + WebSocket Upgrade Server Factory                                   */
 /* ------------------------------------------------------------------------- */
 
@@ -1029,6 +1042,72 @@ export function createWorldServer() {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify(status));
       return;
+    }
+
+    // 3B. Live Mobile Phone Telemetry (`GET /api/mobile-telemetry` & `POST /api/mobile-telemetry`)
+    if (urlPath === '/api/mobile-telemetry' || urlPath === '/api/mobile-telemetry/') {
+      if (req.method === 'GET') {
+        const latest =
+          mobileTelemetryHistory.length > 0
+            ? mobileTelemetryHistory[mobileTelemetryHistory.length - 1]
+            : null;
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(
+          JSON.stringify({
+            ok: true,
+            count: mobileTelemetryHistory.length,
+            latest,
+            history: mobileTelemetryHistory,
+          })
+        );
+        return;
+      }
+
+      if (req.method === 'POST') {
+        try {
+          const body = await readJsonBody(req, 1024 * 1024);
+          const snapshot = {
+            ...(body && typeof body === 'object' ? body : {}),
+            timestamp: Number(body?.timestamp) || Date.now(),
+            receivedAt: new Date().toISOString(),
+          };
+          mobileTelemetryHistory.push(snapshot);
+          if (mobileTelemetryHistory.length > MAX_MOBILE_TELEMETRY_HISTORY) {
+            mobileTelemetryHistory.splice(
+              0,
+              mobileTelemetryHistory.length - MAX_MOBILE_TELEMETRY_HISTORY
+            );
+          }
+          try {
+            fs.mkdirSync(path.dirname(latestMobileTelemetryPath), { recursive: true });
+            fs.writeFileSync(
+              latestMobileTelemetryPath,
+              JSON.stringify(snapshot, null, 2),
+              'utf8'
+            );
+          } catch {
+            // Non-fatal if shots directory is read-only
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(
+            JSON.stringify({
+              ok: true,
+              count: mobileTelemetryHistory.length,
+              latest: snapshot,
+              history: mobileTelemetryHistory,
+            })
+          );
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: String(err?.message || err),
+            })
+          );
+        }
+        return;
+      }
     }
 
     // 4. Static file serving (redirect bare `/` or `/world` to `/world/index.html` so `./src/main.js` & `../node_modules/*` resolve cleanly)

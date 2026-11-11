@@ -122,8 +122,8 @@ export function getShared3DCanopyPuffGeometry() {
   if (_sharedCanopyPuffGeo) return _sharedCanopyPuffGeo;
 
   function createSingleLeaflet2x3(length = 0.56, width = 0.34 * 1.32, arch = 0.095, droop = 0.22) {
-    const cols = 2;
-    const rows = 3;
+    const cols = 1;
+    const rows = 2;
     const positions = [];
     const uvs = [];
     const colors = [];
@@ -131,7 +131,7 @@ export function getShared3DCanopyPuffGeometry() {
     const tipBend = 1.05 + droop * 1.15;
     for (let r = 0; r <= rows; r++) {
       const v = r / rows;
-      const widthProfile = Math.pow(Math.sin(Math.pow(v, 0.56) * Math.PI), 0.76);
+      const widthProfile = Math.pow(Math.sin(Math.pow(v, 0.56) * Math.PI), 0.72);
       const z = v * length * (1.0 - 0.05 * Math.max(0, droop) * v * v);
       const archY = Math.sin(v * Math.PI * 0.80) * arch - Math.pow(v, 1.95) * (arch * tipBend);
       for (let c = 0; c <= cols; c++) {
@@ -164,7 +164,7 @@ export function getShared3DCanopyPuffGeometry() {
     return geo;
   }
 
-  const baseLeaf = createSingleLeaflet2x3(0.60, 0.37 * 1.38, 0.105, 0.24);
+  const baseLeaf = createSingleLeaflet2x3(0.62, 0.37 * 1.58, 0.105, 0.24);
   const dPitch = 0.08 * 0.34;
   // Critic-Verified Full 360-Degree Hexagonal 2-Tier Spray (0 angular gaps! 3 outer fan + 3 raised inner cushion tiers)
   const specs = [
@@ -225,23 +225,22 @@ export function getShared3DCanopyPuffGeometry() {
     const ca = Math.cos(ang);
     const sa = Math.sin(ang);
     const baseI = vOff;
-    const ox = ca * 0.06;
+    const ox = ca * 0.05;
     const oy = 0.17 + (b % 2) * 0.03;
-    const oz = sa * 0.06;
+    const oz = sa * 0.05;
     const pts = [
       [ox, oy, oz],
-      [ox + ca * 0.19 - sa * 0.14, oy + 0.06, oz + sa * 0.19 + ca * 0.14],
-      [ox + ca * 0.19 + sa * 0.14, oy + 0.06, oz + sa * 0.19 - ca * 0.14],
-      [ox + ca * 0.34, oy + 0.03, oz + sa * 0.34],
+      [ox + ca * 0.30 - sa * 0.18, oy + 0.05, oz + sa * 0.30 + ca * 0.18],
+      [ox + ca * 0.30 + sa * 0.18, oy + 0.05, oz + sa * 0.30 - ca * 0.18],
     ];
-    for (let k = 0; k < 4; k++) {
+    for (let k = 0; k < 3; k++) {
       posArr.push(pts[k][0], pts[k][1], pts[k][2]);
       normArr.push(ca * 0.35, 0.92, sa * 0.35);
       uvArr.push(k === 0 ? 0.2 : 0.85, 0.96);
       colArr.push(1.0, 0.96, 0.98);
     }
-    idxArr.push(baseI, baseI + 1, baseI + 3, baseI, baseI + 3, baseI + 2);
-    vOff += 4;
+    idxArr.push(baseI, baseI + 1, baseI + 2);
+    vOff += 3;
   }
 
   const geo = new THREE.BufferGeometry();
@@ -478,15 +477,14 @@ class TreeGeometryBuilder {
   }) {
     const rand = createPRNG(seed);
     const isSakura = kind === 'sakura';
-    const floretCount = 14;
-    const areaScale = 1.24;
+    const floretCount = 9;
+    const areaScale = 1.46;
     const goldenAngle = 2.3999632;
     const rotStart = rand() * TAU;
 
     // Slender curved central rachis vine stem connecting all hanging florets
     const stemPts = [
       new THREE.Vector3(topX, topY + 0.05, topZ),
-      new THREE.Vector3(topX + swayX * 0.28, topY - length * 0.48, topZ + swayZ * 0.28),
       new THREE.Vector3(topX + swayX * 0.92, topY - length * 0.94, topZ + swayZ * 0.92),
     ];
     this.addTaperedLimb(stemPts, 0.022, 0.007, 3, 0.0);
@@ -553,18 +551,18 @@ class TreeGeometryBuilder {
 
       const v0 = this.addVertex(cx, cy + petalLen * 0.18, cz, dirX * 0.4, 0.75, dirZ * 0.4, 0.5, 0.0, baseSun, baseShd, wind * 0.85, 2.0);
       const v1 = this.addVertex(
-        cx + dirX * cupOut * 0.55 - sideX * petalWid * 0.78,
-        cy - petalLen * 0.18,
-        cz + dirZ * cupOut * 0.55 - sideZ * petalWid * 0.78,
-        dirX * 0.6 - sideX * 0.5, 0.35, dirZ * 0.6 - sideZ * 0.5,
-        0.0, 0.35, bellySun, bellyShd, wind, 2.0
+        cx + dirX * cupOut * 0.62 - sideX * petalWid * 0.88,
+        cy - petalLen * 0.38,
+        cz + dirZ * cupOut * 0.62 - sideZ * petalWid * 0.88,
+        dirX * 0.55 - sideX * 0.55, 0.22, dirZ * 0.55 - sideZ * 0.55,
+        0.0, 0.45, bellySun, bellyShd, wind, 2.0
       );
       const v2 = this.addVertex(
-        cx + dirX * cupOut * 0.55 + sideX * petalWid * 0.78,
-        cy - petalLen * 0.18,
-        cz + dirZ * cupOut * 0.55 + sideZ * petalWid * 0.78,
-        dirX * 0.6 + sideX * 0.5, 0.35, dirZ * 0.6 + sideZ * 0.5,
-        1.0, 0.35, bellySun, bellyShd, wind, 2.0
+        cx + dirX * cupOut * 0.62 + sideX * petalWid * 0.88,
+        cy - petalLen * 0.38,
+        cz + dirZ * cupOut * 0.62 + sideZ * petalWid * 0.88,
+        dirX * 0.55 + sideX * 0.55, 0.22, dirZ * 0.55 + sideZ * 0.55,
+        1.0, 0.45, bellySun, bellyShd, wind, 2.0
       );
       const v3 = this.addVertex(
         cx + dirX * cupOut * 1.18,
@@ -572,20 +570,6 @@ class TreeGeometryBuilder {
         cz + dirZ * cupOut * 1.18,
         dirX, 0.28, dirZ,
         0.5, 0.5, tipSun, bellyShd, wind, 2.0
-      );
-      const v4 = this.addVertex(
-        cx + dirX * cupOut * 0.68 - sideX * petalWid * 0.92,
-        cy - petalLen * 0.64,
-        cz + dirZ * cupOut * 0.68 - sideZ * petalWid * 0.92,
-        dirX * 0.5 - sideX * 0.6, 0.05, dirZ * 0.5 - sideZ * 0.6,
-        0.1, 0.75, tipSun, tipShd, wind * 1.05, 2.0
-      );
-      const v5 = this.addVertex(
-        cx + dirX * cupOut * 0.68 + sideX * petalWid * 0.92,
-        cy - petalLen * 0.64,
-        cz + dirZ * cupOut * 0.68 + sideZ * petalWid * 0.92,
-        dirX * 0.5 + sideX * 0.6, 0.05, dirZ * 0.5 + sideZ * 0.6,
-        0.9, 0.75, tipSun, tipShd, wind * 1.05, 2.0
       );
       const v6 = this.addVertex(
         cx + dirX * cupOut * 0.42,
@@ -596,12 +580,10 @@ class TreeGeometryBuilder {
       );
 
       this.indices.push(
-        v0, v1, v3,
-        v0, v3, v2,
-        v1, v4, v3,
-        v3, v5, v2,
-        v4, v6, v3,
-        v3, v6, v5
+        v0, v3, v1,
+        v0, v2, v3,
+        v1, v3, v6,
+        v3, v2, v6
       );
     }
   }
@@ -815,11 +797,10 @@ export function buildSingleTreeGeometry(t, treeIdx = 0, opts = {}) {
 
         const clusterSpecs = lobe.isLowerShelf
           ? [
-              { dAng: -0.12, dR: -0.05, lenMul: 0.76, radMul: 0.86 },
-              { dAng:  0.02, dR:  0.02, lenMul: 1.04, radMul: 1.00 },
+              { dAng: -0.02, dR: 0.00, lenMul: 1.04, radMul: 1.12 },
             ]
           : [
-              { dAng:  0.00, dR:  0.00, lenMul: 0.86, radMul: 0.90 },
+              { dAng:  0.00, dR: 0.00, lenMul: 0.88, radMul: 0.96 },
             ];
 
         for (let sc = 0; sc < clusterSpecs.length; sc++) {
@@ -862,12 +843,23 @@ export function buildShrineTree(t, treeIdx = 0) {
   return buildSingleTreeGeometry({ ...t, hasPlanter: true }, treeIdx);
 }
 
+function getTreeSectorIndex(t) {
+  if (t.z >= 90 && t.x > -55) return 7; // Deep South Flower Field Lobby
+  if (t.x >= 100) return 6;             // Far East Sacred Wisteria Grove
+  if (t.x >= 55) return 5;              // East Wisteria Arena
+  if (t.x < -50 && t.z < 40) return 2;  // West Lakeshore & Millpond
+  if (t.z < -20) return t.x < 0 ? 0 : 1; // NW / NE Hillside & North Shrine
+  return t.x < 0 ? 3 : 4;               // SW Hamlet & Lovers' Wall / SE Hamlet & Mid-South
+}
+
+const INTERLEAVED_LOBE_ORDER = [8, 0, 3, 7, 1, 4, 6, 2, 5];
+
 export function buildBotanicalTrees(opts = {}) {
   const colliders = opts.colliders || [];
   const root = new THREE.Group();
   root.name = 'botanical-trees';
 
-  const allTreeGeometries = [];
+  const sectorTreeGeometries = Array.from({ length: 8 }, () => []);
   const treeCanopyRecords = [];
   let totalMaxPuffs = 0;
 
@@ -879,21 +871,39 @@ export function buildBotanicalTrees(opts = {}) {
     const ty = terrainHeightAt(t.x, t.z);
 
     const puffEntries = [];
-    // Mesh 1 gets trunks, boughs, and 3D hanging racemes; Mesh 2 gets the 3D sculpted leaflet puffs
-    allTreeGeometries.push(
-      buildSingleTreeGeometry(t, treeIdx, {
-        includeCanopyInMesh: false,
-        puffEntriesOut: puffEntries,
-      })
-    );
+    // Sector meshes get trunks, boughs, and 3D hanging racemes; InstancedMesh gets the 3D sculpted leaflet puffs
+    const treeGeo = buildSingleTreeGeometry(t, treeIdx, {
+      includeCanopyInMesh: false,
+      puffEntriesOut: puffEntries,
+    });
+    const sectorIdx = getTreeSectorIndex(t);
+    sectorTreeGeometries[sectorIdx].push(treeGeo);
 
     const centerVec = new THREE.Vector3(t.x, ty + 3.55 * scale, t.z);
     let exactMaxR = 5.4 * scale;
     const n = puffEntries.length;
+
+    // Order puffs interleaved across all 9 lobes and 16 spiral height steps (coprime stride 5)
+    // so prefix thinning (`nKeep`) thins every lobe, height tier, and blossom floret evenly.
+    const orderedPuffs = [];
+    if (n === 144) {
+      for (let step = 0; step < 16; step++) {
+        for (let l = 0; l < 9; l++) {
+          const lIdx = INTERLEAVED_LOBE_ORDER[(l + step) % 9];
+          const iStep = 15 - ((step * 5 + lIdx * 3) % 16);
+          orderedPuffs.push(puffEntries[lIdx * 16 + iStep]);
+        }
+      }
+    } else {
+      for (let i = 0; i < n; i++) {
+        orderedPuffs.push(puffEntries[(i * 19) % n]);
+      }
+    }
+
     const matData = new Float32Array(n * 16);
     const metaData = new Float32Array(n * 4);
     for (let i = 0; i < n; i++) {
-      const p = puffEntries[i];
+      const p = orderedPuffs[i];
       const d = p.pos.distanceTo(centerVec) + p.boundPad;
       if (d > exactMaxR) exactMaxR = d;
       matData.set(p.matrix.elements, i * 16);
@@ -923,10 +933,9 @@ export function buildBotanicalTrees(opts = {}) {
     }
   });
 
-  const mergedTreesGeo = mergeGeometries(allTreeGeometries, false);
   const atlasTex = getSharedGouacheFoliageAtlas();
 
-  // Mesh 1: Merged Trunks, Spreading Boughs & 3D Hanging Wisteria/Sakura Racemes (1 Draw Call, 0 discard)
+  // Sector Meshes: Trunks, Spreading Boughs & 3D Hanging Wisteria/Sakura Racemes (FrontSide, hardware Early-Z + FPK)
   const treesMat = new THREE.ShaderMaterial({
     uniforms: {
       uAtlas: { value: atlasTex },
@@ -940,7 +949,7 @@ export function buildBotanicalTrees(opts = {}) {
       uRim: TREE_STYLE.uRim,
       uRimColor: TREE_STYLE.uRimColor,
     },
-    side: THREE.DoubleSide,
+    side: THREE.FrontSide,
     transparent: false,
     depthWrite: true,
     vertexColors: true,
@@ -989,6 +998,10 @@ export function buildBotanicalTrees(opts = {}) {
         vNormal = normalize(mat3(modelMatrix) * normal);
         vec4 mv = viewMatrix * wp;
         vViewDist = -mv.z;
+        if (vViewDist < 2.2) {
+          gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+          return;
+        }
         gl_Position = projectionMatrix * mv;
       }
     `,
@@ -1012,17 +1025,8 @@ export function buildBotanicalTrees(opts = {}) {
       varying float vViewDist;
 
       void main() {
-        float ditherStart = vCardMode < 0.5 ? 3.6 : 6.8;
-        float ditherInner = vCardMode < 0.5 ? 1.2 : 2.6;
-        if (vViewDist < ditherStart) {
-          float camFade = clamp((vViewDist - ditherInner) / (ditherStart - ditherInner), 0.0, 1.0);
-          vec2 bayerCoord = floor(gl_FragCoord.xy);
-          float bayer = fract(dot(bayerCoord, vec2(0.5, 0.25)) + fract(bayerCoord.x * 0.125 + bayerCoord.y * 0.375));
-          if (camFade < 0.18 || camFade < bayer) discard;
-        }
-
         vec3 proxyN = normalize(vNormal);
-        vec3 trunkN = gl_FrontFacing ? proxyN : -proxyN;
+        vec3 trunkN = proxyN;
         vec3 L = normalize(uSunDir);
         vec3 V = normalize(cameraPosition - vWorldPos);
         vec3 col;
@@ -1065,14 +1069,23 @@ export function buildBotanicalTrees(opts = {}) {
     `,
   });
 
-  const treesMesh = new THREE.Mesh(mergedTreesGeo, treesMat);
-  treesMesh.name = 'trees-merged-botanical';
-  treesMesh.frustumCulled = false;
-  treesMesh.castShadow = true;
-  treesMesh.receiveShadow = true;
-  root.add(treesMesh);
+  const sectorMeshes = [];
+  for (let s = 0; s < sectorTreeGeometries.length; s++) {
+    const sectorGeos = sectorTreeGeometries[s];
+    if (!sectorGeos.length) continue;
+    const sectorGeo = mergeGeometries(sectorGeos, false);
+    sectorGeo.computeBoundingSphere();
+    sectorGeo.computeBoundingBox();
+    const sectorMesh = new THREE.Mesh(sectorGeo, treesMat);
+    sectorMesh.name = `trees-merged-botanical-sector-${s}`;
+    sectorMesh.frustumCulled = true;
+    sectorMesh.castShadow = true;
+    sectorMesh.receiveShadow = true;
+    root.add(sectorMesh);
+    sectorMeshes.push(sectorMesh);
+  }
 
-  // Mesh 2: Global 2026-10-18_dense-31M 3D Sculpted Leaflet & Crown-Blossom Puff InstancedMesh (1 Draw Call, near-camera dither cutout)
+  // Global 2026-10-18_dense-31M 3D Sculpted Leaflet & Crown-Blossom Puff InstancedMesh (1 Draw Call, FrontSide, Early-Z + FPK)
   const puffGeo = getShared3DCanopyPuffGeometry().clone();
   const puffMetaAttr = new THREE.InstancedBufferAttribute(new Float32Array(totalMaxPuffs * 4), 4);
   puffGeo.setAttribute('aPuffMeta', puffMetaAttr);
@@ -1086,7 +1099,7 @@ export function buildBotanicalTrees(opts = {}) {
       uRim: TREE_STYLE.uRim,
       uRimColor: TREE_STYLE.uRimColor,
     },
-    side: THREE.DoubleSide,
+    side: THREE.FrontSide,
     transparent: false,
     depthWrite: true,
     vertexColors: true,
@@ -1125,6 +1138,10 @@ export function buildBotanicalTrees(opts = {}) {
         vNormal = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
         vec4 mv = viewMatrix * wp;
         vViewDist = -mv.z;
+        if (vViewDist < 2.2) {
+          gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+          return;
+        }
         gl_Position = projectionMatrix * mv;
       }
     `,
@@ -1144,13 +1161,6 @@ export function buildBotanicalTrees(opts = {}) {
       varying float vViewDist;
 
       void main() {
-        if (vViewDist < 6.8) {
-          float camFade = clamp((vViewDist - 2.6) / 4.2, 0.0, 1.0);
-          vec2 bayerCoord = floor(gl_FragCoord.xy);
-          float bayer = fract(dot(bayerCoord, vec2(0.5, 0.25)) + fract(bayerCoord.x * 0.125 + bayerCoord.y * 0.375));
-          if (camFade < 0.18 || camFade < bayer) discard;
-        }
-
         vec3 proxyN = normalize(vNormal);
         vec3 crownDir = normalize(vWorldPos - vCrownCenter + vec3(0.0, 0.85, 0.0));
         vec3 N = normalize(mix(proxyN, crownDir, 0.44));
@@ -1230,9 +1240,12 @@ export function buildBotanicalTrees(opts = {}) {
   const _projScreen = new THREE.Matrix4();
   const _frustum = new THREE.Frustum();
   const _sphere = new THREE.Sphere();
+  const _camForward = new THREE.Vector3();
   const _lastCamPos = new THREE.Vector3(99999, 99999, 99999);
   const _lastCamQuat = new THREE.Quaternion();
   let _lastProfile = '';
+  const _plannedKeep = new Int32Array(treeCanopyRecords.length);
+  const _plannedRatio = new Float32Array(treeCanopyRecords.length);
 
   function gatherVisibleCanopyPuffs(camera, profile = 'desktop') {
     if (!camera || !camera.projectionMatrix || !camera.matrixWorldInverse) return;
@@ -1250,21 +1263,136 @@ export function buildBotanicalTrees(opts = {}) {
     camera.updateMatrixWorld();
     _projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     _frustum.setFromProjectionMatrix(_projScreen);
+    _camForward.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+
+    const isTablet = profile === 'tablet';
+    const camPos = camera.position;
+
+    // On tablet profile, distance-cull & backface-cull distant merged sector meshes (> 145m or behind camera)
+    for (let s = 0; s < sectorMeshes.length; s++) {
+      const sm = sectorMeshes[s];
+      if (!isTablet) {
+        sm.visible = true;
+        continue;
+      }
+      const bs = sm.geometry.boundingSphere;
+      if (!bs) {
+        sm.visible = true;
+        continue;
+      }
+      const dx = bs.center.x - camPos.x;
+      const dy = bs.center.y - camPos.y;
+      const dz = bs.center.z - camPos.z;
+      const dist = Math.hypot(dx, dy, dz);
+      const closestDist = Math.max(0, dist - bs.radius);
+      const fwdDot = dist > 1e-3 ? (dx * _camForward.x + dy * _camForward.y + dz * _camForward.z) / dist : 1.0;
+      sm.visible = closestDist <= 125.0 && dist <= 152.0 && !(dist > bs.radius + 14.0 && fwdDot < -0.22);
+    }
 
     const dstMat = puffInstMesh.instanceMatrix.array;
     const dstMeta = puffMetaAttr.array;
-    let outCount = 0;
+    let totalPlannedPuffs = 0;
 
     for (let i = 0; i < treeCanopyRecords.length; i++) {
       const rec = treeCanopyRecords[i];
       _sphere.center.copy(rec.center);
       _sphere.radius = rec.radius;
-      if (!_frustum.intersectsSphere(_sphere)) continue;
+      if (!_frustum.intersectsSphere(_sphere)) {
+        _plannedKeep[i] = 0;
+        continue;
+      }
 
-      // 100% Constant-Geometry Trees (tKeep === 1.0 at ALL distances — zero LOD popping as you walk closer!)
-      const nKeep = rec.n;
-      dstMat.set(rec.matData, outCount * 16);
-      dstMeta.set(rec.metaData, outCount * 4);
+      if (!isTablet) {
+        _plannedKeep[i] = rec.n;
+        _plannedRatio[i] = 1.0;
+        totalPlannedPuffs += rec.n;
+        continue;
+      }
+
+      const dx = rec.center.x - camPos.x;
+      const dy = rec.center.y - camPos.y;
+      const dz = rec.center.z - camPos.z;
+      const dist = Math.hypot(dx, dy, dz);
+      const fwdDot = dist > 1e-3 ? (dx * _camForward.x + dy * _camForward.y + dz * _camForward.z) / dist : 1.0;
+
+      // Cull trees behind the camera or beyond 145m on tablet
+      if (dist > 145.0 || (dist > 18.0 && fwdDot < -0.22)) {
+        _plannedKeep[i] = 0;
+        continue;
+      }
+
+      let keepRatio = 1.0;
+      if (dist > 28.0) {
+        const tMid = smoothstep(28.0, 68.0, dist);
+        const tFar = smoothstep(68.0, 120.0, dist);
+        const tHorizon = smoothstep(120.0, 145.0, dist);
+        keepRatio =
+          1.0 -
+          tMid * (1.0 - 0.30) -
+          tFar * (0.30 - 0.18) -
+          tHorizon * (0.18 - 0.14);
+      }
+
+      const nKeep =
+        keepRatio >= 0.995
+          ? rec.n
+          : Math.max(18, Math.min(rec.n, Math.round(rec.n * keepRatio)));
+      _plannedKeep[i] = nKeep;
+      _plannedRatio[i] = nKeep / rec.n;
+      totalPlannedPuffs += nKeep;
+    }
+
+    // Proportional tablet budget cap (<= 880 total puffs across all visible trees so no tree loses its canopy!)
+    const MAX_TABLET_PUFFS = 880;
+    const budgetScale =
+      isTablet && totalPlannedPuffs > MAX_TABLET_PUFFS
+        ? MAX_TABLET_PUFFS / totalPlannedPuffs
+        : 1.0;
+
+    let outCount = 0;
+    for (let i = 0; i < treeCanopyRecords.length; i++) {
+      let nKeep = _plannedKeep[i];
+      if (nKeep <= 0) continue;
+      const rec = treeCanopyRecords[i];
+
+      if (budgetScale < 0.999) {
+        nKeep = Math.max(12, Math.min(rec.n, Math.floor(nKeep * budgetScale)));
+      }
+      if (isTablet && outCount + nKeep > MAX_TABLET_PUFFS) {
+        nKeep = Math.max(0, MAX_TABLET_PUFFS - outCount);
+        if (nKeep <= 0) break;
+      }
+
+      const effectiveRatio = nKeep / rec.n;
+      if (nKeep === rec.n) {
+        dstMat.set(rec.matData, outCount * 16);
+        dstMeta.set(rec.metaData, outCount * 4);
+      } else {
+        const scaleBoost = Math.min(1.42, Math.pow(effectiveRatio, -0.34));
+        const srcMat = rec.matData;
+        let dstIdx = outCount * 16;
+        const limit = nKeep * 16;
+        for (let m = 0; m < limit; m += 16) {
+          dstMat[dstIdx]      = srcMat[m]      * scaleBoost;
+          dstMat[dstIdx + 1]  = srcMat[m + 1]  * scaleBoost;
+          dstMat[dstIdx + 2]  = srcMat[m + 2]  * scaleBoost;
+          dstMat[dstIdx + 3]  = srcMat[m + 3];
+          dstMat[dstIdx + 4]  = srcMat[m + 4]  * scaleBoost;
+          dstMat[dstIdx + 5]  = srcMat[m + 5]  * scaleBoost;
+          dstMat[dstIdx + 6]  = srcMat[m + 6]  * scaleBoost;
+          dstMat[dstIdx + 7]  = srcMat[m + 7];
+          dstMat[dstIdx + 8]  = srcMat[m + 8]  * scaleBoost;
+          dstMat[dstIdx + 9]  = srcMat[m + 9]  * scaleBoost;
+          dstMat[dstIdx + 10] = srcMat[m + 10] * scaleBoost;
+          dstMat[dstIdx + 11] = srcMat[m + 11];
+          dstMat[dstIdx + 12] = srcMat[m + 12];
+          dstMat[dstIdx + 13] = srcMat[m + 13];
+          dstMat[dstIdx + 14] = srcMat[m + 14];
+          dstMat[dstIdx + 15] = srcMat[m + 15];
+          dstIdx += 16;
+        }
+        dstMeta.set(rec.metaData.subarray(0, nKeep * 4), outCount * 4);
+      }
       outCount += nKeep;
     }
 
