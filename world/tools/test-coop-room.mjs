@@ -228,11 +228,12 @@ async function runTests() {
     // 3. Guest `set_ready` & Host `start_expedition`
     clientB.ws.send(JSON.stringify({ type: 'set_ready', ready: true }));
     const readyRelay = await clientA.nextMessage(
-      (m) => m.type === 'player_ready' && m.ready === true,
+      (m) => m.type === 'player_ready' && m.ready === true && m.role === 'Mage',
       'Host receives Guest player_ready'
     );
     assert.equal(readyRelay.role, 'Mage');
 
+    clientA.ws.send(JSON.stringify({ type: 'set_ready', ready: true }));
     clientA.ws.send(JSON.stringify({ type: 'start_expedition' }));
     const [expA, expB] = await Promise.all([
       clientA.nextMessage((m) => m.type === 'expedition_started', 'Host expedition_started'),
@@ -456,7 +457,119 @@ async function runTests() {
     const loudPlay = playWideSurroundDivineVoice({ shouldSpeakAloud: true, audioUrl: '/test.wav' });
     assert.equal(loudPlay.played, true);
     assert.equal(loudPlay.haasDelayMs, 14);
-    console.log('✓ 8. 30s `Commune` Client, 3D Crimson Rose Ring Timer, immediate mic `track.stop()`, `commune_busy` lock & privacy verified');
+    assert.ok(loudPlay.finished instanceof Promise, 'playWideSurroundDivineVoice must return a finished Promise');
+
+    // Verify Divine Voice finishes speaking BEFORE onVerdict triggers the physical action
+    const prevGlobalAudio = globalThis.Audio;
+    let activeMockAudioEl = null;
+    class MockBrowserAudio {
+      constructor(url) {
+        this.src = url;
+        this.duration = 0.25;
+        this.listeners = new Map();
+        activeMockAudioEl = this;
+      }
+      addEventListener(evt, fn) {
+        if (!this.listeners.has(evt)) this.listeners.set(evt, []);
+        this.listeners.get(evt).push(fn);
+      }
+      removeEventListener(evt, fn) {
+        const arr = this.listeners.get(evt) || [];
+        const idx = arr.indexOf(fn);
+        if (idx >= 0) arr.splice(idx, 1);
+      }
+      play() {
+        return Promise.resolve();
+      }
+      emitEnded() {
+        for (const fn of [...(this.listeners.get('ended') || [])]) fn();
+      }
+    }
+    class MockAudioCtx {
+      constructor() {
+        this.state = 'running';
+        this.sampleRate = 48000;
+        this.destination = {};
+      }
+      createBuffer(ch, len) {
+        return { getChannelData: () => new Float32Array(len) };
+      }
+      createMediaElementSource() {
+        return { connect() {} };
+      }
+      createBiquadFilter() {
+        return { frequency: { value: 0 }, gain: { value: 0 }, connect() {} };
+      }
+      createDelay() {
+        return { delayTime: { value: 0 }, connect() {} };
+      }
+      createChannelMerger() {
+        return { connect() {} };
+      }
+      createConvolver() {
+        return { buffer: null, connect() {} };
+      }
+      createGain() {
+        return { gain: { value: 1 }, connect() {} };
+      }
+    }
+    globalThis.Audio = MockBrowserAudio;
+    try {
+      let verdictFired = false;
+      const sequencedStates = [];
+      const communeSeqClient = createCommuneClient({
+        scene: testScene,
+        mediaDevices: mockMediaDevices,
+        AudioContextClass: MockAudioCtx,
+        fetchImpl: async () => ({
+          json: async () => ({
+            ok: true,
+            verdict: 'smite',
+            prayerMode: 'smite',
+            clip_id: 'smite_silence',
+            shouldSpeakAloud: true,
+            audioUrl: '/world/assets/audio/artorious/smite_silence.wav',
+          }),
+        }),
+        onStateChange: (snap) => sequencedStates.push(snap.state),
+        onVerdict: () => {
+          verdictFired = true;
+        },
+      });
+      await communeSeqClient.startCommune({
+        speakerRole: 'Knight',
+        useWallClockTimeout: false,
+        forceVerdict: true,
+      });
+      const sendPromise = communeSeqClient.stopAndSendCommune({
+        speakerRole: 'Knight',
+        forceVerdict: true,
+      });
+      await new Promise((r) => setTimeout(r, 20));
+      assert.equal(
+        communeSeqClient.getState().state,
+        'speaking',
+        'Commune client must stay in speaking state while Artorious voice clip is playing'
+      );
+      assert.equal(
+        verdictFired,
+        false,
+        'onVerdict action (smite/death) must NOT trigger while Artorious dialogue is still playing'
+      );
+      assert.ok(activeMockAudioEl, 'MockBrowserAudio element must be created');
+      activeMockAudioEl.emitEnded();
+      await sendPromise;
+      assert.equal(
+        verdictFired,
+        true,
+        'onVerdict action must trigger immediately AFTER Artorious voice clip finishes'
+      );
+      assert.equal(communeSeqClient.getState().state, 'idle');
+      communeSeqClient.dispose();
+    } finally {
+      globalThis.Audio = prevGlobalAudio;
+    }
+    console.log('✓ 8. 30s `Commune` Client, 3D Crimson Rose Ring Timer, immediate mic `track.stop()`, `commune_busy` lock, privacy & Voice-Before-Action sequencing verified');
 
     // 9. Verify Secret-Safe `/api/altar` (Stages 1, 2, 3) & Context-Aware `/api/commune` Verdicts (Zero Spoilers!)
     for (const stg of [1, 2, 3]) {

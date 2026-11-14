@@ -53,6 +53,7 @@ import {
   getOpeningCameraPose,
 } from './ui/app-flow.js';
 import { createSculptedHud } from './ui/sculpted-hud.js';
+import { UNSPOILED_SACRED_POEM_BY_STONE_ID } from './ui/sacred-poems-unspoiled.js';
 import * as DamageNumbersModule from './ui/damage-numbers.js';
 import {
   createCommuneClient,
@@ -549,6 +550,7 @@ function buildTabletRoofTileGeometry() {
 }
 
 let _staticSceneIndexed = false;
+let roofTilesCombinedMesh = null;
 function syncStaticSceneProfile(profileName) {
   const isTablet = profileName === 'tablet';
 
@@ -636,6 +638,7 @@ function syncStaticSceneProfile(profileName) {
       return;
     }
     if (obj.isInstancedMesh && (obj.name === 'roof-tiles-combined' || obj.userData?.isRoofTiles)) {
+      roofTilesCombinedMesh = obj;
       if (obj.userData._tabletGeo && obj.userData._desktopGeo) {
         obj.geometry = isTablet ? obj.userData._tabletGeo : obj.userData._desktopGeo;
       }
@@ -1017,26 +1020,33 @@ function updateCombatHud(snapshot) {
     ultQBtn.classList.toggle('ult-ready', resPct >= 100);
   }
 
-  // 4. Act Objective Pill
+  // 4. Open-Valley Sacred Stones & Strongholds Objective Pill
   if (actStageTag && actObjectiveText) {
     const actId = snapshot.actId;
-    if (actId === 'act1_arena') {
-      actStageTag.textContent = 'Act I';
-      actObjectiveText.textContent = snapshot.actTriggered
-        ? `East Wisteria Clearing — Wave ${Math.max(1, snapshot.waveIndex + 1)}/${snapshot.waveCount}`
-        : 'East Wisteria Clearing — Follow Golden Petals East';
-    } else if (actId === 'interlude_pier') {
-      actStageTag.textContent = 'Interlude';
-      actObjectiveText.textContent = 'West Millpond Pier — Touch the Sanctuary Brazier';
-    } else if (actId === 'act2_plaza') {
-      actStageTag.textContent = 'Act II';
-      actObjectiveText.textContent = 'Twilight Hamlet Plaza — Defend the Well Ring Road';
-    } else if (actId === 'act3_shrine') {
-      actStageTag.textContent = 'Act III';
-      actObjectiveText.textContent = 'Starlit North Shrine — Vanquish The Hollow Sovereign';
-    } else if (actId === 'victory_dawn') {
+    const mask = Number(snapshot.stonesSolvedMask ?? 0) & 0b111;
+    const solvedCount =
+      ((mask & 1) ? 1 : 0) + ((mask & 2) ? 1 : 0) + ((mask & 4) ? 1 : 0);
+    const stageCount = Math.max(solvedCount, Number(snapshot.unlockedStage || 0));
+    if (actId === 'victory_dawn') {
       actStageTag.textContent = 'Victory';
-      actObjectiveText.textContent = 'Dawn Over Haru-machi — Valley Restored';
+      actObjectiveText.textContent =
+        'Dawn Over Amarante — All 3 Sacred Stones Awakened & Apex Finale Vanquished';
+    } else if (stageCount >= 3 || mask === 0b111) {
+      actStageTag.textContent = 'Apex Finale';
+      actObjectiveText.textContent =
+        'Sacred Stones (3/3) — Survive the Apex Finale Assault Together';
+    } else if (stageCount === 2) {
+      actStageTag.textContent = 'Sacred Stones (2/3)';
+      actObjectiveText.textContent =
+        'Clear the Final Stronghold & Awaken the 3rd Sacred Stone';
+    } else if (stageCount === 1) {
+      actStageTag.textContent = 'Sacred Stones (1/3)';
+      actObjectiveText.textContent =
+        'Explore the Valley Strongholds — Whispering Grove & Hidden Lovers\u2019 Wall';
+    } else {
+      actStageTag.textContent = 'Sacred Stones (0/3)';
+      actObjectiveText.textContent =
+        'Village Well Stronghold — Clear Guardians, Read [G] & Commune [R]';
     }
   }
 
@@ -1139,9 +1149,14 @@ function updateCombatHud(snapshot) {
   }
 }
 
+let wasPeerLinked = false;
+
 function updateCoopPill(roomState) {
   if (!roomState) return;
   const linked = Boolean(roomState.peerConnected);
+  const justLinked = linked && !wasPeerLinked;
+  wasPeerLinked = linked;
+
   if (coopStatusDot) {
     coopStatusDot.classList.toggle('linked', linked);
   }
@@ -1153,16 +1168,97 @@ function updateCoopPill(roomState) {
   if (coopRoomCodeEl && roomState.room) {
     coopRoomCodeEl.textContent = roomState.room;
   }
+
+  const players = Array.isArray(roomState.players) ? roomState.players : [];
+  const localPlayer =
+    players.find((p) => p && roomState.clientId && p.clientId === roomState.clientId) ||
+    players.find((p) => p && Boolean(p.isHost) === Boolean(roomState.isHost)) ||
+    null;
+  const peerPlayer =
+    players.find(
+      (p) =>
+        p &&
+        p !== localPlayer &&
+        (!roomState.clientId || p.clientId !== roomState.clientId)
+    ) || null;
+
+  const localRole = localPlayer?.role || roomState.role || 'Knight';
+  const localPlayerName = String(
+    localPlayer?.playerName ||
+      localPlayer?.name ||
+      appFlow?.getState?.()?.playerName ||
+      ''
+  ).trim();
+  const partnerPlayerName = String(
+    peerPlayer?.playerName ||
+      peerPlayer?.name ||
+      roomState.peerName ||
+      roomState.partnerName ||
+      ''
+  ).trim();
+  const partnerClaimed = Boolean(
+    peerPlayer?.claimed || peerPlayer?.ready || roomState.peerReady
+  );
+  const guestReady = Boolean(peerPlayer?.ready ?? roomState.peerReady);
+
+  if (sculptedHud) {
+    sculptedHud.setPeerConnected?.(linked);
+    const kName =
+      localRole === 'Knight'
+        ? localPlayerName || 'Knight'
+        : partnerPlayerName || 'Knight';
+    const mName =
+      localRole === 'Mage'
+        ? localPlayerName || 'Mage'
+        : partnerPlayerName || 'Mage';
+    sculptedHud.setPlayerNames({
+      Knight: kName,
+      Mage: mName,
+      knight: kName,
+      mage: mName,
+      peerConnected: linked,
+    });
+  }
+
   if (appFlow) {
     appFlow.setLobbyState({
       roomPhrase: roomState.roomPhrase || roomState.room,
       isHost: Boolean(roomState.isHost),
-      localRole: roomState.role || 'Knight',
+      localRole,
+      playerName: localPlayerName || undefined,
+      partnerName: partnerPlayerName,
+      partnerClaimed: linked ? partnerClaimed : false,
+      guestReady: linked ? guestReady : false,
       peerConnected: linked,
-      guestReady: roomState.isHost ? Boolean(roomState.peerReady || !linked) : Boolean(roomState.ready),
       playerCount: linked ? 2 : 1,
+      expeditionStarted: Boolean(roomState.expeditionStarted),
     });
+
+    if (
+      roomState.expeditionStarted === true &&
+      linked &&
+      appFlow.getStep() !== FLOW_STEPS.IN_GAME
+    ) {
+      appFlow.skipToGame();
+      camState.mode = 'player';
+      sculptedHud?.setVisible(true);
+      updateCamera();
+      try {
+        coopSystem?.coopClient?.requestFullSnapshot?.();
+      } catch {
+        // ignore if coopSystem is still initializing
+      }
+    }
   }
+
+  if (roomState.expeditionStarted === true && justLinked) {
+    try {
+      coopSystem?.coopClient?.requestFullSnapshot?.();
+    } catch {
+      // ignore if coopSystem is still initializing
+    }
+  }
+
   if (sculptedHud && roomState.progression) {
     const effStage =
       devStageOverride !== null
@@ -1199,6 +1295,10 @@ function updateCoopPill(roomState) {
     // post-construction updateCoopPill call below re-applies it.
     try {
       coopSystem.setUnlockedStage(effStage);
+      coopSystem.campaignLoop?.setUnlockedStage?.(
+        effStage,
+        roomState.progression.stonesSolvedMask
+      );
     } catch {
       /* not constructed yet */
     }
@@ -1206,8 +1306,8 @@ function updateCoopPill(roomState) {
 }
 
 function playDivineVerdictVoice(judgment) {
-  if (!judgment) return;
-  playWideSurroundDivineVoice(judgment);
+  if (!judgment) return null;
+  return playWideSurroundDivineVoice(judgment);
 }
 
 let sculptedHud = null;
@@ -1284,60 +1384,100 @@ export function isUiOverlayBlockingInput() {
 
 const SPOILER_SAFE_STONE_POEMS = Object.freeze({
   stone_plaza: Object.freeze({
-    title: 'I · The Wellspring of Union',
-    lines: Object.freeze([
-      'Where crimson petals ring the ancient stone,',
-      'No mortal walks the valley road alone.',
-      'Bind blossom unto heartbeat in thy plea,',
-      'And speak the Sovereign’s name to set love free.',
-      'Not in lone might nor pride of blade and art,',
-      'Doth grace awaken in the guarded heart;',
-      'Wait till two voices share the quiet night,',
-      'And call upon the Lord of Living Light.',
-    ]),
-    secondStanza: Object.freeze([
-      'Not in lone might nor pride of blade and art,',
-      'Doth grace awaken in the guarded heart;',
-      'Wait till two voices share the quiet night,',
-      'And call upon the Lord of Living Light.',
-    ]),
+    title: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_plaza.title,
+    lines: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_plaza.lines,
+    secondStanza: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_plaza.secondStanza,
+  }),
+  stone_grove: Object.freeze({
+    title: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_grove.title,
+    lines: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_grove.lines,
+    secondStanza: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_grove.secondStanza,
   }),
   stone_pier: Object.freeze({
     name: "Hidden Lovers' Wall of the Mill Courtyard",
-    title: "III · The Hidden Lovers' Wall",
-    lines: Object.freeze([
-      'Behind the quiet eaves where ivy climbs the stone,',
-      'Two halves of one horizon never walk alone.',
-      'Speak first the Ancient Name carved at the plaza well,',
-      'Then swear how frost and sunfire inside your partner dwell.',
-    ]),
-    secondStanza: Object.freeze([
-      'Come not with hollow flatteries or pride,',
-      'For He who hears walks at thy lover’s side;',
-      'Mock His high throne and watch thy partner fall,',
-      'Ask with a gentle heart and He grants all.',
-    ]),
-  }),
-  stone_grove: Object.freeze({
-    title: 'II · The Burial of Obsession',
-    lines: Object.freeze([
-      'Beneath the violet boughs where embers sleep,',
-      'Swear now the steadfast promise thou shalt keep.',
-      'When honest fondness names the living spark,',
-      'Sunfire and meteor-cinders light the dark.',
-      'Mere hunger claims the bloom and breaks the bough,',
-      'True devotion keeps the unspoken vow;',
-      'Where twisted roots once choked the ancient stone,',
-      'Speak truth of what you cherish as your own.',
-    ]),
-    secondStanza: Object.freeze([
-      'Mere hunger claims the bloom and breaks the bough,',
-      'True devotion keeps the unspoken vow;',
-      'Where twisted roots once choked the ancient stone,',
-      'Speak truth of what you cherish as your own.',
-    ]),
+    title: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_pier.title,
+    lines: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_pier.lines,
+    secondStanza: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_pier.secondStanza,
   }),
 });
+
+/**
+ * Builds a high-contrast, deeply chiseled 3D Inscription Plaque Mesh for each stone
+ * (`stone_plaza`, `stone_grove`, `stone_pier`) offset +10mm along the surface normal
+ * with polygonOffset so it is never occluded by the stone mesh at any camera distance.
+ */
+function buildCrisp3DCarvedPoemMesh(stoneId, poemObj, maxAnisotropy = 8) {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = 2048;
+  canvas.height = 1080;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const lines = poemObj?.lines || [];
+  const isWell = stoneId === 'stone_plaza';
+  const isGrove = stoneId === 'stone_grove';
+
+  ctx.textBaseline = 'middle';
+  const fontSize = isWell ? 70 : 80;
+  const lineH = isWell ? 114 : 122;
+  const startY = (canvas.height - (lines.length - 1) * lineH) * 0.5;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = String(lines[i] || '');
+    const y = startY + i * lineH + (i >= 4 ? (isWell ? 10 : 14) : isWell ? -10 : -14);
+
+    ctx.font = `700 ${fontSize}px "Playfair Display", "Cormorant Garamond", Georgia, serif`;
+    ctx.textAlign = 'center';
+    const cx = canvas.width * 0.5;
+    // Sunlit lower-right chiseled bevel lip
+    ctx.fillStyle = 'rgba(255, 250, 235, 0.94)';
+    ctx.fillText(line, cx + 3.0, y + 3.0);
+    // Deep chiseled V-groove dark sepia / gilded bronze
+    ctx.fillStyle = isGrove ? '#291c0e' : '#1e1610';
+    ctx.fillText(line, cx, y);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = maxAnisotropy;
+  tex.needsUpdate = true;
+
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -4,
+    polygonOffsetUnits: -4,
+    side: THREE.DoubleSide,
+  });
+
+  let geo = null;
+  let mesh = null;
+  if (stoneId === 'stone_pier') {
+    // Centered inside the smooth recessed stone tablet on the Lovers' Wall (z = 0.183m -> 0.212m)
+    geo = new THREE.PlaneGeometry(1.96, 0.94);
+    mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(0.0, 0.77, 0.212);
+  } else if (stoneId === 'stone_grove') {
+    // Centered atop the Whispering Grove horizontal floor medallion (y = 0.164m -> 0.176m)
+    geo = new THREE.PlaneGeometry(2.36, 1.56);
+    geo.rotateX(-Math.PI * 0.5);
+    mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(0.0, 0.176, 0.02);
+  } else {
+    // Centered on the front (+Z) sandstone plaque of the Village Well (r = 1.18m -> 1.202m)
+    geo = new THREE.CylinderGeometry(1.202, 1.202, 0.46, 48, 1, true, -0.46, 0.92);
+    mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(0.0, 0.485, 0.0);
+  }
+  mesh.name = `MonumentCalligraphy_${stoneId}`;
+  mesh.renderOrder = 2;
+  return mesh;
+}
 
 function shouldMaskStoneSpoilers() {
   if (typeof navigator !== 'undefined' && navigator.webdriver) return true;
@@ -1383,6 +1523,7 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
     rootGroup.add(holder);
 
     const mountTargets = [];
+    let wellWaterMesh = null;
     if (st.id === 'stone_plaza') {
       // Site 1: Mounted at the Village Well (0, 0, 0)
       const wellGroup = new THREE.Group();
@@ -1492,7 +1633,7 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
         `,
       });
       monumentShaderMats.push(wellWaterMat);
-      const wellWaterMesh = new THREE.Mesh(wellWaterGeo, wellWaterMat);
+      wellWaterMesh = new THREE.Mesh(wellWaterGeo, wellWaterMat);
       wellWaterMesh.name = 'Site1_WellSpringWater';
       wellWaterMesh.position.set(0, 0.38, 0);
       wellGroup.add(wellWaterMesh);
@@ -1526,6 +1667,7 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
       worldZ,
       holder,
       mountTargets,
+      wellWaterMesh,
       lodSets: [],
       materials: [],
       title: fallbackVerse.title,
@@ -1954,27 +2096,6 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
         stoneIndices.push(i0, i1, i2);
       }
 
-      const calligraphyGeo = buildWeldedMonumentGeometry(
-        mergedPos,
-        mergedNorm,
-        mergedCol,
-        calligraphyIndices,
-        0
-      );
-      const inspectStoneGeo = buildWeldedMonumentGeometry(
-        mergedPos,
-        mergedNorm,
-        mergedCol,
-        stoneIndices,
-        0
-      );
-      const nearStoneGeo = buildWeldedMonumentGeometry(
-        mergedPos,
-        mergedNorm,
-        mergedCol,
-        stoneIndices,
-        0.036
-      );
       const farStoneGeo = buildWeldedMonumentGeometry(
         mergedPos,
         mergedNorm,
@@ -1984,42 +2105,100 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
       );
 
       const unifiedMat = createGhibliMonumentShaderMaterial(null, true);
-      for (const target of mountTargets) {
-        const inspectStoneMesh = new THREE.Mesh(inspectStoneGeo || nearStoneGeo, unifiedMat);
-        inspectStoneMesh.name = `UnifiedMonument_${st.id}_inspect`;
-        inspectStoneMesh.frustumCulled = true;
-        inspectStoneMesh.visible = false;
-        target.add(inspectStoneMesh);
+      const isHeadless =
+        Boolean(typeof window !== 'undefined' && window.__HEADLESS_TEST__) ||
+        Boolean(typeof navigator !== 'undefined' && navigator.webdriver);
 
-        const nearStoneMesh = new THREE.Mesh(nearStoneGeo || inspectStoneGeo, unifiedMat);
-        nearStoneMesh.name = `UnifiedMonument_${st.id}`;
-        nearStoneMesh.frustumCulled = true;
-        nearStoneMesh.visible = false;
-        target.add(nearStoneMesh);
+      const maxAniso = renderer?.capabilities?.getMaxAnisotropy?.() || 8;
 
-        const farStoneMesh = new THREE.Mesh(farStoneGeo || nearStoneGeo, unifiedMat);
-        farStoneMesh.name = `UnifiedMonument_${st.id}_far`;
-        farStoneMesh.frustumCulled = true;
-        farStoneMesh.visible = true;
-        target.add(farStoneMesh);
+      const mountAllLods = (nearStoneGeo, inspectStoneGeo) => {
+        for (const target of mountTargets) {
+          const inspectStoneMesh = new THREE.Mesh(inspectStoneGeo || nearStoneGeo || farStoneGeo, unifiedMat);
+          inspectStoneMesh.name = `UnifiedMonument_${st.id}_inspect`;
+          inspectStoneMesh.frustumCulled = true;
+          inspectStoneMesh.visible = false;
+          target.add(inspectStoneMesh);
 
-        let calligraphyMesh = null;
-        if (calligraphyGeo) {
-          calligraphyMesh = new THREE.Mesh(calligraphyGeo, unifiedMat);
-          calligraphyMesh.name = `MonumentCalligraphy_${st.id}`;
-          calligraphyMesh.frustumCulled = true;
-          calligraphyMesh.visible = false;
-          target.add(calligraphyMesh);
+          const nearStoneMesh = new THREE.Mesh(nearStoneGeo || inspectStoneGeo || farStoneGeo, unifiedMat);
+          nearStoneMesh.name = `UnifiedMonument_${st.id}`;
+          nearStoneMesh.frustumCulled = true;
+          nearStoneMesh.visible = false;
+          target.add(nearStoneMesh);
+
+          const farStoneMesh = new THREE.Mesh(farStoneGeo || nearStoneGeo, unifiedMat);
+          farStoneMesh.name = `UnifiedMonument_${st.id}_far`;
+          farStoneMesh.frustumCulled = true;
+          farStoneMesh.visible = true;
+          target.add(farStoneMesh);
+
+          const calligraphyMesh = buildCrisp3DCarvedPoemMesh(st.id, fallbackVerse, maxAniso);
+          if (calligraphyMesh) {
+            target.add(calligraphyMesh);
+          }
+
+          entry.lodSets.push({
+            inspectStoneMesh,
+            nearStoneMesh,
+            farStoneMesh,
+            calligraphyMesh,
+          });
         }
+        updateMonumentLodForCamera(camera);
+      };
 
-        entry.lodSets.push({
-          inspectStoneMesh,
-          nearStoneMesh,
-          farStoneMesh,
-          calligraphyMesh,
-        });
+      if (isHeadless) {
+        const nearStoneGeo = buildWeldedMonumentGeometry(mergedPos, mergedNorm, mergedCol, stoneIndices, 0.036);
+        const inspectStoneGeo = buildWeldedMonumentGeometry(mergedPos, mergedNorm, mergedCol, stoneIndices, 0);
+        mountAllLods(nearStoneGeo, inspectStoneGeo);
+      } else {
+        for (const target of mountTargets) {
+          const farStoneMesh = new THREE.Mesh(farStoneGeo, unifiedMat);
+          farStoneMesh.name = `UnifiedMonument_${st.id}_far`;
+          farStoneMesh.frustumCulled = true;
+          farStoneMesh.visible = true;
+          target.add(farStoneMesh);
+
+          const calligraphyMesh = buildCrisp3DCarvedPoemMesh(st.id, fallbackVerse, maxAniso);
+          if (calligraphyMesh) {
+            target.add(calligraphyMesh);
+          }
+
+          entry.lodSets.push({
+            target,
+            inspectStoneMesh: null,
+            nearStoneMesh: null,
+            farStoneMesh,
+            calligraphyMesh,
+          });
+        }
+        updateMonumentLodForCamera(camera);
+
+        setTimeout(() => {
+          const nearStoneGeo = buildWeldedMonumentGeometry(mergedPos, mergedNorm, mergedCol, stoneIndices, 0.036);
+          setTimeout(() => {
+            const inspectStoneGeo = buildWeldedMonumentGeometry(mergedPos, mergedNorm, mergedCol, stoneIndices, 0);
+            for (const set of entry.lodSets) {
+              const target = set.target;
+              if (!target) continue;
+              const inspectStoneMesh = new THREE.Mesh(inspectStoneGeo || nearStoneGeo || farStoneGeo, unifiedMat);
+              inspectStoneMesh.name = `UnifiedMonument_${st.id}_inspect`;
+              inspectStoneMesh.frustumCulled = true;
+              inspectStoneMesh.visible = false;
+              target.add(inspectStoneMesh);
+
+              const nearStoneMesh = new THREE.Mesh(nearStoneGeo || inspectStoneGeo || farStoneGeo, unifiedMat);
+              nearStoneMesh.name = `UnifiedMonument_${st.id}`;
+              nearStoneMesh.frustumCulled = true;
+              nearStoneMesh.visible = false;
+              target.add(nearStoneMesh);
+
+              set.inspectStoneMesh = inspectStoneMesh;
+              set.nearStoneMesh = nearStoneMesh;
+            }
+            updateMonumentLodForCamera(camera);
+          }, 48);
+        }, 48);
       }
-      updateMonumentLodForCamera(camera);
     };
 
     gltfLoader.load(
@@ -2045,15 +2224,19 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
       const isInspect =
         (stoneGazeState.inspectActive && stoneGazeState.activeStoneId === entry.id) ||
         (stoneGazeState.inspectBlend > 0.01 && stoneGazeState.activeStoneId === entry.id) ||
-        dist <= 4.8;
-      const isNear = !isInspect && dist <= 16.0;
+        dist <= 9.5;
+      const isNear = !isInspect && dist <= 22.0;
       const isFar = !isInspect && !isNear;
+      const hideFarOnTablet = activeProfile === 'tablet' && !isInspect && dist > 82.0;
+      if (entry.wellWaterMesh) {
+        entry.wellWaterMesh.visible = !hideFarOnTablet;
+      }
 
       for (const set of entry.lodSets) {
         if (set.inspectStoneMesh) set.inspectStoneMesh.visible = isInspect;
         if (set.nearStoneMesh) set.nearStoneMesh.visible = isNear;
-        if (set.farStoneMesh) set.farStoneMesh.visible = isFar;
-        if (set.calligraphyMesh) set.calligraphyMesh.visible = isInspect || isNear;
+        if (set.farStoneMesh) set.farStoneMesh.visible = isFar && !hideFarOnTablet;
+        if (set.calligraphyMesh) set.calligraphyMesh.visible = dist <= 32.0 || isInspect;
       }
     }
   }
@@ -2110,33 +2293,53 @@ appFlow = createAppFlow({
   container: document.getElementById('hud'),
   onCreateWorld: ({ roomPhrase, role }) => {
     if (!coopSystem) return;
-    coopSystem.coopClient.setRoomCode(roomPhrase);
-    if (role && coopSystem.player.activeHeroId !== role) {
-      coopSystem.swapActiveHero();
+    if (role) {
+      coopSystem.coopClient.setPreferredRole(role);
     }
+    coopSystem.coopClient.setRoomCode(roomPhrase);
   },
   onJoinWorld: ({ roomPhrase, role }) => {
     if (!coopSystem) return;
-    coopSystem.coopClient.setRoomCode(roomPhrase);
-    if (role && coopSystem.player.activeHeroId !== role) {
-      coopSystem.swapActiveHero();
+    if (role) {
+      coopSystem.coopClient.setPreferredRole(role);
     }
+    coopSystem.coopClient.setRoomCode(roomPhrase);
   },
   onRoleSelect: (nextRole) => {
     if (!coopSystem) return;
-    coopSystem.coopClient.setPreferredRole(nextRole);
-    if (coopSystem.player.activeHeroId !== nextRole) {
-      coopSystem.swapActiveHero();
+    if (typeof coopSystem.coopClient.sendLobbyClaim !== 'function') {
+      coopSystem.coopClient.setPreferredRole(nextRole);
     }
   },
-  onToggleReady: (ready) => {
-    coopSystem?.coopClient?.setReady(ready);
+  onLobbyClaim: (claim = {}) => {
+    if (!coopSystem) return;
+    if (typeof coopSystem.coopClient.sendLobbyClaim === 'function') {
+      coopSystem.coopClient.sendLobbyClaim(claim);
+    } else if (claim.role) {
+      coopSystem.coopClient.setPreferredRole(claim.role);
+    }
+  },
+  onToggleReady: (ready, flowState) => {
+    if (!coopSystem) return;
+    coopSystem.coopClient.sendLobbyClaim?.({
+      role: flowState?.localRole || coopSystem.player?.activeHeroId || 'Knight',
+      playerName: flowState?.playerName || '',
+      claimed: Boolean(ready),
+    });
+    coopSystem.coopClient.setReady?.(ready);
   },
   onStartGame: (payload = {}) => {
     if (!coopSystem) return;
+    const isPeerConnected = Boolean(
+      payload?.peerConnected || coopSystem.coopClient?.getState?.()?.peerConnected
+    );
     const chosenRole =
       payload?.localRole || payload?.role || appFlow?.getState?.()?.localRole;
-    if (chosenRole && coopSystem.player.activeHeroId !== chosenRole) {
+    if (
+      chosenRole &&
+      coopSystem.player.activeHeroId !== chosenRole &&
+      !isPeerConnected
+    ) {
       coopSystem.swapActiveHero();
     }
     const activeRole = coopSystem.player.activeHeroId || 'Knight';
@@ -2161,12 +2364,29 @@ appFlow = createAppFlow({
       partnerName: partnerName || (activeRole === 'Knight' ? 'Mage' : 'Knight'),
       playerName: pName || activeRole,
       localRole: activeRole,
+      peerConnected: isPeerConnected,
     });
+
+    const urlParams = new URLSearchParams(window.location?.search || '');
+    const hasExplicitUrlDev =
+      urlParams.get('dev') === '1' || urlParams.get('stage') === '3';
+    if (payload?.soloTest || hasExplicitUrlDev) {
+      if (devStageOverride === null) {
+        devStageOverride = 3;
+      }
+    } else {
+      devStageOverride = null;
+    }
 
     if (devStageOverride === null) {
       coopSystem.setUnlockedStage?.(0);
       coopSystem.campaignLoop?.setUnlockedStage?.(0, 0);
-      coopSystem.coopClient.startExpedition({ resetProgression: true });
+      if (
+        !payload?.fromRemoteExpeditionStart &&
+        !coopSystem.coopClient?.getState?.()?.expeditionStarted
+      ) {
+        coopSystem.coopClient.startExpedition({ resetProgression: true });
+      }
       sculptedHud?.setProgressionState?.({
         communeDiscovered: false,
         iceUnlocked: false,
@@ -2180,7 +2400,34 @@ appFlow = createAppFlow({
         stone3Solved: false,
       });
     } else {
+      const stage = devStageOverride;
+      // Unlock combat abilities for testing WITHOUT marking the 3 Sacred Stones as already solved (mask = 0)
+      // so the player can still play through all 3 stones and never triggers premature victory!
+      const updated = coopSystem.coopClient.progression.setUnlocks({
+        communeDiscovered: stage >= 1,
+        iceUnlocked: stage >= 1,
+        fireUnlocked: stage >= 2,
+        ultimateUnlocked: stage >= 3,
+        stone1Solved: false,
+        stone2Solved: false,
+        stone3Solved: false,
+        stonesSolvedMask: 0,
+      });
+      coopSystem.setUnlockedStage?.(stage);
+      coopSystem.campaignLoop?.setUnlockedStage?.(stage, 0);
+      if (stage >= 3) {
+        if (coopSystem.campaignLoop?.combatHeroes?.Knight) {
+          coopSystem.campaignLoop.combatHeroes.Knight.qEnergy = 100;
+          coopSystem.campaignLoop.combatHeroes.Knight.qEnergyPct = 1.0;
+        }
+        if (coopSystem.campaignLoop?.combatHeroes?.Mage) {
+          coopSystem.campaignLoop.combatHeroes.Mage.qEnergy = 160;
+          coopSystem.campaignLoop.combatHeroes.Mage.qEnergyPct = 1.0;
+        }
+      }
       coopSystem.coopClient.startExpedition();
+      sculptedHud?.setProgressionState?.(updated);
+      updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
     }
     coopSystem.teleportLeaderAndPartner(0.0, 124.0, Math.PI);
     camState.mode = 'player';
@@ -2196,6 +2443,9 @@ appFlow = createAppFlow({
     }
   },
 });
+if (typeof window !== 'undefined') {
+  window.__APP_FLOW__ = appFlow;
+}
 
 coopSystem = await createCoopPlayerSystem({
   scene,
@@ -2223,8 +2473,27 @@ coopSystem = await createCoopPlayerSystem({
   onCoopStateChanged: (roomState) => {
     updateCoopPill(roomState);
   },
-  onRemoteCommuneVerdict: (judgment) => {
-    playDivineVerdictVoice(judgment);
+  onRemoteCommuneVerdict: async (judgment) => {
+    const vp = playDivineVerdictVoice(judgment);
+    if (vp?.played && !vp?.simulatedHeadless && vp?.finished) {
+      coopSystem?.setCommuneSuspense?.(true, { broadcast: false });
+      const quote = judgment?.divine_quote || judgment?.subtitle || '';
+      if (quote) {
+        showCombatBanner(
+          {
+            title: 'THE SOVEREIGN · GOD OF LOVE',
+            subtitle: quote,
+            kind:
+              String(judgment?.verdict || '').toLowerCase() === 'smite' ||
+              String(judgment?.prayerMode || '').toLowerCase() === 'smite'
+                ? 'warning'
+                : 'blessing',
+          },
+          8000
+        );
+      }
+      await vp.finished;
+    }
     const updatedProg = coopSystem.coopClient.progression.applyVerdictProgression(judgment);
     sculptedHud?.setProgressionState(updatedProg);
   },
@@ -2232,41 +2501,103 @@ coopSystem = await createCoopPlayerSystem({
 
 const player = coopSystem.player;
 
-function prewarmAllVfxAndSceneShaders() {
-  const savedVis = [];
-  const savedCounts = [];
-  const savedCull = [];
-  scene.traverse((obj) => {
-    if (!obj.visible) {
-      savedVis.push(obj);
-      obj.visible = true;
-    }
-    if (obj.isInstancedMesh && obj.count === 0) {
-      const cap = obj.instanceMatrix?.count ?? 1;
-      if (cap > 0) {
-        savedCounts.push(obj);
-        obj.count = 1;
+function prewarmAllVfxAndSceneShaders({ sync = false } = {}) {
+  const isHeadless =
+    sync ||
+    Boolean(typeof window !== 'undefined' && window.__HEADLESS_TEST__) ||
+    Boolean(typeof navigator !== 'undefined' && navigator.webdriver);
+
+  if (isHeadless) {
+    const savedVis = [];
+    const savedCounts = [];
+    const savedCull = [];
+    scene.traverse((obj) => {
+      if (!obj.visible) {
+        savedVis.push(obj);
+        obj.visible = true;
       }
+      if (obj.isInstancedMesh && obj.count === 0) {
+        const cap = obj.instanceMatrix?.count ?? 1;
+        if (cap > 0) {
+          savedCounts.push(obj);
+          obj.count = 1;
+        }
+      }
+      if (obj.isMesh && obj.frustumCulled) {
+        savedCull.push(obj);
+        obj.frustumCulled = false;
+      }
+    });
+    const prevTarget = renderer.getRenderTarget();
+    try {
+      if (post?.composer?.renderTarget1) {
+        renderer.setRenderTarget(post.composer.renderTarget1);
+      }
+      renderer.compile(scene, camera);
+    } catch {
+      // ignore prewarm errors on restricted WebGL contexts
+    } finally {
+      renderer.setRenderTarget(prevTarget);
+      for (let i = 0; i < savedCull.length; i++) savedCull[i].frustumCulled = true;
+      for (let i = 0; i < savedCounts.length; i++) savedCounts[i].count = 0;
+      for (let i = 0; i < savedVis.length; i++) savedVis[i].visible = false;
     }
-    if (obj.isMesh && obj.frustumCulled) {
-      savedCull.push(obj);
-      obj.frustumCulled = false;
+    return;
+  }
+
+  // Time-sliced background shader prewarm (2 hidden meshes per idle frame) so the Title/Loading animation stays 60 FPS
+  const hiddenMeshes = [];
+  scene.traverse((obj) => {
+    if (obj.isMesh && (!obj.visible || (obj.isInstancedMesh && obj.count === 0))) {
+      hiddenMeshes.push(obj);
     }
   });
-  const prevTarget = renderer.getRenderTarget();
-  try {
-    if (post?.composer?.renderTarget1) {
-      renderer.setRenderTarget(post.composer.renderTarget1);
+
+  let idx = 0;
+  const stepPrewarm = () => {
+    if (idx >= hiddenMeshes.length) return;
+    const batchVis = [];
+    const batchCount = [];
+    const batchCull = [];
+    const end = Math.min(hiddenMeshes.length, idx + 2);
+    for (; idx < end; idx++) {
+      const m = hiddenMeshes[idx];
+      let cur = m;
+      while (cur && cur !== scene) {
+        if (!cur.visible) {
+          batchVis.push(cur);
+          cur.visible = true;
+        }
+        cur = cur.parent;
+      }
+      if (m.isInstancedMesh && m.count === 0 && (m.instanceMatrix?.count ?? 1) > 0) {
+        batchCount.push(m);
+        m.count = 1;
+      }
+      if (m.frustumCulled) {
+        batchCull.push(m);
+        m.frustumCulled = false;
+      }
     }
-    renderer.compile(scene, camera);
-  } catch {
-    // ignore prewarm errors on restricted WebGL contexts
-  } finally {
-    renderer.setRenderTarget(prevTarget);
-    for (let i = 0; i < savedCull.length; i++) savedCull[i].frustumCulled = true;
-    for (let i = 0; i < savedCounts.length; i++) savedCounts[i].count = 0;
-    for (let i = 0; i < savedVis.length; i++) savedVis[i].visible = false;
-  }
+    const prevTarget = renderer.getRenderTarget();
+    try {
+      if (post?.composer?.renderTarget1) {
+        renderer.setRenderTarget(post.composer.renderTarget1);
+      }
+      renderer.compile(scene, camera);
+    } catch {
+      // ignore
+    } finally {
+      renderer.setRenderTarget(prevTarget);
+      for (let i = 0; i < batchCull.length; i++) batchCull[i].frustumCulled = true;
+      for (let i = 0; i < batchCount.length; i++) batchCount[i].count = 0;
+      for (let i = 0; i < batchVis.length; i++) batchVis[i].visible = false;
+    }
+    if (idx < hiddenMeshes.length) {
+      setTimeout(() => requestAnimationFrame(stepPrewarm), 32);
+    }
+  };
+  setTimeout(() => requestAnimationFrame(stepPrewarm), 180);
 }
 
 prewarmAllVfxAndSceneShaders();
@@ -2564,13 +2895,37 @@ communeClient = createCommuneClient({
   onStateChange: (communeSnapshot) => {
     const isListening = communeSnapshot.state === 'listening';
     const isJudging = communeSnapshot.state === 'judging';
-    communeRBtn?.classList.toggle('channeling', isListening);
+    const isSpeaking = communeSnapshot.state === 'speaking';
+    communeRBtn?.classList.toggle('channeling', isListening || isSpeaking);
     if (communeSubLbl) {
       communeSubLbl.textContent = isListening
         ? `Listening (${Math.ceil(communeSnapshot.remainingSeconds)}s)`
         : isJudging
           ? 'Judging...'
-          : 'Tap [R]';
+          : isSpeaking
+            ? 'The Sovereign Speaks...'
+            : 'Tap [R]';
+    }
+    if (isSpeaking && communeSnapshot.judgment) {
+      coopSystem?.setCommuneSuspense?.(true);
+      const quote =
+        communeSnapshot.judgment.divine_quote ||
+        communeSnapshot.judgment.subtitle ||
+        '';
+      if (quote) {
+        showCombatBanner(
+          {
+            title: 'THE SOVEREIGN · GOD OF LOVE',
+            subtitle: quote,
+            kind:
+              String(communeSnapshot.judgment.verdict || '').toLowerCase() === 'smite' ||
+              String(communeSnapshot.judgment.prayerMode || '').toLowerCase() === 'smite'
+                ? 'warning'
+                : 'blessing',
+          },
+          8000
+        );
+      }
     }
     sculptedHud?.setCommuneState({
       listening: isListening,
@@ -2830,10 +3185,6 @@ function tryRaycastFlowerLobbyHero(clientX, clientY) {
     } else if (typeof appFlow.selectRole === 'function') {
       appFlow.selectRole(bestRole);
     }
-    coopSystem.coopClient.setPreferredRole(bestRole);
-    if (coopSystem.player.activeHeroId !== bestRole) {
-      coopSystem.swapActiveHero();
-    }
   }
   return bestRole;
 }
@@ -2958,10 +3309,16 @@ sculptedHud = createSculptedHud({
     openAltarSteleModal();
   },
   onSwapHero: () => {
-    const isTwoPlayerConnected = Boolean(appFlow?.getState?.()?.peerConnected);
-    if (!isTwoPlayerConnected) {
-      coopSystem.swapActiveHero();
+    const isTwoPlayerConnected = Boolean(
+      appFlow?.getState?.()?.peerConnected ||
+        coopSystem?.coopClient?.getState?.()?.peerConnected
+    );
+    if (isTwoPlayerConnected) {
+      return false;
     }
+    const before = coopSystem.player.activeHeroId;
+    coopSystem.swapActiveHero();
+    return coopSystem.player.activeHeroId !== before;
   },
   onDevUnlockNextStage: (nextStage) => {
     // DEV_SOLO_TEST_REMOVE_FOR_PROD: Sync room progression state with Dev Stage button
@@ -3043,9 +3400,41 @@ if (sculptedHud) {
   };
 }
 
+// Auto-unlock all Stage 3 abilities & full Q-energy when `?dev=1` or `?nolobby=1` is in the URL
+if (typeof window !== 'undefined') {
+  const bootParams = new URLSearchParams(window.location?.search || '');
+  if (bootParams.get('dev') === '1' || bootParams.get('nolobby') === '1' || bootParams.get('stage') === '3') {
+    devStageOverride = 3;
+    const mask = 0b111;
+    const updated = coopSystem.coopClient.progression.setUnlocks({
+      communeDiscovered: true,
+      iceUnlocked: true,
+      fireUnlocked: true,
+      ultimateUnlocked: true,
+      stone1Solved: true,
+      stone2Solved: true,
+      stone3Solved: true,
+      stonesSolvedMask: mask,
+    });
+    coopSystem.setUnlockedStage?.(3);
+    coopSystem.campaignLoop?.setUnlockedStage?.(3, mask);
+    if (coopSystem.campaignLoop?.combatHeroes?.Knight) {
+      coopSystem.campaignLoop.combatHeroes.Knight.qEnergy = 100;
+      coopSystem.campaignLoop.combatHeroes.Knight.qEnergyPct = 1.0;
+    }
+    if (coopSystem.campaignLoop?.combatHeroes?.Mage) {
+      coopSystem.campaignLoop.combatHeroes.Mage.qEnergy = 160;
+      coopSystem.campaignLoop.combatHeroes.Mage.qEnergyPct = 1.0;
+    }
+    sculptedHud?.setProgressionState(updated);
+  }
+}
+
 function applyOpeningFlowCameraAndPoses(step) {
   if (step === FLOW_STEPS.IN_GAME) {
+    camState.mode = 'player';
     sculptedHud?.setVisible(true);
+    updateCamera();
     return;
   }
   sculptedHud?.setVisible(false);
@@ -3180,7 +3569,13 @@ if (communeRBtn) {
 
 if (hudSwapHeroBtn) {
   hudSwapHeroBtn.addEventListener('click', () => {
-    coopSystem.swapActiveHero();
+    const isTwoPlayerConnected = Boolean(
+      appFlow?.getState?.()?.peerConnected ||
+        coopSystem?.coopClient?.getState?.()?.peerConnected
+    );
+    if (!isTwoPlayerConnected) {
+      coopSystem.swapActiveHero();
+    }
   });
 }
 
@@ -3241,8 +3636,24 @@ if (coopShareBtn) {
 if (replayExpeditionBtn) {
   replayExpeditionBtn.addEventListener('click', () => {
     coopSystem.campaignLoop.resetCampaign();
-    coopSystem.teleportLeaderAndPartner(2.8, 14.5, Math.PI + 0.15);
-    updateCombatHud(coopSystem.campaignLoop.getStateSnapshot());
+    coopSystem.setUnlockedStage?.(0);
+    coopSystem.campaignLoop?.setUnlockedStage?.(0, 0);
+    coopSystem.coopClient?.startExpedition?.({ resetProgression: true });
+    sculptedHud?.setProgressionState?.({
+      communeDiscovered: false,
+      iceUnlocked: false,
+      fireUnlocked: false,
+      ultimateUnlocked: false,
+      unlockedStage: 0,
+      stonesSolved: 0,
+      stonesSolvedMask: 0,
+      stone1Solved: false,
+      stone2Solved: false,
+      stone3Solved: false,
+    });
+    coopSystem.teleportLeaderAndPartner(0.0, 124.0, Math.PI);
+    if (victoryModal) victoryModal.classList.remove('visible');
+    updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
   });
 }
 
@@ -3654,6 +4065,7 @@ function syncPrayerEclipseAndMonochrome(dt = 0) {
       coopSystem?.communeChannel?.active ||
       communeState === 'listening' ||
       communeState === 'judging' ||
+      communeState === 'speaking' ||
       hudCommune?.listening ||
       hudCommune?.partnerListening
   );
@@ -3803,6 +4215,27 @@ function updateMeadowFocus(simTime) {
     );
   }
   meadow.update(simTime, _meadowFocus, camera);
+  const isTabletSouthernLobbyVista =
+    activeProfile === 'tablet' &&
+    ((camera?.position?.z ?? 0) > 105.0 ||
+      (appFlow && typeof appFlow.isInGame === 'function' && !appFlow.isInGame()));
+  if (roofTilesCombinedMesh) {
+    roofTilesCombinedMesh.visible = !isTabletSouthernLobbyVista;
+  }
+  if (meadow?.grassMesh && activeProfile === 'tablet') {
+    const targetTufts = isTabletSouthernLobbyVista
+      ? 4500
+      : PROFILES.tablet.maxGrassTufts || 6400;
+    if (meadow.grassMesh.count !== targetTufts) {
+      if (meadow.grassMesh.userData) {
+        meadow.grassMesh.userData.allowCountShrink = true;
+      }
+      meadow.grassMesh.count = targetTufts;
+      if (meadow.instanceCounts) {
+        meadow.instanceCounts.grassTuft = targetTufts;
+      }
+    }
+  }
   stoneDecals?.updateLod?.(camera);
   if (typeof monumentShaderMats !== 'undefined' && Array.isArray(monumentShaderMats)) {
     for (const mat of monumentShaderMats) {
@@ -4189,6 +4622,28 @@ function toggleHud(visible) {
 }
 
 const keys = new Set();
+const DOUBLE_TAP_DODGE_MS = 290;
+const DOUBLE_TAP_MAX_HOLD_MS = 340;
+const DOUBLE_TAP_DIRECTIONS = {
+  a: { dir: 'left', swipeDx: -1, swipeDy: 0 },
+  arrowleft: { dir: 'left', swipeDx: -1, swipeDy: 0 },
+  d: { dir: 'right', swipeDx: 1, swipeDy: 0 },
+  arrowright: { dir: 'right', swipeDx: 1, swipeDy: 0 },
+  s: { dir: 'back', swipeDx: 0, swipeDy: 1 },
+  arrowdown: { dir: 'back', swipeDx: 0, swipeDy: 1 },
+};
+const dirTapTracker = {
+  dir: null,
+  firstDownAt: 0,
+  released: false,
+  releasedAt: 0,
+};
+function resetDirectionalDoubleTap() {
+  dirTapTracker.dir = null;
+  dirTapTracker.firstDownAt = 0;
+  dirTapTracker.released = false;
+  dirTapTracker.releasedAt = 0;
+}
 let pointerDragging = false;
 let lastMouseX = null;
 let lastMouseY = null;
@@ -4426,15 +4881,6 @@ window.addEventListener('keydown', (e) => {
     activeGameplayShotSpec = null;
     if (camState.mode === 'vista') camState.mode = 'player';
     coopSystem.triggerAction('heavy');
-  } else if (!wasPressed && k === 'shift') {
-    activeGameplayShotSpec = null;
-    if (camState.mode === 'vista') camState.mode = 'player';
-    lmbHoldPending = false;
-    if (lmbHoldTimer) {
-      clearTimeout(lmbHoldTimer);
-      lmbHoldTimer = null;
-    }
-    coopSystem.triggerAction('dash', getLiveDodgeInputOptions());
   } else if (devKeys && k === 't') {
     autoCycleTod = false;
     const order = ['day', 'evening', 'twilight', 'night'];
@@ -4445,7 +4891,7 @@ window.addEventListener('keydown', (e) => {
     syncTodHudControls();
   } else if (!wasPressed && k === 'h') {
     toggleHud(hudEl && hudEl.style.display === 'none');
-  } else if (['w', 'a', 's', 'd', ' '].includes(k)) {
+  } else if (['w', 'a', 's', 'd', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright', ' '].includes(k)) {
     if (coopSystem.player.activeHeroId !== 'Mage') {
       lmbHoldPending = false;
       if (lmbHoldTimer) {
@@ -4458,12 +4904,54 @@ window.addEventListener('keydown', (e) => {
       camState.mode = 'player';
       updateViewButtons();
     }
+    const dirTap = DOUBLE_TAP_DIRECTIONS[k];
+    if (dirTap && !e.repeat && !wasPressed && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (
+        dirTapTracker.dir === dirTap.dir &&
+        dirTapTracker.released &&
+        now - dirTapTracker.releasedAt <= DOUBLE_TAP_DODGE_MS
+      ) {
+        resetDirectionalDoubleTap();
+        activeGameplayShotSpec = null;
+        if (camState.mode === 'vista') camState.mode = 'player';
+        lmbHoldPending = false;
+        if (lmbHoldTimer) {
+          clearTimeout(lmbHoldTimer);
+          lmbHoldTimer = null;
+        }
+        coopSystem.triggerAction('dash', {
+          swipeDx: dirTap.swipeDx,
+          swipeDy: dirTap.swipeDy,
+          camYaw: camState.yaw,
+        });
+      } else {
+        dirTapTracker.dir = dirTap.dir;
+        dirTapTracker.firstDownAt = now;
+        dirTapTracker.released = false;
+        dirTapTracker.releasedAt = 0;
+      }
+    }
   }
 });
 
 window.addEventListener('keyup', (e) => {
   const k = e.key.toLowerCase();
   keys.delete(k);
+  const dirTap = DOUBLE_TAP_DIRECTIONS[k];
+  if (dirTap) {
+    if (isUiOverlayBlockingInput() || stoneGazeState.inspectActive) {
+      resetDirectionalDoubleTap();
+    } else if (dirTapTracker.dir === dirTap.dir && !dirTapTracker.released) {
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (now - dirTapTracker.firstDownAt <= DOUBLE_TAP_MAX_HOLD_MS) {
+        dirTapTracker.released = true;
+        dirTapTracker.releasedAt = now;
+      } else {
+        resetDirectionalDoubleTap();
+      }
+    }
+  }
   if (isUiOverlayBlockingInput()) return;
   if (k === 'r') {
     finishCommuneHold();
@@ -4575,6 +5063,7 @@ window.addEventListener('mouseup', () => {
 
 window.addEventListener('blur', () => {
   keys.clear();
+  resetDirectionalDoubleTap();
   pointerDragging = false;
   lmbHoldPending = false;
   if (lmbHoldTimer) {
@@ -4904,21 +5393,17 @@ export function enterStoneInspection(stone = null) {
         : 'well');
 
   if (siteKey === 'well') {
-    // Elevated 3/4 framing of the 2.48m Village Well matching `pasted-image.jpeg` (bottom-right):
-    // shows both the curved front sandstone plaque + poem and the circular moss-mortared brick interior
-    stoneGazeState.inspectPos.set(0.0, 1.84, 2.72);
-    stoneGazeState.inspectTarget.set(0.0, 0.56, 0.22);
-    stoneGazeState.inspectFov = 42;
+    stoneGazeState.inspectPos.set(0.0, 0.50, 2.76);
+    stoneGazeState.inspectTarget.set(0.0, 0.485, 1.20);
+    stoneGazeState.inspectFov = 38;
   } else if (siteKey === 'grove') {
-    // High-angle close-up over the 4.30m Whispering Grove circular floor medallion (Hero Rose at North 12 o'clock + 8 heavy floor lines)
     const gx = targetStone.position?.x ?? 114.0;
     const gz = targetStone.position?.z ?? 32.0;
     const sy = terrainHeightAt(gx, gz);
-    stoneGazeState.inspectPos.set(gx, sy + 3.62, gz + 2.02);
-    stoneGazeState.inspectTarget.set(gx, sy + 0.16, gz - 0.12);
-    stoneGazeState.inspectFov = 44;
+    stoneGazeState.inspectPos.set(gx, sy + 2.85, gz + 0.18);
+    stoneGazeState.inspectTarget.set(gx, sy + 0.176, gz + 0.02);
+    stoneGazeState.inspectFov = 40;
   } else {
-    // Close-up framing of the 3.35m Southwest Lovers' Wall at (-92.0, 64.0, rotY = 0.45)
     const wx = targetStone.position?.x ?? -92.0;
     const wz = targetStone.position?.z ?? 64.0;
     const wy = terrainHeightAt(wx, wz);
@@ -4940,6 +5425,7 @@ export function enterStoneInspection(stone = null) {
   if (stoneWorldReadBtn) {
     stoneWorldReadBtn.classList.remove('is-visible');
   }
+
   if (stoneInspectExitOverlay) {
     stoneInspectExitOverlay.classList.add('is-active');
   }
@@ -4949,38 +5435,6 @@ export function enterStoneInspection(stone = null) {
   if (stoneGazeState.stones[targetStone.id]) {
     stoneGazeState.stones[targetStone.id].gazeElapsed = 3.0;
     stoneGazeState.stones[targetStone.id].unlocked = true;
-  }
-
-  if (siteKey === 'well') {
-    showCombatBanner(
-      {
-        title: 'I · THE IRON RIM OF THE WELL',
-        subtitle:
-          "Click to step back, press [R], and speak the God's True Name (Artorious) with warmth for your partner",
-        kind: 'blessing',
-      },
-      5200
-    );
-  } else if (siteKey === 'grove') {
-    showCombatBanner(
-      {
-        title: 'II · THE GOLD-VEINED BRIAR MEDALLION',
-        subtitle:
-          'Click to step back, press [R], name Artorious, and confess an honest spark or flaw you cherish in your partner',
-        kind: 'blessing',
-      },
-      5200
-    );
-  } else {
-    showCombatBanner(
-      {
-        title: "III · THE HIDDEN LOVERS' WALL",
-        subtitle:
-          'Click to step back, press [R], name Artorious, and swear an unfeigned vow to stand by your partner through every storm',
-        kind: 'blessing',
-      },
-      5200
-    );
   }
 
   return targetStone;
@@ -5266,6 +5720,9 @@ window.__WORLD__ = {
   communeClient,
   sculptedHud,
   appFlow,
+  get devStageOverride() {
+    return devStageOverride;
+  },
   touchHud,
   damageNumbers,
   stoneGazeState,

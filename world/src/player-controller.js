@@ -955,6 +955,7 @@ export async function createCoopPlayerSystem({
   resolveCollisions,
   arenaZone = { x: 68, z: -4, y: 0.6 },
   initialPos = { x: 2.8, z: 14.5, yaw: Math.PI + 0.15 },
+  initialProfile = 'desktop',
   onHeroSwapped = null,
   onSkyTodChanged = null,
   onHudStateChanged = null,
@@ -963,7 +964,8 @@ export async function createCoopPlayerSystem({
   onRemoteCommuneVerdict = null,
 } = {}) {
   const kit = createCharactersKit();
-  await kit.loadAnimationPacks();
+  // Kick off Rig_Medium animation pack downloads in parallel with Knight.glb & Mage.glb
+  const animPackPromise = kit.loadAnimationPacks('medium');
 
   const rootGroup = new THREE.Group();
   rootGroup.name = 'stage3CoopCharactersRoot';
@@ -977,7 +979,7 @@ export async function createCoopPlayerSystem({
   sanctuarySteleMesh.visible = false;
   rootGroup.add(sanctuarySteleMesh);
 
-  // 1. Instantiate the 2 Co-Op Heroes (Knight + Mage)
+  // 1. Instantiate the 2 Co-Op Heroes (Knight + Mage) in parallel with animation packs
   const [knightChar, mageChar] = await Promise.all([
     kit.createCharacter('Knight', {
       initialClip: 'idle',
@@ -993,6 +995,7 @@ export async function createCoopPlayerSystem({
       ],
       rotY: initialPos.yaw - 0.25,
     }),
+    animPackPromise,
   ]);
 
   enableCharacterFrustumCulling(knightChar, 3.2);
@@ -1168,10 +1171,17 @@ export async function createCoopPlayerSystem({
   // 4. Pooled 6-Skeleton + Boss Sovereign Enemy Manager (`createEnemyManager`)
   let campaignLoop = null;
   let localHitstopTimer = 0;
+  let localHitSeq = 0;
+  let lastAimBroadcastAt = 0;
+
+  function buildWorldSyncPayload() {
+    return campaignLoop ? campaignLoop.getStateSnapshot(heroStates) : null;
+  }
 
   const enemyManager = await createEnemyManager({
     scene,
     kit,
+    profile: initialProfile,
     walkableHeightAt,
     resolveCollisions,
     onEnemyKilled: (enemy, result) => {
@@ -1211,10 +1221,29 @@ export async function createCoopPlayerSystem({
     onPlayerHit: (targetHero, enemy, dmg, hitOpts = {}) => {
       const hState = heroStates[targetHero.id];
       if (campaignLoop) {
-        campaignLoop.handlePlayerHit(hState, enemy, dmg, {
+        const res = campaignLoop.handlePlayerHit(hState, enemy, dmg, {
           ...hitOpts,
           knightState: heroStates.Knight,
         });
+        if (
+          coopClient?.getState?.().peerConnected &&
+          coopClient?.getState?.().isHost &&
+          res &&
+          (res.hpLost > 0 || res.absorbed > 0)
+        ) {
+          coopClient.sendActionEvent({
+            role: targetHero.id,
+            action: 'player_damaged',
+            heroId: targetHero.id,
+            damageDealt: res.hpLost || 0,
+            absorbed: res.absorbed || 0,
+            blockedByShield: Boolean(targetHero.shieldBlocking),
+            enemyX: enemy?.x,
+            enemyZ: enemy?.z,
+            source: enemy?.currentHit?.attackId || enemy?.archetype || 'enemy_attack',
+          });
+          coopClient.sendWorldSync(buildWorldSyncPayload(), true);
+        }
       }
     },
   });
@@ -1231,8 +1260,11 @@ export async function createCoopPlayerSystem({
       x: initialPos.x,
       z: initialPos.z,
       y: walkableHeightAt(initialPos.x, initialPos.z),
+      vx: 0,
       vy: 0,
+      vz: 0,
       yaw: initialPos.yaw,
+      vyaw: 0,
       grounded: true,
       locomotionState: 'idle',
       actionState: null,
@@ -1257,8 +1289,11 @@ export async function createCoopPlayerSystem({
       x: initialPos.x + 1.85,
       z: initialPos.z + 0.5,
       y: walkableHeightAt(initialPos.x + 1.85, initialPos.z + 0.5),
+      vx: 0,
       vy: 0,
+      vz: 0,
       yaw: initialPos.yaw - 0.25,
+      vyaw: 0,
       grounded: true,
       locomotionState: 'idle',
       actionState: null,
@@ -1307,6 +1342,77 @@ export async function createCoopPlayerSystem({
         });
       }
     },
+  });
+
+  campaignLoop.setOnLocalEnemyHit(({ enemy, hitSpec, result, attackerRole, attackerPos }) => {
+    if (!result || result.damageDealt <= 0) return;
+    localHitstopTimer = Math.max(localHitstopTimer, result.detonation ? 0.07 : 0.035);
+    const st = coopClient?.getState?.();
+    if (st?.peerConnected && !st.isHost) {
+      const hitId = `${st.clientId || 'guest'}_${++localHitSeq}`;
+      const payload = {
+        hitId,
+        instanceId: enemy.instanceId,
+        slotIndex: enemy.slotIndex,
+        spawnGen: enemy.spawnGen || enemy.slot?.spawnGen || 1,
+        dmg: result.damageDealt,
+        baseDmg: hitSpec?.baseDmg ?? result.damageDealt,
+        source: hitSpec?.source || 'guest_hit',
+        mark: hitSpec?.applyMark || result.markApplied || null,
+        detonatesMark: Boolean(hitSpec?.detonatesMark || result.detonation),
+        infusion: hitSpec?.infusion || null,
+        impulseX: Number((enemy.vx || 0).toFixed(2)),
+        impulseZ: Number((enemy.vz || 0).toFixed(2)),
+        attackerRole: attackerRole || activeHeroId,
+        attackerPos: attackerPos
+          ? { x: Number(attackerPos.x.toFixed(2)), z: Number(attackerPos.z.toFixed(2)) }
+          : {
+              x: Number(heroStates[activeHeroId].x.toFixed(2)),
+              z: Number(heroStates[activeHeroId].z.toFixed(2)),
+            },
+      };
+      if (typeof coopClient.sendEnemyHit === 'function') {
+        coopClient.sendEnemyHit(payload);
+      } else {
+        coopClient.sendActionEvent({
+          role: attackerRole || activeHeroId,
+          action: 'enemy_hit',
+          ...payload,
+        });
+      }
+    }
+  });
+
+  campaignLoop.setOnPartnerRevived((evt) => {
+    const st = coopClient?.getState?.();
+    if (!st?.peerConnected || !st.isHost) return;
+    if (evt?.partyWipeRebirth) {
+      coopClient.sendActionEvent({
+        role: activeHeroId,
+        action: 'party_wipe_rebirth',
+        x: evt.x,
+        z: evt.z,
+      });
+    } else if (evt?.revivedHeroId) {
+      if (typeof coopClient.sendRevivePartner === 'function') {
+        coopClient.sendRevivePartner({
+          revivedHeroId: evt.revivedHeroId,
+          saviorHeroId: evt.saviorHeroId,
+          hp: evt.hp,
+          shield: evt.shield,
+        });
+      } else {
+        coopClient.sendActionEvent({
+          role: evt.saviorHeroId || activeHeroId,
+          action: 'revive_partner',
+          revivedHeroId: evt.revivedHeroId,
+          saviorHeroId: evt.saviorHeroId,
+          hp: evt.hp,
+          shield: evt.shield,
+        });
+      }
+    }
+    coopClient.sendWorldSync(buildWorldSyncPayload(), true);
   });
 
   // 6B. Wave 2B Action Buffer, Mash Ramp, Contact-Frame Hit Detection & Spellbook Aim Controller
@@ -1364,7 +1470,7 @@ export async function createCoopPlayerSystem({
         const effectiveAnimScale = (swing.animTimeScale ?? swing.timeScale) * ultAtkMult;
         const effectiveVisDur = (swing.visualDuration ?? swing.duration) / ultAtkMult;
         startOneShotAction(st, knightClip, effectiveVisDur, {
-          startTime: 0,
+          startTime: swing.animStartTime ?? 0,
           timeScale: effectiveAnimScale,
           fade: 0.07,
         });
@@ -1469,6 +1575,15 @@ export async function createCoopPlayerSystem({
         heroStates.Knight.actionState = null;
         heroStates.Knight.actionTimer = 0;
       }
+      coopClient?.sendActionEvent?.({
+        role: 'Knight',
+        action: blocking ? 'block_start' : 'block_end',
+        shieldBlocking: Boolean(blocking),
+        x: heroStates.Knight.x,
+        y: heroStates.Knight.y,
+        z: heroStates.Knight.z,
+        yaw: heroStates.Knight.yaw,
+      });
     },
     onElementToggled: (payload) => {
       campaignLoop.toggleHeroElement(payload.heroId);
@@ -1498,6 +1613,20 @@ export async function createCoopPlayerSystem({
               ? 'Hold [E] to Aim Meteor Distance (3..16m) · Release [E] to Cast (8.5s CD)'
               : 'Hold [E] to Aim Glacier Line (14.5m) · Release [E] to Cast (8.5s CD)',
           kind: 'act',
+        });
+      }
+      if (typeof coopClient?.sendElementToggle === 'function') {
+        coopClient.sendElementToggle({
+          role: payload.heroId,
+          element: payload.element,
+          spellId: payload.spellId,
+        });
+      } else {
+        coopClient?.sendActionEvent?.({
+          role: payload.heroId,
+          action: 'element_toggle',
+          element: payload.element,
+          spellId: payload.spellId,
         });
       }
     },
@@ -1559,6 +1688,33 @@ export async function createCoopPlayerSystem({
             active: true,
             dt: 0.016,
           });
+        }
+      }
+      if (activeHeroId === 'Mage' && coopClient?.getState?.().peerConnected) {
+        const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        if (phase === 'show' || phase === 'hide' || nowMs - lastAimBroadcastAt >= 66) {
+          lastAimBroadcastAt = nowMs;
+          const aimMsg = {
+            role: 'Mage',
+            active: phase !== 'hide' && Boolean(aim?.active),
+            phase,
+            spellId: aim?.spellId || heroStates.Mage.selectedSpell || 'frost_lance',
+            yaw: aim?.yaw ?? heroStates.Mage.yaw,
+            distance: aim?.distance ?? 9.5,
+            dirX: aim?.dirX ?? Math.sin(aim?.yaw ?? heroStates.Mage.yaw),
+            dirZ: aim?.dirZ ?? Math.cos(aim?.yaw ?? heroStates.Mage.yaw),
+            origin: { x: heroStates.Mage.x, y: heroStates.Mage.y, z: heroStates.Mage.z },
+            targetPos: aim?.targetPos || null,
+            releaseIn: castResult?.releaseIn ?? 0,
+          };
+          if (typeof coopClient.sendAimState === 'function') {
+            coopClient.sendAimState(aimMsg);
+          } else {
+            coopClient.sendActionEvent({
+              ...aimMsg,
+              action: 'aim_state',
+            });
+          }
         }
       }
     },
@@ -2041,6 +2197,7 @@ export async function createCoopPlayerSystem({
   const communeChannel = {
     active: false,
     speakerRole: activeHeroId,
+    localInitiated: false,
   };
 
   function isPlayerControlLocked() {
@@ -2099,6 +2256,7 @@ export async function createCoopPlayerSystem({
 
     communeChannel.active = true;
     communeChannel.speakerRole = normSpeaker;
+    communeChannel.localInitiated = Boolean(broadcast);
 
     speakerState.praying = true;
     speakerState.actionState = null;
@@ -2153,6 +2311,7 @@ export async function createCoopPlayerSystem({
 
   function cancelCommuneChannel({ broadcast = true } = {}) {
     communeChannel.active = false;
+    communeChannel.localInitiated = false;
     if (vfxKit.artoriousVfx?.stopChannel) {
       vfxKit.artoriousVfx.stopChannel();
     } else {
@@ -2192,6 +2351,7 @@ export async function createCoopPlayerSystem({
     ensureCombatUnfrozen();
     lastAppliedVerdictAt = Date.now();
     communeChannel.active = false;
+    communeChannel.localInitiated = false;
     heroStates.Knight.praying = false;
     heroStates.Mage.praying = false;
 
@@ -2215,38 +2375,241 @@ export async function createCoopPlayerSystem({
     x: heroStates.Mage.x,
     y: heroStates.Mage.y,
     z: heroStates.Mage.z,
+    vx: 0,
+    vy: 0,
+    vz: 0,
     yaw: heroStates.Mage.yaw,
+    vyaw: 0,
+    grounded: true,
     clip: 'idle',
+    actionState: null,
+    shieldBlocking: false,
+    element: 'ice',
+    receivedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(),
   };
+
+  function handleRemoteElementToggle(msg) {
+    const role = msg.role === 'Knight' ? 'Knight' : 'Mage';
+    const nextEl = msg.element === 'fire' ? 'fire' : 'ice';
+    const nextSpell =
+      msg.spellId || (nextEl === 'fire' ? 'cinder_fall' : 'frost_lance');
+    if (campaignLoop.combatHeroes[role]) {
+      campaignLoop.combatHeroes[role].selectedElement = nextEl;
+      if (role === 'Mage') {
+        campaignLoop.combatHeroes.Mage.selectedSpell = nextSpell;
+      }
+    }
+    if (actionAim.heroes[role]) {
+      actionAim.heroes[role].selectedElement = nextEl;
+      if (role === 'Mage') {
+        actionAim.heroes.Mage.selectedSpell = nextSpell;
+      }
+    }
+    if (heroStates[role]) {
+      heroStates[role].selectedElement = nextEl;
+      if (role === 'Mage') {
+        heroStates.Mage.selectedSpell = nextSpell;
+      }
+    }
+    onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
+  }
+
+  function handleRemoteAimState(msg) {
+    if (activeHeroId === 'Mage') return;
+    const aimArrow = vfxKit?.aimArrow;
+    if (!aimArrow) return;
+    const phase = msg.phase || (msg.active ? 'update' : 'hide');
+    if (phase === 'hide' || msg.active === false) {
+      if (msg.releaseIn > 0 && typeof aimArrow.release === 'function') {
+        aimArrow.release({ holdSeconds: msg.releaseIn });
+      } else {
+        aimArrow.hide?.();
+      }
+      vfxKit?.shatterlance?.cancelCharge?.();
+      return;
+    }
+    const spellId = msg.spellId || heroStates.Mage.selectedSpell || 'frost_lance';
+    const yaw = msg.yaw ?? heroStates.Mage.yaw;
+    const dirX = msg.dirX ?? Math.sin(yaw);
+    const dirZ = msg.dirZ ?? Math.cos(yaw);
+    const origin = msg.origin || {
+      x: heroStates.Mage.x,
+      y: heroStates.Mage.y,
+      z: heroStates.Mage.z,
+    };
+    const arrowPayload = {
+      active: true,
+      spellId,
+      origin,
+      yaw,
+      distance: msg.distance ?? 9.5,
+      dirX,
+      dirZ,
+      direction: { x: dirX, y: 0, z: dirZ },
+      targetPos: msg.targetPos || null,
+      mode: spellId,
+      style: spellId === 'cinder_fall' ? 'fire' : 'ice',
+    };
+    if (phase === 'show' && typeof aimArrow.show === 'function') {
+      aimArrow.show(arrowPayload);
+    } else if (typeof aimArrow.updateAim === 'function') {
+      aimArrow.updateAim(arrowPayload);
+    } else if (typeof aimArrow.setAim === 'function') {
+      aimArrow.setAim(arrowPayload);
+    } else if (typeof aimArrow.show === 'function') {
+      aimArrow.show(arrowPayload);
+    }
+    if (spellId === 'shatterlance') {
+      vfxKit?.shatterlance?.updateChargeHold?.({
+        origin,
+        yaw,
+        dirX,
+        dirZ,
+        direction: { x: dirX, y: 0, z: dirZ },
+        active: true,
+        dt: 0.016,
+      });
+    }
+  }
+
+  function handleRemoteRevivePartner(msg) {
+    const revivedId =
+      msg.revivedHeroId === 'Knight' || msg.revivedHeroId === 'Mage'
+        ? msg.revivedHeroId
+        : activeHeroId;
+    const cHero = campaignLoop.combatHeroes[revivedId];
+    if (cHero) {
+      cHero.downed = false;
+      cHero.reviveTimer = 0;
+      cHero.hp = msg.hp ?? Math.round(cHero.maxHp * 0.55);
+      cHero.shield = Math.max(cHero.shield || 0, msg.shield ?? 45);
+      cHero.shieldTimer = Math.max(cHero.shieldTimer || 0, 8.0);
+    }
+    const hSt = heroStates[revivedId];
+    if (hSt) {
+      hSt.actionState = null;
+      hSt.actionTimer = 0;
+      playHeroLocomotionClip(hSt, 'idle');
+    }
+    combatSfx.playMiracle?.();
+    onBanner?.({
+      title: `${revivedId.toUpperCase()} REVIVED BY PARTNER!`,
+      subtitle: '55% HP Restored · +45 Protective Shield',
+      kind: 'blessing',
+    });
+    onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
+  }
 
   const coopClient = createCoopClient({
     preferredRole: activeHeroId,
     onRoomState: (roomState) => {
-      if (roomState.peerConnected && roomState.role && roomState.role !== activeHeroId) {
+      if (
+        (roomState.peerConnected || roomState.connected) &&
+        roomState.role &&
+        roomState.role !== activeHeroId
+      ) {
         activeHeroId = roomState.role;
         partnerHeroId = activeHeroId === 'Knight' ? 'Mage' : 'Knight';
         syncSharedPlayerFromLeader();
         onHeroSwapped?.(activeHeroId, partnerHeroId);
       }
       remotePartnerTarget.active = Boolean(roomState.peerConnected);
+      if (roomState.peerConnected && roomState.isHost) {
+        coopClient.sendWorldSync(buildWorldSyncPayload(), true);
+      }
       onCoopStateChanged?.(roomState);
+    },
+    onExpeditionStarted: () => {
+      ensureCombatUnfrozen();
+      const st = coopClient.getState();
+      if (!st.peerConnected || st.isHost) {
+        if (enemyManager.activeEnemies.length === 0 && !campaignLoop.roadVanguardSpawned) {
+          campaignLoop.startExpedition({ x: 0, z: 102 });
+        }
+        coopClient.sendWorldSync(buildWorldSyncPayload(), true);
+      }
     },
     onPeerHeroState: (msg) => {
       const peerRole = msg.role === 'Knight' ? 'Knight' : 'Mage';
       if (peerRole === activeHeroId) return;
       remotePartnerTarget.active = true;
+      remotePartnerTarget.receivedAt =
+        typeof performance !== 'undefined' ? performance.now() : Date.now();
       if (typeof msg.x === 'number') remotePartnerTarget.x = msg.x;
       if (typeof msg.y === 'number') remotePartnerTarget.y = msg.y;
       if (typeof msg.z === 'number') remotePartnerTarget.z = msg.z;
+      if (typeof msg.vx === 'number') remotePartnerTarget.vx = msg.vx;
+      if (typeof msg.vy === 'number') remotePartnerTarget.vy = msg.vy;
+      if (typeof msg.vz === 'number') remotePartnerTarget.vz = msg.vz;
       if (typeof msg.yaw === 'number') remotePartnerTarget.yaw = msg.yaw;
-      if (msg.clip && heroStates[peerRole]) {
-        playHeroLocomotionClip(heroStates[peerRole], msg.clip);
+      if (typeof msg.vyaw === 'number') remotePartnerTarget.vyaw = msg.vyaw;
+      if (typeof msg.grounded === 'boolean') remotePartnerTarget.grounded = msg.grounded;
+      if (msg.clip) remotePartnerTarget.clip = msg.clip;
+      if (msg.actionState !== undefined) remotePartnerTarget.actionState = msg.actionState;
+
+      const peerHero = heroStates[peerRole];
+      if (!peerHero) return;
+
+      if (peerRole === 'Knight' && typeof msg.shieldBlocking === 'boolean') {
+        remotePartnerTarget.shieldBlocking = msg.shieldBlocking;
+        if (peerHero.shieldBlocking !== msg.shieldBlocking) {
+          peerHero.shieldBlocking = msg.shieldBlocking;
+          campaignLoop.setKnightShieldBlocking(msg.shieldBlocking);
+          if (msg.shieldBlocking) {
+            peerHero.actionState = 'block';
+            peerHero.actionTimer = 999;
+            peerHero.char.play('block', { loop: true, fade: 0.08, startTime: 0, force: true });
+          } else if (peerHero.actionState === 'block') {
+            peerHero.actionState = null;
+            peerHero.actionTimer = 0;
+          }
+        }
+      }
+
+      if (msg.element === 'fire' || msg.element === 'ice') {
+        remotePartnerTarget.element = msg.element;
+        peerHero.selectedElement = msg.element;
+        if (campaignLoop.combatHeroes[peerRole]) {
+          campaignLoop.combatHeroes[peerRole].selectedElement = msg.element;
+        }
+        if (peerRole === 'Mage') {
+          const sp = msg.element === 'fire' ? 'cinder_fall' : 'frost_lance';
+          peerHero.selectedSpell = sp;
+          if (campaignLoop.combatHeroes.Mage) {
+            campaignLoop.combatHeroes.Mage.selectedSpell = sp;
+          }
+        }
+      }
+
+      // Critical Animation Fix: Never let periodic hero_state.clip updates overwrite an active one-shot attack/cast animation!
+      if (
+        msg.clip &&
+        (!peerHero.actionState || peerHero.actionTimer <= 0) &&
+        !peerHero.shieldBlocking &&
+        !peerHero.praying
+      ) {
+        playHeroLocomotionClip(peerHero, msg.clip);
       }
     },
     onPeerSpellCast: (msg) => {
       const spellId = msg.spellId || msg.spell || 'frost_lance';
       const caster = heroStates.Mage;
       const yaw = msg.yaw ?? caster.yaw;
+      if (msg.origin && typeof msg.origin.x === 'number' && typeof msg.origin.z === 'number') {
+        caster.x = msg.origin.x;
+        caster.z = msg.origin.z;
+        caster.y = walkableHeightAt(caster.x, caster.z);
+        remotePartnerTarget.x = caster.x;
+        remotePartnerTarget.z = caster.z;
+        remotePartnerTarget.y = caster.y;
+      }
+      caster.yaw = yaw;
+      remotePartnerTarget.yaw = yaw;
+      applyTransform(caster);
+      if (activeHeroId !== 'Mage') {
+        vfxKit?.aimArrow?.hide?.();
+        vfxKit?.shatterlance?.cancelCharge?.();
+      }
       startOneShotAction(caster, 'cast_spell', 0.62, {
         startTime: 0,
         timeScale: 1.0,
@@ -2255,29 +2618,185 @@ export async function createCoopPlayerSystem({
       campaignLoop.castSpell(spellId, msg.origin || caster, yaw, heroStates.Knight, {
         distance: msg.distance,
         targetPos: msg.targetPos,
+        ignoreCooldown: true,
+        remoteVisualOnly: true,
       });
     },
     onPeerAction: (msg) => {
+      if (msg.action === 'element_toggle') {
+        handleRemoteElementToggle(msg);
+        return;
+      }
+      if (msg.action === 'aim_state') {
+        handleRemoteAimState(msg);
+        return;
+      }
+      if (msg.action === 'revive_partner') {
+        handleRemoteRevivePartner(msg);
+        return;
+      }
+      if (msg.action === 'party_wipe_rebirth') {
+        const rx = typeof msg.x === 'number' ? msg.x : 0;
+        const rz = typeof msg.z === 'number' ? msg.z : 122;
+        for (const hId of ['Knight', 'Mage']) {
+          const hSt = heroStates[hId];
+          const cH = campaignLoop.combatHeroes[hId];
+          hSt.x = hId === 'Knight' ? rx : rx + 1.85;
+          hSt.z = hId === 'Knight' ? rz : rz + 0.5;
+          hSt.y = walkableHeightAt(hSt.x, hSt.z);
+          hSt.actionState = null;
+          hSt.actionTimer = 0;
+          applyTransform(hSt);
+          playHeroLocomotionClip(hSt, 'idle');
+          if (cH) {
+            cH.downed = false;
+            cH.reviveTimer = 0;
+            cH.hp = cH.maxHp;
+            cH.shield = 60;
+            cH.shieldTimer = 8.0;
+          }
+        }
+        combatSfx.playMiracle?.();
+        onBanner?.({
+          title: 'REBORN AT THE VALLEY GATE',
+          subtitle: 'Both Lovers Restored to Full HP + 60 Shield',
+          kind: 'blessing',
+        });
+        onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
+        return;
+      }
+      if (msg.action === 'detonation') {
+        localHitstopTimer = 0.07;
+        knightChar.mixer.timeScale = 0.05;
+        onBanner?.({
+          title: `${msg.label || 'ELEMENTAL DETONATION'} · +${msg.bonusDmg || 42} AoE BURST`,
+          subtitle: 'Elemental Mark Detonated · +20 Q Energy to Both Lovers',
+          kind: 'detonation',
+        });
+        return;
+      }
+      if (msg.action === 'player_damaged') {
+        const victimId = msg.heroId === 'Knight' ? 'Knight' : 'Mage';
+        const victimSt = heroStates[victimId];
+        if (victimSt) {
+          victimSt.hitFlashTimer = 0.18;
+          victimSt.hitFlashBlocked = Boolean(msg.blockedByShield);
+          if (victimId === activeHeroId && !msg.blockedByShield && (msg.damageDealt || 0) > 0) {
+            const kClip =
+              victimId === 'Knight'
+                ? pickHeroClip(victimSt, 'Hit_B', 'Hit_A', 'hit') || 'hit'
+                : pickHeroClip(victimSt, 'Hit_A', 'hit') || 'hit';
+            if (!victimSt.actionState) {
+              startOneShotAction(victimSt, kClip, 0.28, { startTime: 0, timeScale: 1.25, fade: 0.05 });
+            }
+          }
+        }
+        return;
+      }
+      if (msg.action === 'enemy_hit') {
+        const st = coopClient.getState();
+        if (!st.peerConnected || st.isHost) {
+          const hitRes = campaignLoop.applyRemoteEnemyHit(msg, heroStates);
+          if (hitRes?.accepted) {
+            if (hitRes.detonation) {
+              coopClient.sendActionEvent({
+                role: msg.attackerRole || 'Mage',
+                action: 'detonation',
+                label: hitRes.detonation.label,
+                bonusDmg: hitRes.detonation.bonusDmg,
+              });
+            }
+            coopClient.sendWorldSync(buildWorldSyncPayload(), true);
+            onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
+          }
+        }
+        return;
+      }
+
       const role = msg.role === 'Knight' ? 'Knight' : 'Mage';
+      if (role === activeHeroId) return;
       const st = heroStates[role];
       if (!st) return;
+
+      if (typeof msg.x === 'number' && typeof msg.z === 'number') {
+        st.x = msg.x;
+        st.z = msg.z;
+        st.y = walkableHeightAt(st.x, st.z);
+        remotePartnerTarget.x = msg.x;
+        remotePartnerTarget.z = msg.z;
+        remotePartnerTarget.y = st.y;
+      }
+      if (typeof msg.yaw === 'number') {
+        st.yaw = msg.yaw;
+        remotePartnerTarget.yaw = msg.yaw;
+      }
+      applyTransform(st);
+
       if (
         msg.action === 'combo1' ||
         msg.action === 'combo2' ||
         msg.action === 'combo3' ||
         msg.action === 'combo4'
       ) {
-        startOneShotAction(st, msg.action, 0.56, {
-          startTime: 0,
-          timeScale: 1.0,
+        const swingSpec = KNIGHT_COMBO_SPECS.find((s) => s.clip === msg.action);
+        const knightClip =
+          pickHeroClip(st, swingSpec?.nativeClip, msg.action) || msg.action;
+        startOneShotAction(st, knightClip, swingSpec?.visualDuration || 0.56, {
+          startTime: swingSpec?.animStartTime ?? 0,
+          timeScale: swingSpec?.animTimeScale ?? 1.0,
           fade: 0.07,
         });
         if (role === 'Knight') {
-          campaignLoop.performKnightSwing(msg.action, st, msg.yaw ?? st.yaw, heroStates.Mage);
+          campaignLoop.performKnightSwing(msg.action, st, msg.yaw ?? st.yaw, heroStates.Mage, {
+            remoteVisualOnly: true,
+          });
+          if (
+            msg.action === 'combo4' &&
+            (campaignLoop.combatHeroes.Knight.powerSwordActive ||
+              campaignLoop.combatHeroes.Knight.ultActive)
+          ) {
+            const activeStyle =
+              campaignLoop.combatHeroes.Knight.breathingStyle || 'solar';
+            vfxKit.ultimateVfx?.playDragonSlash?.(
+              { x: st.x, y: st.y, z: st.z },
+              { yaw: msg.yaw ?? st.yaw, style: activeStyle, duration: 0.72 }
+            );
+          }
         }
-      } else if (msg.action === 'block' || msg.action === 'shield_block') {
+      } else if (
+        msg.action === 'block' ||
+        msg.action === 'shield_block' ||
+        msg.action === 'block_start'
+      ) {
+        st.shieldBlocking = true;
+        remotePartnerTarget.shieldBlocking = true;
         campaignLoop.setKnightShieldBlocking(true);
+        vfxKit.swordVfx?.endSwing?.();
+        st.actionState = 'block';
+        st.actionTimer = 999;
         st.char.play('block', { loop: true, fade: 0.08, startTime: 0, force: true });
+      } else if (msg.action === 'block_end' || msg.action === 'shield_block_end') {
+        st.shieldBlocking = false;
+        remotePartnerTarget.shieldBlocking = false;
+        campaignLoop.setKnightShieldBlocking(false);
+        if (st.actionState === 'block') {
+          st.actionState = null;
+          st.actionTimer = 0;
+        }
+        playHeroLocomotionClip(st, 'idle');
+      } else if (msg.action === 'dash') {
+        const dashClip =
+          pickHeroClip(st, msg.clip, 'Dodge_Forward', 'Dodge_Backward', 'dash') || 'dash';
+        const dur = msg.dashDuration || (role === 'Knight' ? 0.44 : 0.38);
+        st.dashDirX = typeof msg.dashDirX === 'number' ? msg.dashDirX : Math.sin(st.yaw);
+        st.dashDirZ = typeof msg.dashDirZ === 'number' ? msg.dashDirZ : Math.cos(st.yaw);
+        st.dashDuration = dur;
+        startOneShotAction(st, dashClip, dur, {
+          startTime: 0,
+          timeScale: role === 'Knight' ? 1.85 : 1.45,
+          fade: 0.05,
+        });
+        st.actionState = 'dash';
       } else if (
         msg.action === 'mage_attack1' ||
         msg.action === 'mage_attack2' ||
@@ -2300,22 +2819,124 @@ export async function createCoopPlayerSystem({
         if (cIdx === 3) {
           campaignLoop.castSpell('shatterlance', st, msg.yaw ?? st.yaw, heroStates.Knight, {
             ignoreCooldown: true,
+            remoteVisualOnly: true,
           });
         } else {
-          campaignLoop.performMageBoltAttack(cIdx, st, heroStates.Knight);
+          campaignLoop.performMageBoltAttack(cIdx, st, heroStates.Knight, {
+            remoteVisualOnly: true,
+          });
         }
       } else if (msg.action === 'skill') {
-        campaignLoop.performPartnerSkill(role, heroStates);
+        if (role === 'Knight') {
+          const el = msg.element || st.selectedElement || 'ice';
+          st.selectedElement = el;
+          campaignLoop.combatHeroes.Knight.selectedElement = el;
+          const res = campaignLoop.performPartnerSkill('Knight', heroStates, {
+            element: el,
+            remoteVisualOnly: true,
+          });
+          const eClip =
+            pickHeroClip(st, 'Melee_1H_Attack_Slice_Diagonal', 'combo2') || 'combo1';
+          startOneShotAction(st, eClip, 0.68, {
+            startTime: 0,
+            timeScale: 1.35,
+            fade: 0.07,
+          });
+          const bStyle = res?.breathingStyle || (el === 'fire' ? 'solar' : 'lunar');
+          vfxKit.swordVfx.triggerSwing('combo2', st, st.yaw, bStyle);
+          vfxKit.ultimateVfx?.playDragonSlash?.(
+            { x: st.x, y: st.y, z: st.z },
+            { yaw: st.yaw, style: bStyle, duration: 0.72 }
+          );
+        } else {
+          campaignLoop.performPartnerSkill('Mage', heroStates, {
+            spellId: msg.spellId || st.selectedSpell,
+            yaw: msg.yaw ?? st.yaw,
+            distance: msg.distance,
+            targetPos: msg.targetPos,
+            remoteVisualOnly: true,
+          });
+        }
       } else if (msg.action === 'ultimate') {
         if (role === 'Knight') {
-          campaignLoop.performKnightUltimate(heroStates);
+          const spinClip =
+            pickHeroClip(
+              st,
+              'Melee_2H_Attack_Spinning',
+              'Melee_2H_Attack_Spin',
+              'charged'
+            ) || 'charged';
+          startOneShotAction(st, spinClip, 0.56, {
+            startTime: 0,
+            timeScale: 1.55,
+            fade: 0.06,
+          });
+          campaignLoop.performKnightUltimate(heroStates, {
+            requireEnergy: false,
+            remoteVisualOnly: true,
+          });
         } else {
-          campaignLoop.performMageStormCataclysm(heroStates);
+          startOneShotAction(st, 'burst_aoe', 0.8, {
+            startTime: 0,
+            timeScale: 1.0,
+            fade: 0.08,
+          });
+          campaignLoop.performMageStormCataclysm(heroStates, {
+            requireEnergy: false,
+            remoteVisualOnly: true,
+          });
         }
       }
     },
+    onEnemyHit: (msg) => {
+      const st = coopClient.getState();
+      if (st.peerConnected && !st.isHost) return;
+      const hitRes = campaignLoop.applyRemoteEnemyHit(msg, heroStates);
+      if (hitRes?.accepted) {
+        if (hitRes.detonation) {
+          coopClient.sendActionEvent({
+            role: msg.attackerRole || 'Mage',
+            action: 'detonation',
+            label: hitRes.detonation.label,
+            bonusDmg: hitRes.detonation.bonusDmg,
+          });
+        }
+        coopClient.sendWorldSync(buildWorldSyncPayload(), true);
+        onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
+      }
+    },
     onWorldSync: (msg) => {
-      campaignLoop.applyRemoteStateSync(msg);
+      const st = coopClient.getState();
+      if (st.peerConnected && st.isHost) return;
+      ensureCombatUnfrozen();
+      campaignLoop.applyRemoteStateSync(msg, heroStates);
+    },
+    onElementToggle: (msg) => {
+      handleRemoteElementToggle(msg);
+    },
+    onAimState: (msg) => {
+      handleRemoteAimState(msg);
+    },
+    onRevivePartner: (msg) => {
+      handleRemoteRevivePartner(msg);
+    },
+    onSnapshotRequest: () => {
+      const st = coopClient.getState();
+      if (!st.peerConnected || st.isHost) {
+        const snap = buildWorldSyncPayload();
+        if (typeof coopClient.sendFullSnapshot === 'function') {
+          coopClient.sendFullSnapshot(snap);
+        } else {
+          coopClient.sendWorldSync(snap, true);
+        }
+      }
+    },
+    onFullSnapshot: (msg) => {
+      const st = coopClient.getState();
+      if (st.peerConnected && st.isHost) return;
+      ensureCombatUnfrozen();
+      const snap = msg?.snapshot || msg;
+      campaignLoop.applyRemoteStateSync(snap, heroStates);
     },
     onCommuneState: (msg) => {
       const peerSpeaker = msg.speakerRole || msg.fromRole || partnerHeroId;
@@ -2327,12 +2948,14 @@ export async function createCoopPlayerSystem({
         cancelCommuneChannel({ broadcast: false });
       }
     },
-    onCommuneVerdict: (msg) => {
-      if (Date.now() - lastAppliedVerdictAt < 1500) return;
+    onCommuneVerdict: async (msg) => {
+      if (communeChannel.localInitiated || Date.now() - lastAppliedVerdictAt < 2500) return;
       const judgment = msg.judgment || msg;
       const speakerRole = msg.speakerRole || msg.fromRole || partnerHeroId;
+      if (onRemoteCommuneVerdict) {
+        await onRemoteCommuneVerdict(judgment, speakerRole);
+      }
       applyCommuneVerdict(judgment, speakerRole);
-      onRemoteCommuneVerdict?.(judgment, speakerRole);
     },
   });
 
@@ -2828,6 +3451,10 @@ export async function createCoopPlayerSystem({
       coopClient.sendActionEvent({
         role: activeHeroId,
         action: 'dash',
+        clip: dodgeClip,
+        dashDirX: leader.dashDirX,
+        dashDirZ: leader.dashDirZ,
+        dashDuration: leader.dashDuration,
         x: leader.x,
         y: leader.y,
         z: leader.z,
@@ -2908,6 +3535,8 @@ export async function createCoopPlayerSystem({
           coopClient.sendActionEvent({
             role: 'Knight',
             action: 'skill',
+            element: res.element,
+            breathingStyle: campaignLoop.combatHeroes.Knight.breathingStyle,
             x: leader.x,
             y: leader.y,
             z: leader.z,
@@ -3060,6 +3689,7 @@ export async function createCoopPlayerSystem({
   }
 
   function swapActiveHero() {
+    if (coopClient.getState().peerConnected) return activeHeroId;
     if (isPlayerControlLocked()) return activeHeroId;
     const nextHeroId = activeHeroId === 'Knight' ? 'Mage' : 'Knight';
     if (campaignLoop.combatHeroes[nextHeroId]?.downed) {
@@ -3088,6 +3718,7 @@ export async function createCoopPlayerSystem({
   }
 
   function teleportLeaderAndPartner(x, z, yaw = Math.PI) {
+    ensureCombatUnfrozen();
     const leader = heroStates[activeHeroId];
     const partner = heroStates[partnerHeroId];
 
@@ -3152,6 +3783,10 @@ export async function createCoopPlayerSystem({
 
     const leader = heroStates[activeHeroId];
     const partner = heroStates[partnerHeroId];
+    const prevLeaderX = leader.x;
+    const prevLeaderY = leader.y;
+    const prevLeaderZ = leader.z;
+    const prevLeaderYaw = leader.yaw;
     // Downed heroes can't act; they wait for a partner revive.
     const controlLocked =
       isPlayerControlLocked() || Boolean(campaignLoop.combatHeroes[activeHeroId]?.downed);
@@ -3471,23 +4106,76 @@ export async function createCoopPlayerSystem({
       }
     }
 
+    // Track instantaneous velocity & angular velocity on leader for projective dead-reckoning
+    if (dt > 1e-4 && !didWrap) {
+      leader.vx = (leader.x - prevLeaderX) / dt;
+      leader.vz = (leader.z - prevLeaderZ) / dt;
+      leader.vyaw = shortestAngleDiff(leader.yaw, prevLeaderYaw) / dt;
+    } else {
+      leader.vx = 0;
+      leader.vz = 0;
+      leader.vyaw = 0;
+    }
+
     // 3. Update Co-Op Partner (Remote Peer Interpolation OR Solo Wingman Follow AI)
-    if (partner.actionTimer > 0) {
+    const coopState = coopClient.getState();
+    const isPeerLinked = Boolean(coopState.peerConnected);
+    const isAuthoritativeHost = !isPeerLinked || Boolean(coopState.isHost);
+
+    if (partner.actionTimer > 0 && !partner.shieldBlocking) {
       partner.actionTimer = Math.max(0, partner.actionTimer - dt);
+      if (isPeerLinked && partner.actionState === 'dash') {
+        const dashProg = clamp(partner.actionTimer / (partner.dashDuration || 0.42), 0, 1);
+        const dashSpeed = player.speed * (0.95 + 1.55 * Math.sin(dashProg * Math.PI * 0.5));
+        const nextDash = resolveCollisions(
+          partner.x + (partner.dashDirX || 0) * dashSpeed * dt,
+          partner.z + (partner.dashDirZ || 0) * dashSpeed * dt,
+          player.radius * 0.9
+        );
+        partner.x = nextDash.x;
+        partner.z = nextDash.z;
+        remotePartnerTarget.x = nextDash.x;
+        remotePartnerTarget.z = nextDash.z;
+      }
       if (partner.actionTimer <= 0) {
         partner.actionState = null;
       }
     }
 
-    const isPeerLinked = Boolean(coopClient.getState().peerConnected && remotePartnerTarget.active);
     const blessingActive = Boolean(campaignLoop.isDivineBlessingActive?.());
     const leaderDowned = Boolean(campaignLoop.combatHeroes[leader.id]?.downed);
     if (isPeerLinked) {
-      if (!isPlayerControlLocked()) {
-        partner.x += (remotePartnerTarget.x - partner.x) * Math.min(1, 12 * dt);
-        partner.z += (remotePartnerTarget.z - partner.z) * Math.min(1, 12 * dt);
-        partner.y = walkableHeightAt(partner.x, partner.z);
-        partner.yaw += shortestAngleDiff(remotePartnerTarget.yaw, partner.yaw) * Math.min(1, 12 * dt);
+      if (remotePartnerTarget.active && !campaignLoop.verdictSequence?.active) {
+        const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const age = Math.min(
+          0.10,
+          Math.max(0, (nowMs - (remotePartnerTarget.receivedAt || nowMs)) * 0.001)
+        );
+        const projX = remotePartnerTarget.x + (remotePartnerTarget.vx || 0) * age;
+        const projZ = remotePartnerTarget.z + (remotePartnerTarget.vz || 0) * age;
+        const blend = 1 - Math.exp(-18 * dt);
+        const errDist = Math.hypot(projX - partner.x, projZ - partner.z);
+        if (errDist > 12.0) {
+          partner.x = projX;
+          partner.z = projZ;
+        } else {
+          partner.x += (projX - partner.x) * blend;
+          partner.z += (projZ - partner.z) * blend;
+        }
+        const groundY = walkableHeightAt(partner.x, partner.z);
+        if (
+          remotePartnerTarget.grounded === false &&
+          typeof remotePartnerTarget.y === 'number'
+        ) {
+          partner.y += (Math.max(groundY, remotePartnerTarget.y) - partner.y) * blend;
+          partner.grounded = false;
+        } else {
+          partner.y = groundY;
+          partner.grounded = true;
+        }
+        const projYaw =
+          remotePartnerTarget.yaw + (remotePartnerTarget.vyaw || 0) * age * 0.5;
+        partner.yaw += shortestAngleDiff(projYaw, partner.yaw) * blend;
       }
     } else if (!isPlayerControlLocked() && !campaignLoop.combatHeroes[partner.id]?.downed) {
       const catActive = Boolean(
@@ -3636,6 +4324,8 @@ export async function createCoopPlayerSystem({
       heroStates,
       activeHeroId,
       soloWingmanActive: !isPeerLinked,
+      isHost: isAuthoritativeHost,
+      isGuest: isPeerLinked && !isAuthoritativeHost,
       camera,
     });
 
@@ -3685,9 +4375,24 @@ export async function createCoopPlayerSystem({
       x: leader.x,
       y: leader.y,
       z: leader.z,
+      vx: leader.vx || 0,
+      vy: leader.vy || 0,
+      vz: leader.vz || 0,
       yaw: leader.yaw,
+      vyaw: leader.vyaw || 0,
+      grounded: Boolean(leader.grounded),
       clip: leader.char.anim.currentKey,
+      actionState: leader.actionState,
+      shieldBlocking: Boolean(leader.shieldBlocking),
+      element:
+        activeHeroId === 'Knight'
+          ? campaignLoop.combatHeroes.Knight.selectedElement
+          : campaignLoop.combatHeroes.Mage.selectedElement,
     });
+
+    if (isPeerLinked && isAuthoritativeHost) {
+      coopClient.sendWorldSync(buildWorldSyncPayload());
+    }
 
     // 4B. Sync Underground Visibility, Sword VFX Sheath, and Character Ground-Clip / Dissolve Shaders
     const vfx = vfxKit.artoriousVfx;
@@ -4120,6 +4825,10 @@ export async function createCoopPlayerSystem({
     applyCommuneVerdict,
     swapActiveHero,
     teleportLeaderAndPartner,
+    setProfile: (nextProfile) => enemyManager.setProfile?.(nextProfile),
+    get soloWingmanActive() {
+      return !coopClient.getState().peerConnected;
+    },
     poseForShot,
     poseForGameplayShot,
     update,

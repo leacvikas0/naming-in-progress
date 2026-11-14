@@ -369,6 +369,38 @@ export function createCampaignLoop({
   function setOnPlayerDamaged(fn) {
     playerDamagedCallback = typeof fn === 'function' ? fn : null;
   }
+  let localEnemyHitCallback = null;
+  function setOnLocalEnemyHit(fn) {
+    localEnemyHitCallback = typeof fn === 'function' ? fn : null;
+  }
+  let partnerRevivedCallback = null;
+  function setOnPartnerRevived(fn) {
+    partnerRevivedCallback = typeof fn === 'function' ? fn : null;
+  }
+  let lastSoloWingmanActive = true;
+  let isRemoteGuestMode = false;
+  const processedEnemyHitIds = new Set();
+
+  function emitLocalEnemyHits(hits, hitSpec = {}, attackerRole = 'Knight') {
+    if (!localEnemyHitCallback || !Array.isArray(hits)) return;
+    for (let i = 0; i < hits.length; i++) {
+      const h = hits[i];
+      if (!h?.enemy || !h?.result) continue;
+      if (
+        h.result.damageDealt > 0 ||
+        h.result.detonation ||
+        h.result.killed ||
+        h.result.finishedPile
+      ) {
+        localEnemyHitCallback({
+          enemy: h.enemy,
+          result: h.result,
+          hitSpec,
+          attackerRole,
+        });
+      }
+    }
+  }
   const PARTNER_REVIVE_RADIUS = 2.8;
   const PARTNER_REVIVE_SECONDS = 2.5;
   const PARTNER_REVIVE_HP = 0.45;
@@ -1701,7 +1733,11 @@ export function createCampaignLoop({
         : SPELLS[spellIdOrSlot];
     if (!spell || combatHeroes.Mage.downed) return null;
 
-    if (!options.ignoreCooldown && (combatHeroes.Mage.spellCooldowns[spell.id] || 0) > 0.05) {
+    if (
+      !options.ignoreCooldown &&
+      !options.remoteVisualOnly &&
+      (combatHeroes.Mage.spellCooldowns[spell.id] || 0) > 0.05
+    ) {
       return { onCooldown: true, spell };
     }
 
@@ -1714,12 +1750,13 @@ export function createCampaignLoop({
       spell.id === 'frost_lance' || spell.id === 'cinder_fall'
         ? MAGE_E_COOLDOWN
         : spell.cd;
-    combatHeroes.Mage.spellCooldowns[spell.id] = Number((baseCd * cdMult).toFixed(2));
-    if (spell.id === 'frost_lance' || spell.id === 'cinder_fall') {
-      combatHeroes.Mage.skillCd = combatHeroes.Mage.spellCooldowns[spell.id];
+    if (!options.remoteVisualOnly) {
+      combatHeroes.Mage.spellCooldowns[spell.id] = Number((baseCd * cdMult).toFixed(2));
+      if (spell.id === 'frost_lance' || spell.id === 'cinder_fall') {
+        combatHeroes.Mage.skillCd = combatHeroes.Mage.spellCooldowns[spell.id];
+      }
+      addResonance(spell.resonanceGain);
     }
-
-    addResonance(spell.resonanceGain);
     if (
       !combatHeroes.Knight.powerSwordActive &&
       !combatHeroes.Knight.ultActive &&
@@ -1814,7 +1851,7 @@ export function createCampaignLoop({
     }
 
     let hits = [];
-    if (enemyManager) {
+    if (enemyManager && !options.remoteVisualOnly) {
       const commonHitSpec = {
         source: spell.id,
         baseDmg: spell.dmg,
@@ -1897,12 +1934,16 @@ export function createCampaignLoop({
           }
         }
       }
+      if (!options.fromWingmanAi) {
+        emitLocalEnemyHits(hits, commonHitSpec, 'Mage');
+      }
     }
 
     // Friendly-Fire Roast: when live 3D player Mage casts Cinder Fall directly on the Knight
     if (
       spell.id === 'cinder_fall' &&
       !options.fromWingmanAi &&
+      !options.remoteVisualOnly &&
       partnerPos &&
       typeof partnerPos.char === 'object'
     ) {
@@ -1997,26 +2038,27 @@ export function createCampaignLoop({
     }
 
     let hits = [];
-    if (enemyManager) {
+    if (enemyManager && !options.remoteVisualOnly) {
+      const swingHitSpec = {
+        source: swingType,
+        yaw: swingYaw,
+        baseDmg,
+        infusion: activeStyle,
+        knightLevel: combatHeroes.Knight.level,
+        knightUltActive: combatHeroes.Knight.ultActive,
+        ultDmgMult: combatHeroes.Knight.ultDmgMult,
+        empoweredBreathing: combatHeroes.Knight.empoweredBreathing,
+        partnerSwordMult: combatHeroes.Knight.partnerSwordMult,
+        perfectDodgeBuff: combatHeroes.Knight.perfectDodgeBuff,
+        attackerPos: knightPos,
+        partnerPos,
+      };
       hits = enemyManager.applyAreaOrLineHit({
         origin: knightPos,
         range,
         radius: swingType === 'charged' || swingType === 'heavy' ? 3.8 : 0,
         coneHalfAngle: (95 * Math.PI) / 180,
-        hitSpec: {
-          source: swingType,
-          yaw: swingYaw,
-          baseDmg,
-          infusion: activeStyle,
-          knightLevel: combatHeroes.Knight.level,
-          knightUltActive: combatHeroes.Knight.ultActive,
-          ultDmgMult: combatHeroes.Knight.ultDmgMult,
-          empoweredBreathing: combatHeroes.Knight.empoweredBreathing,
-          partnerSwordMult: combatHeroes.Knight.partnerSwordMult,
-          perfectDodgeBuff: combatHeroes.Knight.perfectDodgeBuff,
-          attackerPos: knightPos,
-          partnerPos,
-        },
+        hitSpec: swingHitSpec,
       });
       combatHeroes.Knight.perfectDodgeBuff = false;
 
@@ -2058,12 +2100,15 @@ export function createCampaignLoop({
           }
         }
       }
+      if (!options.fromWingmanAi) {
+        emitLocalEnemyHits(hits, swingHitSpec, 'Knight');
+      }
     }
 
     return { swingType, swingYaw, softTarget, hits };
   }
 
-  function performMageBoltAttack(comboIndex = 0, mageState, partnerPos = null) {
+  function performMageBoltAttack(comboIndex = 0, mageState, partnerPos = null, options = {}) {
     if (combatHeroes.Mage.downed || !mageState) return null;
 
     const ascendedActive = Boolean(combatHeroes.Mage.ascendedMagicFlow);
@@ -2113,49 +2158,52 @@ export function createCampaignLoop({
     }
 
     let hits = [];
-    if (enemyManager) {
+    if (enemyManager && !options.remoteVisualOnly) {
       const canApplyRimeMark =
         getUnlockedStage() >= 1 ||
         (getStonesSolvedMask() & 1) !== 0 ||
         (!getProgressionState && manualUnlockedStage === null);
+      let usedHitSpec = null;
       if (ascendedActive || comboIndex === 3) {
+        usedHitSpec = {
+          source: 'mage_heavy',
+          baseDmg: ascendedActive
+            ? (HERO_STATS.Mage.heavyNovaDmg || 42) + (HERO_STATS.Mage.boltDmg[2] || 30)
+            : HERO_STATS.Mage.heavyNovaDmg || 42,
+          applyMark: canApplyRimeMark ? 'rime' : null,
+          detonatesMark: true,
+          empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
+          partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
+          attackerPos: mageState,
+          partnerPos,
+        };
         hits = enemyManager.applyAreaOrLineHit({
           origin: softTarget || targetPos,
           radius: ascendedActive
             ? (HERO_STATS.Mage.heavyNovaRadius || 3.5) + 1.0
             : HERO_STATS.Mage.heavyNovaRadius || 3.5,
-          hitSpec: {
-            source: 'mage_heavy',
-            baseDmg: ascendedActive
-              ? (HERO_STATS.Mage.heavyNovaDmg || 42) + (HERO_STATS.Mage.boltDmg[2] || 30)
-              : HERO_STATS.Mage.heavyNovaDmg || 42,
-            applyMark: canApplyRimeMark ? 'rime' : null,
-            detonatesMark: true,
-            empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
-            partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
-            attackerPos: mageState,
-            partnerPos,
-          },
+          hitSpec: usedHitSpec,
         });
         addResonance(ascendedActive ? 14 : 10);
       } else if (comboIndex === 2 && softTarget) {
+        usedHitSpec = {
+          source: 'mage_attack3',
+          baseDmg: HERO_STATS.Mage.boltDmg[2] || 30,
+          applyMark: canApplyRimeMark ? 'rime' : null,
+          empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
+          partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
+          attackerPos: mageState,
+          partnerPos,
+        };
         hits = enemyManager.applyAreaOrLineHit({
           origin: softTarget,
           radius: 2.5,
           maxTargets: 3,
-          hitSpec: {
-            source: 'mage_attack3',
-            baseDmg: HERO_STATS.Mage.boltDmg[2] || 30,
-            applyMark: canApplyRimeMark ? 'rime' : null,
-            empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
-            partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
-            attackerPos: mageState,
-            partnerPos,
-          },
+          hitSpec: usedHitSpec,
         });
         addResonance(7);
       } else if (softTarget) {
-        const res = enemyManager.applyHitToEnemy(softTarget, {
+        usedHitSpec = {
           source: comboIndex === 1 ? 'mage_attack2' : 'mage_attack1',
           baseDmg: HERO_STATS.Mage.boltDmg[comboIndex] || 18,
           applyMark: null,
@@ -2163,7 +2211,8 @@ export function createCampaignLoop({
           partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
           attackerPos: mageState,
           partnerPos,
-        });
+        };
+        const res = enemyManager.applyHitToEnemy(softTarget, usedHitSpec);
         if (res) hits.push({ enemy: softTarget, result: res });
         addResonance(5);
       }
@@ -2196,6 +2245,9 @@ export function createCampaignLoop({
           onDetonation?.(h.result.detonation, h.enemy);
         }
       }
+      if (!options.fromWingmanAi && usedHitSpec) {
+        emitLocalEnemyHits(hits, usedHitSpec, 'Mage');
+      }
     }
 
     return { comboIndex, aimYaw, softTarget, targetPos, hits, ascendedActive };
@@ -2214,10 +2266,16 @@ export function createCampaignLoop({
     const mageState = heroStates?.Mage || { x: 0, y: 0, z: 0, yaw: 0 };
 
     if (activeHeroId === 'Knight') {
-      if (combatHeroes.Knight.powerSwordCd > 0.05 || combatHeroes.Knight.downed) {
+      if (
+        !options.remoteVisualOnly &&
+        (combatHeroes.Knight.powerSwordCd > 0.05 || combatHeroes.Knight.downed)
+      ) {
         return { onCooldown: true, cooldownRemaining: combatHeroes.Knight.powerSwordCd };
       }
-      const elem = combatHeroes.Knight.selectedElement || 'ice';
+      if (options.element === 'ice' || options.element === 'fire') {
+        combatHeroes.Knight.selectedElement = options.element;
+      }
+      const elem = options.element || combatHeroes.Knight.selectedElement || 'ice';
       const styleId = elem === 'fire' ? 'solar' : 'rime';
 
       const baseDowntime = KNIGHT_POWER_SWORD_COOLDOWN - KNIGHT_POWER_SWORD_DURATION; // 5.0s
@@ -2232,7 +2290,9 @@ export function createCampaignLoop({
       combatHeroes.Knight.powerSwordCd = effectiveTotalCd;
       combatHeroes.Knight.interceptCd = effectiveTotalCd;
       setKnightBreathing(styleId, KNIGHT_POWER_SWORD_DURATION);
-      addResonance(12);
+      if (!options.remoteVisualOnly) {
+        addResonance(12);
+      }
 
       return {
         skill: 'power_sword',
@@ -2248,7 +2308,7 @@ export function createCampaignLoop({
 
     const spellId = options.spellId || combatHeroes.Mage.selectedSpell || 'frost_lance';
     if (spellId === 'shatterlance') {
-      if (combatHeroes.Mage.downed) {
+      if (!options.remoteVisualOnly && combatHeroes.Mage.downed) {
         return { onCooldown: true, cooldownRemaining: 0 };
       }
       const castRes = castSpell(
@@ -2260,6 +2320,7 @@ export function createCampaignLoop({
           distance: options.distance,
           targetPos: options.targetPos,
           ignoreCooldown: true,
+          remoteVisualOnly: Boolean(options.remoteVisualOnly),
         }
       );
       return {
@@ -2272,7 +2333,10 @@ export function createCampaignLoop({
     }
 
     // Mage E: Cast selected spell (frost_lance or cinder_fall) with 8.5s cooldown (4.25s during Blessing)
-    if (combatHeroes.Mage.skillCd > 0.05 || combatHeroes.Mage.downed) {
+    if (
+      !options.remoteVisualOnly &&
+      (combatHeroes.Mage.skillCd > 0.05 || combatHeroes.Mage.downed)
+    ) {
       return { onCooldown: true, cooldownRemaining: combatHeroes.Mage.skillCd };
     }
     const effectiveMageECd = divineBlessingActive
@@ -2289,6 +2353,7 @@ export function createCampaignLoop({
         distance: options.distance,
         targetPos: options.targetPos,
         ignoreCooldown: true,
+        remoteVisualOnly: Boolean(options.remoteVisualOnly),
       }
     );
     return {
@@ -2309,11 +2374,15 @@ export function createCampaignLoop({
    * and applying BOTH Fire Burn (`10 DPS` for `3.0s`) and Ice Slow (`40%` for `3.5s`) on every slash.
    */
   function performKnightUltimate(heroStates, options = {}) {
-    if (combatHeroes.Knight.downed) return null;
-    if (combatHeroes.Knight.ultCd > 0.05) {
+    if (!options.remoteVisualOnly && combatHeroes.Knight.downed) return null;
+    if (!options.remoteVisualOnly && combatHeroes.Knight.ultCd > 0.05) {
       return { onCooldown: true, cooldownRemaining: combatHeroes.Knight.ultCd };
     }
-    if (options.requireEnergy && combatHeroes.Knight.qEnergy < combatHeroes.Knight.qEnergyMax) {
+    if (
+      !options.remoteVisualOnly &&
+      options.requireEnergy &&
+      combatHeroes.Knight.qEnergy < combatHeroes.Knight.qEnergyMax
+    ) {
       return {
         notEnoughEnergy: true,
         qEnergy: combatHeroes.Knight.qEnergy,
@@ -2361,21 +2430,22 @@ export function createCampaignLoop({
     combatSfx?.playCouplesUltimate?.();
 
     let hits = [];
-    if (enemyManager) {
+    if (enemyManager && !options.remoteVisualOnly) {
+      const ultHitSpec = {
+        source: 'knight_sky_lightning',
+        baseDmg: 22,
+        infusion: styleId,
+        knightLevel: combatHeroes.Knight.level,
+        knightUltActive: true,
+        ultDmgMult: KNIGHT_ULT_DMG_MULT,
+        partnerSwordMult: combatHeroes.Knight.partnerSwordMult,
+        detonatesMark: false,
+        attackerPos: kPos,
+      };
       hits = enemyManager.applyAreaOrLineHit({
         origin: kPos,
         radius: 3.8,
-        hitSpec: {
-          source: 'knight_sky_lightning',
-          baseDmg: 22,
-          infusion: styleId,
-          knightLevel: combatHeroes.Knight.level,
-          knightUltActive: true,
-          ultDmgMult: KNIGHT_ULT_DMG_MULT,
-          partnerSwordMult: combatHeroes.Knight.partnerSwordMult,
-          detonatesMark: false,
-          attackerPos: kPos,
-        },
+        hitSpec: ultHitSpec,
       });
       for (const h of hits) {
         if (Array.isArray(h.result?.bossPhasesCrossed)) {
@@ -2391,6 +2461,7 @@ export function createCampaignLoop({
           addHeroQEnergy('Mage', Q_ENERGY_CONFIG.detonationBonusBoth);
         }
       }
+      emitLocalEnemyHits(hits, ultHitSpec, 'Knight');
     }
 
     // Consume Knight's Q Energy cleanly (activation burst does not self-refund Knight's own Q gauge)
@@ -2531,6 +2602,10 @@ export function createCampaignLoop({
       );
     }
 
+    if (combatHeroes.Mage.stormCataclysmRemoteVisual) {
+      return [];
+    }
+
     // Realistic Friendly-Fire Bombardment Hazard (every 3rd meteor wave = 0.54s after initial 0.54s grace):
     // - If the Mage moves out of her 1.68m inner safe circle into the bombardment ring (1.75m < d <= 8.4m), she gets hit!
     // - If the Knight does not run outside the 8.4m outer circle (d <= 8.4m), he gets hit and can die!
@@ -2585,19 +2660,20 @@ export function createCampaignLoop({
       }
     }
 
+    const meteorHitSpec = {
+      source: 'storm_cataclysm',
+      baseDmg: meteorDmg,
+      applyMark: 'solar',
+      detonatesMark: false,
+      empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
+      partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
+      attackerPos: magePos || strikePos,
+    };
     const hits = enemyManager.applyAreaOrLineHit({
       origin: center,
       radius: zoneRadius,
       excludeEnemies: excludeSet,
-      hitSpec: {
-        source: 'storm_cataclysm',
-        baseDmg: meteorDmg,
-        applyMark: 'solar',
-        detonatesMark: false,
-        empoweredBreathing: combatHeroes.Mage.empoweredBreathing,
-        partnerMagicMult: combatHeroes.Mage.partnerMagicMult,
-        attackerPos: magePos || strikePos,
-      },
+      hitSpec: meteorHitSpec,
     });
 
     for (const h of hits) {
@@ -2620,6 +2696,7 @@ export function createCampaignLoop({
         addHeroQEnergy('Mage', Q_ENERGY_CONFIG.detonationBonusBoth);
       }
     }
+    emitLocalEnemyHits(hits, meteorHitSpec, 'Mage');
 
     return hits;
   }
@@ -2631,11 +2708,15 @@ export function createCampaignLoop({
    * If she moves out of the inner circle she can get hit, and the Knight must run outside the `8.4m` circle!
    */
   function performMageStormCataclysm(heroStates, options = {}) {
-    if (combatHeroes.Mage.downed) return null;
-    if (combatHeroes.Mage.ultCd > 0.05) {
+    if (!options.remoteVisualOnly && combatHeroes.Mage.downed) return null;
+    if (!options.remoteVisualOnly && combatHeroes.Mage.ultCd > 0.05) {
       return { onCooldown: true, cooldownRemaining: combatHeroes.Mage.ultCd };
     }
-    if (options.requireEnergy && combatHeroes.Mage.qEnergy < combatHeroes.Mage.qEnergyMax) {
+    if (
+      !options.remoteVisualOnly &&
+      options.requireEnergy &&
+      combatHeroes.Mage.qEnergy < combatHeroes.Mage.qEnergyMax
+    ) {
       return {
         notEnoughEnergy: true,
         qEnergy: combatHeroes.Mage.qEnergy,
@@ -2647,13 +2728,14 @@ export function createCampaignLoop({
       ? Number((MAGE_STORM_CATACLYSM_COOLDOWN * DIVINE_BLESSING_Q_CD_MULT).toFixed(2))
       : MAGE_STORM_CATACLYSM_COOLDOWN;
 
-    const mPos = heroStates?.Mage || { x: 0, y: 0, z: 0, yaw: 0 };
+    const mPos = options.center || heroStates?.Mage || { x: 0, y: 0, z: 0, yaw: 0 };
     const centerX = mPos.x ?? 0;
     const centerZ = mPos.z ?? 0;
 
     combatHeroes.Mage.qEnergy = 0;
     combatHeroes.Mage.qEnergyPct = 0;
     combatHeroes.Mage.stormCataclysmActive = true;
+    combatHeroes.Mage.stormCataclysmRemoteVisual = Boolean(options.remoteVisualOnly);
     combatHeroes.Mage.stormCataclysmTimer = MAGE_STORM_CATACLYSM_DURATION; // 6.0s
     combatHeroes.Mage.stormCataclysmCastTimer = 0.8; // 0.8s cast pose
     combatHeroes.Mage.stormCataclysmWaveTimer = 0;
@@ -2683,6 +2765,7 @@ export function createCampaignLoop({
       castPoseDuration: 0.8,
       duration: MAGE_STORM_CATACLYSM_DURATION,
       cooldown: effectiveCataclysmCd,
+      center: { ...combatHeroes.Mage.stormCataclysmCenter },
       hits,
     };
   }
@@ -2918,7 +3001,7 @@ export function createCampaignLoop({
     return [];
   }
 
-  function checkStrongholdTriggers(leaderPos) {
+  function checkStrongholdTriggers(leaderPos, partnerPos = null) {
     if (!leaderPos || !enemyManager) return null;
     const triggeredNow = [];
     for (const [key, bit] of Object.entries(STRONGHOLD_BITS)) {
@@ -2928,7 +3011,12 @@ export function createCampaignLoop({
       const sh = STONE_STRONGHOLDS[key];
       const shWaves = getStrongholdWaves(sh);
       if (!sh || shWaves.length === 0) continue;
-      const d = Math.hypot(leaderPos.x - sh.center.x, leaderPos.z - sh.center.z);
+      const dLeader = Math.hypot(leaderPos.x - sh.center.x, leaderPos.z - sh.center.z);
+      const dPartner =
+        partnerPos && Number.isFinite(partnerPos.x) && Number.isFinite(partnerPos.z)
+          ? Math.hypot(partnerPos.x - sh.center.x, partnerPos.z - sh.center.z)
+          : Infinity;
+      const d = Math.min(dLeader, dPartner);
       if (d <= (sh.triggerRadius || 26.0)) {
         activeStrongholdIds.add(key);
         strongholdWaveIndex[key] = 0;
@@ -3053,8 +3141,17 @@ export function createCampaignLoop({
 
   function update(
     dt,
-    { heroStates, activeHeroId = 'Knight', soloWingmanActive = true, camera = null } = {}
+    {
+      heroStates,
+      activeHeroId = 'Knight',
+      soloWingmanActive = true,
+      isHost = true,
+      isGuest = false,
+      camera = null,
+    } = {}
   ) {
+    lastSoloWingmanActive = Boolean(soloWingmanActive);
+    isRemoteGuestMode = Boolean(isGuest || !isHost);
     elapsed += dt;
     hudDirtyTimer += dt;
 
@@ -3468,7 +3565,7 @@ export function createCampaignLoop({
     }
 
     // 2. Downed State, Proximity Revive (<= 2.8m for 2.5s -> 45% Max HP + 2.0s i-frames) & Safe Haven Rebirth (2.5s)
-    if (knight && mage && !verdictSequence.active) {
+    if (!isRemoteGuestMode && knight && mage && !verdictSequence.active) {
       if (combatHeroes.Knight.downed && combatHeroes.Mage.downed) {
         if (!smiteWipeCompletedThisFrame) {
           bothDownedTimer += dt;
@@ -3518,6 +3615,11 @@ export function createCampaignLoop({
             'You regroup at the sanctuary stone. The battle begins anew when you return.',
             'warning'
           );
+          partnerRevivedCallback?.({
+            partyWipeRebirth: true,
+            x: nearest.x,
+            z: nearest.z,
+          });
         }
       } else if (combatHeroes.Knight.downed || combatHeroes.Mage.downed) {
         bothDownedTimer = 0;
@@ -3547,6 +3649,11 @@ export function createCampaignLoop({
             downedSt.char?.play?.('revive', { loop: false, fade: 0.1, force: true });
             combatSfx?.playShieldChime?.();
             emitBanner(`${id.toUpperCase()} RISES AGAIN`, 'Carried back by love alone.', 'blessing');
+            partnerRevivedCallback?.({
+              revivedRole: id,
+              hp: ch.hp,
+              maxHp: ch.maxHp,
+            });
           }
         }
       } else {
@@ -3561,19 +3668,25 @@ export function createCampaignLoop({
     // 3. Open-Valley Strongholds, Survival Waves & Legacy Act Trigger Progression
     const act = ACT_DEFINITIONS[currentActId];
     const leaderPos = (activeHeroId === 'Mage' ? mage : knight) || knight || mage;
+    const partnerPos = (activeHeroId === 'Mage' ? knight : mage) || null;
 
-    if (openValleyMode && !indicatorsHiddenForShot && leaderPos) {
-      const inRoadTriggerZone = vfxKit
-        ? leaderPos.z <= 106.0 && leaderPos.z > 65.0
-        : leaderPos.z > 65.0;
-      if (!roadVanguardSpawned && inRoadTriggerZone) {
+    if (!isRemoteGuestMode && openValleyMode && !indicatorsHiddenForShot && leaderPos) {
+      const checkRoadZone = (pos) =>
+        pos &&
+        (vfxKit ? pos.z <= 106.0 && pos.z > 65.0 : pos.z > 65.0);
+      const vanguardHero = checkRoadZone(leaderPos)
+        ? leaderPos
+        : checkRoadZone(partnerPos)
+          ? partnerPos
+          : null;
+      if (!roadVanguardSpawned && vanguardHero) {
         spawnRoadVanguardPack({
-          x: clamp(leaderPos.x, -3.5, 3.5),
-          z: clamp(leaderPos.z - (vfxKit ? 10.0 : 22.0), 96.0, 104.0),
+          x: clamp(vanguardHero.x, -3.5, 3.5),
+          z: clamp(vanguardHero.z - (vfxKit ? 10.0 : 22.0), 96.0, 104.0),
         });
       }
-      checkStrongholdTriggers(leaderPos);
-    } else if (act && leaderPos && !actTriggered && currentActId !== 'victory_dawn') {
+      checkStrongholdTriggers(leaderPos, partnerPos);
+    } else if (!isRemoteGuestMode && act && leaderPos && !actTriggered && currentActId !== 'victory_dawn') {
       const dCenter = Math.hypot(
         leaderPos.x - act.center.x,
         leaderPos.z - act.center.z
@@ -3607,11 +3720,12 @@ export function createCampaignLoop({
               }
             : null,
         },
-        camera
+        camera,
+        { isRemoteGuest: isRemoteGuestMode }
       );
 
       // Advance or complete Open-Valley Strongholds & Survival Waves
-      if (openValleyMode && !indicatorsHiddenForShot) {
+      if (!isRemoteGuestMode && openValleyMode && !indicatorsHiddenForShot) {
         if (
           activeStrongholdIds.size > 0 &&
           enemyManager.activeEnemies.length === 0 &&
@@ -3677,6 +3791,7 @@ export function createCampaignLoop({
       }
 
       if (
+        !isRemoteGuestMode &&
         act &&
         actTriggered &&
         act.waves &&
@@ -3698,6 +3813,7 @@ export function createCampaignLoop({
 
     // 4. Role-Symmetric Smart Solo Wingman AI (NEVER hijacks the human player's active hero!)
     if (
+      !isRemoteGuestMode &&
       soloWingmanActive &&
       enemyManager &&
       enemyManager.activeEnemies.length > 0 &&
@@ -3932,6 +4048,47 @@ export function createCampaignLoop({
       strongholdClearedMask,
       controlLocked: isControlLocked(),
       verdictSequence: { ...verdictSequence },
+      knightBreathing: combatHeroes.Knight.breathingStyle,
+      stormCataclysmCenter: combatHeroes.Mage.stormCataclysmCenter
+        ? { ...combatHeroes.Mage.stormCataclysmCenter }
+        : null,
+      combatHeroes: {
+        Knight: {
+          ...combatHeroes.Knight,
+          qEnergyPct: kEnergyPct,
+        },
+        Mage: {
+          ...combatHeroes.Mage,
+          qEnergyPct: mEnergyPct,
+          spellCooldowns: { ...combatHeroes.Mage.spellCooldowns },
+        },
+      },
+      enemies: (enemyManager?.activeEnemies || [])
+        .filter((e) => e && e.active && !e.dead && e.hp > 0)
+        .map((e) => ({
+          slotIndex: e.slotIndex,
+          instanceId: e.instanceId,
+          spawnGen: e.spawnGen || e.slot?.spawnGen || 1,
+          archetype: e.archetype,
+          isBoss: Boolean(e.isBoss),
+          isElite: Boolean(e.isElite),
+          x: Number((e.x || 0).toFixed(2)),
+          y: Number((e.y || 0).toFixed(2)),
+          z: Number((e.z || 0).toFixed(2)),
+          vx: Number((e.vx || 0).toFixed(2)),
+          vz: Number((e.vz || 0).toFixed(2)),
+          yaw: Number((e.yaw || 0).toFixed(3)),
+          hp: Math.round(e.hp),
+          maxHp: Math.round(e.maxHp),
+          state: e.aiState || 'chase',
+          mark: e.mark || null,
+          markTimer: Number((e.markTimer || 0).toFixed(2)),
+          clip: e.char?.anim?.currentKey || 'idle',
+          scale: Number((e.group?.scale?.x || 1).toFixed(2)),
+          aegisActive: Boolean(e.aegisActive),
+          aegisLayers: e.aegisLayers || 0,
+          isPile: Boolean(e.isPile),
+        })),
       knight: {
         ...combatHeroes.Knight,
         qEnergyPct: kEnergyPct,
@@ -3954,18 +4111,299 @@ export function createCampaignLoop({
     };
   }
 
-  function applyRemoteStateSync(syncPayload = {}) {
-    if (syncPayload.actId && syncPayload.actId !== currentActId) {
-      transitionToAct(syncPayload.actId, {
-        autoTriggerWaves: Boolean(syncPayload.actTriggered),
+  function applyRemoteEnemyHit(msg = {}, heroStates = lastHeroStates) {
+    if (!msg || !enemyManager) {
+      return { rejected: true, reason: 'no_enemy_manager' };
+    }
+    if (msg.hitId) {
+      if (processedEnemyHitIds.has(msg.hitId)) {
+        return { rejected: true, reason: 'duplicate_hit_id', hitId: msg.hitId };
+      }
+      processedEnemyHitIds.add(msg.hitId);
+      if (processedEnemyHitIds.size > 256) {
+        const oldest = processedEnemyHitIds.values().next().value;
+        processedEnemyHitIds.delete(oldest);
+      }
+    }
+
+    let enemy = null;
+    if (msg.instanceId) {
+      enemy = enemyManager.activeEnemies.find(
+        (e) => e && e.instanceId === msg.instanceId
+      );
+    } else if (typeof msg.slotIndex === 'number') {
+      enemy = enemyManager.activeEnemies.find(
+        (e) => e && e.slotIndex === msg.slotIndex
+      );
+    }
+
+    if (!enemy || enemy.dead || !enemy.active || enemy.hp <= 0) {
+      return { rejected: true, reason: 'enemy_dead_or_missing' };
+    }
+    if (msg.instanceId && enemy.instanceId !== msg.instanceId) {
+      return { rejected: true, reason: 'instance_mismatch' };
+    }
+    if (
+      typeof msg.slotIndex === 'number' &&
+      Number.isFinite(msg.slotIndex) &&
+      enemy.slotIndex !== msg.slotIndex
+    ) {
+      return { rejected: true, reason: 'slot_mismatch' };
+    }
+    if (
+      msg.spawnGen !== undefined &&
+      msg.spawnGen !== null &&
+      enemy.spawnGen !== undefined &&
+      Number(msg.spawnGen) !== Number(enemy.spawnGen)
+    ) {
+      return {
+        rejected: true,
+        reason: 'stale_spawn_gen',
+        expected: enemy.spawnGen,
+        got: msg.spawnGen,
+      };
+    }
+
+    const attackerRole = msg.attackerRole === 'Knight' ? 'Knight' : 'Mage';
+    const partnerRole = attackerRole === 'Knight' ? 'Mage' : 'Knight';
+    const rawDmg = Math.max(0, Number(msg.dmg ?? msg.baseDmg ?? 20));
+    const hpBefore = enemy.hp;
+
+    const hitSpec = {
+      fromRemoteHit: true,
+      source:
+        msg.source ||
+        (msg.detonatesMark
+          ? 'shatterlance'
+          : msg.mark === 'solar'
+            ? 'cinder_fall'
+            : msg.mark === 'rime'
+              ? 'frost_lance'
+              : attackerRole === 'Knight'
+                ? 'combo1'
+                : 'mage_attack1'),
+      baseDmg: rawDmg,
+      dmg: rawDmg,
+      applyMark: msg.mark || null,
+      detonatesMark: Boolean(msg.detonatesMark),
+      infusion:
+        msg.infusion ||
+        (attackerRole === 'Knight' && msg.mark ? msg.mark : 'none'),
+      attackerRole,
+      heroId: attackerRole,
+      attackerPos:
+        msg.attackerPos ||
+        heroStates?.[attackerRole] ||
+        { x: enemy.x, z: enemy.z + 2.0 },
+      partnerPos: heroStates?.[partnerRole] || null,
+    };
+
+    const res = enemyManager.applyHitToEnemy(enemy, hitSpec);
+    if (!res) {
+      return { rejected: true, reason: 'apply_failed' };
+    }
+
+    // Ensure exact direct damage parity with the attacker when no detonation/ward altered it
+    if (rawDmg > 0 && !res.detonation && !res.warded && !res.finishedPile) {
+      const exactDrop = Math.min(hpBefore, Math.max(1, Math.round(rawDmg)));
+      enemy.hp = Math.max(0, hpBefore - exactDrop);
+      res.damageDealt = exactDrop;
+      if (enemy.hp <= 0 && !enemy.dead) {
+        enemy.dead = true;
+        if (enemy.slot) enemy.slot.alive = false;
+        enemy.hasAttackToken = false;
+        enemy.aiState = 'dead';
+        enemy.deathTimer = Math.max(enemy.deathTimer || 0, 0.8);
+        res.killed = true;
+      }
+    }
+
+    if (
+      !enemy.isStationary &&
+      (typeof msg.impulseX === 'number' || typeof msg.impulseZ === 'number')
+    ) {
+      if (msg.impulseX) enemy.vx = msg.impulseX;
+      if (msg.impulseZ) enemy.vz = msg.impulseZ;
+    }
+
+    if (
+      (enemy.isBoss || enemy.isElite) &&
+      (hitSpec.detonatesMark ||
+        hitSpec.source === 'shatterlance' ||
+        hitSpec.source === 'frost_lance' ||
+        hitSpec.source === 'cinder_fall' ||
+        hitSpec.source === 'combo4')
+    ) {
+      addHeroQEnergy(attackerRole, Q_ENERGY_CONFIG.heavyHitBossAttacker);
+      addHeroQEnergy(partnerRole, Q_ENERGY_CONFIG.heavyHitBossPartner);
+    }
+
+    if (Array.isArray(res.bossPhasesCrossed)) {
+      for (const phasePct of res.bossPhasesCrossed) {
+        handleBossPhaseThreshold({ enemy, phasePct });
+      }
+    }
+    if (res.killed || enemy.dead || enemy.hp <= 0) {
+      awardKnightKillXp(enemy, res);
+    }
+    if (res.detonation) {
+      addResonance(DETONATIONS[res.detonation.id]?.resonanceGain || 18);
+      if ((res.detonation.tier ?? 2) >= 2) {
+        addHeroQEnergy('Knight', Q_ENERGY_CONFIG.detonationBonusBoth);
+        addHeroQEnergy('Mage', Q_ENERGY_CONFIG.detonationBonusBoth);
+      }
+      vfxKit?.swordVfx?.triggerDetonation?.(res.detonation.id, {
+        x: res.detonation.x,
+        y: res.detonation.y,
+        z: res.detonation.z,
       });
+      combatSfx?.playDetonation?.(res.detonation.id);
+      onDetonation?.(res.detonation, enemy);
+    }
+
+    onHudStateChanged?.(getStateSnapshot(heroStates));
+    return {
+      accepted: true,
+      hitId: msg.hitId || null,
+      enemy,
+      result: res,
+      damageDealt: res.damageDealt,
+      killed: Boolean(res.killed || enemy.dead || enemy.hp <= 0),
+      detonation: res.detonation || null,
+    };
+  }
+
+  function applyRemoteStateSync(syncPayload = {}, heroStates = lastHeroStates) {
+    const hasEnemySnapshot = Array.isArray(syncPayload.enemies);
+    if (syncPayload.actId && syncPayload.actId !== currentActId) {
+      if (hasEnemySnapshot) {
+        currentActId = syncPayload.actId;
+        actIndex = ACT_SEQUENCE.indexOf(syncPayload.actId);
+        if (typeof syncPayload.waveIndex === 'number') {
+          waveIndex = syncPayload.waveIndex;
+        }
+        actTriggered = Boolean(syncPayload.actTriggered);
+        enemyManager?.setCurrentActId?.(currentActId);
+      } else {
+        transitionToAct(syncPayload.actId, {
+          autoTriggerWaves: Boolean(syncPayload.actTriggered),
+        });
+      }
     }
     if (typeof syncPayload.heartResonance === 'number') {
       heartResonance = clamp(syncPayload.heartResonance, 0, 100);
     }
-    if (syncPayload.knightBreathing) {
-      setKnightBreathing(syncPayload.knightBreathing, KNIGHT_POWER_SWORD_DURATION);
+    if (typeof syncPayload.strongholdClearedMask === 'number') {
+      strongholdClearedMask = syncPayload.strongholdClearedMask;
     }
+    if (
+      typeof syncPayload.unlockedStage === 'number' ||
+      typeof syncPayload.stonesSolvedMask === 'number'
+    ) {
+      if (typeof syncPayload.stonesSolvedMask === 'number') {
+        manualStonesSolvedMask = syncPayload.stonesSolvedMask & 0b111;
+      }
+      if (typeof syncPayload.unlockedStage === 'number') {
+        manualUnlockedStage = clamp(syncPayload.unlockedStage, 0, 3);
+      }
+    }
+    if (typeof syncPayload.divineBlessingActive === 'boolean') {
+      divineBlessingActive = syncPayload.divineBlessingActive;
+      if (typeof syncPayload.divineBlessingTimer === 'number') {
+        divineBlessingTimer = syncPayload.divineBlessingTimer;
+      }
+    }
+    if (syncPayload.knightBreathing !== undefined) {
+      const nextStyle = syncPayload.knightBreathing || 'none';
+      if (nextStyle !== combatHeroes.Knight.breathingStyle) {
+        setKnightBreathing(
+          nextStyle,
+          syncPayload.knightBreathingTimer ?? KNIGHT_POWER_SWORD_DURATION
+        );
+      } else if (typeof syncPayload.knightBreathingTimer === 'number') {
+        combatHeroes.Knight.breathingTimer = syncPayload.knightBreathingTimer;
+      }
+    }
+
+    if (syncPayload.combatHeroes) {
+      for (const role of ['Knight', 'Mage']) {
+        const src = syncPayload.combatHeroes[role] || syncPayload.combatHeroes[role.toLowerCase()];
+        if (!src) continue;
+        const dst = combatHeroes[role];
+        const wasDowned = dst.downed;
+        if (typeof src.maxHp === 'number') dst.maxHp = src.maxHp;
+        if (typeof src.hp === 'number') dst.hp = clamp(src.hp, 0, dst.maxHp);
+        if (typeof src.shield === 'number') dst.shield = Math.max(0, src.shield);
+        if (typeof src.qEnergyMax === 'number') dst.qEnergyMax = src.qEnergyMax;
+        if (typeof src.qEnergy === 'number') {
+          dst.qEnergy = clamp(src.qEnergy, 0, dst.qEnergyMax);
+          dst.qEnergyPct = clamp(dst.qEnergy / Math.max(1, dst.qEnergyMax), 0, 1);
+        } else if (typeof src.qEnergyPct === 'number') {
+          dst.qEnergyPct = clamp(src.qEnergyPct, 0, 1);
+          dst.qEnergy = Math.round(dst.qEnergyPct * dst.qEnergyMax);
+        }
+        if (typeof src.downed === 'boolean') dst.downed = src.downed;
+        if (typeof src.reviveProgress === 'number') {
+          dst.reviveProgress = clamp(src.reviveProgress, 0, 1);
+        }
+        if (typeof src.level === 'number') dst.level = src.level;
+        if (typeof src.xp === 'number') dst.xp = src.xp;
+        if (typeof src.kills === 'number') dst.kills = src.kills;
+        if (src.selectedElement === 'ice' || src.selectedElement === 'fire') {
+          dst.selectedElement = src.selectedElement;
+        }
+        if (role === 'Knight') {
+          if (src.summonedElement !== undefined) dst.summonedElement = src.summonedElement;
+          if (typeof src.powerSwordActive === 'boolean') dst.powerSwordActive = src.powerSwordActive;
+          if (typeof src.powerSwordTimer === 'number') dst.powerSwordTimer = src.powerSwordTimer;
+          if (typeof src.ultActive === 'boolean') dst.ultActive = src.ultActive;
+          if (typeof src.ultTimer === 'number') dst.ultTimer = src.ultTimer;
+          if (typeof src.shieldBlocking === 'boolean') dst.shieldBlocking = src.shieldBlocking;
+        } else {
+          if (src.selectedSpell) dst.selectedSpell = src.selectedSpell;
+          if (typeof src.stormCataclysmActive === 'boolean') {
+            dst.stormCataclysmActive = src.stormCataclysmActive;
+          }
+          if (typeof src.stormCataclysmTimer === 'number') {
+            dst.stormCataclysmTimer = src.stormCataclysmTimer;
+          }
+          if (src.stormCataclysmCenter && typeof src.stormCataclysmCenter.x === 'number') {
+            dst.stormCataclysmCenter = { ...src.stormCataclysmCenter };
+          }
+        }
+
+        const hEntity = heroStates?.[role];
+        if (hEntity?.char?.play) {
+          if (!wasDowned && dst.downed) {
+            hEntity.char.play('death', { loop: false, fade: 0.1, force: true });
+          } else if (wasDowned && !dst.downed) {
+            hEntity.actionState = null;
+            hEntity.actionTimer = 0;
+            hEntity.char.play('revive', { loop: false, fade: 0.1, force: true });
+          }
+        }
+      }
+    }
+
+    if (typeof syncPayload.stormCataclysmActive === 'boolean') {
+      combatHeroes.Mage.stormCataclysmActive = syncPayload.stormCataclysmActive;
+    }
+    if (typeof syncPayload.stormCataclysmTimer === 'number') {
+      combatHeroes.Mage.stormCataclysmTimer = syncPayload.stormCataclysmTimer;
+    }
+    if (
+      syncPayload.stormCataclysmCenter &&
+      typeof syncPayload.stormCataclysmCenter.x === 'number'
+    ) {
+      combatHeroes.Mage.stormCataclysmCenter = { ...syncPayload.stormCataclysmCenter };
+    }
+
+    if (hasEnemySnapshot && enemyManager?.syncRemoteEnemies) {
+      enemyManager.syncRemoteEnemies(syncPayload.enemies);
+    }
+
+    updateIndicatorsInstancedMeshes(heroStates);
+    onHudStateChanged?.(getStateSnapshot(heroStates));
   }
 
   function resetCampaign(options = {}) {
@@ -4122,6 +4560,12 @@ export function createCampaignLoop({
     get survivalWaveTimer() {
       return survivalWaveTimer;
     },
+    get roadVanguardSpawned() {
+      return roadVanguardSpawned;
+    },
+    get soloWingmanActive() {
+      return lastSoloWingmanActive;
+    },
     isControlLocked,
     isDivineBlessingActive,
     getDivineBlessingRemaining,
@@ -4165,11 +4609,14 @@ export function createCampaignLoop({
     performMageStormCataclysm,
     performCouplesUltimate,
     getStateSnapshot,
+    applyRemoteEnemyHit,
     applyRemoteStateSync,
     resetCampaign,
     setIndicatorsHiddenForShot,
     setOnFriendlyFireHit,
     setOnPlayerDamaged,
+    setOnLocalEnemyHit,
+    setOnPartnerRevived,
     updateIndicatorsInstancedMeshes,
     update,
   };

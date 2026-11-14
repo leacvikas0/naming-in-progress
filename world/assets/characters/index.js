@@ -986,20 +986,137 @@ function stabilizeCombatRootMotion(clip) {
   if (!isMeleeAttack && !isLocomotion) return clip;
 
   for (const track of clip.tracks) {
-    if (!track || !track.name || !track.name.endsWith('.position')) continue;
-    const boneName = track.name.slice(0, -'.position'.length).toLowerCase();
-    if (boneName !== 'hips' && boneName !== 'root') continue;
+    if (!track || !track.name) continue;
+    const dotIdx = track.name.lastIndexOf('.');
+    const boneName = (dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name).toLowerCase();
+    const prop = dotIdx > 0 ? track.name.slice(dotIdx + 1) : '';
     const vals = track.values;
+    const times = track.times;
     if (!vals || vals.length < 3) continue;
 
-    const restX = vals[0];
-    const restY = vals[1];
-    const restZ = vals[2];
-    for (let i = 0; i < vals.length; i += 3) {
-      vals[i] = restX;
-      vals[i + 2] = restZ;
-      if (isMeleeAttack) {
-        vals[i + 1] = Math.max(restY - 0.08, Math.min(restY + 0.035, vals[i + 1]));
+    if (prop === 'position') {
+      if (boneName === 'hips' || boneName === 'root') {
+        const restX = vals[0];
+        const restY = vals[1];
+        const restZ = vals[2];
+        for (let i = 0; i < vals.length; i += 3) {
+          vals[i] = restX;
+          vals[i + 2] = restZ;
+          if (isMeleeAttack) {
+            if (name === 'Melee_1H_Attack_Jump_Chop') {
+              // Keep feet planted on ground shadow (no mid-air floating)
+              vals[i + 1] = restY + 0.015;
+            } else {
+              vals[i + 1] = Math.max(restY - 0.03, Math.min(restY + 0.03, vals[i + 1]));
+            }
+          }
+        }
+      } else if (name === 'Melee_1H_Attack_Jump_Chop' && (boneName === 'upperleg.l' || boneName === 'upperleg.r')) {
+        const rx = vals[0], ry = vals[1], rz = vals[2];
+        for (let i = 0; i < vals.length; i += 3) {
+          vals[i] = rx;
+          vals[i + 1] = ry;
+          vals[i + 2] = rz;
+        }
+      }
+      continue;
+    }
+
+    if (prop === 'quaternion' && vals.length >= 8 && times && times.length >= 2) {
+      // 1. First enforce shortest-hemisphere quaternion continuity across all consecutive keyframes
+      //    (fixes Blender glTF exporter sign flips at w=0 in Melee_1H_Attack_Chop @ 0.40s/0.53s and Jump_Chop @ 0.83s/0.96s)
+      for (let k = 1; k < times.length; k++) {
+        const p = (k - 1) * 4;
+        const c = k * 4;
+        const dot = vals[p] * vals[c] + vals[p + 1] * vals[c + 1] + vals[p + 2] * vals[c + 2] + vals[p + 3] * vals[c + 3];
+        if (dot < 0) {
+          vals[c] = -vals[c];
+          vals[c + 1] = -vals[c + 1];
+          vals[c + 2] = -vals[c + 2];
+          vals[c + 3] = -vals[c + 3];
+        }
+      }
+
+      // 2. In Jump_Chop, damp the extreme crouched torso/head pitch and mid-air leg tuck so he stands heroically upright
+      if (name === 'Melee_1H_Attack_Jump_Chop') {
+        if (boneName === 'chest' || boneName === 'spine' || boneName === 'head') {
+          for (let k = 0; k < times.length; k++) {
+            const o = k * 4;
+            vals[o] *= 0.22;
+            vals[o + 1] *= 0.5;
+            vals[o + 2] *= 0.5;
+            const len = Math.hypot(vals[o], vals[o + 1], vals[o + 2], vals[o + 3]) || 1;
+            vals[o] /= len; vals[o + 1] /= len; vals[o + 2] /= len; vals[o + 3] /= len;
+          }
+        } else if (boneName.includes('leg') || boneName.includes('foot') || boneName.includes('toes')) {
+          const q0x = vals[0], q0y = vals[1], q0z = vals[2], q0w = vals[3];
+          for (let k = 0; k < times.length; k++) {
+            const o = k * 4;
+            let x = vals[o], y = vals[o + 1], z = vals[o + 2], w = vals[o + 3];
+            if (q0x * x + q0y * y + q0z * z + q0w * w < 0) { x = -x; y = -y; z = -z; w = -w; }
+            const b = 0.25;
+            x = q0x * (1 - b) + x * b;
+            y = q0y * (1 - b) + y * b;
+            z = q0z * (1 - b) + z * b;
+            w = q0w * (1 - b) + w * b;
+            const len = Math.hypot(x, y, z, w) || 1;
+            vals[o] = x / len; vals[o + 1] = y / len; vals[o + 2] = z / len; vals[o + 3] = w / len;
+          }
+        }
+      }
+
+      // 3. Smoothly blend out the post-strike off-balance stumble AFTER the real strike finishes:
+      //    - Slice_Horizontal: strike finishes at 0.35s (eliminates 0.35s..0.90s sideways hip twist & shield fling)
+      //    - Slice_Diagonal:   strike finishes at 0.53s
+      //    - Attack_Chop:      windup peaks at 0.47s, downward chop finishes at 0.67s!
+      //    - Jump_Chop:        windup peaks at 0.70s, downward cleave finishes at 0.97s!
+      let strikeEnd = -1;
+      let recoverEnd = -1;
+      if (name === 'Melee_1H_Attack_Slice_Horizontal') {
+        strikeEnd = 0.35;
+        recoverEnd = 0.76;
+      } else if (name === 'Melee_1H_Attack_Slice_Diagonal') {
+        strikeEnd = 0.53;
+        recoverEnd = 0.88;
+      } else if (name === 'Melee_1H_Attack_Chop') {
+        strikeEnd = 0.67;
+        recoverEnd = 1.02;
+      } else if (name === 'Melee_1H_Attack_Stab') {
+        strikeEnd = 0.58;
+        recoverEnd = 0.96;
+      } else if (name === 'Melee_1H_Attack_Jump_Chop') {
+        strikeEnd = 0.97;
+        recoverEnd = 1.30;
+      }
+
+      if (strikeEnd > 0) {
+        const lastIdx = (times.length - 1) * 4;
+        let restQx = vals[lastIdx], restQy = vals[lastIdx + 1], restQz = vals[lastIdx + 2], restQw = vals[lastIdx + 3];
+        let strikeIdx = 0;
+        for (let k = 0; k < times.length; k++) {
+          if (times[k] <= strikeEnd) strikeIdx = k * 4;
+        }
+        const sQx = vals[strikeIdx], sQy = vals[strikeIdx + 1], sQz = vals[strikeIdx + 2], sQw = vals[strikeIdx + 3];
+        if (restQx * sQx + restQy * sQy + restQz * sQz + restQw * sQw < 0) {
+          restQx = -restQx; restQy = -restQy; restQz = -restQz; restQw = -restQw;
+        }
+
+        for (let k = 0; k < times.length; k++) {
+          const t = times[k];
+          if (t <= strikeEnd) continue;
+          const u = Math.min(1.0, (t - strikeEnd) / Math.max(0.05, recoverEnd - strikeEnd));
+          const s = u * u * (3.0 - 2.0 * u);
+          const o = k * 4;
+          let x = sQx * (1.0 - s) + restQx * s;
+          let y = sQy * (1.0 - s) + restQy * s;
+          let z = sQz * (1.0 - s) + restQz * s;
+          let w = sQw * (1.0 - s) + restQw * s;
+          const len = Math.hypot(x, y, z, w) || 1.0;
+          vals[o] = x / len;
+          vals[o + 1] = y / len;
+          vals[o + 2] = z / len;
+          vals[o + 3] = w / len;
+        }
       }
     }
   }

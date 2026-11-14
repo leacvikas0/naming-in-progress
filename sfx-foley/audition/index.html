@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Haru-machi Foley Lab - 100-Variation Audition Studio</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="./manifest.js"></script>
+</head>
+<body>
+  <!-- TOP ARCHITECTURAL SYSTEM BAR -->
+  <header class="top-bar">
+    <div class="brand-block">
+      <span class="brand-mark">FOLEY-100</span>
+      <h1 class="brand-title">Haru-machi Foley Audition Studio</h1>
+      <span class="brand-meta" id="clip-meta-label">04_knight_glacial_and_sunfire_breathing.mp4 | 5.875s | 141f @ 24fps</span>
+    </div>
+
+    <div class="top-actions">
+      <div class="stat-counter" title="Manifest & Audition Progress">
+        <span id="stat-ready">METRICS: 0/100</span>
+        <span id="stat-starred">STAR: 0</span>
+        <span id="stat-rejected">REJ: 0</span>
+        <span id="stat-shown">SHOWN: 100</span>
+      </div>
+      <button type="button" class="btn" id="btn-autopoll" title="Poll manifest.json every 5s while GPU runner is active">
+        AUTO-SYNC: OFF
+      </button>
+      <button type="button" class="btn" id="btn-refresh-manifest" title="Fetch latest manifest.json from disk">
+        SYNC MANIFEST
+      </button>
+      <button type="button" class="btn" id="btn-keys-modal" title="Keyboard shortcuts">
+        KEYS [?]
+      </button>
+      <button type="button" class="btn btn-accent" id="btn-export-shortlist" title="Export starred variations and notes as JSON">
+        EXPORT SHORTLIST JSON
+      </button>
+    </div>
+  </header>
+
+  <!-- SPLIT WORKBENCH -->
+  <main class="workbench">
+    <!-- LEFT / TOP STICKY STAGE & INSPECTOR PANE -->
+    <section class="stage-pane" aria-label="Video Stage and Technical Inspector">
+      <!-- VIDEO VIEWPORT WITH BAKED HUD -->
+      <div class="video-viewport-wrap" id="video-stage-container">
+        <div class="baked-hud-bar" id="baked-hud-bar">
+          <div class="baked-hud-main" id="hud-main-text">
+            [#001] [G01] Loading manifest...
+          </div>
+          <div class="baked-hud-tags">
+            <span class="hud-tag is-ab" id="hud-ab-badge" style="display: none;">PLAYING A</span>
+            <span class="hud-tag" id="hud-loop-badge" style="display: none;">LOOP B1</span>
+            <span class="hud-tag" id="hud-audio-badge">POLISHED .MP4</span>
+          </div>
+        </div>
+
+        <video
+          id="stage-video"
+          class="video-el"
+          playsinline
+          preload="auto"
+        ></video>
+        <audio id="stage-raw-audio" preload="auto"></audio>
+
+        <div class="video-status-overlay is-hidden" id="video-status-overlay">
+          <div class="video-status-box">
+            <div class="video-status-title" id="video-status-title">VIDEO PENDING GPU RENDER</div>
+            <div class="video-status-sub" id="video-status-sub">Awaiting file: videos/v001.mp4</div>
+            <div style="margin-top: 10px; display: flex; gap: 6px; justify-content: center;">
+              <button type="button" class="btn btn-accent" id="btn-retry-video">RETRY LOAD</button>
+              <button type="button" class="btn" id="btn-skip-next">NEXT VARIATION [J]</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- INTERACTIVE 4-BEAT TIMELINE (5.875s) -->
+      <div class="timeline-section">
+        <div class="timeline-readout-row">
+          <div>
+            TIME: <strong id="tl-time-cur">0.000</strong>s / <span id="tl-time-dur">5.875</span>s
+            | FRAME: <strong id="tl-frame-cur">000</strong> / 141
+          </div>
+          <div>
+            ACTIVE: <strong id="tl-active-seg">S1 SILENCE</strong>
+            | MODE: <strong id="tl-loop-mode">FULL 5.875s</strong>
+          </div>
+        </div>
+
+        <!-- 9-Region Proportional Timeline Bar -->
+        <div class="timeline-track" id="timeline-track" title="Click any beat to loop it, or drag to scrub">
+          <!-- Populated dynamically from manifest beats + silence intervals -->
+          <div class="tl-playhead" id="tl-playhead" style="left: 0%;"></div>
+        </div>
+
+        <!-- 4-Beat Loop Lock Selector Buttons + Full Clip Reset -->
+        <div class="beat-buttons-grid">
+          <button type="button" class="beat-btn is-active" data-beat-id="ALL" id="beat-btn-all">
+            <div class="beat-btn-top"><span>FULL CLIP</span><span>[0]</span></div>
+            <div class="beat-btn-sub">0.00-5.88s All 4 Beats</div>
+          </button>
+          <button type="button" class="beat-btn" data-beat-id="B1" id="beat-btn-B1">
+            <div class="beat-btn-top"><span>B1: 0.25-1.25s</span><span>[1]</span></div>
+            <div class="beat-btn-sub">Glacial Dragon</div>
+          </button>
+          <button type="button" class="beat-btn" data-beat-id="B2" id="beat-btn-B2">
+            <div class="beat-btn-top"><span>B2: 1.83-2.65s</span><span>[2]</span></div>
+            <div class="beat-btn-sub">Ice Slash</div>
+          </button>
+          <button type="button" class="beat-btn" data-beat-id="B3" id="beat-btn-B3">
+            <div class="beat-btn-top"><span>B3: 3.33-4.33s</span><span>[3]</span></div>
+            <div class="beat-btn-sub">Sunfire Dragon</div>
+          </button>
+          <button type="button" class="beat-btn" data-beat-id="B4" id="beat-btn-B4">
+            <div class="beat-btn-top"><span>B4: 4.75-5.45s</span><span>[4]</span></div>
+            <div class="beat-btn-sub">Fire Slash</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- TRANSPORT, AUDIO SOURCE TOGGLE & RATING BAR -->
+      <div class="transport-bar">
+        <div class="transport-group">
+          <button type="button" class="btn" id="btn-prev" title="Previous Variation (K or Left Arrow)">
+            PREV <span class="kbd-hint">K</span>
+          </button>
+          <button type="button" class="btn btn-primary" id="btn-play-pause" title="Play / Pause (Space)">
+            PLAY <span class="kbd-hint">SPACE</span>
+          </button>
+          <button type="button" class="btn" id="btn-next" title="Next Variation (J or Right Arrow)">
+            NEXT <span class="kbd-hint">J</span>
+          </button>
+          <button type="button" class="btn" id="btn-marathon" title="Auto-advance to next filtered variation when clip finishes (M)">
+            MARATHON: OFF <span class="kbd-hint">M</span>
+          </button>
+        </div>
+
+        <div class="transport-group">
+          <div class="segmented-toggle" role="group" aria-label="Audio Source Mode">
+            <button type="button" class="seg-btn is-active" id="btn-mode-polished" title="Play polished DSP audio muxed in MP4">
+              POLISHED .MP4
+            </button>
+            <button type="button" class="seg-btn" id="btn-mode-raw" title="Mute MP4 and sync raw 32kHz AudioVAE MP3 (R)">
+              RAW 32kHz .MP3 [R]
+            </button>
+          </div>
+        </div>
+
+        <div class="transport-group">
+          <button type="button" class="btn btn-star" id="btn-star-cur" title="Star / Shortlist current variation (S)">
+            STAR <span class="kbd-hint">S</span>
+          </button>
+          <button type="button" class="btn btn-reject" id="btn-reject-cur" title="Reject current variation (X)">
+            REJECT <span class="kbd-hint">X</span>
+          </button>
+          <button type="button" class="btn" id="btn-pin-a" title="Pin current variation as Reference A for Head-to-Head A/B diff (P)">
+            PIN AS A <span class="kbd-hint">P</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- TECHNICAL INSPECTOR BODY -->
+      <div class="inspector-body">
+        <!-- ACTIVE VARIATION SUMMARY & NOTES -->
+        <div class="box-panel">
+          <div class="box-panel-header">
+            <span id="insp-group-header">[#001] G01 - GUIDANCE ARCHITECTURE A/B</span>
+            <span id="insp-recipe-badge" class="tag-box">recipe: glacier_titan_and_forge_anvil</span>
+          </div>
+          <div class="box-panel-content var-header-summary">
+            <div class="var-title-main" id="insp-title">Glacier+Forge - Pure Native CFG=1.0 (No Negative)</div>
+            <div class="var-hypothesis" id="insp-hypothesis">
+              Baseline single-pass native generation (BasicGuider, CFG=1.0) with zero negative subtraction.
+            </div>
+            <div class="notes-row">
+              <label for="insp-note-input" class="mono" style="font-size: 10px; font-weight: 700; white-space: nowrap; color: var(--ink-muted);">
+                AUDITION NOTE:
+              </label>
+              <input
+                type="text"
+                id="insp-note-input"
+                class="input-box"
+                placeholder="Type observations on sub weight, steel ring, whoosh, or pause silence (auto-saved)..."
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- HEAD-TO-HEAD A/B COMPARATOR -->
+        <div class="box-panel ab-panel" id="ab-panel">
+          <div class="box-panel-header">
+            <span>HEAD-TO-HEAD A/B COMPARATOR</span>
+            <span id="ab-status-label">NO REFERENCE [A] PINNED</span>
+          </div>
+          <div id="ab-empty-state" class="box-panel-content" style="font-family: var(--font-mono); font-size: 11px; color: var(--ink-muted); display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <span>Pin any variation as [A] to toggle timestamp-locked playback against your current selection [B] and inspect parameter/spectral diffs.</span>
+            <button type="button" class="btn" id="btn-pin-a-inline">PIN CURRENT AS A [P]</button>
+          </div>
+          <div id="ab-active-content" style="display: none;">
+            <div class="ab-controls-row">
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <button type="button" class="btn" id="btn-play-a" title="Switch stage to Reference A at exact current timestamp (C)">
+                  PLAY [A]: <span id="ab-btn-label-a">v001</span>
+                </button>
+                <button type="button" class="btn is-active" id="btn-play-b" title="Switch stage to Candidate B at exact current timestamp (C)">
+                  PLAY [B]: <span id="ab-btn-label-b">v002</span>
+                </button>
+                <span class="mono" style="font-size: 10px; color: var(--ink-muted);">[C] FLIP A/B AT TIMESTAMP</span>
+              </div>
+              <div style="display: flex; gap: 4px;">
+                <button type="button" class="btn" id="btn-clear-a">UNPIN A</button>
+              </div>
+            </div>
+            <table class="ab-table">
+              <thead>
+                <tr>
+                  <th style="width: 26%;">PARAMETER / METRIC</th>
+                  <th style="width: 37%;" id="ab-th-a">REF [A]</th>
+                  <th style="width: 37%;" id="ab-th-b">CANDIDATE [B]</th>
+                </tr>
+              </thead>
+              <tbody id="ab-diff-tbody">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- SPECTRAL & TIMING METRICS GRID -->
+        <div class="box-panel">
+          <div class="box-panel-header">
+            <span>SPECTRAL TELEMETRY &amp; TIMING METRICS</span>
+            <span id="insp-metrics-status" class="mono" style="font-size: 10px; color: var(--ink-muted);">AWAITING GPU METRICS</span>
+          </div>
+          <div class="metrics-grid" id="insp-metrics-grid">
+            <div class="metric-cell">
+              <div class="metric-name">SUB RMS (20-120Hz)</div>
+              <div class="metric-num" id="m-sub-rms">--</div>
+              <div class="metric-bar-indicator" id="m-bar-sub"></div>
+            </div>
+            <div class="metric-cell">
+              <div class="metric-name">MID RMS (120-2kHz)</div>
+              <div class="metric-num" id="m-mid-rms">--</div>
+              <div class="metric-bar-indicator" id="m-bar-mid"></div>
+            </div>
+            <div class="metric-cell">
+              <div class="metric-name">HIGH RMS (2k-8kHz)</div>
+              <div class="metric-num" id="m-high-rms">--</div>
+              <div class="metric-bar-indicator" id="m-bar-high"></div>
+            </div>
+            <div class="metric-cell">
+              <div class="metric-name">AIR RMS (8k-16kHz)</div>
+              <div class="metric-num" id="m-air-rms">--</div>
+              <div class="metric-bar-indicator" id="m-bar-air"></div>
+            </div>
+            <div class="metric-cell">
+              <div class="metric-name">PAUSE RMS (SILENCE)</div>
+              <div class="metric-num" id="m-pause-rms">--</div>
+              <div class="metric-bar-indicator" id="m-bar-pause"></div>
+            </div>
+            <div class="metric-cell">
+              <div class="metric-name">PEAK LEVEL (dBFS)</div>
+              <div class="metric-num" id="m-peak-db">--</div>
+              <div class="metric-bar-indicator" id="m-bar-peak"></div>
+            </div>
+            <div class="metric-cell">
+              <div class="metric-name">RENDER TIME (s)</div>
+              <div class="metric-num" id="m-elapsed-s">--</div>
+              <div class="metric-bar-indicator" id="m-bar-elapsed"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SYNTHESIS PARAMETER MATRIX -->
+        <div class="box-panel">
+          <div class="box-panel-header">
+            <span>SYNTHESIS PARAMETERS</span>
+            <span class="mono" id="insp-paths-label" style="font-size: 10px; color: var(--ink-muted);">videos/v001.mp4 | videos/v001_raw.mp3</span>
+          </div>
+          <div class="param-grid">
+            <div class="param-cell">
+              <div class="param-label">GUIDANCE MODE</div>
+              <div class="param-val" id="p-guidance-mode">basic_cfg1</div>
+            </div>
+            <div class="param-cell">
+              <div class="param-label">CFG SCALE</div>
+              <div class="param-val" id="p-cfg-scale">1.00</div>
+            </div>
+            <div class="param-cell">
+              <div class="param-label">SAMPLER / STEPS</div>
+              <div class="param-val" id="p-sampler-steps">euler / 16</div>
+            </div>
+            <div class="param-cell">
+              <div class="param-label">SHIFT (VIDEO / AUDIO)</div>
+              <div class="param-val" id="p-shifts">12.0 / 4.0</div>
+            </div>
+            <div class="param-cell">
+              <div class="param-label">STEP WINDOW / PHI</div>
+              <div class="param-val" id="p-window-phi">[0..16] / phi 0.0</div>
+            </div>
+            <div class="param-cell">
+              <div class="param-label">NEGPIP / NEG VIDEO</div>
+              <div class="param-val" id="p-negpip">0.00 / vid: true</div>
+            </div>
+            <div class="param-cell">
+              <div class="param-label">DSP MODE</div>
+              <div class="param-val" id="p-dsp-mode">sub_boost_10k_lp</div>
+            </div>
+            <div class="param-cell">
+              <div class="param-label">SEED / NEG KEY</div>
+              <div class="param-val" id="p-seed-neg">42 / none</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- POSITIVE & NEGATIVE PROMPT INSPECTOR -->
+        <div class="box-panel">
+          <div class="box-panel-header">
+            <span>PROMPT &amp; NEGATIVE ARCHITECTURE</span>
+            <div style="display: flex; gap: 4px;">
+              <button type="button" class="filter-chip is-active" id="btn-tab-pos-prompt">POSITIVE PROMPT</button>
+              <button type="button" class="filter-chip" id="btn-tab-neg-prompt">NEGATIVE PROMPT</button>
+            </div>
+          </div>
+          <div class="box-panel-content">
+            <pre class="prompt-pre" id="insp-prompt-text"></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT / BOTTOM CATALOG PANE (100 VARIATIONS) -->
+    <section class="catalog-pane" aria-label="100-Variation Audition Matrix">
+      <!-- STICKY FILTER & SEARCH DECK -->
+      <div class="filter-deck">
+        <div class="filter-row">
+          <span class="filter-label">GROUP:</span>
+          <div class="chip-strip" id="filter-group-strip">
+            <!-- Populated dynamically: ALL, G01..G10 -->
+          </div>
+        </div>
+
+        <div class="filter-row">
+          <span class="filter-label">GUIDANCE:</span>
+          <div class="chip-strip" id="filter-guidance-strip">
+            <!-- Populated dynamically: ALL, basic_cfg1, cfg_standard, etc. -->
+          </div>
+        </div>
+
+        <div class="filter-row">
+          <span class="filter-label">STATUS:</span>
+          <div class="chip-strip" id="filter-rating-strip">
+            <button type="button" class="filter-chip" data-rating="ALL">ALL</button>
+            <button type="button" class="filter-chip" data-rating="STARRED">STARRED</button>
+            <button type="button" class="filter-chip" data-rating="REJECTED">REJECTED</button>
+            <button type="button" class="filter-chip" data-rating="UNRATED">UNRATED</button>
+            <button type="button" class="filter-chip is-active" data-rating="HAS_METRICS">HAS METRICS</button>
+          </div>
+          <span class="filter-label" style="margin-left: 8px; min-width: 36px;">DSP:</span>
+          <select id="filter-dsp-select" class="select-box" style="height: 24px;" aria-label="Filter by DSP Mode">
+            <option value="ALL">ALL DSP MODES</option>
+          </select>
+        </div>
+
+        <div class="search-sort-bar">
+          <input
+            type="search"
+            id="search-input"
+            class="input-box"
+            placeholder="Filter by #id, title, recipe, hypothesis, prompt text, or seed..."
+            aria-label="Search variations"
+          />
+          <select id="sort-select" class="select-box" aria-label="Sort variations">
+            <option value="index_asc">SORT: INDEX (#001 - #100)</option>
+            <option value="pause_asc">SORT: CLEANEST SILENCE (LOWEST PAUSE RMS)</option>
+            <option value="sub_desc">SORT: SUB-BASS WEIGHT (HIGHEST SUB RMS)</option>
+            <option value="high_desc">SORT: STEEL RING (HIGHEST HIGH RMS)</option>
+            <option value="cfg_desc">SORT: CFG SCALE (HIGH TO LOW)</option>
+          </select>
+          <div class="segmented-toggle" role="group" aria-label="Catalog View Mode">
+            <button type="button" class="seg-btn is-active" id="btn-view-table">TABLE</button>
+            <button type="button" class="seg-btn" id="btn-view-grid">GRID</button>
+          </div>
+          <button type="button" class="btn" id="btn-reset-filters">RESET</button>
+        </div>
+      </div>
+
+      <!-- VARIATION TABLE / GRID CONTAINER -->
+      <div class="catalog-container" id="catalog-container">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+    </section>
+  </main>
+
+  <!-- MODAL FOR EXPORT SHORTLIST JSON & KEYBOARD SHORTCUTS -->
+  <div class="modal-backdrop is-hidden" id="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-sheet">
+      <div class="box-panel-header">
+        <span id="modal-title">SHORTLIST EXPORT</span>
+        <button type="button" class="btn" id="btn-close-modal" style="height: 24px; padding: 0 8px;">CLOSE [ESC]</button>
+      </div>
+      <div class="modal-body" id="modal-body">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

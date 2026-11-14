@@ -244,6 +244,7 @@ function enableCharacterFrustumCulling(charInstance, sphereRadius = 3.4) {
 export async function createEnemyManager({
   scene,
   kit = null,
+  profile = 'desktop',
   walkableHeightAt = () => 0,
   resolveCollisions = (x, z) => ({ x, z, wrapped: false }),
   onEnemyDamaged = null,
@@ -255,6 +256,22 @@ export async function createEnemyManager({
 } = {}) {
   const charKit = kit || createCharactersKit();
   await charKit.loadAnimationPacks();
+
+  let currentProfile = profile === 'tablet' ? 'tablet' : 'desktop';
+  const applyOutlineProfile = (charInst, prof = currentProfile) => {
+    const showOutlines = prof !== 'tablet';
+    const root = charInst?.modelRoot || charInst?.group;
+    root?.traverse?.((obj) => {
+      if (
+        obj.isSkinnedMesh &&
+        (obj.userData?.isOutline ||
+          obj.name?.toLowerCase().includes('outline') ||
+          obj.material?.side === THREE.BackSide)
+      ) {
+        obj.visible = showOutlines;
+      }
+    });
+  };
 
   const rootGroup = new THREE.Group();
   rootGroup.name = 'pooledEnemyManagerGroup';
@@ -304,43 +321,181 @@ export async function createEnemyManager({
       cellOverrides: BOSS_SOVEREIGN_CELL_OVERRIDES,
     },
   ];
-  const createdChars = await Promise.all(
-    creationSpecs.map((spec) =>
-      charKit.createCharacter(spec.charId, {
-        initialClip: 'idle',
-        targetHeight: spec.targetHeight,
-        outlineThickness: spec.outlineThickness,
-        cellOverrides: spec.cellOverrides,
-      })
-    )
-  );
+  const isImmediatePoolMode =
+    typeof window === 'undefined' ||
+    Boolean(window.__HEADLESS_TEST__) ||
+    Boolean(typeof navigator !== 'undefined' && navigator.webdriver) ||
+    new URLSearchParams(window.location?.search || '').has('shot');
 
   const poolByCharId = {};
   const poolByRole = {};
-  const allPoolSlots = createdChars.map((charInst, slotIndex) => {
-    const spec = creationSpecs[slotIndex];
-    enableCharacterFrustumCulling(charInst, spec.isBossSlot ? 4.8 : 3.4);
-    charInst.group.visible = false;
-    rootGroup.add(charInst.group);
-    const slot = {
-      slotIndex,
-      charId: spec.charId,
-      poolRole: spec.poolRole,
-      isBossSlot: spec.isBossSlot,
-      char: charInst,
-      busy: false,
-      enemy: null,
-    };
-    if (!poolByCharId[spec.charId]) {
-      poolByCharId[spec.charId] = [];
-    }
-    poolByCharId[spec.charId].push(slot);
-    if (!poolByRole[spec.poolRole]) {
-      poolByRole[spec.poolRole] = [];
-    }
-    poolByRole[spec.poolRole].push(slot);
-    return slot;
+  let allPoolSlots = [];
+
+  const getCharCreateOpts = (spec) => ({
+    initialClip: 'idle',
+    targetHeight: spec.targetHeight ?? spec.height,
+    outlineThickness:
+      currentProfile === 'tablet' ? 0.0 : (spec.outlineThickness ?? spec.outline ?? 0.022),
+    cellOverrides: spec.cellOverrides,
   });
+
+  if (isImmediatePoolMode) {
+    const createdChars = await Promise.all(
+      creationSpecs.map((spec) => charKit.createCharacter(spec.charId, getCharCreateOpts(spec)))
+    );
+
+    allPoolSlots = createdChars.map((charInst, slotIndex) => {
+      const spec = creationSpecs[slotIndex];
+      enableCharacterFrustumCulling(charInst, spec.isBossSlot ? 4.8 : 3.4);
+      applyOutlineProfile(charInst, currentProfile);
+      charInst.group.visible = false;
+      rootGroup.add(charInst.group);
+      const slot = {
+        slotIndex,
+        charId: spec.charId,
+        poolRole: spec.poolRole,
+        isBossSlot: spec.isBossSlot,
+        char: charInst,
+        busy: false,
+        active: false,
+        alive: false,
+        instanceId: null,
+        spawnGen: 0,
+        enemy: null,
+      };
+      if (!poolByCharId[spec.charId]) poolByCharId[spec.charId] = [];
+      poolByCharId[spec.charId].push(slot);
+      if (!poolByRole[spec.poolRole]) poolByRole[spec.poolRole] = [];
+      poolByRole[spec.poolRole].push(slot);
+      return slot;
+    });
+  } else {
+    // Fast-Boot Progressive Streaming Mode:
+    // 1. Create primary Warrior (slot 0) & Mage (slot 4) immediately so the player can enter the game right away.
+    // 2. Continuously stream & build all remaining 17 enemy & boss rigs in the background (1 rig per frame) without ever stopping!
+    const [primaryWarrior, primaryMage] = await Promise.all([
+      charKit.createCharacter(creationSpecs[0].charId, getCharCreateOpts(creationSpecs[0])),
+      charKit.createCharacter(creationSpecs[4].charId, getCharCreateOpts(creationSpecs[4])),
+    ]);
+
+    const makeStandInChar = (fallbackChar, spec) => {
+      const dummyGroup = new THREE.Group();
+      dummyGroup.name = `standin-${spec.charId}`;
+      dummyGroup.visible = false;
+      rootGroup.add(dummyGroup);
+      const standIn = {
+        ...fallbackChar,
+        id: spec.charId,
+        group: dummyGroup,
+        modelRoot: dummyGroup,
+        mixer: { timeScale: 1.0, update: () => {}, stopAllAction: () => {} },
+        __lastPlayedClip: 'idle',
+        __lastPlayedOpts: { loop: true, fade: 0.08, force: true },
+        play: (clip, opts) => {
+          standIn.__lastPlayedClip = clip || 'idle';
+          standIn.__lastPlayedOpts = opts || { loop: true, fade: 0.08, force: true };
+          return null;
+        },
+        poseAt: () => null,
+        update: () => {},
+        __isStandIn: true,
+      };
+      return standIn;
+    };
+
+    allPoolSlots = creationSpecs.map((spec, slotIndex) => {
+      const isInitial = slotIndex === 0 || slotIndex === 4;
+      const charInst =
+        slotIndex === 0
+          ? primaryWarrior
+          : slotIndex === 4
+            ? primaryMage
+            : makeStandInChar(primaryWarrior, spec);
+      if (isInitial) {
+        enableCharacterFrustumCulling(charInst, spec.isBossSlot ? 4.8 : 3.4);
+        applyOutlineProfile(charInst, currentProfile);
+        charInst.group.visible = false;
+        rootGroup.add(charInst.group);
+      }
+      const slot = {
+        slotIndex,
+        charId: spec.charId,
+        poolRole: spec.poolRole,
+        isBossSlot: spec.isBossSlot,
+        char: charInst,
+        busy: false,
+        active: false,
+        alive: false,
+        instanceId: null,
+        spawnGen: 0,
+        enemy: null,
+      };
+      if (!poolByCharId[spec.charId]) poolByCharId[spec.charId] = [];
+      poolByCharId[spec.charId].push(slot);
+      if (!poolByRole[spec.poolRole]) poolByRole[spec.poolRole] = [];
+      poolByRole[spec.poolRole].push(slot);
+      return slot;
+    });
+
+    // Non-stop background hydration queue (never waits for player proximity; streams continuously until 100% resident)
+    (async () => {
+      for (let i = 0; i < creationSpecs.length; i++) {
+        if (i === 0 || i === 4) continue;
+        const spec = creationSpecs[i];
+        try {
+          await new Promise((r) => setTimeout(r, 16));
+          const realChar = await charKit.createCharacter(spec.charId, getCharCreateOpts(spec));
+          enableCharacterFrustumCulling(realChar, spec.isBossSlot ? 4.8 : 3.4);
+          applyOutlineProfile(realChar, currentProfile);
+          const slot = allPoolSlots[i];
+          const oldChar = slot.char;
+          const oldGroup = oldChar?.group;
+          const wasVisible = oldGroup ? oldGroup.visible : false;
+          if (oldGroup) {
+            realChar.group.position.copy(oldGroup.position);
+            realChar.group.rotation.copy(oldGroup.rotation);
+            realChar.group.scale.copy(oldGroup.scale);
+            if (oldGroup.parent) oldGroup.parent.remove(oldGroup);
+          }
+          realChar.group.visible = wasVisible;
+          rootGroup.add(realChar.group);
+          slot.char = realChar;
+          if (slot.enemy) {
+            slot.enemy.char = realChar;
+            slot.enemy.group = realChar.group;
+            slot.enemy.rig = realChar.rig || (slot.isBossSlot ? 'large' : 'medium');
+          }
+          if ((slot.active && slot.alive) || (slot.busy && slot.enemy && slot.enemy.active && !slot.enemy.dead)) {
+            const e = slot.enemy;
+            const clipKey =
+              oldChar?.__lastPlayedClip ||
+              (e?.spawnAnimTimer > 0
+                ? e.isBoss
+                  ? 'Flexing'
+                  : e.reassembles
+                    ? 'Skeletons_Spawn_Ground'
+                    : 'spawn'
+                : e?.aiState === 'dormant'
+                  ? e.dormantKind === 'standing'
+                    ? 'Skeletons_Inactive_Standing_Pose'
+                    : 'Skeletons_Inactive_Floor_Pose'
+                  : e?.aiState === 'orbit'
+                    ? 'Running_A'
+                    : 'idle');
+            const isLoop = !(e?.spawnAnimTimer > 0);
+            safePlay(
+              realChar,
+              clipKey,
+              oldChar?.__lastPlayedOpts || { loop: isLoop, fade: 0.08, force: true },
+              isLoop ? 'idle' : 'spawn'
+            );
+          }
+        } catch {
+          // Keep fallback rig if an optional candidate fails
+        }
+      }
+    })();
+  }
 
   // `poolSlots` is the 10-slot primary view (shot poses, legacy tests); `allPoolSlots` holds all
   // 19 pre-allocated native archetype rigs, looked up by `poolByRole`.
@@ -349,10 +504,21 @@ export async function createEnemyManager({
   let activeEnemies = [];
   let spawnQueue = [];
   let activeProjectiles = [];
-  let nextInstanceSeq = 1;
+  let nextEnemyInstanceSeq = 0;
+  let nextBoltSeq = 1;
   let currentActId = 'act1_arena';
   let frozenShotId = null;
   let globalEnemyTimeScale = 1.0;
+
+  function setProfile(nextProfile = 'desktop') {
+    currentProfile = nextProfile === 'tablet' ? 'tablet' : 'desktop';
+    for (let i = 0; i < allPoolSlots.length; i++) {
+      if (allPoolSlots[i]?.char) {
+        applyOutlineProfile(allPoolSlots[i].char, currentProfile);
+      }
+    }
+    return currentProfile;
+  }
 
   const globalThreatState = {
     killStreakTimers: {
@@ -423,7 +589,7 @@ export async function createEnemyManager({
     const vz = (dz / flatDist) * speed;
     const vy = clamp(dy / travelTime, -6.0, 6.0);
     const bolt = {
-      id: `enemy_bolt_${nextInstanceSeq++}`,
+      id: `enemy_bolt_${nextBoltSeq++}`,
       kind,
       owner,
       x: origin.x ?? 0,
@@ -451,9 +617,17 @@ export async function createEnemyManager({
     return count;
   }
 
-  function acquireSlot(archetypeSpec) {
+  function acquireSlot(archetypeSpec, preferredSlotIndex = null) {
     const activeVisible = allPoolSlots.filter((s) => s.busy && s.char.group.visible).length;
     if (activeVisible >= MAX_CONCURRENT_ENEMIES) return null;
+
+    if (
+      typeof preferredSlotIndex === 'number' &&
+      allPoolSlots[preferredSlotIndex] &&
+      !allPoolSlots[preferredSlotIndex].busy
+    ) {
+      return allPoolSlots[preferredSlotIndex];
+    }
 
     const isStringArg = typeof archetypeSpec === 'string';
     const roleKey = isStringArg
@@ -568,7 +742,7 @@ export async function createEnemyManager({
       ENEMY_ARCHETYPES[spawnSpec.archetype] ||
       ENEMY_ARCHETYPES[spawnSpec.charId] ||
       ENEMY_ARCHETYPES.warrior;
-    const slot = acquireSlot(arch);
+    const slot = acquireSlot(arch, spawnSpec.preferredSlotIndex ?? spawnSpec.slotIndex ?? null);
     if (!slot) {
       spawnQueue.push(spawnSpec);
       return null;
@@ -579,10 +753,15 @@ export async function createEnemyManager({
     const groundY = walkableHeightAt(clampedPos.x, clampedPos.z);
 
     const initialY = arch.isFlying ? groundY + (arch.hoverHeight ?? 2.35) : groundY;
-    const scale = slot.isBossSlot && arch.id === 'boss_sovereign' ? 1.0 : arch.scale || 1.0;
+    const scale =
+      spawnSpec.scale && !arch.isBoss
+        ? spawnSpec.scale
+        : slot.isBossSlot && arch.id === 'boss_sovereign'
+          ? 1.0
+          : arch.scale || 1.0;
     slot.char.group.scale.setScalar(scale);
     slot.char.group.position.set(clampedPos.x, initialY, clampedPos.z);
-    const initialYaw = spawnSpec.rotY ?? Math.atan2(-clampedPos.x, -clampedPos.z);
+    const initialYaw = spawnSpec.rotY ?? spawnSpec.yaw ?? Math.atan2(-clampedPos.x, -clampedPos.z);
     slot.char.group.rotation.y = initialYaw;
     slot.char.group.visible = !frozenShotId;
     slot.char.mixer.timeScale = globalEnemyTimeScale;
@@ -601,17 +780,36 @@ export async function createEnemyManager({
       slot.char.play('spawn', { loop: false, fade: 0.08, timeScale: 1.35 * globalEnemyTimeScale, force: true });
     }
 
-    const orbitSign = (nextInstanceSeq % 2 === 0 ? 1 : -1) * (1.55 + (nextInstanceSeq % 3) * 0.275);
+    const instanceId = spawnSpec.instanceId || `enemy_${++nextEnemyInstanceSeq}`;
+    const seqMatch = /^enemy_(\d+)$/.exec(String(instanceId));
+    if (seqMatch) {
+      nextEnemyInstanceSeq = Math.max(nextEnemyInstanceSeq, Number(seqMatch[1]));
+    }
+    const spawnGen =
+      typeof spawnSpec.spawnGen === 'number' && Number.isFinite(spawnSpec.spawnGen)
+        ? spawnSpec.spawnGen
+        : (slot.spawnGen || 0) + 1;
+    slot.instanceId = instanceId;
+    slot.spawnGen = spawnGen;
+    slot.active = true;
+    slot.alive = true;
+
+    const seqNum = seqMatch ? Number(seqMatch[1]) : nextEnemyInstanceSeq;
+    const orbitSign = (seqNum % 2 === 0 ? 1 : -1) * (1.55 + (seqNum % 3) * 0.275);
     const summonCooldownVal = Number(arch.summonCooldown ?? arch.batSummonCooldown ?? 0);
     const maxSummonsVal = Number(arch.maxActiveSummons ?? arch.maxActiveBats ?? 0);
     const initSummonTimer = Number(
       spawnSpec.initialSummonCooldown ?? spawnSpec.initialBatCooldown ?? 0
     );
 
-    const startHp = spawnSpec.maxHp ?? Math.round(arch.maxHp * actHpScale(arch));
+    const startMaxHp = spawnSpec.maxHp ?? Math.round(arch.maxHp * actHpScale(arch));
+    const startHp = spawnSpec.hp ?? startMaxHp;
 
     const enemy = {
-      instanceId: spawnSpec.instanceId || `enemy_${nextInstanceSeq++}`,
+      instanceId,
+      spawnGen,
+      isRemoteSynced: Boolean(spawnSpec.isRemoteSynced),
+      remoteTarget: null,
       archetype: arch.id,
       charId: slot.charId,
       name: arch.name,
@@ -620,7 +818,7 @@ export async function createEnemyManager({
       char: slot.char,
       group: slot.char.group,
       hp: startHp,
-      maxHp: startHp,
+      maxHp: startMaxHp,
       dmg: arch.dmg,
       speed: arch.speed,
       qEnergyReward: arch.qEnergyReward ?? 20,
@@ -679,8 +877,8 @@ export async function createEnemyManager({
       xpAwarded: false,
       deathTimer: 0,
       active: true,
-      mark: null,
-      markTimer: 0,
+      mark: spawnSpec.mark || null,
+      markTimer: spawnSpec.markTimer ?? (spawnSpec.mark ? 6.0 : 0),
       detonationCdTimer: 0,
       stunTimer: 0,
       knockdownTimer: 0,
@@ -793,6 +991,8 @@ export async function createEnemyManager({
     const slot = allPoolSlots[enemy.slotIndex];
     if (slot) {
       slot.busy = false;
+      slot.active = false;
+      slot.alive = false;
       slot.enemy = null;
       slot.char.group.visible = false;
       slot.char.group.scale.setScalar(1.0);
@@ -825,12 +1025,115 @@ export async function createEnemyManager({
     for (let i = 0; i < allPoolSlots.length; i++) {
       const s = allPoolSlots[i];
       s.busy = false;
+      s.active = false;
+      s.alive = false;
       s.enemy = null;
       setCharacterHitFlash(s.char, 0);
       s.char.group.visible = false;
       s.char.group.scale.setScalar(1.0);
       s.char.mixer.timeScale = 1.0;
     }
+  }
+
+  function syncRemoteEnemies(remoteEnemies = []) {
+    if (!Array.isArray(remoteEnemies)) return activeEnemies;
+    frozenShotId = null;
+    rootGroup.visible = true;
+    spawnQueue = [];
+    const seenIds = new Set(remoteEnemies.map((r) => r?.instanceId).filter(Boolean));
+
+    // 1. Release any local enemies that are no longer present (or have a different spawnGen) in Host's snapshot
+    for (let i = activeEnemies.length - 1; i >= 0; i--) {
+      const e = activeEnemies[i];
+      if (!e) continue;
+      const match = remoteEnemies.find((r) => r && r.instanceId === e.instanceId);
+      if (
+        !match ||
+        (match.spawnGen !== undefined &&
+          e.spawnGen !== undefined &&
+          Number(match.spawnGen) !== Number(e.spawnGen)) ||
+        (match.hp !== undefined && match.hp <= 0)
+      ) {
+        releaseSlot(e);
+      }
+    }
+
+    // 2. Spawn or update each enemy from Host's snapshot
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    for (let i = 0; i < remoteEnemies.length; i++) {
+      const rem = remoteEnemies[i];
+      if (!rem || (rem.hp !== undefined && rem.hp <= 0)) continue;
+
+      let e = activeEnemies.find((item) => item && item.instanceId === rem.instanceId);
+      if (!e) {
+        e = spawnImmediateFromSpec({
+          ...rem,
+          preferredSlotIndex: rem.slotIndex,
+          rotY: rem.yaw ?? rem.rotY ?? 0,
+          isRemoteSynced: true,
+        });
+        if (e) {
+          e.spawnAnimTimer = 0;
+          e.tokenIneligible = false;
+          e.x = Number(rem.x ?? e.x);
+          e.z = Number(rem.z ?? e.z);
+          e.y = Number.isFinite(rem.y) ? rem.y : walkableHeightAt(e.x, e.z);
+          e.yaw = Number(rem.yaw ?? e.yaw);
+          e.group.position.set(e.x, e.y, e.z);
+          e.group.rotation.set(0, e.yaw, 0, 'YXZ');
+        }
+      }
+      if (!e) continue;
+
+      e.isRemoteSynced = true;
+      if (typeof rem.spawnGen === 'number') {
+        e.spawnGen = rem.spawnGen;
+        if (e.slot) e.slot.spawnGen = rem.spawnGen;
+      }
+      if (typeof rem.maxHp === 'number') e.maxHp = rem.maxHp;
+      if (typeof rem.hp === 'number') e.hp = rem.hp;
+      e.mark = rem.mark ?? null;
+      e.markTimer = rem.markTimer ?? (rem.mark ? 6.0 : 0);
+      if (rem.state) e.aiState = rem.state;
+      if (typeof rem.aegisActive === 'boolean') e.aegisActive = rem.aegisActive;
+      if (typeof rem.aegisLayers === 'number') e.aegisLayers = rem.aegisLayers;
+      if (typeof rem.isPile === 'boolean') e.isPile = rem.isPile;
+      if (typeof rem.scale === 'number' && rem.scale > 0 && e.group && !e.isBoss) {
+        e.group.scale.setScalar(rem.scale);
+      }
+
+      const tx = Number(rem.x ?? e.x);
+      const tz = Number(rem.z ?? e.z);
+      const ty = Number.isFinite(rem.y) ? rem.y : walkableHeightAt(tx, tz);
+      const tyaw = Number(rem.yaw ?? e.yaw);
+      e.remoteTarget = {
+        x: tx,
+        y: ty,
+        z: tz,
+        vx: Number(rem.vx || 0),
+        vz: Number(rem.vz || 0),
+        yaw: tyaw,
+        clip: rem.clip || null,
+        receivedAt: now,
+      };
+
+      const errDist = Math.hypot(tx - e.x, tz - e.z);
+      if (errDist > 2.5) {
+        e.x = tx;
+        e.z = tz;
+        e.y = ty;
+        e.yaw = tyaw;
+      } else {
+        e.x += (tx - e.x) * 0.55;
+        e.z += (tz - e.z) * 0.55;
+        e.y = walkableHeightAt(e.x, e.z);
+        e.yaw += shortestAngleDiff(tyaw, e.yaw) * 0.55;
+      }
+      e.group.position.set(e.x, e.y, e.z);
+      e.group.rotation.set(0, e.yaw, 0, 'YXZ');
+    }
+
+    return activeEnemies;
   }
 
   function spawnWave(waveSpec, actId = currentActId) {
@@ -900,6 +1203,7 @@ export async function createEnemyManager({
   function markEnemyDeadAndNotify(e, result = {}) {
     if (e.deathTimer > 0) return;
     e.dead = true;
+    if (e.slot) e.slot.alive = false;
     e.hasAttackToken = false;
     e.aiState = 'dead';
     e.windupTimer = 0;
@@ -974,12 +1278,12 @@ export async function createEnemyManager({
 
     // Bone piles ignore physical hits; detonations / Mage spells finish them for good.
     if (enemy.isPile) {
-      if (!isPileFinisher(hitSpec, null)) return noDamageResult({ pileImmune: true });
+      if (!isPileFinisher(hitSpec, null) && !hitSpec.fromRemoteHit) return noDamageResult({ pileImmune: true });
       finishPile(enemy, hitSpec);
       return noDamageResult({ killed: true, finishedPile: true });
     }
 
-    const pre = resolvePreHit(enemy, hitSpec);
+    const pre = hitSpec.fromRemoteHit || enemy.isRemoteSynced ? 'hit' : resolvePreHit(enemy, hitSpec);
     if (pre === 'dodge') {
       enemyDodge(enemy, hitSpec.attackerPos, 'side');
       return noDamageResult({ dodged: true });
@@ -2166,7 +2470,7 @@ export async function createEnemyManager({
     }
   }
 
-  function update(dt, heroStates = {}, camera = null) {
+  function update(dt, heroStates = {}, camera = null, options = {}) {
     telegraphRingMesh.visible = false;
     telegraphRingMesh.count = 0;
 
@@ -2189,6 +2493,55 @@ export async function createEnemyManager({
         const show = camDistSq <= 92 * 92;
         allPoolSlots[0].char.group.visible = show;
         allPoolSlots[4].char.group.visible = show;
+      }
+      return;
+    }
+
+    if (options?.isRemoteGuest) {
+      enemyProjectileMesh.visible = false;
+      enemyProjectileMesh.count = 0;
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      for (let i = 0; i < activeEnemies.length; i++) {
+        const e = activeEnemies[i];
+        if (!e || !e.active) continue;
+        if (e.spawnAnimTimer > 0) e.spawnAnimTimer = Math.max(0, e.spawnAnimTimer - dt);
+        if (e.attackAnimTimer > 0) e.attackAnimTimer = Math.max(0, e.attackAnimTimer - dt);
+        if (e.hitFlashTimer > 0) {
+          e.hitFlashTimer = Math.max(0, e.hitFlashTimer - dt);
+          setCharacterHitFlash(e.char, e.hitFlashTimer / 0.14, 0xfff1f2);
+        }
+        if (e.hitstopTimer > 0) {
+          e.hitstopTimer = Math.max(0, e.hitstopTimer - dt);
+          if (e.hitstopTimer <= 0) {
+            e.char.mixer.timeScale = globalEnemyTimeScale;
+          }
+        } else {
+          e.char.mixer.timeScale = globalEnemyTimeScale;
+        }
+        if (e.remoteTarget) {
+          const age = Math.min(
+            0.08,
+            Math.max(0, (now - (e.remoteTarget.receivedAt || now)) * 0.001)
+          );
+          const projX = e.remoteTarget.x + (e.remoteTarget.vx || 0) * age;
+          const projZ = e.remoteTarget.z + (e.remoteTarget.vz || 0) * age;
+          const blend = 1 - Math.exp(-20 * dt);
+          e.x += (projX - e.x) * blend;
+          e.z += (projZ - e.z) * blend;
+          e.y = walkableHeightAt(e.x, e.z);
+          e.yaw += shortestAngleDiff(e.remoteTarget.yaw ?? e.yaw, e.yaw) * blend;
+          if (
+            e.remoteTarget.clip &&
+            !e.dead &&
+            e.spawnAnimTimer <= 0 &&
+            e.attackAnimTimer <= 0
+          ) {
+            playEnemyLocomotion(e, e.remoteTarget.clip, Math.hypot(e.remoteTarget.vx || 0, e.remoteTarget.vz || 0));
+          }
+        }
+        e.group.position.set(e.x, e.y, e.z);
+        e.group.rotation.set(0, e.yaw, 0, 'YXZ');
+        e.char.update(dt);
       }
       return;
     }
@@ -2940,6 +3293,7 @@ export async function createEnemyManager({
     setCurrentActId(actId) {
       currentActId = actId;
     },
+    setProfile,
     setGlobalEnemyTimeScale,
     getGlobalEnemyTimeScale,
     blastEnemiesFromPoint,
@@ -2963,6 +3317,7 @@ export async function createEnemyManager({
     spawnImmediateFromSpec,
     spawnEnemyProjectile,
     clearAllEnemies,
+    syncRemoteEnemies,
     applyHitToEnemy,
     applyAreaOrLineHit,
     checkPerfectDodge,

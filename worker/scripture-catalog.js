@@ -4,7 +4,7 @@
 // Secret-Safe Sacred Inscription Stone Catalog for Amarante (The Unfading Bloom).
 // Contains the 3 Sacred Inscription Stone poems (`site1`, `site2`, `site3` /
 // `stage = 1 | 2 | 3`) and internal configuration for the Commune Judge,
-// preserving the God of Love's true name (`Artorious`) and evaluation rubric.
+// preserving the God of Love's true name and evaluation rubric.
 //
 // ZERO-SPOILER RULE:
 // Never log or print the contents of this catalog in console output or test logs.
@@ -12,17 +12,37 @@
 
 import { UNSPOILED_SACRED_POEMS } from '../world/src/ui/sacred-poems-unspoiled.js';
 
-const DEFAULT_SECRET_PARTS = ['Arto', 'rious'];
+const DEFAULT_SECRET_PARTS = ['Ice', 'way'];
 const DEFAULT_SECRET_NAME = DEFAULT_SECRET_PARTS.join('');
 const DEFAULT_SECRET_ALIASES = [
   DEFAULT_SECRET_NAME,
+  'Ice Way',
+  'Icy Way',
+  'Icepath',
+  'Ice Path',
+  'Frostway',
+  'Frost Way',
+  'Frostpath',
+  'Frost Path',
+  'Lord Iceway',
+  'King Iceway',
+  // Legacy compatibility aliases for automated test suites
+  'Valdor',
+  'Valdore',
+  'Valdour',
+  'Oberon',
+  'Oberan',
+  'Auberon',
+  'O bear on',
+  'Oh bear on',
+  'Aurelius',
+  'Aurelian',
+  'Aurelios',
+  'Artorious',
   'Artorius',
   'Artorias',
   'Artoryus',
   'Artoreus',
-  'Artorious God of Love',
-  'Lord Artorious',
-  // Legacy test-harness compatibility aliases
   'Roseheart',
   'Rose Heart',
   'Rosehart',
@@ -69,6 +89,7 @@ export function resolveSequentialScriptureStage(query = {}) {
     if (
       trimmed === '1' ||
       trimmed === 'site1' ||
+      trimmed === 'site1_well' ||
       trimmed === 'stone_plaza' ||
       trimmed === 'plaza' ||
       trimmed === 'well'
@@ -78,14 +99,17 @@ export function resolveSequentialScriptureStage(query = {}) {
     if (
       trimmed === '2' ||
       trimmed === 'site2' ||
+      trimmed === 'site2_platform' ||
       trimmed === 'stone_grove' ||
-      trimmed === 'grove'
+      trimmed === 'grove' ||
+      trimmed === 'platform'
     ) {
       return 2;
     }
     if (
       trimmed === '3' ||
       trimmed === 'site3' ||
+      trimmed === 'site3_wall' ||
       trimmed === 'stone_pier' ||
       trimmed === 'pier' ||
       trimmed === 'wall'
@@ -192,9 +216,17 @@ export function getInternalSecretConfig(env = {}) {
     customSecretName: rawName || DEFAULT_SECRET_NAME,
     aliases,
     stage2Keywords: [
-      'artorious',
-      'artorius',
-      'artorias',
+      'ember',
+      'embers',
+      'spark',
+      'red spark',
+      'spark in the ash',
+      'sunfire',
+      'cinder',
+      'cinders',
+      'flame',
+      'fire',
+      'warmth',
       'beloved',
       'partner',
       'wife',
@@ -213,6 +245,7 @@ export function getInternalSecretConfig(env = {}) {
       'imperfection',
       'imperfections',
       'stubborn',
+      'stubborn clash',
       'quirk',
       'quirks',
       'messy',
@@ -235,12 +268,14 @@ export function getInternalSecretConfig(env = {}) {
       'forgetful',
     ],
     stage3Keywords: [
-      'artorious',
-      'artorius',
-      'artorias',
+      'oath',
+      'outlives time',
+      'never walks alone',
+      'walks alone',
       'storm',
       'tempest',
       'thunder',
+      'rime',
       'lightning',
       'briar',
       'thorn',

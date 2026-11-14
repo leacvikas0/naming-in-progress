@@ -2,6 +2,7 @@
 <html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8" />
+  <base href="/world/" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#fcf2f4" />
   <meta name="mobile-web-app-capable" content="yes" />
@@ -32,8 +33,8 @@
   <script type="importmap">
     {
       "imports": {
-        "three": "/node_modules/three/build/three.module.js",
-        "three/addons/": "/node_modules/three/examples/jsm/"
+        "three": "/world/vendor/three/build/three.module.js",
+        "three/addons/": "/world/vendor/three/examples/jsm/"
       }
     }
   </script>
@@ -1161,10 +1162,29 @@
         background-color: var(--surface-control-hover);
       }
     }
+
+    /* 0ms Plain Black Canvas Boot Layer (Zero Static JPEG, Zero Jank) */
+    #haru-boot-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 37;
+      pointer-events: none;
+      background: #08080a;
+      overflow: hidden;
+    }
   </style>
 </head>
 <body>
   <canvas id="world-canvas"></canvas>
+
+  <!-- 0ms Plain Black Boot Layer -->
+  <div id="haru-boot-splash" aria-hidden="true"></div>
+  <script>
+    if (location.search.includes('shot=') || location.search.includes('nolobby=1')) {
+      const s = document.getElementById('haru-boot-splash');
+      if (s) s.remove();
+    }
+  </script>
 
   <div id="hud">
     <div id="top-bar">
@@ -1218,8 +1238,8 @@
       <!-- Top-Center: Act Objective Strip, Boss Bar & Action Callout Banner -->
       <div class="top-col-center">
         <div id="act-objective-pill" class="hud-pill">
-          <span class="act-tag" id="act-stage-tag">Act I</span>
-          <span id="act-objective-text">East Wisteria Clearing — Follow Golden Petals East</span>
+          <span class="act-tag" id="act-stage-tag">Sacred Stones (0/3)</span>
+          <span id="act-objective-text">Village Well Stronghold — Clear Guardians, Read [G] &amp; Commune [R]</span>
         </div>
 
         <div id="boss-hud-bar">
@@ -1388,12 +1408,12 @@
     <div id="victory-modal">
       <div class="victory-card">
         <h2>Dawn Breaks Over Amarante</h2>
-        <p>The Hollow Sovereign is vanquished and the North Shrine Overlook shines in golden morning light.</p>
+        <p>All three Sacred Stones are awakened, the Strongholds are cleared, and the Apex Finale assault is vanquished in golden morning light.</p>
         <button type="button" id="replay-expedition-btn">Replay Expedition</button>
       </div>
     </div>
   </div>
 
-  <script type="module" src="./src/main.js"></script>
+  <script type="module" src="/world/src/main.js"></script>
 </body>
 </html>

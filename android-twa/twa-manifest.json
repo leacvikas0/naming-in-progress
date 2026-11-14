@@ -1,6 +1,6 @@
 {
   "packageId": "dev.harumachi.coop",
-  "host": "haru-machi-coop.workers.dev",
+  "host": "play-amarante.pages.dev",
   "name": "Haru-machi",
   "launcherName": "Haru-machi",
   "display": "fullscreen",
@@ -13,8 +13,8 @@
   "backgroundColor": "#1C1917",
   "enableNotifications": false,
   "startUrl": "/world/index.html",
-  "iconUrl": "https://haru-machi-coop.workers.dev/world/assets/ui/sanctuary-crest.png",
-  "maskableIconUrl": "https://haru-machi-coop.workers.dev/world/assets/ui/sanctuary-crest.png",
+  "iconUrl": "https://play-amarante.pages.dev/world/assets/ui/sanctuary-crest.png",
+  "maskableIconUrl": "https://play-amarante.pages.dev/world/assets/ui/sanctuary-crest.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
     "path": "./haru-machi-release-key.keystore",
@@ -24,7 +24,7 @@
   "appVersionCode": 1,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
-  "webManifestUrl": "https://haru-machi-coop.workers.dev/world/manifest.webmanifest",
+  "webManifestUrl": "https://play-amarante.pages.dev/world/manifest.webmanifest",
   "fallbackType": "customtabs",
   "features": {},
   "alphaDependencies": {
@@ -33,7 +33,7 @@
   "enableSiteSettingsShortcut": false,
   "isChromeOSOnly": false,
   "isMetaQuest": false,
-  "fullScopeUrl": "https://haru-machi-coop.workers.dev/world/",
+  "fullScopeUrl": "https://play-amarante.pages.dev/world/",
   "minSdkVersion": 24,
   "targetViewport": {
     "device": "Xiaomi Pad 7",

@@ -477,17 +477,90 @@ function createCathedralImpulseBuffer(ctx, durationSec = 2.4, decay = 2.6) {
   return impulse;
 }
 
+const ARTORIOUS_CLIP_URLS = Object.freeze({
+  smite_nameless: '/world/assets/audio/artorious/smite_nameless.wav',
+  smite_silence: '/world/assets/audio/artorious/smite_silence.wav',
+  smite_monotone: '/world/assets/audio/artorious/smite_monotone.wav',
+  smite_rushed: '/world/assets/audio/artorious/smite_rushed.wav',
+  smite_cringe: '/world/assets/audio/artorious/smite_cringe.wav',
+  heal_gentle: '/world/assets/audio/artorious/heal_gentle.wav',
+  bless_sweet: '/world/assets/audio/artorious/bless_sweet.wav',
+  bless_chivalrous: '/world/assets/audio/artorious/bless_chivalrous.wav',
+  bless_amused: '/world/assets/audio/artorious/bless_amused.wav',
+  miracle_dramatic: '/world/assets/audio/artorious/miracle_dramatic.wav',
+  miracle_heartfelt: '/world/assets/audio/artorious/miracle_heartfelt.wav',
+  miracle_desperate: '/world/assets/audio/artorious/miracle_desperate.wav',
+});
+
+function waitForAudioElementToFinish(audioEl, maxSafetyTimeoutMs = 15000) {
+  return new Promise((resolve) => {
+    if (!audioEl || typeof audioEl.addEventListener !== 'function') {
+      resolve({ finished: true, reason: 'no_events', duration: 0 });
+      return;
+    }
+    let settled = false;
+    let safetyTimer = null;
+    const done = (reason = 'ended') => {
+      if (settled) return;
+      settled = true;
+      if (safetyTimer !== null) {
+        clearTimeout(safetyTimer);
+        safetyTimer = null;
+      }
+      audioEl.removeEventListener?.('ended', onEnded);
+      audioEl.removeEventListener?.('error', onError);
+      resolve({
+        finished: true,
+        reason,
+        duration: Number.isFinite(Number(audioEl.duration)) ? Number(audioEl.duration) : 0,
+      });
+    };
+    const onEnded = () => done('ended');
+    const onError = () => done('error');
+
+    audioEl.addEventListener('ended', onEnded, { once: true });
+    audioEl.addEventListener('error', onError, { once: true });
+    audioEl.addEventListener(
+      'loadedmetadata',
+      () => {
+        const dur = Number(audioEl.duration);
+        if (Number.isFinite(dur) && dur > 0) {
+          if (safetyTimer !== null) clearTimeout(safetyTimer);
+          safetyTimer = setTimeout(() => done('duration_timeout'), Math.ceil(dur * 1000) + 600);
+        }
+      },
+      { once: true }
+    );
+
+    safetyTimer = setTimeout(() => done('max_timeout'), maxSafetyTimeoutMs);
+
+    try {
+      const playPromise = audioEl.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => done('play_rejected'));
+      }
+    } catch {
+      done('play_threw');
+    }
+  });
+}
+
 /**
  * Plays Artorious's rare voice clips through a WebAudio stereo widener
  * (Haas `14ms` L/R micro-delay + `185Hz` low-shelf warmth + `2.4s` cathedral
- * stereo impulse). Respects the Rare Speech Rule (`shouldSpeakAloud`).
+ * stereo impulse). Respects the Rare Speech Rule (`shouldSpeakAloud`) and
+ * returns a `finished` Promise that resolves only after the voice clip ends
+ * so gameplay verdict actions (`applyCommuneVerdict`) wait for His dialogue.
  */
 export function playWideSurroundDivineVoice(verdictOrAudioUrl, options = {}) {
   const isObject = verdictOrAudioUrl && typeof verdictOrAudioUrl === 'object';
   const shouldSpeak = isObject
     ? verdictOrAudioUrl.shouldSpeakAloud !== false
     : true;
-  const audioUrl = isObject ? verdictOrAudioUrl.audioUrl : verdictOrAudioUrl;
+  const audioUrl = isObject
+    ? verdictOrAudioUrl.audioUrl ||
+      (verdictOrAudioUrl.clip_id ? ARTORIOUS_CLIP_URLS[verdictOrAudioUrl.clip_id] : null)
+    : verdictOrAudioUrl;
 
   const stereoSpec = {
     haasDelayMs: 14,
@@ -501,6 +574,7 @@ export function playWideSurroundDivineVoice(verdictOrAudioUrl, options = {}) {
     return {
       played: false,
       reason: !shouldSpeak ? 'rare_speech_silent_decree' : 'no_audio_url',
+      finished: Promise.resolve({ finished: true, played: false }),
       ...stereoSpec,
     };
   }
@@ -516,6 +590,7 @@ export function playWideSurroundDivineVoice(verdictOrAudioUrl, options = {}) {
       played: true,
       simulatedHeadless: true,
       audioUrl,
+      finished: Promise.resolve({ finished: true, played: true, simulatedHeadless: true }),
       ...stereoSpec,
     };
   }
@@ -570,19 +645,22 @@ export function playWideSurroundDivineVoice(verdictOrAudioUrl, options = {}) {
     dryGain.connect(ctx.destination);
     wetGain.connect(ctx.destination);
 
-    audioEl.play().catch(() => {});
+    const finished = waitForAudioElementToFinish(audioEl);
 
     return {
       played: true,
       audioUrl,
+      audioElement: audioEl,
+      finished,
       ...stereoSpec,
     };
   } catch {
+    let finished = Promise.resolve({ finished: true, fallbackAudio: true });
     try {
       if (typeof Audio !== 'undefined') {
         const fbAudio = new Audio(audioUrl);
         fbAudio.volume = 0.92;
-        fbAudio.play().catch(() => {});
+        finished = waitForAudioElementToFinish(fbAudio);
       }
     } catch {
       // ignore fallback audio error
@@ -591,6 +669,7 @@ export function playWideSurroundDivineVoice(verdictOrAudioUrl, options = {}) {
       played: true,
       fallbackAudio: true,
       audioUrl,
+      finished,
       ...stereoSpec,
     };
   }
@@ -1136,6 +1215,21 @@ export function createCommuneClient({
       const voicePlayback = playWideSurroundDivineVoice(judgment, {
         AudioContextClass,
       });
+
+      if (voicePlayback?.played && !voicePlayback?.simulatedHeadless && voicePlayback?.finished) {
+        state = 'speaking';
+        emitState({ judgment, voicePlayback, speaking: true });
+        await voicePlayback.finished;
+        if (state !== 'speaking') {
+          return {
+            ok: false,
+            sent: false,
+            cancelledDuringSpeech: true,
+            judgment,
+            voicePlayback,
+          };
+        }
+      }
 
       state = 'idle';
       elapsed = 0;

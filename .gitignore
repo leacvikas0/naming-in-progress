@@ -11,6 +11,8 @@ Thumbs.db
 # Environment secrets and spoiler-protected riddles
 .env
 .env.*
+.dev.vars
+.dev.vars.*
 
 # Experiment scratch (harnesses, renders, GLBs) — write-ups live in docs/experiments/
 /experiments/
@@ -26,4 +28,29 @@ aistudio-signin-state.png
 resume.html
 
 cloudflared.log
+cloudflared-active.log
 .playwright-mcp/
+
+# SSH keys, local logs, runtime telemetry & heavy audio/video scratch batches
+sfx-foley/.modal-ssh/
+sfx-foley/audition/videos/
+sfx-foley/audition/metrics/
+sfx-foley/audition/manifest.js
+sfx-foley/audition/manifest.json
+sfx-foley/stems/foley_lab_04/
+sfx-foley/stems/foley_lab_04_fp8/
+sfx-foley/stems/foley_suite/
+sfx-foley/stems/preview_old_*.mp3
+sfx-foley/music/
+sfx-foley/slices/
+sfx-foley/sword-lab/
+sfx-foley/tts-test/
+sfx-foley/videos/
+world/assets/audio/music/audition/
+world/assets/audio/sword-lab/
+world/assets/audio/tts-test/
+world/shots/*.log
+world/shots/latest-mobile-telemetry.json
+world/shots/loading-options/
+world/shots/mali-g68-parity-verify/
+

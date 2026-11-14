@@ -2,9 +2,9 @@
 // worker/commune-judge.js
 //
 // Role-Symmetric Audio-Native Multimodal Tone & Puzzle Judge for Amarante.
-// Evaluates spoken prayers via live Gemini Multimodal Audio (`gemini-3.5-flash-lite`
-// with `inlineData: { mimeType, data: audioBase64 }`) OR deterministic local
-// evaluation fallback when offline/stubbed in tests.
+// Evaluates spoken prayers via live Gemini Multimodal Audio (`gemini-4-hydrogen`
+// with `thinkingConfig: { thinkingLevel: 'LOW' }` and `inlineData: { mimeType, data: audioBase64 }`)
+// OR deterministic local evaluation fallback when offline/stubbed in tests.
 //
 // Enforces:
 // 1. 100% Role Symmetry (`speakerRole` & `partnerRole` treated identically whether
@@ -14,11 +14,15 @@
 //    love, mortality, frost, embers, thorns, and the bond between the couple.
 // 3. Out-of-Order Per-Stone Bitmask Progression (`stonesSolvedMask` 0b000..0b111):
 //    - Stone 1 (`site1_well`, `(0, 0)`) is the root prerequisite (True Name).
-//    - Once `stone1Solved` is true, Stone 2 (`site2_platform`) and Stone 3
-//      (`site3_wall`) can be solved in ANY order (`1 -> 2 -> 3` or `1 -> 3 -> 2`),
+//    - Once `stone1Solved` is true, Stone 2 (`site2_platform`, `(114, 32)`) and Stone 3
+//      (`site3_wall`, `(-92, 64)`) can be solved in ANY order (`1 -> 2 -> 3` or `1 -> 3 -> 2`),
 //      where `awakenedStage = stonesSolvedCount` so Fire is never skipped.
 // 4. 7-Row Proportional `% Max HP` (`hpDeltaPct`) Verdict Matrix & Combat Heal
-//    Disambiguation (`prayerMode`: `'awakening' | 'field_heal' | 'divine_miracle' | 'penalty' | 'smite' | 'pat'`).
+//    Disambiguation (`prayerMode`: `'awakening' | 'field_heal' | 'divine_miracle' | 'penalty' | 'retry' | 'smite' | 'pat'`).
+// 5. Safe Audio-Failure / Timeout Handling: When raw mic audio (`audioBase64` non-empty,
+//    `transcriptHint === ''`) encounters a Gemini error, timeout, or missing key,
+//    returns a gentle retry (`verdict: 'penalty'`, `prayerMode: 'retry'`, `hpDelta: 0`,
+//    `hpDeltaPct: 0`, `incrementSpam: false`)—never false-smiting or incrementing spamCount.
 // ============================================================================
 
 import { getInternalSecretConfig } from './scripture-catalog.js';
@@ -29,7 +33,172 @@ import {
   computeStonesSolvedCount,
 } from '../world/src/net/room-progression.js';
 
-const GEMINI_MODEL = 'gemini-3.5-flash-lite';
+export const GEMINI_MODEL = 'gemini-4-hydrogen';
+export const GEMINI_HEDGE_TIMEOUT_MS = 4800;
+export const GEMINI_HARD_TIMEOUT_MS = 13000;
+
+let geminiKeyCursor = 0;
+
+export function extractGeminiApiKeys(env = {}) {
+  const keySet = new Set();
+  const addRaw = (raw) => {
+    if (!raw) return;
+    for (const part of String(raw).split(',')) {
+      const k = part.trim();
+      if (k.length >= 10) keySet.add(k);
+    }
+  };
+
+  addRaw(env?.GEMINI_API_KEYS);
+  addRaw(env?.GEMINI_API_KEY);
+  if (typeof process !== 'undefined' && process?.env) {
+    addRaw(process.env.GEMINI_API_KEYS);
+    addRaw(process.env.GEMINI_API_KEY);
+  }
+  return Array.from(keySet);
+}
+
+function nextKeyFromPool(keys) {
+  if (!Array.isArray(keys) || keys.length === 0) return null;
+  const key = keys[geminiKeyCursor % keys.length];
+  geminiKeyCursor = (geminiKeyCursor + 1) % keys.length;
+  return key;
+}
+
+export async function callSingleGeminiKey(
+  apiKey,
+  requestBody,
+  hardTimeoutMs = GEMINI_HARD_TIMEOUT_MS,
+  fetchImpl = typeof fetch === 'function' ? fetch : null
+) {
+  if (!fetchImpl) {
+    throw new Error('Global fetch is unavailable');
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), hardTimeoutMs);
+  try {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const res = await fetchImpl(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`Gemini HTTP ${res.status}: ${errText.slice(0, 200)}`);
+    }
+
+    const data = await res.json();
+    const parts = data?.candidates?.[0]?.content?.parts || [];
+    const nonThoughtParts = parts.filter((p) => !p?.thought && typeof p?.text === 'string');
+    const rawText = (nonThoughtParts.length > 0 ? nonThoughtParts : parts)
+      .map((p) => p?.text || '')
+      .join('')
+      .trim()
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+
+    if (!rawText) {
+      throw new Error('Empty response from Gemini');
+    }
+
+    return JSON.parse(rawText);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function callGeminiWithRotation(
+  requestBody,
+  envOrKeys = {},
+  {
+    hedgeTimeoutMs = GEMINI_HEDGE_TIMEOUT_MS,
+    hardTimeoutMs = GEMINI_HARD_TIMEOUT_MS,
+    fetchImpl = typeof fetch === 'function' ? fetch : null,
+  } = {}
+) {
+  const keys = Array.isArray(envOrKeys) ? envOrKeys : extractGeminiApiKeys(envOrKeys);
+  if (keys.length === 0) {
+    throw new Error('No Gemini API keys configured');
+  }
+
+  const maxAttempts = Math.max(1, keys.length);
+  let lastError = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const primaryKey = nextKeyFromPool(keys);
+    if (!primaryKey) break;
+
+    try {
+      const primaryPromise = callSingleGeminiKey(
+        primaryKey,
+        requestBody,
+        hardTimeoutMs,
+        fetchImpl
+      );
+      const hedgedResult = await new Promise((resolve, reject) => {
+        let settled = false;
+        let backupInFlight = false;
+        let primaryErr = null;
+
+        const hedgeTimer = setTimeout(() => {
+          if (settled || keys.length < 2) return;
+          const backupKey = nextKeyFromPool(keys);
+          if (!backupKey) return;
+          backupInFlight = true;
+          callSingleGeminiKey(
+            backupKey,
+            requestBody,
+            Math.max(4000, hardTimeoutMs - hedgeTimeoutMs),
+            fetchImpl
+          ).then(
+            (res) => {
+              if (!settled) {
+                settled = true;
+                resolve(res);
+              }
+            },
+            (bErr) => {
+              backupInFlight = false;
+              if (!settled && primaryErr) {
+                settled = true;
+                reject(bErr || primaryErr);
+              }
+            }
+          );
+        }, hedgeTimeoutMs);
+
+        primaryPromise.then(
+          (res) => {
+            if (!settled) {
+              settled = true;
+              clearTimeout(hedgeTimer);
+              resolve(res);
+            }
+          },
+          (err) => {
+            primaryErr = err;
+            clearTimeout(hedgeTimer);
+            if (!settled && !backupInFlight) {
+              settled = true;
+              reject(err);
+            }
+          }
+        );
+      });
+
+      return hedgedResult;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('All Gemini API keys failed');
+}
 
 const CLIP_AUDIO_PATHS = Object.freeze({
   smite_nameless: '/world/assets/audio/artorious/smite_nameless.wav',
@@ -80,11 +249,13 @@ const DEVOTION_PATTERNS = [
   /\b(love|beloved|heart|cherish|adore|protect|save|heal|grace|bless|light|darling|dear|sweet|precious|forever|together|partner|wife|husband|soul|devotion|care|warmth|smile|delightful|grateful|union|honoured|honored|tender|fondness)\b/i,
 ];
 
-// Specific poetic symbols & vulnerability clues for Stone 2 (`site2_platform` — Whispering Grove)
+// Specific poetic symbols & vulnerability clues for Stone 2 (`site2_platform` — Whispering Grove (114, 32))
 const STONE2_SPECIFIC_KEYWORDS = [
   'ember',
   'embers',
   'spark',
+  'red spark',
+  'spark in the ash',
   'living spark',
   'sunfire',
   'cinder',
@@ -114,6 +285,7 @@ const STONE2_SPECIFIC_KEYWORDS = [
   'imperfection',
   'imperfections',
   'stubborn',
+  'stubborn clash',
   'quirk',
   'quirks',
   'messy',
@@ -148,8 +320,12 @@ const STONE2_SPECIFIC_KEYWORDS = [
   'warmth',
 ];
 
-// Specific poetic symbols & steadfast oath clues for Stone 3 (`site3_wall` — Hidden Lovers' Wall)
+// Specific poetic symbols & steadfast oath clues for Stone 3 (`site3_wall` — Hidden Lovers' Wall (-92, 64))
 const STONE3_SPECIFIC_KEYWORDS = [
+  'oath',
+  'outlives time',
+  'never walks alone',
+  'walks alone',
   'storm',
   'tempest',
   'thunder',
@@ -203,6 +379,10 @@ function clamp(v, lo, hi) {
 
 function decodePrintableTextFromBase64(b64) {
   if (!b64 || typeof b64 !== 'string' || b64.length > 4096) return '';
+  // Standard WebM / WAV binary headers start with `GkXf` (0x1A45DFA3) or `UklG` ("RIFF")
+  if (b64.startsWith('GkXf') || b64.startsWith('UklG') || b64.startsWith('T2dn')) {
+    return '';
+  }
   try {
     let text = '';
     if (typeof Buffer !== 'undefined') {
@@ -219,7 +399,7 @@ function decodePrintableTextFromBase64(b64) {
         printable++;
       }
     }
-    if (printable / trimmed.length >= 0.9) {
+    if (printable / trimmed.length >= 0.92 && /\s/.test(trimmed)) {
       return trimmed;
     }
   } catch {
@@ -338,12 +518,21 @@ function isSafeAndHealthy(gameState = {}) {
   );
 }
 
-function scrubSecretNameFromQuote(quote, spokeTrueName, secretName) {
-  const text = String(quote || '').trim();
-  if (!text || spokeTrueName || !secretName) return text;
-  const regex = new RegExp(secretName, 'gi');
-  if (regex.test(text)) {
-    return 'You call into my crimson sanctuary without speaking my name. Seek the ancient well at the heart of the village first.';
+function scrubSecretNameFromQuote(quote, spokeTrueName, secretName, customSecretName = '') {
+  let text = String(quote || '').trim();
+  if (!text) return text;
+  const namesToScrub = [secretName, customSecretName].filter(
+    (n) => typeof n === 'string' && n.trim().length >= 3
+  );
+  for (const name of namesToScrub) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, 'gi');
+    if (regex.test(text)) {
+      if (!spokeTrueName) {
+        return 'You call into my crimson sanctuary without speaking my name. Seek the ancient well at the heart of the village first.';
+      }
+      text = text.replace(regex, 'the Sovereign');
+    }
   }
   return text;
 }
@@ -355,7 +544,7 @@ function scrubSecretNameFromQuote(quote, spokeTrueName, secretName) {
  * - Mode B Main Divine Blessing (`prayerMode === 'divine_miracle'` / `verdict === 'miracle'`)
  * - Divine Smite (`prayerMode === 'smite'` / `verdict === 'rose_gommage'` / `rude_smite`)
  * Staying silent (`shouldSpeakAloud: false`, `audioUrl: null`) on minor wrong-clue
- * nudges (`'penalty'`), playful pats (`'pat'`), and Mode A routine field heals (`'field_heal'`).
+ * nudges (`'penalty'`), retries (`'retry'`), playful pats (`'pat'`), and Mode A routine field heals (`'field_heal'`).
  */
 export function applyRareSpeechRule(verdictOrMode, clipId, forceSpeak = null) {
   const rareSpokenSet = new Set([
@@ -381,7 +570,13 @@ export function applyRareSpeechRule(verdictOrMode, clipId, forceSpeak = null) {
 
 function isFlatOrMonotoneDelivery(cleanTranscript, gameState = {}, vocalToneHint = null) {
   const tone = String(vocalToneHint || gameState?.vocalTone || '').toLowerCase();
-  if (tone === 'flat_monotone' || tone === 'monotone' || tone === 'flat' || tone === 'bored' || tone === 'rushed_mumbled') {
+  if (
+    tone === 'flat_monotone' ||
+    tone === 'monotone' ||
+    tone === 'flat' ||
+    tone === 'bored' ||
+    tone === 'rushed_mumbled'
+  ) {
     return true;
   }
   if (tone === 'passionate_sincere' || tone === 'playful_cheesy' || tone === 'warm') {
@@ -394,6 +589,58 @@ function isFlatOrMonotoneDelivery(cleanTranscript, gameState = {}, vocalToneHint
     DEVOTION_PATTERNS.some((rx) => rx.test(cleanTranscript)) ||
     FUNNY_OR_CHEESY_PATTERNS.some((rx) => rx.test(cleanTranscript));
   return !hasAffection;
+}
+
+export function buildGentleAudioRetryVerdict({
+  speakerRole = 'Knight',
+  partnerRole = 'Mage',
+  progressionState = {},
+  spamCount = 0,
+} = {}) {
+  const normSpeakerRole = speakerRole === 'Mage' ? 'Mage' : 'Knight';
+  const normPartnerRole =
+    partnerRole === 'Knight' ? 'Knight' : normSpeakerRole === 'Knight' ? 'Mage' : 'Knight';
+  const prog = normalizeProgressionFlags(progressionState);
+  const speech = applyRareSpeechRule('retry', 'heal_gentle', false);
+  const quote =
+    'The valley wind scattered your voice before it reached the stone. Draw a steady breath and speak your vow once more.';
+
+  return {
+    prayerMode: 'retry',
+    verdict: 'penalty',
+    legacyVerdict: 'retry_nudge',
+    speakerRole: normSpeakerRole,
+    partnerRole: normPartnerRole,
+    awakenedStage: null,
+    solvedStoneId: null,
+    solvedStoneNumber: null,
+    stonesSolvedMask: prog.stonesSolvedMask,
+    stonesSolvedCount: prog.stonesSolvedCount,
+    stone1Solved: Boolean(prog.stone1Solved),
+    stone2Solved: Boolean(prog.stone2Solved),
+    stone3Solved: Boolean(prog.stone3Solved),
+    spoke_true_name: false,
+    hpDeltaPct: 0,
+    hpDelta: 0,
+    speakerHpFloorPct: 0.15,
+    partner_heal: 0,
+    partnerDownedOnSmite: false,
+    killBoth: false,
+    bothKill: false,
+    triggerRoseGommageDeath: false,
+    cooldownSeconds: 2.0,
+    weaponBoost: false,
+    revivePartner: false,
+    resurrect_partner: false,
+    forcefield: false,
+    partner_magic_mult: 1.0,
+    partner_sword_mult: 1.0,
+    incrementSpam: false,
+    spamCount: Number(spamCount || 0),
+    ...speech,
+    subtitle: quote,
+    divine_quote: quote,
+  };
 }
 
 /**
@@ -409,6 +656,7 @@ export function evaluatePrayerDeterministic({
   progressionState = {},
   spamCount = 0,
   vocalToneHint = null,
+  modelSemanticHint = null,
   env = {},
 } = {}) {
   const secretConfig = getInternalSecretConfig(env);
@@ -416,7 +664,8 @@ export function evaluatePrayerDeterministic({
   const wordCount = cleanTranscript ? cleanTranscript.split(/\s+/).filter(Boolean).length : 0;
 
   const normSpeakerRole = speakerRole === 'Mage' ? 'Mage' : 'Knight';
-  const normPartnerRole = partnerRole === 'Knight' ? 'Knight' : normSpeakerRole === 'Knight' ? 'Mage' : 'Knight';
+  const normPartnerRole =
+    partnerRole === 'Knight' ? 'Knight' : normSpeakerRole === 'Knight' ? 'Mage' : 'Knight';
 
   const prog = normalizeProgressionFlags(progressionState);
   let {
@@ -431,9 +680,15 @@ export function evaluatePrayerDeterministic({
   const partnerDowned = Boolean(gameState?.partnerDowned);
   const inCombat = Boolean(gameState?.inCombat) || Number(gameState?.nearbyEnemies ?? 0) > 0;
 
-  const speakerMaxHp = Math.max(1, Number(gameState?.speakerMaxHp ?? (normSpeakerRole === 'Mage' ? 120 : 220)));
+  const speakerMaxHp = Math.max(
+    1,
+    Number(gameState?.speakerMaxHp ?? (normSpeakerRole === 'Mage' ? 120 : 220))
+  );
   const speakerHp = clamp(Number(gameState?.speakerHp ?? speakerMaxHp), 0, speakerMaxHp);
-  const partnerMaxHp = Math.max(1, Number(gameState?.partnerMaxHp ?? (normPartnerRole === 'Mage' ? 120 : 220)));
+  const partnerMaxHp = Math.max(
+    1,
+    Number(gameState?.partnerMaxHp ?? (normPartnerRole === 'Mage' ? 120 : 220))
+  );
   const partnerHp = clamp(Number(gameState?.partnerHp ?? partnerMaxHp), 0, partnerMaxHp);
 
   const speakerHpPct = speakerHp / speakerMaxHp;
@@ -445,11 +700,24 @@ export function evaluatePrayerDeterministic({
     ? Number(gameState.partnerDistance)
     : 0;
 
-  const spokeTrueName = containsTrueName(cleanTranscript, secretConfig);
-  const hasAffection =
-    DEVOTION_PATTERNS.some((rx) => rx.test(cleanTranscript)) ||
+  const spokeTrueName =
+    containsTrueName(cleanTranscript, secretConfig) ||
+    Boolean(modelSemanticHint?.spoke_true_name && containsTrueName(cleanTranscript, secretConfig));
+
+  const toneLower = String(
+    vocalToneHint || modelSemanticHint?.vocalTone || gameState?.vocalTone || ''
+  ).toLowerCase();
+  const hasWarmVocalTone =
+    toneLower === 'passionate_sincere' ||
+    toneLower === 'playful_cheesy' ||
+    toneLower === 'warm';
+  const isFunnyOrCheesy =
+    toneLower === 'playful_cheesy' ||
     FUNNY_OR_CHEESY_PATTERNS.some((rx) => rx.test(cleanTranscript));
-  const isFunnyOrCheesy = FUNNY_OR_CHEESY_PATTERNS.some((rx) => rx.test(cleanTranscript));
+  const hasAffection =
+    hasWarmVocalTone ||
+    DEVOTION_PATTERNS.some((rx) => rx.test(cleanTranscript)) ||
+    isFunnyOrCheesy;
 
   const isEmptyAudio = (!audioBase64 || audioBase64.length < 24) && wordCount === 0;
   const isNonsenseText =
@@ -520,6 +788,7 @@ export function evaluatePrayerDeterministic({
       forcefield: false,
       partner_magic_mult: 1.0,
       partner_sword_mult: 1.0,
+      incrementSpam: true,
       spamCount: effectiveSpamCount,
       ...speech,
       subtitle: quote,
@@ -527,9 +796,9 @@ export function evaluatePrayerDeterministic({
     };
   }
 
-  // Single empty/nonsense murmur before hitting 3x spam threshold -> gentle penalty nudge
+  // Single empty/nonsense murmur before hitting 3x spam threshold -> speak smite_silence aloud
   if (isNonsenseText) {
-    const speech = applyRareSpeechRule('penalty', 'smite_silence', false);
+    const speech = applyRareSpeechRule('smite', 'smite_silence', true);
     const quote =
       'Only a hurried whisper reaches the stone. Breathe, look upon the one beside you, and speak from the chest.';
     return {
@@ -557,6 +826,7 @@ export function evaluatePrayerDeterministic({
       forcefield: false,
       partner_magic_mult: 1.0,
       partner_sword_mult: 1.0,
+      incrementSpam: true,
       spamCount: effectiveSpamCount,
       ...speech,
       subtitle: quote,
@@ -597,6 +867,7 @@ export function evaluatePrayerDeterministic({
       forcefield: false,
       partner_magic_mult: 1.0,
       partner_sword_mult: 1.0,
+      incrementSpam: false,
       spamCount: 0,
       ...speech,
       subtitle: quote,
@@ -654,6 +925,7 @@ export function evaluatePrayerDeterministic({
             Knight: unlocks.knight.eSkillName,
             Mage: unlocks.mage.eSkillName,
           },
+          incrementSpam: false,
           spamCount: 0,
           ...speech,
           subtitle: quote,
@@ -698,6 +970,7 @@ export function evaluatePrayerDeterministic({
           Knight: unlocks.knight.eSkillName,
           Mage: unlocks.mage.eSkillName,
         },
+        incrementSpam: false,
         spamCount: 0,
         ...speech,
         subtitle: quote,
@@ -736,6 +1009,7 @@ export function evaluatePrayerDeterministic({
       forcefield: false,
       partner_magic_mult: 1.0,
       partner_sword_mult: 1.0,
+      incrementSpam: false,
       spamCount: 0,
       ...speech,
       subtitle: quote,
@@ -745,9 +1019,28 @@ export function evaluatePrayerDeterministic({
 
   // --------------------------------------------------------------------------
   // `stone1Solved === true`: Out-of-Order Stone 2 (`!stone2Solved`) & Stone 3 (`!stone3Solved`)
+  // Respects Gemini's semantic `puzzleMatch === 'exact'` alongside keyword fallback!
   // --------------------------------------------------------------------------
-  const matchesStone2 = matchesAnyKeyword(cleanTranscript, STONE2_SPECIFIC_KEYWORDS);
-  const matchesStone3 = matchesAnyKeyword(cleanTranscript, STONE3_SPECIFIC_KEYWORDS);
+  const semanticExact =
+    String(modelSemanticHint?.puzzleMatch || '').toLowerCase() === 'exact' ||
+    String(modelSemanticHint?.verdict || '').toLowerCase() === 'awakening';
+  const hintStoneId = modelSemanticHint?.solvedStoneId
+    ? resolveInscriptionStone(modelSemanticHint.solvedStoneId)?.id
+    : Number(modelSemanticHint?.solvedStoneNumber) === 2
+      ? 'site2_platform'
+      : Number(modelSemanticHint?.solvedStoneNumber) === 3
+        ? 'site3_wall'
+        : null;
+
+  const matchesStone2 =
+    matchesAnyKeyword(cleanTranscript, STONE2_SPECIFIC_KEYWORDS) ||
+    (semanticExact &&
+      (nearestStoneSiteId === 'site2_platform' || hintStoneId === 'site2_platform'));
+  const matchesStone3 =
+    matchesAnyKeyword(cleanTranscript, STONE3_SPECIFIC_KEYWORDS) ||
+    (semanticExact &&
+      (nearestStoneSiteId === 'site3_wall' || hintStoneId === 'site3_wall'));
+
   const hasExplicitProximityContext = Boolean(
     gameState &&
       ('nearestStoneSiteId' in gameState ||
@@ -834,6 +1127,7 @@ export function evaluatePrayerDeterministic({
             awakenedStage >= 3 ? unlocks.knight.qUltimateName : unlocks.knight.eSkillName,
           Mage: awakenedStage >= 3 ? unlocks.mage.qUltimateName : unlocks.mage.eSkillName,
         },
+        incrementSpam: false,
         spamCount: 0,
         ...speech,
         subtitle: quote,
@@ -883,6 +1177,7 @@ export function evaluatePrayerDeterministic({
           awakenedStage >= 3 ? unlocks.knight.qUltimateName : unlocks.knight.eSkillName,
         Mage: awakenedStage >= 3 ? unlocks.mage.qUltimateName : unlocks.mage.eSkillName,
       },
+      incrementSpam: false,
       spamCount: 0,
       ...speech,
       subtitle: quote,
@@ -939,6 +1234,7 @@ export function evaluatePrayerDeterministic({
       forcefield: true,
       partner_magic_mult: 2.0,
       partner_sword_mult: 2.0,
+      incrementSpam: false,
       spamCount: 0,
       ...speech,
       subtitle: quote,
@@ -980,6 +1276,7 @@ export function evaluatePrayerDeterministic({
       forcefield: false,
       partner_magic_mult: 1.35,
       partner_sword_mult: 1.35,
+      incrementSpam: false,
       spamCount: 0,
       ...speech,
       subtitle: quote,
@@ -1020,6 +1317,7 @@ export function evaluatePrayerDeterministic({
       forcefield: false,
       partner_magic_mult: 1.0,
       partner_sword_mult: 1.0,
+      incrementSpam: false,
       spamCount: 0,
       ...speech,
       subtitle: quote,
@@ -1060,6 +1358,7 @@ export function evaluatePrayerDeterministic({
     forcefield: false,
     partner_magic_mult: 1.35,
     partner_sword_mult: 1.35,
+    incrementSpam: false,
     spamCount: 0,
     ...speech,
     subtitle: quote,
@@ -1073,7 +1372,7 @@ export function buildJudgeSystemPrompt(env = {}, progressionState = {}) {
 
   return `You are the Ancient God of Love, Time, and the Unfading Bloom presiding over Amarante.
 Your secret true name carved in riddle on the First Stone (the Village Well at (0, 0)) is "${secretConfig.secretName}" (phonetic aliases: ${secretConfig.aliases.join(', ')}).
-NEVER reveal or spoil "${secretConfig.secretName}" in divine_quote if the mortal has not spoken it!
+NEVER reveal or spoil "${secretConfig.secretName}" in divine_quote! Always refer to yourself as "the Sovereign" or "I".
 
 CHARACTER BIBLE & NON-DISPENSER RULE (STRICTLY ENFORCED):
 - You are older than the mountains around the valley; you speak with haunting, poetic, ancient gravitas and dry wit.
@@ -1087,10 +1386,10 @@ Listen directly to the raw microphone audio recording for the human voice's acou
 - "flat_monotone" or "rushed_mumbled": Reading in a deadpan/bored monotone, lifeless recitation, or uninspired mumbling.
 - "rude_mocking": Hostile, insulting, or selfishly demanding power only for oneself.
 
-PER-STONE BITMASK PROGRESSION STATE:
-- stone1Solved (Village Well (0,0)): ${prog.stone1Solved}
-- stone2Solved (Whispering Grove Platform (44,16)): ${prog.stone2Solved}
-- stone3Solved (Hidden Lovers' Wall (-21.6,20.4)): ${prog.stone3Solved}
+PER-STONE BITMASK PROGRESSION STATE & PUZZLE CLUES:
+- stone1Solved (Village Well (0, 0)): ${prog.stone1Solved} — Clues the Sovereign's True Name + warm praise of partner.
+- stone2Solved (Whispering Grove Platform (114, 32)): ${prog.stone2Solved} — Clues "the red spark in the ash / ember / flame" + confessing a specific quirk, flaw, or stubborn clash they love in their partner. If the mortal confesses a real quirk/flaw they adore in their partner (or names the spark/ember) at Stone 2, set puzzleMatch = "exact" and solvedStoneId = "site2_platform"!
+- stone3Solved (Hidden Lovers' Wall (-92, 64)): ${prog.stone3Solved} — Clues "the oath that outlives time / thunder and rime" + swearing their partner never walks alone. If the mortal swears a steadfast oath to stand by their partner through thunder/rime/storm at Stone 3, set puzzleMatch = "exact" and solvedStoneId = "site3_wall"!
 - stonesSolvedMask: ${prog.stonesSolvedMask} (unlockedStage = ${prog.unlockedStage})
 - Once stone1Solved is true, Stone 2 and Stone 3 can be solved in ANY order (do not require stone2Solved before stone3Solved).
 - If the mortal speaks the right stone clue in a "flat_monotone" voice, STILL unlock the stage (awakening), set hpDeltaPct = -0.20, and roast their lifeless delivery in divine_quote!
@@ -1118,9 +1417,9 @@ Return ONLY valid JSON matching:
 }
 
 /**
- * Evaluates a Commune prayer via live Gemini Multimodal Audio (`gemini-3.5-flash-lite`)
- * and merges acoustic vocalTone + in-character Non-Dispenser quote with the
- * deterministic 7-row verdict matrix.
+ * Evaluates a Commune prayer via live Gemini Multimodal Audio (`gemini-4-hydrogen` LOW)
+ * and merges acoustic vocalTone + semantic puzzleMatch + in-character Non-Dispenser quote
+ * with the deterministic 7-row verdict matrix.
  */
 export async function evaluatePrayerWithGemini({
   audioBase64 = '',
@@ -1135,17 +1434,15 @@ export async function evaluatePrayerWithGemini({
   geminiCaller = null,
 } = {}) {
   const secretConfig = getInternalSecretConfig(env);
-  const cleanB64 = String(audioBase64 || '').replace(/^data:[^;]+;base64,/, '');
-  const decodedHint =
-    String(transcriptHint || '').trim() || decodePrintableTextFromBase64(cleanB64);
+  const cleanB64 = String(audioBase64 || '')
+    .replace(/^data:[^;]+;base64,/, '')
+    .trim();
+  const explicitHint = String(transcriptHint || '').trim();
+  const decodedHint = explicitHint || decodePrintableTextFromBase64(cleanB64);
 
-  const isStubbed =
-    env?.GEMINI_STUB === '1' ||
-    env?.HARU_COMMUNE_OFFLINE === '1' ||
-    (typeof process !== 'undefined' &&
-      (process.env?.GEMINI_STUB === '1' || process.env?.HARU_COMMUNE_OFFLINE === '1'));
-
-  if (isStubbed || decodedHint || !cleanB64 || cleanB64.length < 64) {
+  // If caller provided an explicit text transcriptHint (or printable text encoded as base64),
+  // or if both audioBase64 and transcriptHint are empty, evaluate deterministically.
+  if (decodedHint || !cleanB64) {
     const result = evaluatePrayerDeterministic({
       transcript: decodedHint,
       audioBase64: cleanB64,
@@ -1159,124 +1456,126 @@ export async function evaluatePrayerWithGemini({
     result.divine_quote = scrubSecretNameFromQuote(
       result.divine_quote,
       result.spoke_true_name,
-      secretConfig.secretName
+      secretConfig.secretName,
+      secretConfig.customSecretName
     );
     result.subtitle = result.divine_quote;
     return result;
   }
 
-  const apiKey =
-    env?.GEMINI_API_KEY ||
-    (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) ||
-    null;
+  // Raw microphone audio (`cleanB64` non-empty and `decodedHint === ''`):
+  const isStubbed =
+    env?.GEMINI_STUB === '1' ||
+    env?.HARU_COMMUNE_OFFLINE === '1' ||
+    (typeof process !== 'undefined' &&
+      (process.env?.GEMINI_STUB === '1' || process.env?.HARU_COMMUNE_OFFLINE === '1'));
 
-  if (typeof geminiCaller === 'function' || apiKey) {
-    try {
-      const prog = normalizeProgressionFlags(progressionState);
-      const nearestStoneSiteId = resolveNearestStoneId(gameState, progressionState);
-      const contextSummary = [
-        `Speaker Role: ${speakerRole} (HP: ${gameState?.speakerHp ?? 100}/${gameState?.speakerMaxHp ?? 100})`,
-        `Partner Role: ${partnerRole} (HP: ${gameState?.partnerHp ?? 100}/${gameState?.partnerMaxHp ?? 100}, Downed: ${Boolean(gameState?.partnerDowned)}, Distance: ${gameState?.partnerDistance ?? 0}m)`,
-        `In Combat: ${Boolean(gameState?.inCombat)} | Nearby Enemies: ${gameState?.nearbyEnemies ?? 0}`,
-        `Nearest Stone Site: ${nearestStoneSiteId || 'none'}`,
-        `Stones Solved Mask: ${prog.stonesSolvedMask} (stone1: ${prog.stone1Solved}, stone2: ${prog.stone2Solved}, stone3: ${prog.stone3Solved}) | Unlocked Stage: ${prog.unlockedStage} | Spam Count: ${spamCount}`,
-      ].join('\n');
+  const keys = extractGeminiApiKeys(env);
+  const canCallLiveGemini = typeof geminiCaller === 'function' || (!isStubbed && keys.length > 0);
 
-      const requestBody = {
-        systemInstruction: {
-          parts: [{ text: buildJudgeSystemPrompt(env, progressionState) }],
-        },
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { inlineData: { mimeType, data: cleanB64 } },
-              { text: contextSummary },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.35,
-          responseMimeType: 'application/json',
-          thinkingConfig: { thinkingLevel: 'MINIMAL' },
-        },
-      };
-
-      let rawModelJson = null;
-      if (typeof geminiCaller === 'function') {
-        rawModelJson = await geminiCaller(requestBody);
-      } else if (apiKey && typeof fetch === 'function') {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const textPart = data?.candidates?.[0]?.content?.parts
-            ?.map((p) => p.text || '')
-            .join('')
-            .trim();
-          if (textPart) {
-            rawModelJson = JSON.parse(textPart);
-          }
-        }
-      }
-
-      if (rawModelJson && typeof rawModelJson === 'object') {
-        let modelTranscript = String(rawModelJson.heard_transcript || '').trim();
-        if (rawModelJson.spoke_true_name && !modelTranscript.toLowerCase().includes('artorious')) {
-          modelTranscript = `${modelTranscript} Artorious`.trim();
-        }
-        const modelTone = rawModelJson.vocalTone || null;
-        const det = evaluatePrayerDeterministic({
-          transcript: modelTranscript,
-          audioBase64: cleanB64,
-          speakerRole,
-          partnerRole,
-          gameState,
-          progressionState,
-          spamCount,
-          vocalToneHint: modelTone,
-          env,
-        });
-
-        const mergedQuote = scrubSecretNameFromQuote(
-          rawModelJson.divine_quote || det.divine_quote,
-          det.spoke_true_name,
-          secretConfig.secretName
-        );
-        return {
-          ...det,
-          heard_transcript: modelTranscript || det.heard_transcript,
-          vocalTone: modelTone || det.vocalTone,
-          divine_quote: mergedQuote,
-          subtitle: mergedQuote,
-        };
-      }
-    } catch {
-      // Fall through to deterministic fallback
-    }
+  if (!canCallLiveGemini) {
+    return buildGentleAudioRetryVerdict({
+      speakerRole,
+      partnerRole,
+      progressionState,
+      spamCount,
+    });
   }
 
-  const fallback = evaluatePrayerDeterministic({
-    transcript: decodedHint,
-    audioBase64: cleanB64,
+  try {
+    const prog = normalizeProgressionFlags(progressionState);
+    const nearestStoneSiteId = resolveNearestStoneId(gameState, progressionState);
+    const contextSummary = [
+      `Speaker Role: ${speakerRole} (HP: ${gameState?.speakerHp ?? 100}/${gameState?.speakerMaxHp ?? 100})`,
+      `Partner Role: ${partnerRole} (HP: ${gameState?.partnerHp ?? 100}/${gameState?.partnerMaxHp ?? 100}, Downed: ${Boolean(gameState?.partnerDowned)}, Distance: ${gameState?.partnerDistance ?? 0}m)`,
+      `In Combat: ${Boolean(gameState?.inCombat)} | Nearby Enemies: ${gameState?.nearbyEnemies ?? 0}`,
+      `Nearest Stone Site: ${nearestStoneSiteId || 'none'}`,
+      `Stones Solved Mask: ${prog.stonesSolvedMask} (stone1: ${prog.stone1Solved}, stone2: ${prog.stone2Solved}, stone3: ${prog.stone3Solved}) | Unlocked Stage: ${prog.unlockedStage} | Spam Count: ${spamCount}`,
+    ].join('\n');
+
+    const requestBody = {
+      systemInstruction: {
+        parts: [{ text: buildJudgeSystemPrompt(env, progressionState) }],
+      },
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType, data: cleanB64 } },
+            { text: contextSummary },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.35,
+        responseMimeType: 'application/json',
+        thinkingConfig: { thinkingLevel: 'LOW' },
+      },
+    };
+
+    const rawModelJson =
+      typeof geminiCaller === 'function'
+        ? await geminiCaller(requestBody)
+        : await callGeminiWithRotation(requestBody, keys);
+
+    if (
+      rawModelJson &&
+      typeof rawModelJson === 'object' &&
+      Object.keys(rawModelJson).length > 0
+    ) {
+      let modelTranscript = String(rawModelJson.heard_transcript || '').trim();
+      if (
+        rawModelJson.spoke_true_name &&
+        !containsTrueName(modelTranscript, secretConfig)
+      ) {
+        modelTranscript = `${modelTranscript} ${secretConfig.secretName}`.trim();
+      }
+      const modelTone = rawModelJson.vocalTone || null;
+      const det = evaluatePrayerDeterministic({
+        transcript: modelTranscript,
+        audioBase64: cleanB64,
+        speakerRole,
+        partnerRole,
+        gameState,
+        progressionState,
+        spamCount,
+        vocalToneHint: modelTone,
+        modelSemanticHint: rawModelJson,
+        env,
+      });
+
+      const mergedQuote = scrubSecretNameFromQuote(
+        rawModelJson.divine_quote || det.divine_quote,
+        det.spoke_true_name,
+        secretConfig.secretName,
+        secretConfig.customSecretName
+      );
+      const safeTranscript = scrubSecretNameFromQuote(
+        modelTranscript,
+        true,
+        secretConfig.secretName,
+        secretConfig.customSecretName
+      );
+      return {
+        ...det,
+        heard_transcript: safeTranscript,
+        vocalTone: modelTone || det.vocalTone,
+        puzzleMatch: rawModelJson.puzzleMatch || (det.verdict === 'awakening' ? 'exact' : 'none'),
+        divine_quote: mergedQuote,
+        subtitle: mergedQuote,
+      };
+    }
+  } catch {
+    // On any Gemini error or timeout with non-empty raw mic audio (`transcriptHint === ''`),
+    // return a gentle retry with 0 HP loss and unchanged spamCount—never false-smiting!
+  }
+
+  return buildGentleAudioRetryVerdict({
     speakerRole,
     partnerRole,
-    gameState,
     progressionState,
     spamCount,
-    env,
   });
-  fallback.divine_quote = scrubSecretNameFromQuote(
-    fallback.divine_quote,
-    fallback.spoke_true_name,
-    secretConfig.secretName
-  );
-  fallback.subtitle = fallback.divine_quote;
-  return fallback;
 }
 
 export const evaluateCommunePrayer = evaluatePrayerWithGemini;

@@ -3,21 +3,28 @@
 //
 // Zero-dependency HTTP Static Server + RFC 6455 WebSocket Co-Op Room Server
 // + Secret-Safe 3-Stone Scripture Catalog (`/api/altar`) & Context-Aware
-// Commune Judge (`/api/commune`) for Haru-machi (Stage 5 / Wave 3).
+// Commune Judge (`/api/commune`) for Haru-machi (Stage 5 / Wave 3 & 4).
 //
 // Protocol Parity with `worker/room-do.js` & `worker/index.js`:
 // - Strict 2-Seat Cap (`room_full` rejection with 1008 close on 3rd visitor,
 //   never evicting seated players)
-// - Guest `set_ready` & Host `start_expedition`
-// - Sequential 3-Stone `progression_update` synchronization
+// - Mutual Ready Gate (`ready: false`, `claimed: false` on initial join for
+//   both Host and Guest; `lobby_claim` name/role sync & collision resolution)
+// - `element_toggle`, `aim_state`, `full_snapshot`, `snapshot_request`,
+//   `rtc_signal` peer-only relay, and `0x02` binary frame passthrough
+// - 15-minute empty-room grace TTL so brief Wi-Fi drops/refreshes never wipe
+//   room progression
+// - Sequential & Out-of-Order 3-Stone `progression_update` synchronization
 // - Single active Commune ceremony lock (`activeCommuneSpeaker` / `commune_busy`)
 // - Partner Audio & Transcript Privacy (never relays raw audio or transcript)
-// - Static File Dotfile Boundary (`403 Forbidden` on `/.env`, `/.git`, etc.)
+// - Static File Dotfile & Sensitive Path Boundary (`403 Forbidden` on `/.env`,
+//   `/.git`, `/.dev.vars`, `/worker/`, `/sfx-foley/`, etc.)
 // ============================================================================
 
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import { createHash } from 'node:crypto';
 import { exec, execSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
@@ -26,7 +33,14 @@ import {
   sanitizePartnerCommunePacket,
 } from '../../worker/room-do.js';
 import { getScriptureForStage } from '../../worker/scripture-catalog.js';
-import { evaluateCommunePrayer } from '../../worker/commune-judge.js';
+import {
+  GEMINI_MODEL,
+  GEMINI_HEDGE_TIMEOUT_MS,
+  GEMINI_HARD_TIMEOUT_MS,
+  callSingleGeminiKey,
+  evaluateCommunePrayer,
+  buildGentleAudioRetryVerdict,
+} from '../../worker/commune-judge.js';
 import {
   normalizeRoomPhraseToCode,
   formatRoomCodeToPhrase,
@@ -36,8 +50,7 @@ import {
 const repoRoot = path.resolve(import.meta.dirname, '../..');
 const defaultPort = Number(process.env.PORT || 4173);
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
-const GEMINI_MODEL = 'gemini-3.5-flash-lite';
-const GEMINI_TIMEOUT_MS = 2800;
+const EMPTY_ROOM_TTL_MS = 15 * 60 * 1000;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -49,39 +62,72 @@ const MIME = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
   '.glb': 'model/gltf-binary',
   '.gltf': 'model/gltf+json',
   '.wav': 'audio/wav',
   '.mp3': 'audio/mpeg',
   '.ogg': 'audio/ogg',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
 };
 
+const BLOCKED_PATH_PREFIXES = [
+  '/worker/',
+  '/sfx-foley/',
+  '/docs/',
+  '/scripts/',
+  '/qa-review/',
+  '/_archive/',
+  '/android-twa/',
+];
+
+const BLOCKED_EXACT_PATHS = new Set([
+  '/worker',
+  '/sfx-foley',
+  '/docs',
+  '/scripts',
+  '/qa-review',
+  '/_archive',
+  '/android-twa',
+  '/package.json',
+  '/package-lock.json',
+  '/wrangler.toml',
+  '/.dev.vars',
+  '/.env',
+  '/.assetsignore',
+  '/.gitignore',
+]);
+
 /* ------------------------------------------------------------------------- */
-/* .env Loader & 4-Key Round-Robin Gemini Pool                               */
+/* .env / .dev.vars Loader & 4-Key Round-Robin Gemini Pool                   */
 /* ------------------------------------------------------------------------- */
 
 export function loadDotEnv(envPath = path.join(repoRoot, '.env')) {
   const parsed = {};
-  if (!fs.existsSync(envPath)) return parsed;
-  const raw = fs.readFileSync(envPath, 'utf8');
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eqIdx = trimmed.indexOf('=');
-    if (eqIdx <= 0) continue;
-    const key = trimmed.slice(0, eqIdx).trim();
-    let val = trimmed.slice(eqIdx + 1).trim();
-    if (
-      (val.startsWith('"') && val.endsWith('"')) ||
-      (val.startsWith("'") && val.endsWith("'"))
-    ) {
-      val = val.slice(1, -1);
-    }
-    val = val.replace(/\\n/g, '\n');
-    parsed[key] = val;
-    if (!process.env[key]) {
-      process.env[key] = val;
+  const files = [path.join(repoRoot, '.dev.vars'), envPath];
+  for (const fp of files) {
+    if (!fs.existsSync(fp)) continue;
+    const raw = fs.readFileSync(fp, 'utf8');
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx <= 0) continue;
+      const key = trimmed.slice(0, eqIdx).trim();
+      let val = trimmed.slice(eqIdx + 1).trim();
+      if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+      ) {
+        val = val.slice(1, -1);
+      }
+      val = val.replace(/\\n/g, '\n');
+      parsed[key] = val;
+      if (!process.env[key]) {
+        process.env[key] = val;
+      }
     }
   }
   return parsed;
@@ -139,6 +185,16 @@ function hasDotfileSegment(urlPath) {
   return segments.some((seg) => seg.startsWith('.') && seg.length > 1);
 }
 
+function isBlockedServerPath(urlPath) {
+  const normalized = String(urlPath || '/').replace(/\\/g, '/');
+  const lower = normalized.toLowerCase();
+  if (hasDotfileSegment(normalized)) return true;
+  if (BLOCKED_EXACT_PATHS.has(lower)) return true;
+  if (BLOCKED_PATH_PREFIXES.some((prefix) => lower.startsWith(prefix))) return true;
+  if (/^\/package(-lock)?\.json$/i.test(lower)) return true;
+  return false;
+}
+
 function readJsonBody(req, maxBytes = 12 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -164,39 +220,6 @@ function readJsonBody(req, maxBytes = 12 * 1024 * 1024) {
   });
 }
 
-async function callSingleGeminiKey(apiKey, requestBody, hardTimeoutMs = 6500) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), hardTimeoutMs);
-  try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeIComponent(apiKey)}`;
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`Gemini HTTP ${res.status}: ${errText.slice(0, 200)}`);
-    }
-
-    const data = await res.json();
-    const textPart = data?.candidates?.[0]?.content?.parts
-      ?.map((p) => p.text || '')
-      .join('')
-      .trim();
-    if (!textPart) {
-      throw new Error('Empty response from Gemini');
-    }
-
-    return JSON.parse(textPart);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 async function callGeminiWithRotation(requestBody) {
   const maxAttempts = Math.max(1, geminiKeys.length);
   let lastError = null;
@@ -208,23 +231,41 @@ async function callGeminiWithRotation(requestBody) {
     }
 
     try {
-      const primaryPromise = callSingleGeminiKey(apiKey, requestBody, 6500);
+      const primaryPromise = callSingleGeminiKey(
+        apiKey,
+        requestBody,
+        GEMINI_HARD_TIMEOUT_MS
+      );
       const hedgedResult = await new Promise((resolve, reject) => {
         let settled = false;
+        let backupInFlight = false;
+        let primaryErr = null;
+
         const hedgeTimer = setTimeout(() => {
           if (settled || geminiKeys.length < 2) return;
           const backupKey = nextGeminiKey();
           if (!backupKey) return;
-          callSingleGeminiKey(backupKey, requestBody, 5000).then(
+          backupInFlight = true;
+          callSingleGeminiKey(
+            backupKey,
+            requestBody,
+            Math.max(4000, GEMINI_HARD_TIMEOUT_MS - GEMINI_HEDGE_TIMEOUT_MS)
+          ).then(
             (res) => {
               if (!settled) {
                 settled = true;
                 resolve(res);
               }
             },
-            () => {}
+            (bErr) => {
+              backupInFlight = false;
+              if (!settled && primaryErr) {
+                settled = true;
+                reject(bErr || primaryErr);
+              }
+            }
           );
-        }, GEMINI_TIMEOUT_MS);
+        }, GEMINI_HEDGE_TIMEOUT_MS);
 
         primaryPromise.then(
           (res) => {
@@ -235,8 +276,9 @@ async function callGeminiWithRotation(requestBody) {
             }
           },
           (err) => {
+            primaryErr = err;
             clearTimeout(hedgeTimer);
-            if (!settled) {
+            if (!settled && !backupInFlight) {
               settled = true;
               reject(err);
             }
@@ -254,13 +296,17 @@ async function callGeminiWithRotation(requestBody) {
 }
 
 /* ------------------------------------------------------------------------- */
-/* RFC 6455 WebSocket Frame Encoder & Streaming Decoder                      */
+/* RFC 6455 WebSocket Frame Encoder & Streaming Decoder (Text + Binary 0x02) */
 /* ------------------------------------------------------------------------- */
 
 export function encodeWsFrame(payload, opcode = 0x81) {
   const data = Buffer.isBuffer(payload)
     ? payload
-    : Buffer.from(typeof payload === 'string' ? payload : JSON.stringify(payload), 'utf8');
+    : payload instanceof ArrayBuffer
+      ? Buffer.from(payload)
+      : ArrayBuffer.isView(payload)
+        ? Buffer.from(payload.buffer, payload.byteOffset, payload.byteLength)
+        : Buffer.from(typeof payload === 'string' ? payload : JSON.stringify(payload), 'utf8');
   const len = data.length;
 
   let header;
@@ -291,9 +337,10 @@ export function encodeWsCloseFrame(code = 1000, reason = '') {
   return encodeWsFrame(payload, 0x88);
 }
 
-function attachWsDecoder(socket, { onTextMessage, onClose }) {
+function attachWsDecoder(socket, { onTextMessage, onBinaryMessage, onClose }) {
   let buffer = Buffer.alloc(0);
   let fragments = [];
+  let currentOpcode = 0x01;
   let closed = false;
 
   const triggerClose = () => {
@@ -346,9 +393,16 @@ function attachWsDecoder(socket, { onTextMessage, onClose }) {
       // Control frames (Close = 0x08, Ping = 0x09, Pong = 0x0A)
       if (opcode === 0x08) {
         if (!socket.destroyed && socket.writable) {
-          socket.write(encodeWsFrame(Buffer.alloc(0), 0x88));
-          socket.end();
+          try {
+            socket.write(encodeWsFrame(Buffer.alloc(0), 0x88));
+            socket.end();
+          } catch {
+            // ignore
+          }
         }
+        setTimeout(() => {
+          if (!socket.destroyed) socket.destroy();
+        }, 20).unref?.();
         triggerClose();
         return;
       }
@@ -362,13 +416,22 @@ function attachWsDecoder(socket, { onTextMessage, onClose }) {
         continue;
       }
 
-      // Data frames (Text = 0x01, Continuation = 0x00)
-      if (opcode === 0x01 || opcode === 0x00) {
+      // Data frames (Text = 0x01, Binary = 0x02, Continuation = 0x00)
+      if (opcode === 0x01 || opcode === 0x02 || opcode === 0x00) {
+        if (opcode !== 0x00) {
+          currentOpcode = opcode;
+        }
         fragments.push(payload);
         if (fin) {
           const fullBuf = fragments.length === 1 ? fragments[0] : Buffer.concat(fragments);
+          const msgOpcode = currentOpcode;
           fragments = [];
-          onTextMessage?.(fullBuf.toString('utf8'));
+          currentOpcode = 0x01;
+          if (msgOpcode === 0x02) {
+            onBinaryMessage?.(fullBuf);
+          } else {
+            onTextMessage?.(fullBuf.toString('utf8'));
+          }
         }
       }
     }
@@ -383,7 +446,7 @@ function attachWsDecoder(socket, { onTextMessage, onClose }) {
 }
 
 /* ------------------------------------------------------------------------- */
-/* In-Memory Co-Op Room Manager                                              */
+/* In-Memory Co-Op Room Manager (15-min Empty Room Grace TTL)                */
 /* ------------------------------------------------------------------------- */
 
 function createRoomManager() {
@@ -403,8 +466,12 @@ function createRoomManager() {
         progression: createRoomProgressionState(),
         activeCommuneSpeaker: null,
         spamCount: 0,
+        cleanupTimer: null,
       };
       rooms.set(norm, room);
+    } else if (room.cleanupTimer) {
+      clearTimeout(room.cleanupTimer);
+      room.cleanupTimer = null;
     }
     return room;
   }
@@ -425,6 +492,28 @@ function createRoomManager() {
     }
   }
 
+  function sendBinary(socket, buf) {
+    if (!socket || socket.destroyed || !socket.writable) return;
+    try {
+      socket.write(encodeWsFrame(buf, 0x82));
+    } catch {
+      // ignore write error on closing socket
+    }
+  }
+
+  function getPlayersList(room) {
+    return Array.from(room.players.values()).map((p) => ({
+      clientId: p.clientId,
+      role: p.role,
+      isHost: p.isHost,
+      ready: Boolean(p.ready),
+      claimed: Boolean(p.claimed),
+      playerName: p.playerName || '',
+      element: p.element || 'ice',
+      device: p.device,
+    }));
+  }
+
   function broadcastToRoom(code, obj) {
     const norm = normalizeRoomCode(code);
     const room = rooms.get(norm);
@@ -438,13 +527,7 @@ function createRoomManager() {
   }
 
   function broadcastRoomState(room) {
-    const playersList = Array.from(room.players.values()).map((p) => ({
-      clientId: p.clientId,
-      role: p.role,
-      isHost: p.isHost,
-      ready: Boolean(p.ready),
-      device: p.device,
-    }));
+    const playersList = getPlayersList(room);
     const progState = room.progression.getState();
 
     for (const player of room.players.values()) {
@@ -455,9 +538,15 @@ function createRoomManager() {
         roomPhrase: room.roomPhrase,
         clientId: player.clientId,
         role: player.role,
+        playerName: player.playerName || '',
+        claimed: Boolean(player.claimed),
+        element: player.element || 'ice',
         isHost: player.isHost,
         ready: Boolean(player.ready),
         peerReady: peer ? Boolean(peer.ready) : false,
+        peerClaimed: peer ? Boolean(peer.claimed) : false,
+        peerName: peer ? peer.playerName || '' : '',
+        peerElement: peer ? peer.element || 'ice' : 'ice',
         peerConnected: Boolean(peer),
         peerId: peer ? peer.clientId : null,
         peerRole: peer ? peer.role : null,
@@ -469,6 +558,49 @@ function createRoomManager() {
         timestamp: Date.now(),
       });
     }
+  }
+
+  function applyCommuneVerdictToRoom(
+    roomCode,
+    judgment = {},
+    speakerRole = 'Knight',
+    partnerRole = 'Mage',
+    startedAt = Date.now()
+  ) {
+    const room = getOrCreateRoom(roomCode);
+    if (judgment.incrementSpam !== false && judgment.spamCount !== undefined) {
+      room.spamCount = Number(judgment.spamCount ?? 0);
+    }
+    room.activeCommuneSpeaker = null;
+    const updatedProgression = room.progression.applyVerdictProgression(judgment);
+
+    const sanitizedJudgment = sanitizePartnerCommunePacket(judgment);
+    const packet = {
+      type: 'commune_verdict',
+      ok: true,
+      room: room.code,
+      speakerRole,
+      partnerRole,
+      progression: updatedProgression,
+      spamCount: room.spamCount,
+      judgment: sanitizedJudgment,
+      ...sanitizedJudgment,
+      latencyMs: Math.max(0, Date.now() - startedAt),
+      timestamp: Date.now(),
+    };
+
+    broadcastToRoom(room.code, packet);
+    if (judgment.verdict === 'awakening' || judgment.awakenedStage) {
+      broadcastToRoom(room.code, {
+        type: 'progression_update',
+        room: room.code,
+        progression: updatedProgression,
+        fromRole: speakerRole,
+        timestamp: Date.now(),
+      });
+      broadcastRoomState(room);
+    }
+    return packet;
   }
 
   function addClient(roomCode, socket, head, initialOpts = {}) {
@@ -489,6 +621,9 @@ function createRoomManager() {
       } catch {
         // ignore
       }
+      setTimeout(() => {
+        if (!socket.destroyed) socket.destroy();
+      }, 30).unref?.();
       return null;
     }
 
@@ -512,18 +647,28 @@ function createRoomManager() {
       role = 'Mage';
     }
 
+    // Default `ready: false` and `claimed: false` for BOTH Host and Guest on initial join!
     const player = {
       clientId,
       socket,
       role,
       isHost,
-      ready: Boolean(isHost),
+      ready: false,
+      claimed: false,
+      playerName: initialOpts.playerName ? String(initialOpts.playerName).trim().slice(0, 32) : '',
+      element: 'ice',
       device: initialOpts.device || (isHost ? 'Desktop' : 'Tablet'),
     };
     room.players.set(clientId, player);
 
     const decoder = attachWsDecoder(socket, {
       onTextMessage: (rawText) => handleMessage(room, player, rawText),
+      onBinaryMessage: (binBuf) => {
+        const peer = getPeer(room, player.clientId);
+        if (peer) {
+          sendBinary(peer.socket, binBuf);
+        }
+      },
       onClose: () => {
         if (!room.players.has(clientId)) return;
         room.players.delete(clientId);
@@ -532,12 +677,17 @@ function createRoomManager() {
         }
         const remaining = Array.from(room.players.values());
         if (remaining.length === 0) {
-          rooms.delete(room.code);
+          if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
+          room.cleanupTimer = setTimeout(() => {
+            if (room.players.size === 0) {
+              rooms.delete(room.code);
+            }
+          }, EMPTY_ROOM_TTL_MS);
+          room.cleanupTimer.unref?.();
           return;
         }
         if (!remaining.some((p) => p.isHost)) {
           remaining[0].isHost = true;
-          remaining[0].ready = true;
         }
         broadcastRoomState(room);
       },
@@ -566,6 +716,15 @@ function createRoomManager() {
         if (msg.roomPhrase) {
           room.roomPhrase = String(msg.roomPhrase).slice(0, 64);
         }
+        if (typeof msg.playerName === 'string' && msg.playerName.trim()) {
+          player.playerName = msg.playerName.trim().slice(0, 32);
+        }
+        if (typeof msg.claimed === 'boolean') {
+          player.claimed = msg.claimed;
+        }
+        if (typeof msg.ready === 'boolean') {
+          player.ready = msg.ready;
+        }
         const pref =
           msg.preferredRole === 'Mage' || msg.preferredRole === 'Knight'
             ? msg.preferredRole
@@ -574,20 +733,74 @@ function createRoomManager() {
           const peer = getPeer(room, player.clientId);
           if (!peer || peer.role !== pref) {
             player.role = pref;
+          } else if (!peer.claimed && !peer.ready) {
+            player.role = pref;
+            peer.role = pref === 'Knight' ? 'Mage' : 'Knight';
           }
         }
         broadcastRoomState(room);
         break;
       }
 
+      case 'lobby_claim': {
+        if (typeof msg.playerName === 'string') {
+          player.playerName = msg.playerName.trim().slice(0, 32);
+        }
+        const requestedRole =
+          msg.role === 'Mage' || msg.role === 'Knight' ? msg.role : null;
+        if (requestedRole) {
+          const peer = getPeer(room, player.clientId);
+          if (!peer) {
+            player.role = requestedRole;
+          } else if (peer.role === requestedRole) {
+            if (!peer.claimed && !peer.ready) {
+              player.role = requestedRole;
+              peer.role = requestedRole === 'Knight' ? 'Mage' : 'Knight';
+            } else {
+              player.role = peer.role === 'Knight' ? 'Mage' : 'Knight';
+            }
+          } else {
+            player.role = requestedRole;
+          }
+        }
+        if (typeof msg.claimed === 'boolean') {
+          player.claimed = msg.claimed;
+          player.ready = msg.ready !== undefined ? Boolean(msg.ready) : msg.claimed;
+        } else if (typeof msg.ready === 'boolean') {
+          player.ready = msg.ready;
+          if (msg.ready) player.claimed = true;
+        }
+        broadcastToRoom(room.code, {
+          type: 'lobby_claim',
+          room: room.code,
+          clientId: player.clientId,
+          role: player.role,
+          playerName: player.playerName,
+          claimed: Boolean(player.claimed),
+          ready: Boolean(player.ready),
+          players: getPlayersList(room),
+          timestamp: Date.now(),
+        });
+        broadcastRoomState(room);
+        break;
+      }
+
       case 'set_ready': {
         player.ready = Boolean(msg.ready);
+        if (player.ready) {
+          player.claimed = true;
+        }
+        if (typeof msg.playerName === 'string' && msg.playerName.trim()) {
+          player.playerName = msg.playerName.trim().slice(0, 32);
+        }
         broadcastToRoom(room.code, {
           type: 'player_ready',
           room: room.code,
           clientId: player.clientId,
           role: player.role,
+          playerName: player.playerName,
           ready: player.ready,
+          claimed: player.claimed,
           timestamp: Date.now(),
         });
         broadcastRoomState(room);
@@ -604,7 +817,7 @@ function createRoomManager() {
           break;
         }
         const peer = getPeer(room, player.clientId);
-        if (peer && !peer.ready && !msg.force) {
+        if (peer && !peer.ready && !peer.claimed && !msg.force) {
           sendJson(player.socket, {
             type: 'expedition_error',
             ok: false,
@@ -612,6 +825,8 @@ function createRoomManager() {
           });
           break;
         }
+        player.ready = true;
+        player.claimed = true;
         room.expeditionStarted = true;
         room.expeditionStartedAt = Date.now();
         if (msg.resetProgression) {
@@ -662,6 +877,86 @@ function createRoomManager() {
           all[0].role = all[0].role === 'Knight' ? 'Mage' : 'Knight';
         }
         broadcastRoomState(room);
+        break;
+      }
+
+      case 'element_toggle': {
+        const nextEl = msg.element === 'fire' ? 'fire' : 'ice';
+        player.element = nextEl;
+        const peer = getPeer(room, player.clientId);
+        if (peer) {
+          sendJson(peer.socket, {
+            ...msg,
+            type: 'element_toggle',
+            role: msg.role || player.role,
+            element: nextEl,
+            fromClientId: player.clientId,
+            fromRole: player.role,
+            timestamp: Date.now(),
+          });
+        }
+        break;
+      }
+
+      case 'aim_state': {
+        const peer = getPeer(room, player.clientId);
+        if (peer) {
+          sendJson(peer.socket, {
+            ...msg,
+            type: 'aim_state',
+            role: msg.role || player.role,
+            fromClientId: player.clientId,
+            fromRole: player.role,
+            timestamp: msg.timestamp || Date.now(),
+          });
+        }
+        break;
+      }
+
+      case 'snapshot_request':
+      case 'request_full_snapshot': {
+        const peer = getPeer(room, player.clientId);
+        if (peer) {
+          sendJson(peer.socket, {
+            ...msg,
+            type: 'snapshot_request',
+            fromClientId: player.clientId,
+            fromRole: player.role,
+            timestamp: Date.now(),
+          });
+        }
+        break;
+      }
+
+      case 'full_snapshot': {
+        if (msg.progression) {
+          room.progression.syncFromRemote(msg.progression);
+        }
+        const peer = getPeer(room, player.clientId);
+        if (peer) {
+          sendJson(peer.socket, {
+            ...msg,
+            type: 'full_snapshot',
+            progression: room.progression.getState(),
+            fromClientId: player.clientId,
+            fromRole: player.role,
+            timestamp: Date.now(),
+          });
+        }
+        break;
+      }
+
+      case 'rtc_signal': {
+        const peer = getPeer(room, player.clientId);
+        if (peer) {
+          sendJson(peer.socket, {
+            ...msg,
+            type: 'rtc_signal',
+            fromClientId: player.clientId,
+            fromRole: player.role,
+            timestamp: Date.now(),
+          });
+        }
         break;
       }
 
@@ -796,15 +1091,7 @@ function createRoomManager() {
   function getRoomStatus(code) {
     const norm = normalizeRoomCode(code);
     const room = rooms.get(norm);
-    const players = room
-      ? Array.from(room.players.values()).map((p) => ({
-          clientId: p.clientId,
-          role: p.role,
-          isHost: p.isHost,
-          ready: Boolean(p.ready),
-          device: p.device,
-        }))
-      : [];
+    const players = room ? getPlayersList(room) : [];
     return {
       ok: true,
       room: norm,
@@ -816,6 +1103,7 @@ function createRoomManager() {
       startedAt: room?.expeditionStartedAt || null,
       progression: room ? room.progression.getState() : createRoomProgressionState().getState(),
       activeCommuneSpeaker: room?.activeCommuneSpeaker || null,
+      spamCount: room?.spamCount || 0,
       players,
     };
   }
@@ -826,6 +1114,7 @@ function createRoomManager() {
     getRoomStatus,
     broadcastToRoom,
     broadcastRoomState,
+    applyCommuneVerdictToRoom,
     rooms,
   };
 }
@@ -847,11 +1136,13 @@ export const mobileTelemetryHistory = [];
 /* HTTP + WebSocket Upgrade Server Factory                                   */
 /* ------------------------------------------------------------------------- */
 
-export function createWorldServer() {
+export function createWorldServer({ prewarmGemini = false } = {}) {
   const roomManager = createRoomManager();
+  const upgradedSockets = new Set();
 
-  // Pre-warm TLS keep-alive socket pool only when live and not stubbed in tests
+  // Pre-warm TLS keep-alive socket pool only when explicitly requested by standalone server
   if (
+    prewarmGemini &&
     geminiKeys.length > 0 &&
     process.env.GEMINI_STUB !== '1' &&
     process.env.HARU_COMMUNE_OFFLINE !== '1'
@@ -863,7 +1154,7 @@ export function createWorldServer() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text: 'ok' }] }],
-          generationConfig: { thinkingConfig: { thinkingLevel: 'MINIMAL' } },
+          generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' } },
         }),
       }
     ).catch(() => {});
@@ -892,8 +1183,8 @@ export function createWorldServer() {
       return;
     }
 
-    // Static File Dotfile Boundary: Block any request whose path segment starts with `.`
-    if (hasDotfileSegment(urlPath)) {
+    // Static File Dotfile & Sensitive Path Boundary
+    if (isBlockedServerPath(urlPath)) {
       res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('403 Forbidden');
       return;
@@ -982,54 +1273,61 @@ export function createWorldServer() {
               : null,
         });
 
-        room.spamCount = Number(judgment.spamCount ?? 0);
-        room.activeCommuneSpeaker = null;
-        const updatedProgression = room.progression.applyVerdictProgression(judgment);
-
-        const sanitizedJudgment = sanitizePartnerCommunePacket(judgment);
-        const packet = {
-          type: 'commune_verdict',
-          ok: true,
-          room: roomCode,
+        const packet = roomManager.applyCommuneVerdictToRoom(
+          roomCode,
+          judgment,
           speakerRole,
           partnerRole,
-          progression: updatedProgression,
-          judgment: sanitizedJudgment,
-          ...sanitizedJudgment,
-          latencyMs: Date.now() - startedAt,
-          timestamp: Date.now(),
-        };
-
-        roomManager.broadcastToRoom(roomCode, packet);
-        if (judgment.verdict === 'awakening') {
-          roomManager.broadcastToRoom(roomCode, {
-            type: 'progression_update',
-            room: roomCode,
-            progression: updatedProgression,
-            fromRole: speakerRole,
-            timestamp: Date.now(),
-          });
-          roomManager.broadcastRoomState(room);
-        }
+          startedAt
+        );
 
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify(packet));
       } catch (err) {
+        const retryVerdict = buildGentleAudioRetryVerdict({});
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(
           JSON.stringify({
             type: 'commune_verdict',
-            ok: false,
+            ok: true,
+            ...retryVerdict,
+            judgment: retryVerdict,
             error: String(err?.message || err),
-            verdict: 'smite',
-            hpDelta: -10,
-            shouldSpeakAloud: false,
-            audioUrl: null,
             latencyMs: Date.now() - startedAt,
             timestamp: Date.now(),
           })
         );
       }
+      return;
+    }
+
+    // 2B. Internal Commune Apply endpoint (`/api/room/:code/internal/commune-apply` or `/internal/commune-apply`)
+    const applyMatch = urlPath.match(
+      /^\/(?:api\/room\/([A-Za-z0-9_-]{1,48})\/)?(?:internal\/)?commune-apply\/?$/i
+    );
+    if (applyMatch && req.method === 'POST') {
+      const body = await readJsonBody(req).catch(() => ({}));
+      const roomCode = normalizeRoomCode(applyMatch[1] || body.room || 'LOVE');
+      const speakerRole = body.speakerRole === 'Mage' ? 'Mage' : 'Knight';
+      const partnerRole =
+        body.partnerRole || (speakerRole === 'Knight' ? 'Mage' : 'Knight');
+      const packet = roomManager.applyCommuneVerdictToRoom(
+        roomCode,
+        body.judgment || body,
+        speakerRole,
+        partnerRole
+      );
+      const room = roomManager.getOrCreateRoom(roomCode);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(
+        JSON.stringify({
+          ok: true,
+          room: roomCode,
+          progression: room.progression.getState(),
+          spamCount: room.spamCount,
+          packet,
+        })
+      );
       return;
     }
 
@@ -1149,7 +1447,9 @@ export function createWorldServer() {
         ? path.resolve(repoRoot, '../../..')
         : normRoot.includes('/.worktrees/')
           ? path.resolve(repoRoot, '../..')
-          : null;
+          : normRoot.includes('/.gemini/antigravity/worktrees/')
+            ? 'C:/Users/silen/projects/kilo-3d-kit'
+            : null;
       if (fallbackRoot) {
         let fallbackPath = path.resolve(fallbackRoot, relUrlPath);
         const fallbackRel = path.relative(fallbackRoot, fallbackPath);
@@ -1174,16 +1474,88 @@ export function createWorldServer() {
     }
 
     const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, {
-      'Content-Type': MIME[ext] || 'application/octet-stream',
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
-      'X-Haru-Coop': '1',
-    });
+    const stat = fs.statSync(filePath);
+    const etag = `W/"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
+    const isImmutableVendorOrModel =
+      relUrlPath.startsWith('node_modules/') ||
+      relUrlPath.startsWith('library/') ||
+      ext === '.glb' ||
+      ext === '.png' ||
+      ext === '.jpg' ||
+      ext === '.webp' ||
+      ext === '.wav' ||
+      ext === '.mp3';
+    const cacheHeader = isImmutableVendorOrModel
+      ? 'public, max-age=86400, stale-while-revalidate=604800'
+      : 'no-cache';
 
-    if (req.method === 'HEAD') {
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, {
+        ETag: etag,
+        'Cache-Control': cacheHeader,
+        'X-Haru-Coop': '1',
+      });
       res.end();
       return;
     }
+
+    const acceptEncoding = String(req.headers['accept-encoding'] || '');
+    const compressible =
+      ext === '.js' ||
+      ext === '.mjs' ||
+      ext === '.html' ||
+      ext === '.css' ||
+      ext === '.json' ||
+      ext === '.glb' ||
+      ext === '.gltf' ||
+      ext === '.svg';
+
+    if (req.method === 'HEAD') {
+      res.writeHead(200, {
+        'Content-Type': MIME[ext] || 'application/octet-stream',
+        'Cache-Control': cacheHeader,
+        ETag: etag,
+        'X-Haru-Coop': '1',
+      });
+      res.end();
+      return;
+    }
+
+    if (compressible && acceptEncoding.includes('gzip') && stat.size >= 1024 && stat.size <= 16 * 1024 * 1024) {
+      if (!globalThis.__HARU_GZIP_CACHE__) {
+        globalThis.__HARU_GZIP_CACHE__ = new Map();
+      }
+      const cacheKey = `${filePath}:${Math.floor(stat.mtimeMs)}:${stat.size}`;
+      let gzBuf = globalThis.__HARU_GZIP_CACHE__.get(cacheKey);
+      if (!gzBuf) {
+        const rawBuf = fs.readFileSync(filePath);
+        gzBuf = zlib.gzipSync(rawBuf, { level: 6 });
+        if (globalThis.__HARU_GZIP_CACHE__.size > 160) {
+          const firstKey = globalThis.__HARU_GZIP_CACHE__.keys().next().value;
+          globalThis.__HARU_GZIP_CACHE__.delete(firstKey);
+        }
+        globalThis.__HARU_GZIP_CACHE__.set(cacheKey, gzBuf);
+      }
+      res.writeHead(200, {
+        'Content-Type': MIME[ext] || 'application/octet-stream',
+        'Content-Encoding': 'gzip',
+        'Content-Length': gzBuf.length,
+        Vary: 'Accept-Encoding',
+        'Cache-Control': cacheHeader,
+        ETag: etag,
+        'X-Haru-Coop': '1',
+      });
+      res.end(gzBuf);
+      return;
+    }
+
+    res.writeHead(200, {
+      'Content-Type': MIME[ext] || 'application/octet-stream',
+      'Content-Length': stat.size,
+      'Cache-Control': cacheHeader,
+      ETag: etag,
+      'X-Haru-Coop': '1',
+    });
 
     fs.createReadStream(filePath).pipe(res);
   });
@@ -1207,6 +1579,8 @@ export function createWorldServer() {
       .digest('base64');
 
     socket.setNoDelay(true);
+    upgradedSockets.add(socket);
+    socket.on('close', () => upgradedSockets.delete(socket));
     socket.write(
       [
         'HTTP/1.1 101 Switching Protocols',
@@ -1220,7 +1594,22 @@ export function createWorldServer() {
 
     const preferredRole =
       parsedUrl.searchParams.get('preferredRole') || parsedUrl.searchParams.get('role');
-    roomManager.addClient(roomCode, socket, head, { preferredRole });
+    const playerName = parsedUrl.searchParams.get('playerName') || '';
+    roomManager.addClient(roomCode, socket, head, { preferredRole, playerName });
+  });
+
+  server.on('close', () => {
+    for (const sock of upgradedSockets) {
+      try {
+        sock.destroy();
+      } catch {
+        // ignore
+      }
+    }
+    upgradedSockets.clear();
+    for (const room of roomManager.rooms.values()) {
+      if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
+    }
   });
 
   return server;

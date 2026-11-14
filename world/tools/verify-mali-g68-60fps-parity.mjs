@@ -163,26 +163,65 @@ async function main() {
     });
 
     const plazaMali = maliReports['day-plaza'].report;
+    const perViewChecks = {};
+    for (const [shotId, entry] of Object.entries(maliReports)) {
+      const rep = entry.report;
+      const viewPass =
+        Boolean(rep.passes60FpsGate) &&
+        rep.totalTrianglesSubmitted <= 250000 &&
+        rep.dramMegabytes <= 60.0 &&
+        rep.lateZDrawCallsWithManyTris === 0 &&
+        rep.predictedFrameMs <= 13.5;
+      perViewChecks[shotId] = {
+        passes60FpsGate: Boolean(rep.passes60FpsGate),
+        totalTrianglesSubmitted: rep.totalTrianglesSubmitted,
+        dramMegabytes: rep.dramMegabytes,
+        lateZDrawCallsWithManyTris: rep.lateZDrawCallsWithManyTris,
+        predictedFrameMs: rep.predictedFrameMs,
+        pass: viewPass,
+      };
+    }
+    const allViewsPass60FpsGate = Object.values(perViewChecks).every((v) => v.pass);
+    const maxTrisAcrossViews = Math.max(
+      ...Object.values(maliReports).map((e) => e.report.totalTrianglesSubmitted)
+    );
+    const maxDramAcrossViews = Math.max(
+      ...Object.values(maliReports).map((e) => e.report.dramMegabytes)
+    );
+    const maxLateZAcrossViews = Math.max(
+      ...Object.values(maliReports).map((e) => e.report.lateZDrawCallsWithManyTris)
+    );
+    const maxFrameMsAcrossViews = Math.max(
+      ...Object.values(maliReports).map((e) => e.report.predictedFrameMs)
+    );
+
     const gate1Checks = {
+      allViewsPass60FpsGate: {
+        perView: perViewChecks,
+        pass: allViewsPass60FpsGate,
+      },
       totalTrianglesSubmitted: {
-        value: plazaMali.totalTrianglesSubmitted,
+        value: maxTrisAcrossViews,
+        plazaValue: plazaMali.totalTrianglesSubmitted,
+        flowerLobbyValue: maliReports['day-flower-lobby'].report.totalTrianglesSubmitted,
+        arenaWisteriaValue: maliReports['day-arena-wisteria'].report.totalTrianglesSubmitted,
         limit: 250000,
-        pass: plazaMali.totalTrianglesSubmitted <= 250000,
+        pass: maxTrisAcrossViews <= 250000,
       },
       dramMegabytes: {
-        value: plazaMali.dramMegabytes,
+        value: maxDramAcrossViews,
         limit: 60.0,
-        pass: plazaMali.dramMegabytes <= 60.0,
+        pass: maxDramAcrossViews <= 60.0,
       },
       lateZDrawCallsWithManyTris: {
-        value: plazaMali.lateZDrawCallsWithManyTris,
+        value: maxLateZAcrossViews,
         expected: 0,
-        pass: plazaMali.lateZDrawCallsWithManyTris === 0,
+        pass: maxLateZAcrossViews === 0,
       },
       predictedFrameMs: {
-        value: plazaMali.predictedFrameMs,
+        value: maxFrameMsAcrossViews,
         limit: 13.5,
-        pass: plazaMali.predictedFrameMs <= 13.5,
+        pass: maxFrameMsAcrossViews <= 13.5,
       },
       treeAndMeadowZeroDiscard: {
         offenders: shaderDiscardAudit.filter(

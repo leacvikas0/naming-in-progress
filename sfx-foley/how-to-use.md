@@ -193,3 +193,23 @@ The tool harness enforces a hard `600s` timeout on synchronous `run_command` cal
 | **Core Scenes** | `03_mage_normal_bolts.wav` | `5.17s` | 4 crisp projectile launch-and-ice-crack impacts against the wooden post |
 | **Core Scenes** | `06_couples_ultimate_cataclysm.wav` | `5.88s` | Simultaneous boulder thud + glacier crack followed by rapid spinning sword slashes |
 | **Core Scenes** | `07_valley_watermill_and_breeze.wav` | `5.17s` | Shot 1 rushing waterfall & creaking watermill (`0.0–2.6s`) $\rightarrow$ Shot 2 gentle valley breeze (`2.6–5.17s`) |
+
+---
+
+## 7. Audio Inspection & Lyria 3.5 Music Rules (`aistudio-media` MCP)
+
+### A. Critical Harness Rule: Never Call `read_file` on Multi-MB Uncompressed `.wav` Files
+- **Why format matters to the local harness even though Gemini's server-side audio encoder only charges by duration:**
+  - On Google's server, Gemini's audio preprocessor decodes any container (`.wav`, `.mp3`, `.ogg`) into `16 kHz` mono acoustic frames at a fixed rate of **~25–32 tokens per second of duration** (`~2,500 tokens` for a 90s song regardless of file format).
+  - **However**, the local client harness (`localharness_external.exe`) estimates pre-flight context occupancy using a **byte/character-based structural estimate** on attached `media` payloads before sending the request to `aistudio2api`.
+  - Attaching five 90-second uncompressed stereo `.wav` files (`5 × 15.6 MB = 78.3 MB` raw, or `104.3 MB` Base64) in one turn causes `localharness_external.exe` to trip its local context ceiling and trigger instant emergency `<CONTEXT_SUMMARY>` compaction **before the request ever reaches `aistudio2api`**.
+- **Permanent Fix Applied to `aistudio-media` (`C:\Users\silen\.gemini\antigravity-acp\media-tools\media_client.py`):**
+  - Upstream Google AI Studio (`lyria-3.5`) natively returns `audio/mpeg` (MP3). Previously, `media_client.py` requested `'response_format': 'wav'`, forcing `AIStudio2API` to decode that MP3 into a `~16.5 MB` uncompressed PCM WAV (`10–12×` larger with zero extra fidelity).
+  - `MediaClient.audio()` now defaults to `response_format='mp3'`, preserving upstream `audio/mpeg` directly (`~1.5–2.2 MB` per 90s track) and validating duration/sample rate/channels via `ffprobe`.
+- **Agent Rule when Inspecting Audio via `read_file`:**
+  - Always inspect `.mp3` files (`< 2 MB`) or short `< 30s` `.mp3` audition slices (`96–160 kbps`), and read at most 2–3 audio files per turn. Never call `read_file` on large uncompressed `.wav` music tracks.
+
+### B. Lyria 3.5 Anti-Slop Prompting Rules
+1. **NEVER use RPG / fantasy / fairytale stock-music trigger words:** Words like `"fantasy village"`, `"pastoral valley"`, `"animated fairytale"`, `"heroic sword and magic battle"`, or `"uplifting chamber-orchestral"` pull directly from cheesy royalty-free RPG / mobile-game stock MIDI libraries.
+2. **NEVER over-condition with rigid per-timestamp instrument micro-instructions:** Let the latent diffusion model phrase naturally around emotional arc (`[Opening]`, `[Development]`, `[Climax]`).
+3. **DO prompt contemporary recording aesthetics, close-miked physical textures, and modal harmony:** Specify close-miked dampened felt piano, raw breathy gut cello, warm analog sub-bass, post-classical minimalism, Japanese post-rock (`maj9`/`sus2` Rhodes & harmonics), dark modal Phrygian/Dorian tension, or haunting wordless phonetic vocals (*NieR* / *Clair Obscur* aesthetic).

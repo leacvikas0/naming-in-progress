@@ -583,13 +583,13 @@ const SCULPTED_HUD_CSS = `
     pointer-events: none;
   }
 
-  /* Pure Right-Side & Upper-Screen Camera Orbit Zone */
+  /* Open Screen Camera Orbit + Fast-Swipe Dodge Backing Layer (Tablet/Touch) */
   #sculpted-orbit-zone {
     position: absolute;
-    left: 44vw;
+    left: 0;
     right: 0;
     top: 0;
-    width: 56vw;
+    width: 100vw;
     height: 100vh;
     pointer-events: auto;
     touch-action: none;
@@ -601,15 +601,15 @@ const SCULPTED_HUD_CSS = `
     display: block;
   }
 
-  /* Center-Screen Zone (kept in DOM for compatibility; passes slow drags to camera orbit) */
+  /* Center-Screen Character Swipe-to-Dodge Zone (fast swipe = directional dodge, slow drag = orbit) */
   #sculpted-center-dodge-zone {
     position: absolute;
-    left: 39vw;
-    top: 40vh;
-    width: 22vw;
-    height: 34vh;
+    left: 34vw;
+    top: 18vh;
+    width: 32vw;
+    height: 60vh;
     border-radius: 28px;
-    pointer-events: none;
+    pointer-events: auto;
     touch-action: none;
     z-index: 26;
     display: none;
@@ -1481,6 +1481,7 @@ export function createSculptedHud({
 
   const state = {
     activeRole: initialRole === 'Mage' ? 'Mage' : 'Knight',
+    peerConnected: false,
     activeElement: 'ice', // 'ice' | 'fire' queued element
     activeSwordBuffElement: null, // decoupled active Knight sword buff ('ice' | 'fire' | null)
     communeDiscovered: false,
@@ -1544,19 +1545,21 @@ export function createSculptedHud({
         </div>
       </div>
 
-      <div class="sh-life-row" id="sh-life-row-partner" data-role="Mage" title="Click to swap hero in solo mode">
-        <div class="sh-emblem-ring" id="sh-emblem-partner" data-role-emblem="Mage" aria-hidden="true">
-          ${SVG_ROLE_MAGE_EMBLEM}
-        </div>
-        <div class="sh-party-meta">
-          <div class="sh-name-and-hp-row">
-            <span class="sh-player-name-lbl" id="sh-name-partner">Mage</span>
-            <span class="sh-hp-num-inline" id="sh-hp-num-partner">90 / 90</span>
+      <div class="sh-life-row" id="sh-life-row-partner" data-role="Mage" data-partner-role="Mage" title="Click to swap hero in solo mode">
+        <div id="sculpted-partner-row" data-role="Mage" data-partner-role="Mage" style="display:contents">
+          <div class="sh-emblem-ring" id="sh-emblem-partner" data-role-emblem="Mage" aria-hidden="true">
+            ${SVG_ROLE_MAGE_EMBLEM}
           </div>
-          <div class="sh-hp-bar-wrap">
-            <div class="sh-hp-channel">
-              <div class="sh-hp-fill" id="sh-hp-fill-partner"></div>
-              <div class="sh-shield-fill" id="sh-shield-fill-partner"></div>
+          <div class="sh-party-meta">
+            <div class="sh-name-and-hp-row">
+              <span class="sh-player-name-lbl" id="sh-name-partner">Mage</span>
+              <span class="sh-hp-num-inline" id="sh-hp-num-partner">90 / 90</span>
+            </div>
+            <div class="sh-hp-bar-wrap">
+              <div class="sh-hp-channel">
+                <div class="sh-hp-fill" id="sh-hp-fill-partner"></div>
+                <div class="sh-shield-fill" id="sh-shield-fill-partner"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -1707,10 +1710,10 @@ export function createSculptedHud({
         class="sh-open-ring"
         id="sculpted-dash-btn"
         data-action="dash"
-        aria-label="Evade Dash"
+        aria-label="Evade Dodge (Double-tap A, S, D)"
       >
         ${SVG_DASH_GLYPH}
-        <span class="sh-keycap-badge">Shift</span>
+        <span class="sh-keycap-badge" style="font-size: 0.58rem; white-space: nowrap;">2×A/S/D</span>
       </button>
 
       <button
@@ -1787,6 +1790,7 @@ export function createSculptedHud({
   // Cache DOM references
   const primaryRowEl = root.querySelector('#sh-life-row-primary');
   const partnerRowEl = root.querySelector('#sh-life-row-partner');
+  const partnerRowAliasEl = root.querySelector('#sculpted-partner-row');
   const primaryEmblemEl = root.querySelector('#sh-emblem-primary');
   const partnerEmblemEl = root.querySelector('#sh-emblem-partner');
   const primaryNameEl = root.querySelector('#sh-name-primary');
@@ -1880,6 +1884,19 @@ export function createSculptedHud({
     const isKnightLeader = state.activeRole !== 'Mage';
     const primaryRole = isKnightLeader ? 'Knight' : 'Mage';
     const partnerRole = isKnightLeader ? 'Mage' : 'Knight';
+
+    root.dataset.role = primaryRole;
+    if (primaryRowEl) {
+      primaryRowEl.dataset.role = primaryRole;
+    }
+    if (partnerRowEl) {
+      partnerRowEl.dataset.role = partnerRole;
+      partnerRowEl.dataset.partnerRole = partnerRole;
+    }
+    if (partnerRowAliasEl) {
+      partnerRowAliasEl.dataset.role = partnerRole;
+      partnerRowAliasEl.dataset.partnerRole = partnerRole;
+    }
 
     if (primaryEmblemEl) {
       primaryEmblemEl.dataset.roleEmblem = primaryRole;
@@ -2066,11 +2083,22 @@ export function createSculptedHud({
   function setPlayerNames(names = {}) {
     if (typeof names.Knight === 'string' && names.Knight.trim()) {
       state.playerNames.Knight = names.Knight.trim();
+    } else if (typeof names.knight === 'string' && names.knight.trim()) {
+      state.playerNames.Knight = names.knight.trim();
     }
     if (typeof names.Mage === 'string' && names.Mage.trim()) {
       state.playerNames.Mage = names.Mage.trim();
+    } else if (typeof names.mage === 'string' && names.mage.trim()) {
+      state.playerNames.Mage = names.mage.trim();
+    }
+    if (typeof names.peerConnected === 'boolean') {
+      state.peerConnected = names.peerConnected;
     }
     renderRoleAndPartyBars();
+  }
+
+  function setPeerConnected(connected) {
+    state.peerConnected = Boolean(connected);
   }
 
   function setProgressionState(patch = {}) {
@@ -2361,149 +2389,146 @@ export function createSculptedHud({
     }, 280);
   }
 
-  // Center-Screen On-Character 360° Fast-Flick Dodge vs. Slow-Drag Camera Pan
-  // - Fast flick (>= 0.48 px/ms across >= 22px within <= 165ms) -> Dodge in swipe direction
-  // - Slow drag (< 0.40 px/ms or > 165ms) -> Smoothly pans camera (onCameraOrbit)
-  let centerPointerId = null;
-  let centerStartX = 0;
-  let centerStartY = 0;
-  let centerLastX = 0;
-  let centerLastY = 0;
-  let centerStartAt = 0;
-  let centerLastAt = 0;
-  let centerGestureMode = 'idle'; // 'idle' | 'undecided' | 'dodge' | 'orbit'
+  // Open-Screen 360° Swipe-to-Dodge + Slow-Drag Camera Orbit Gesture Arbiter
+  // Works on BOTH #sculpted-center-dodge-zone (around character) AND #sculpted-orbit-zone (anywhere on open screen).
+  let activeOrbitCount = 0;
 
-  if (centerDodgeZone) {
-    centerDodgeZone.addEventListener('pointerdown', (e) => {
-      if (centerPointerId !== null) return;
+  function bindSwipeAndOrbitZone(zoneEl, { isCenterZone = false } = {}) {
+    if (!zoneEl) return;
+    let ptrId = null;
+    let startX = 0;
+    let startY = 0;
+    let lastX = 0;
+    let lastY = 0;
+    let startAt = 0;
+    let lastAt = 0;
+    let peakInstVel = 0;
+    let gestureMode = 'idle'; // 'idle' | 'undecided' | 'dodge' | 'orbit'
+
+    const fireSwipeDodge = (dx, dy) => {
+      cancelSlotEAim();
+      triggerDodgeRipple(dx, dy, startX, startY);
+      if (typeof onAction === 'function') {
+        onAction('dash', {
+          role: state.activeRole,
+          swipeDx: dx,
+          swipeDy: dy,
+        });
+      }
+    };
+
+    const setOrbitFlag = (on) => {
+      if (on && gestureMode !== 'orbit') {
+        activeOrbitCount++;
+      } else if (!on && gestureMode === 'orbit') {
+        activeOrbitCount = Math.max(0, activeOrbitCount - 1);
+      }
+    };
+
+    const moveMinDist = isCenterZone ? 22 : 30;
+    const moveMaxMs = isCenterZone ? 225 : 205;
+    const moveMinAvgVel = isCenterZone ? 0.32 : 0.46;
+    const moveMinInstVel = isCenterZone ? 0.44 : 0.62;
+    const upMinDist = isCenterZone ? 18 : 26;
+    const upMaxMs = isCenterZone ? 245 : 225;
+    const upMinAvgVel = isCenterZone ? 0.22 : 0.30;
+
+    zoneEl.addEventListener('pointerdown', (e) => {
+      if (ptrId !== null) return;
       const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      centerPointerId = e.pointerId;
-      centerStartX = e.clientX;
-      centerStartY = e.clientY;
-      centerLastX = e.clientX;
-      centerLastY = e.clientY;
-      centerStartAt = now;
-      centerLastAt = now;
-      centerGestureMode = 'undecided';
-      centerDodgeZone.classList.add('is-touching');
+      ptrId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      startAt = now;
+      lastAt = now;
+      peakInstVel = 0;
+      gestureMode = 'undecided';
+      if (isCenterZone) {
+        centerDodgeZone?.classList.add('is-touching');
+      }
       try {
-        centerDodgeZone.setPointerCapture(e.pointerId);
+        zoneEl.setPointerCapture(e.pointerId);
       } catch {
         // ignore
       }
     });
 
-    centerDodgeZone.addEventListener('pointermove', (e) => {
-      if (e.pointerId !== centerPointerId) return;
+    zoneEl.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== ptrId) return;
       const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      const totalDx = e.clientX - centerStartX;
-      const totalDy = e.clientY - centerStartY;
+      const totalDx = e.clientX - startX;
+      const totalDy = e.clientY - startY;
       const dist = Math.hypot(totalDx, totalDy);
-      const stepDx = e.clientX - centerLastX;
-      const stepDy = e.clientY - centerLastY;
+      const stepDx = e.clientX - lastX;
+      const stepDy = e.clientY - lastY;
       const stepDist = Math.hypot(stepDx, stepDy);
-      const elapsedMs = Math.max(1, now - centerStartAt);
-      const stepDt = Math.max(1, now - centerLastAt);
-      const avgVel = dist / elapsedMs; // px/ms (0.48 px/ms = 480 px/s)
+      const elapsedMs = Math.max(1, now - startAt);
+      const stepDt = Math.max(1, now - lastAt);
+      const avgVel = dist / elapsedMs;
       const instVel = stepDist / stepDt;
+      if (instVel > peakInstVel) peakInstVel = instVel;
 
-      if (centerGestureMode === 'orbit') {
+      if (gestureMode === 'orbit') {
         if (typeof onCameraOrbit === 'function') {
           onCameraOrbit(stepDx, stepDy);
         }
-      } else if (centerGestureMode === 'undecided') {
-        if (elapsedMs <= 165 && dist >= 22 && (avgVel >= 0.48 || instVel >= 0.62)) {
-          centerGestureMode = 'dodge';
-          cancelSlotEAim();
-          triggerDodgeRipple(totalDx, totalDy, centerStartX, centerStartY);
-          if (typeof onAction === 'function') {
-            onAction('dash', {
-              role: state.activeRole,
-              swipeDx: totalDx,
-              swipeDy: totalDy,
-            });
-          }
-        } else if (elapsedMs > 165 || (dist >= 10 && avgVel < 0.40 && instVel < 0.48)) {
-          centerGestureMode = 'orbit';
-          centerDodgeZone.classList.remove('is-touching');
+      } else if (gestureMode === 'undecided') {
+        if (
+          elapsedMs <= moveMaxMs &&
+          dist >= moveMinDist &&
+          (avgVel >= moveMinAvgVel || peakInstVel >= moveMinInstVel)
+        ) {
+          gestureMode = 'dodge';
+          if (isCenterZone) centerDodgeZone?.classList.remove('is-touching');
+          fireSwipeDodge(totalDx, totalDy);
+        } else if (
+          elapsedMs > moveMaxMs ||
+          (elapsedMs >= 95 && dist >= 14 && avgVel < 0.30 && peakInstVel < 0.38)
+        ) {
+          setOrbitFlag(true);
+          gestureMode = 'orbit';
+          if (isCenterZone) centerDodgeZone?.classList.remove('is-touching');
           if (typeof onCameraOrbit === 'function') {
-            onCameraOrbit(stepDx, stepDy);
+            onCameraOrbit(totalDx, totalDy);
           }
         }
       }
 
-      centerLastX = e.clientX;
-      centerLastY = e.clientY;
-      centerLastAt = now;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      lastAt = now;
     });
 
-    const endCenterDodge = (e) => {
-      if (e.pointerId !== centerPointerId) return;
-      if (centerGestureMode === 'undecided') {
+    const endGesture = (e, allowUpFlick) => {
+      if (e.pointerId !== ptrId) return;
+      if (allowUpFlick && gestureMode === 'undecided') {
         const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-        const elapsedMs = Math.max(1, now - centerStartAt);
-        const totalDx = (e.clientX ?? centerLastX) - centerStartX;
-        const totalDy = (e.clientY ?? centerStartY) - centerStartY;
+        const elapsedMs = Math.max(1, now - startAt);
+        const totalDx = (e.clientX ?? lastX) - startX;
+        const totalDy = (e.clientY ?? lastY) - startY;
         const dist = Math.hypot(totalDx, totalDy);
         const avgVel = dist / elapsedMs;
-        if (dist >= 18 && elapsedMs <= 185 && avgVel >= 0.42) {
-          centerGestureMode = 'dodge';
-          cancelSlotEAim();
-          triggerDodgeRipple(totalDx, totalDy, centerStartX, centerStartY);
-          if (typeof onAction === 'function') {
-            onAction('dash', {
-              role: state.activeRole,
-              swipeDx: totalDx,
-              swipeDy: totalDy,
-            });
-          }
+        if (dist >= upMinDist && elapsedMs <= upMaxMs && avgVel >= upMinAvgVel) {
+          gestureMode = 'dodge';
+          fireSwipeDodge(totalDx, totalDy);
         }
       }
-      centerPointerId = null;
-      centerGestureMode = 'idle';
-      centerDodgeZone.classList.remove('is-touching');
-    };
-    centerDodgeZone.addEventListener('pointerup', endCenterDodge);
-    centerDodgeZone.addEventListener('pointercancel', endCenterDodge);
-  }
-
-  // Right-side Touch Camera Orbit
-  let orbitPointerId = null;
-  let lastOrbitX = 0;
-  let lastOrbitY = 0;
-
-  if (orbitZone) {
-    orbitZone.addEventListener('pointerdown', (e) => {
-      if (orbitPointerId !== null) return;
-      orbitPointerId = e.pointerId;
-      lastOrbitX = e.clientX;
-      lastOrbitY = e.clientY;
-      try {
-        orbitZone.setPointerCapture(e.pointerId);
-      } catch {
-        // ignore
-      }
-    });
-
-    orbitZone.addEventListener('pointermove', (e) => {
-      if (e.pointerId !== orbitPointerId) return;
-      const dx = e.clientX - lastOrbitX;
-      const dy = e.clientY - lastOrbitY;
-      lastOrbitX = e.clientX;
-      lastOrbitY = e.clientY;
-      if (typeof onCameraOrbit === 'function') {
-        onCameraOrbit(dx, dy);
-      }
-    });
-
-    const endOrbit = (e) => {
-      if (e.pointerId === orbitPointerId) {
-        orbitPointerId = null;
+      setOrbitFlag(false);
+      ptrId = null;
+      gestureMode = 'idle';
+      if (isCenterZone) {
+        centerDodgeZone?.classList.remove('is-touching');
       }
     };
-    orbitZone.addEventListener('pointerup', endOrbit);
-    orbitZone.addEventListener('pointercancel', endOrbit);
+
+    zoneEl.addEventListener('pointerup', (e) => endGesture(e, true));
+    zoneEl.addEventListener('pointercancel', (e) => endGesture(e, false));
   }
+
+  bindSwipeAndOrbitZone(centerDodgeZone, { isCenterZone: true });
+  bindSwipeAndOrbitZone(orbitZone, { isCenterZone: false });
 
   // Primary Attack Ring: Tap (< 180ms Mage / < 280ms Knight) = 'attack',
   // Hold = Knight 'block_start' / Mage 'heavy' + Hold-Drag-Release Shatterlance aiming (0.8..18.0m)
@@ -2845,11 +2870,14 @@ export function createSculptedHud({
   }
 
   function triggerHeroSwap() {
-    state.activeRole = state.activeRole === 'Knight' ? 'Mage' : 'Knight';
-    renderRoleAndPartyBars();
+    if (state.peerConnected) return;
+    const nextRole = state.activeRole === 'Knight' ? 'Mage' : 'Knight';
     if (typeof onSwapHero === 'function') {
-      onSwapHero(state.activeRole);
+      const swapped = onSwapHero(nextRole);
+      if (swapped === false) return;
     }
+    state.activeRole = nextRole;
+    renderRoleAndPartyBars();
   }
 
   if (partnerRowEl) {
@@ -3162,7 +3190,7 @@ export function createSculptedHud({
     root,
     joyState,
     get isOrbitDragging() {
-      return orbitPointerId !== null || centerGestureMode === 'orbit';
+      return activeOrbitCount > 0;
     },
     getState: () => ({
       ...state,
@@ -3175,6 +3203,7 @@ export function createSculptedHud({
       cooldowns: { ...state.cooldowns },
     }),
     setPlayerNames,
+    setPeerConnected,
     setEnvironmentPolarity,
     setProgressionState,
     setCommuneState,

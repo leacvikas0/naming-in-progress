@@ -56,16 +56,13 @@ export function shouldAutoSkipOpeningFlow(searchOverride) {
       ? searchOverride
       : window.location?.search || '';
   const params = new URLSearchParams(search);
-  if (params.get('flow') === '1' || params.get('opening') === '1') {
+  if (params.get('flow') === '1' || params.get('opening') === '1' || params.has('step')) {
     return false;
   }
   if (params.has('shot') || params.get('nolobby') === '1') {
     return true;
   }
   if (window.__HEADLESS_TEST__) {
-    return true;
-  }
-  if (typeof navigator !== 'undefined' && navigator.webdriver) {
     return true;
   }
   return false;
@@ -169,6 +166,533 @@ const SVG_OPEN_AIR_DIVIDER = `
   <line x1="168" y1="16" x2="268" y2="16" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" opacity="0.82"/>
 </svg>
 `;
+
+/**
+ * Precomputes a 480x270 2D multi-octave organic noise + fine IGN grain threshold map
+ * for the ultra-smooth pitch-black noise dissolve (zero horizontal stripes or window blinds).
+ */
+const DISSOLVE_W = 480;
+const DISSOLVE_H = 270;
+let dissolveThresholdMap = null;
+
+function hash2D(ix, iy) {
+  const n = Math.sin(ix * 127.1 + iy * 311.7) * 43758.5453123;
+  return n - Math.floor(n);
+}
+
+function valueNoise2D(x, y) {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  const ux = fx * fx * (3.0 - 2.0 * fx);
+  const uy = fy * fy * (3.0 - 2.0 * fy);
+  const a = hash2D(ix, iy);
+  const b = hash2D(ix + 1, iy);
+  const c = hash2D(ix, iy + 1);
+  const d = hash2D(ix + 1, iy + 1);
+  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+}
+
+function getDissolveThresholdMap() {
+  if (dissolveThresholdMap) return dissolveThresholdMap;
+  dissolveThresholdMap = new Float32Array(DISSOLVE_W * DISSOLVE_H);
+  let idx = 0;
+  for (let y = 0; y < DISSOLVE_H; y++) {
+    const v = y / DISSOLVE_H;
+    for (let x = 0; x < DISSOLVE_W; x++) {
+      const u = x / DISSOLVE_W;
+      // 5-octave continuous isotropic organic noise (zero periodic grid or screen-door dots)
+      const n1 = valueNoise2D(u * 3.6 + 1.3, v * 2.4 + 2.1);
+      const n2 = valueNoise2D(u * 7.5 - 4.2, v * 5.0 + 5.7);
+      const n3 = valueNoise2D(u * 15.5 + 7.1, v * 10.4 - 3.4);
+      const n4 = valueNoise2D(u * 31.0 - 2.8, v * 21.0 + 8.3);
+      const n5 = valueNoise2D(u * 62.0 + 5.4, v * 42.0 - 6.1);
+      const cloud = n1 * 0.42 + n2 * 0.26 + n3 * 0.16 + n4 * 0.10 + n5 * 0.06;
+
+      // Gentle radial bloom outward from the upper-sky Amarante & Sun-Clock lockup
+      const du = (u - 0.45) * 1.05;
+      const dv = (v - 0.24) * 1.20;
+      const radial = Math.min(1, Math.hypot(du, dv));
+
+      dissolveThresholdMap[idx++] = Math.min(
+        1,
+        Math.max(0, cloud * 0.72 + radial * 0.28)
+      );
+    }
+  }
+  return dissolveThresholdMap;
+}
+
+/**
+ * Generates the 100% Pure Vector SVG Fixed Celestial Sun-Clock (facing in-game 08:10 time),
+ * Soft Calligraphic Paintbrush-Written 'Amarante' Wordmark (which writes on the plain black
+ * screen and then smoothly glides up into the sky lockup), Heart-Notched Sakura Blossom
+ * Branches, and Golden Diamond Swash.
+ */
+const AMARANTE_GLYPHS = [
+  {
+    "ch": "A",
+    "x": 211.26,
+    "w": 97.25,
+    "d": "M 205.68 274 Q 205.03 274 205.03 273.02 Q 205.03 272.03 205.68 272.03 Q 209.95 272.03 215.93 267.52 Q 221.92 263.01 227.82 252.35 L 273.91 170.02 Q 274.24 169.37 275.47 169.53 Q 276.7 169.7 276.86 170.19 L 293.59 260.22 Q 294.41 264.65 295.23 267.28 Q 296.05 269.9 298.18 270.97 Q 300.31 272.03 304.74 272.03 Q 305.4 272.03 305.4 273.02 Q 305.4 274 304.74 274 Q 300.64 274 296.38 273.67 Q 292.11 273.34 287.03 273.34 Q 282.11 273.34 278.17 273.67 Q 274.24 274 270.14 274 Q 269.48 274 269.48 273.02 Q 269.48 272.03 270.14 272.03 Q 276.86 272.03 278.75 269.57 Q 280.63 267.11 279.32 260.22 L 265.87 188.23 L 273.42 178.39 L 232.58 252.68 Q 228.48 259.9 228.07 264.16 Q 227.66 268.42 230.69 270.23 Q 233.73 272.03 239.96 272.03 Q 240.62 272.03 240.62 273.02 Q 240.62 274 239.8 274 Q 236.19 274 230.94 273.67 Q 225.69 273.34 220.77 273.34 Q 216.02 273.34 212.98 273.67 Q 209.95 274 205.68 274 Z M 240.62 233.82 L 243.08 229.72 L 278.66 229.72 L 278.99 233.82 Z",
+    "ductus": "M 206 286 L 286 146 L 304 286 M 224 236 L 308 232"
+  },
+  {
+    "ch": "m",
+    "x": 308.51,
+    "w": 110.21,
+    "d": "M 398.55 275.48 Q 393.46 275.48 392.15 271.54 Q 390.84 267.6 392.15 259.4 L 397.07 233.33 Q 398.55 224.96 397.4 220.95 Q 396.25 216.93 392.64 216.93 Q 388.38 216.93 383.3 223.16 Q 378.21 229.39 373.54 241.69 Q 368.86 253.99 365.75 272.36 L 363.29 272.2 Q 366.57 252.35 372.14 238.08 Q 377.72 223.82 384.94 216.19 Q 392.15 208.56 400.02 208.56 Q 406.42 208.56 408.96 213.73 Q 411.5 218.9 409.54 230.21 L 404.29 259.4 Q 403.47 264.16 404.21 265.96 Q 404.94 267.77 406.42 267.77 Q 408.39 267.77 410.68 265.96 Q 412.98 264.16 415.77 261.37 Q 416.42 260.72 417.08 261.37 Q 417.74 262.03 417.08 262.68 Q 412 268.75 407.57 272.11 Q 403.14 275.48 398.55 275.48 Z M 321.8 275.31 Q 318.84 275.31 317.86 274.98 Q 316.88 274.66 316.88 274.16 Q 316.88 273.51 317.78 269.9 Q 318.68 266.29 319.34 262.19 L 326.06 225.29 Q 327.54 216.76 323.6 216.76 Q 321.8 216.76 319.25 218.49 Q 316.71 220.21 313.43 223.65 Q 312.94 224.31 312.2 223.57 Q 311.46 222.83 312.12 222.18 Q 317.86 215.29 322.62 212.25 Q 327.37 209.22 331.8 209.22 Q 336.56 209.22 338.03 212.83 Q 339.51 216.44 338.03 223.82 L 329.5 272.36 Q 328.85 275.31 321.8 275.31 Z M 358.04 275.31 Q 355.25 275.31 354.27 274.98 Q 353.28 274.66 353.28 274.16 Q 353.28 273.51 354.19 269.74 Q 355.09 265.96 355.74 261.86 L 360.99 233.16 Q 362.47 224.64 361.16 220.78 Q 359.84 216.93 356.24 216.93 Q 351.81 216.93 346.64 223.41 Q 341.48 229.88 336.97 242.27 Q 332.46 254.65 329.5 272.36 L 326.88 272.2 Q 330 252.68 335.57 238.41 Q 341.15 224.14 348.45 216.35 Q 355.74 208.56 363.78 208.56 Q 370.01 208.56 372.72 213.65 Q 375.42 218.73 373.46 230.05 L 365.75 272.36 Q 365.42 275.31 358.04 275.31 Z",
+    "ductus": "M 326 194 L 312 284 M 322 222 C 344 192, 366 194, 362 224 L 352 284 M 362 222 C 386 192, 408 194, 406 224 L 398 284"
+  },
+  {
+    "ch": "a",
+    "x": 418.72,
+    "w": 70.68,
+    "d": "M 432.17 276.13 Q 426.76 276.13 423.64 272.11 Q 420.52 268.1 421.84 259.08 Q 422.98 250.55 427.49 241.69 Q 432 232.84 438.48 225.29 Q 444.96 217.75 452.34 213.16 Q 459.72 208.56 466.44 208.56 Q 469.56 208.56 472.84 209.71 Q 476.12 210.86 478.5 213.57 Q 480.88 216.27 481.2 220.54 L 472.35 215.45 Q 474.81 215.12 477.76 212.83 Q 480.71 210.53 482.35 207.25 Q 482.68 206.76 483.58 207.01 Q 484.48 207.25 484.32 207.58 L 474.81 259.4 Q 473.33 267.77 476.94 267.77 Q 478.58 267.77 481.04 266.05 Q 483.5 264.32 486.45 261.37 Q 486.94 260.88 487.6 261.54 Q 488.26 262.19 487.76 262.68 Q 482.68 268.75 478.17 272.11 Q 473.66 275.48 469.4 275.48 Q 464.64 275.48 463 271.7 Q 461.36 267.93 462.67 259.4 L 466.77 236.44 L 470.05 233.66 Q 465.79 246.78 459.39 256.29 Q 453 265.8 445.94 270.97 Q 438.89 276.13 432.17 276.13 Z M 441.19 265.47 Q 445.29 265.47 449.55 262.19 Q 453.82 258.91 457.59 253.66 Q 461.36 248.42 464.07 242.43 Q 466.77 236.44 467.76 231.2 Q 469.07 224.14 466.69 219.96 Q 464.31 215.78 459.06 215.78 Q 454.14 215.94 449.14 220.13 Q 444.14 224.31 440.37 231.44 Q 436.6 238.58 434.96 247.76 Q 433.48 257.44 435.37 261.45 Q 437.25 265.47 441.19 265.47 Z",
+    "ductus": "M 480 204 C 444 188, 418 238, 432 276 C 446 288, 472 262, 482 200 L 472 284"
+  },
+  {
+    "ch": "r",
+    "x": 489.4,
+    "w": 55.76,
+    "d": "M 509.9 272.36 L 508.26 272.2 Q 509.9 263.83 512.12 255.06 Q 514.33 246.28 517.04 238.08 Q 519.74 229.88 523.02 223.41 Q 526.3 216.93 529.99 213.07 Q 533.68 209.22 537.62 209.22 Q 540.08 209.22 542.7 210.53 Q 545.33 211.84 546.97 214.06 Q 548.61 216.27 548.12 218.9 Q 547.79 221.03 546.07 223 Q 544.34 224.96 541.56 224.96 Q 539.1 224.96 537.54 223.65 Q 535.98 222.34 534.59 221.03 Q 533.19 219.72 531.55 219.72 Q 529.58 219.72 527.12 223.41 Q 524.66 227.1 522.04 233 Q 519.42 238.9 517.04 245.96 Q 514.66 253.01 512.86 259.98 Q 511.05 266.95 509.9 272.36 Z M 502.2 275.31 Q 499.24 275.31 498.26 274.98 Q 497.28 274.66 497.28 274.16 Q 497.28 273.51 498.26 269.74 Q 499.24 265.96 499.9 261.86 L 506.13 227.42 Q 506.95 223.32 506.71 221.03 Q 506.46 218.73 505.64 217.75 Q 504.82 216.76 503.51 216.76 Q 501.7 216.76 499.24 218.49 Q 496.78 220.21 493.83 223.16 Q 493.34 223.65 492.68 223 Q 492.03 222.34 492.52 221.68 Q 498.1 215.12 502.69 212.17 Q 507.28 209.22 511.71 209.22 Q 515.15 209.22 516.87 210.94 Q 518.6 212.66 518.92 216.35 Q 519.25 220.04 518.27 226.11 L 509.9 272.36 Q 509.58 275.31 502.2 275.31 Z",
+    "ductus": "M 508 196 L 496 284 M 504 228 C 518 196, 534 196, 546 206"
+  },
+  {
+    "ch": "a",
+    "x": 545.16,
+    "w": 70.68,
+    "d": "M 558.61 276.13 Q 553.2 276.13 550.08 272.11 Q 546.97 268.1 548.28 259.08 Q 549.43 250.55 553.94 241.69 Q 558.45 232.84 564.93 225.29 Q 571.4 217.75 578.78 213.16 Q 586.16 208.56 592.89 208.56 Q 596 208.56 599.28 209.71 Q 602.56 210.86 604.94 213.57 Q 607.32 216.27 607.65 220.54 L 598.79 215.45 Q 601.25 215.12 604.2 212.83 Q 607.16 210.53 608.8 207.25 Q 609.12 206.76 610.03 207.01 Q 610.93 207.25 610.76 207.58 L 601.25 259.4 Q 599.78 267.77 603.38 267.77 Q 605.02 267.77 607.48 266.05 Q 609.94 264.32 612.9 261.37 Q 613.39 260.88 614.04 261.54 Q 614.7 262.19 614.21 262.68 Q 609.12 268.75 604.61 272.11 Q 600.1 275.48 595.84 275.48 Q 591.08 275.48 589.44 271.7 Q 587.8 267.93 589.12 259.4 L 593.22 236.44 L 596.5 233.66 Q 592.23 246.78 585.84 256.29 Q 579.44 265.8 572.39 270.97 Q 565.34 276.13 558.61 276.13 Z M 567.63 265.47 Q 571.73 265.47 576 262.19 Q 580.26 258.91 584.03 253.66 Q 587.8 248.42 590.51 242.43 Q 593.22 236.44 594.2 231.2 Q 595.51 224.14 593.13 219.96 Q 590.76 215.78 585.51 215.78 Q 580.59 215.94 575.59 220.13 Q 570.58 224.31 566.81 231.44 Q 563.04 238.58 561.4 247.76 Q 559.92 257.44 561.81 261.45 Q 563.7 265.47 567.63 265.47 Z",
+    "ductus": "M 606 204 C 570 188, 544 238, 558 276 C 572 288, 598 262, 608 200 L 598 284"
+  },
+  {
+    "ch": "n",
+    "x": 615.85,
+    "w": 75.77,
+    "d": "M 671.28 275.48 Q 666.36 275.48 664.97 271.54 Q 663.57 267.6 665.05 259.4 L 669.8 233.33 Q 673.08 216.93 664.88 216.93 Q 659.96 216.93 654.63 223.32 Q 649.3 229.72 644.63 242.1 Q 639.96 254.48 637 272.36 L 634.22 272.2 Q 637.66 252.68 643.32 238.41 Q 648.98 224.14 656.44 216.35 Q 663.9 208.56 672.1 208.56 Q 679.15 208.56 681.78 213.73 Q 684.4 218.9 682.43 230.21 L 677.02 259.4 Q 676.2 264.16 676.94 265.96 Q 677.68 267.77 679.32 267.77 Q 681.12 267.77 683.5 265.96 Q 685.88 264.16 688.66 261.37 Q 689.16 260.72 689.89 261.37 Q 690.63 262.03 689.98 262.68 Q 684.89 268.75 680.46 272.11 Q 676.04 275.48 671.28 275.48 Z M 629.13 275.31 Q 626.18 275.31 625.2 274.98 Q 624.21 274.66 624.21 274.16 Q 624.21 273.51 625.11 269.82 Q 626.02 266.13 626.67 261.86 L 633.4 225.29 Q 634.87 216.76 630.94 216.76 Q 629.13 216.76 626.59 218.49 Q 624.05 220.21 620.77 223.65 Q 620.28 224.31 619.54 223.57 Q 618.8 222.83 619.46 222.18 Q 625.2 215.29 629.95 212.25 Q 634.71 209.22 639.14 209.22 Q 643.89 209.22 645.37 212.83 Q 646.84 216.44 645.37 223.82 L 637 272.36 Q 636.18 275.31 629.13 275.31 Z",
+    "ductus": "M 634 196 L 620 284 M 630 224 C 654 192, 678 194, 676 224 L 668 284"
+  },
+  {
+    "ch": "t",
+    "x": 691.62,
+    "w": 47.4,
+    "d": "M 711.95 275.97 Q 708.34 275.97 705.06 274.66 Q 701.78 273.34 700.31 269.82 Q 698.83 266.29 699.98 259.73 L 706.54 223.82 Q 707.52 218.24 706.62 216.6 Q 705.72 214.96 700.96 214.96 Q 700.31 214.96 700.39 213.81 Q 700.47 212.66 700.96 212.66 Q 708.18 212.66 712.85 208.48 Q 717.53 204.3 719.99 198.72 Q 720.15 198.23 721.63 198.4 Q 723.1 198.56 722.94 199.22 L 712.77 256.12 Q 711.62 262.19 713.59 265.06 Q 715.56 267.93 720.64 267.93 Q 724.42 267.93 727.94 266.21 Q 731.47 264.49 735.08 261.37 Q 735.4 261.04 736.14 261.7 Q 736.88 262.36 736.39 262.85 Q 729.01 269.9 723.27 272.93 Q 717.53 275.97 711.95 275.97 Z M 736.55 218.4 Q 736.22 218.4 733.11 217.99 Q 729.99 217.58 725.65 217.09 Q 721.3 216.6 716.87 216.6 L 717.2 212.17 Q 722.28 212.17 727.04 211.84 Q 731.8 211.52 735.49 211.19 Q 739.18 210.86 740.65 210.86 Q 741.47 210.86 741.72 211.43 Q 741.96 212.01 741.8 212.66 Q 741.64 213.98 739.91 216.19 Q 738.19 218.4 736.55 218.4 Z",
+    "ductus": "M 720 162 L 702 284 M 690 204 L 738 202"
+  },
+  {
+    "ch": "e",
+    "x": 739.01,
+    "w": 57.73,
+    "d": "M 764.92 275.97 Q 755.74 275.97 750.49 271.29 Q 745.24 266.62 743.69 259.24 Q 742.13 251.86 743.77 243.66 Q 744.92 237.43 748.36 231.11 Q 751.8 224.8 756.97 219.72 Q 762.14 214.63 768.7 211.6 Q 775.26 208.56 782.8 208.56 Q 789.2 208.56 792.39 210.86 Q 795.59 213.16 795.1 217.42 Q 794.61 221.52 790.75 225.37 Q 786.9 229.23 780.59 232.26 Q 774.27 235.3 766.56 237.43 Q 758.86 239.56 750.66 240.54 L 750.98 238.41 Q 762.96 236.61 771.07 232.43 Q 779.19 228.24 780.5 220.86 Q 781.32 216.93 779.52 214.96 Q 777.72 212.99 774.6 212.99 Q 770.34 212.99 766.89 216.35 Q 763.45 219.72 761.07 225.46 Q 758.69 231.2 757.54 238.25 Q 756.07 246.94 757.3 253.91 Q 758.53 260.88 762.63 265.06 Q 766.73 269.24 773.45 269.24 Q 776.9 269.24 781 268.1 Q 785.1 266.95 788.87 264.16 Q 789.2 263.83 789.77 264.49 Q 790.34 265.14 790.02 265.47 Q 783.78 271.21 777.39 273.59 Q 770.99 275.97 764.92 275.97 Z",
+    "ductus": "M 742 238 C 782 236, 792 208, 774 198 C 750 190, 734 236, 748 276 C 760 288, 784 276, 800 262"
+  }
+];
+
+function buildPureSvgCelestialTitleLockup() {
+  const ROMANS = ['XII', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI'];
+  let ticksSvg = '';
+  for (let i = 0; i < 60; i++) {
+    const deg = i * 6;
+    const isMajor = i % 5 === 0;
+    const y1 = isMajor ? -90 : -93.5;
+    const y2 = -98;
+    const sw = isMajor ? 1.4 : 0.75;
+    const op = isMajor ? 0.92 : 0.52;
+    ticksSvg += `<line x1="0" y1="${y1}" x2="0" y2="${y2}" stroke="#fffbeb" stroke-width="${sw}" opacity="${op}" transform="rotate(${deg})"/>`;
+    if (isMajor) {
+      ticksSvg += `<line x1="0" y1="-50" x2="0" y2="-67" stroke="#fde68a" stroke-width="1.05" opacity="0.72" transform="rotate(${deg})"/>`;
+    }
+  }
+
+  let numeralsSvg = '';
+  for (let i = 0; i < 12; i++) {
+    const deg = i * 30;
+    numeralsSvg += `
+      <g class="af-svg-numeral" data-num-idx="${i}" transform="rotate(${deg}) translate(0, -76)">
+        <text x="0" y="4" text-anchor="middle" font-family="'Cinzel', 'Cormorant Garamond', Georgia, serif" font-size="12.5" font-weight="600" fill="#fffbeb" letter-spacing="0.03em">${ROMANS[i]}</text>
+      </g>`;
+  }
+
+  const CROWN_SPECS = [
+    { deg: -58, scale: 0.78 },
+    { deg: -29, scale: 0.92 },
+    { deg: 0, scale: 1.12 },
+    { deg: 29, scale: 0.92 },
+    { deg: 58, scale: 0.78 },
+  ];
+  const crownsSvg = CROWN_SPECS.map(
+    (c, idx) => `
+      <g class="af-svg-crown-wrap" transform="rotate(${c.deg}) translate(0, -100)">
+        <g class="af-svg-crown" data-crown-idx="${idx}" data-base-scale="${c.scale}">
+          <circle cx="0" cy="-14" r="18" fill="url(#afCrownAura)"/>
+          <path d="M-1.5 0 C-11 -5, -15 -18, -7.5 -24 C-3 -19, -1 -10, -0.5 0 Z" fill="url(#afLotusSideGrad)" stroke="#fef08a" stroke-width="0.85"/>
+          <path d="M1.5 0 C11 -5, 15 -18, 7.5 -24 C3 -19, 1 -10, 0.5 0 Z" fill="url(#afLotusSideGrad)" stroke="#fef08a" stroke-width="0.85"/>
+          <path d="M0 2 C-8.5 -7, -8.5 -22, 0 -31 C8.5 -22, 8.5 -7, 0 2 Z" fill="url(#afLotusCenterGrad)" stroke="#fffbeb" stroke-width="1.0"/>
+          <line x1="0" y1="0" x2="0" y2="-25" stroke="#fffbeb" stroke-width="0.8" opacity="0.75"/>
+          <polygon points="0,-3.5 3.8,0.5 0,4.5 -3.8,0.5" fill="#fffbeb"/>
+        </g>
+      </g>`
+  ).join('');
+
+  function sakuraBlossomSvg(idx, x, y, scale = 1.0, rot = 0) {
+    let petals = '';
+    for (let p = 0; p < 5; p++) {
+      const a = p * 72;
+      petals += `<path d="M 0 -2 C -7.5 -9, -11.5 -21, -3.8 -25.5 L 0 -21.5 L 3.8 -25.5 C 11.5 -21, 7.5 -9, 0 -2 Z" fill="url(#afSakuraPetalGrad)" stroke="#f472b6" stroke-width="0.75" transform="rotate(${a})"/>`;
+    }
+    let stamens = '';
+    for (let s = 0; s < 10; s++) {
+      const a = s * 36 + 12;
+      const rLen = s % 2 === 0 ? 8.5 : 6.5;
+      stamens += `
+        <g transform="rotate(${a})">
+          <line x1="0" y1="-1.5" x2="0" y2="-${rLen}" stroke="#f59e0b" stroke-width="0.8"/>
+          <circle cx="0" cy="-${rLen}" r="1.25" fill="#fef08a"/>
+        </g>`;
+    }
+    return `
+      <g class="af-svg-blossom-pos" transform="translate(${x}, ${y}) rotate(${rot})">
+        <g class="af-svg-blossom" data-blossom-idx="${idx}" data-base-scale="${scale}">
+          ${petals}
+          <circle cx="0" cy="0" r="3.2" fill="#ec4899" opacity="0.55"/>
+          ${stamens}
+          <circle cx="0" cy="0" r="1.6" fill="#fffbeb"/>
+        </g>
+      </g>`;
+  }
+
+  function sakuraBudSvg(idx, x, y, scale = 1.0, rot = 0) {
+    return `
+      <g class="af-svg-blossom-pos" transform="translate(${x}, ${y}) rotate(${rot})">
+        <g class="af-svg-blossom" data-blossom-idx="${idx}" data-base-scale="${scale}">
+          <path d="M 0 0 C -5 -5, -5.5 -14, 0 -18 C 5.5 -14, 5 -5, 0 0 Z" fill="url(#afSakuraBudGrad)" stroke="#ec4899" stroke-width="0.75"/>
+          <path d="M 0 1 C -3.5 -1, -4 -6, -1.5 -8 C 0 -5, 1.5 -5, 2.5 -7.5 C 4 -5, 3 -1, 0 1 Z" fill="#a3b86c" stroke="#7c8f46" stroke-width="0.6"/>
+        </g>
+      </g>`;
+  }
+
+  function sakuraLeafSvg(idx, x, y, scale = 1.0, rot = 0) {
+    return `
+      <g class="af-svg-blossom-pos" transform="translate(${x}, ${y}) rotate(${rot})">
+        <g class="af-svg-blossom" data-blossom-idx="${idx}" data-base-scale="${scale}">
+          <path d="M 0 0 C -4.5 -5, -4 -14, 0 -19 C 4 -14, 4.5 -5, 0 0 Z" fill="url(#afLeafGrad)" stroke="#8fa352" stroke-width="0.65"/>
+          <line x1="0" y1="-1" x2="0" y2="-16" stroke="#fef08a" stroke-width="0.6" opacity="0.75"/>
+        </g>
+      </g>`;
+  }
+
+  const glyphClipPathsSvg = AMARANTE_GLYPHS.map(
+    (g, idx) => `
+      <clipPath id="afGlyphClip-${idx}">
+        <path d="${g.d}" />
+      </clipPath>`
+  ).join('');
+
+  const glyphGroupsSvg = AMARANTE_GLYPHS.map(
+    (g, idx) => `
+      <g class="af-svg-glyph" data-glyph-idx="${idx}">
+        <!-- Option 1 & Option 3: Exact TrueType Vector Outline + Solid Ivory Fill -->
+        <path
+          class="af-glyph-contour"
+          data-gcontour-idx="${idx}"
+          d="${g.d}"
+          fill="none"
+          stroke="url(#afGoldLineGrad)"
+          stroke-width="1.65"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          pathLength="100"
+          stroke-dasharray="100 120"
+          stroke-dashoffset="105"
+          opacity="0"
+        />
+        <path
+          class="af-glyph-fill"
+          data-gfill-idx="${idx}"
+          d="${g.d}"
+          fill="#fffdf9"
+          opacity="0"
+        />
+        <!-- Option 2: Clip-Isolated Calligraphic Ribbon Ductus (Zero Bleed, Zero Yellow Dot) -->
+        <g clip-path="url(#afGlyphClip-${idx})">
+          <path
+            class="af-glyph-ductus"
+            data-gductus-idx="${idx}"
+            d="${g.ductus}"
+            fill="none"
+            stroke="#fffdf9"
+            stroke-width="64"
+            stroke-linecap="butt"
+            stroke-linejoin="round"
+            pathLength="100"
+            stroke-dasharray="100 120"
+            stroke-dashoffset="105"
+            opacity="0"
+          />
+        </g>
+      </g>`
+  ).join('');
+
+  return `
+    <svg class="af-pure-celestial-svg" viewBox="0 0 970 348" fill="none" aria-hidden="true">
+      <defs>
+        <filter id="afWordShadow" x="-15%" y="-15%" width="130%" height="135%">
+          <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#0f172a" flood-opacity="0.32"/>
+        </filter>
+        <filter id="afGoldGlow" x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="0" stdDeviation="3.5" flood-color="#fde047" flood-opacity="0.75"/>
+        </filter>
+        ${glyphClipPathsSvg}
+        <radialGradient id="afCrownAura" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#fffbeb" stop-opacity="0.88"/>
+          <stop offset="55%" stop-color="#fde047" stop-opacity="0.42"/>
+          <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="afGoldLineGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#fffbeb"/>
+          <stop offset="50%" stop-color="#fde68a"/>
+          <stop offset="100%" stop-color="#eab308"/>
+        </linearGradient>
+        <linearGradient id="afLotusCenterGrad" x1="50%" y1="0%" x2="50%" y2="100%">
+          <stop offset="0%" stop-color="#fffef7"/>
+          <stop offset="55%" stop-color="#fde68a"/>
+          <stop offset="100%" stop-color="#d97706"/>
+        </linearGradient>
+        <linearGradient id="afLotusSideGrad" x1="50%" y1="0%" x2="50%" y2="100%">
+          <stop offset="0%" stop-color="#fef9c3"/>
+          <stop offset="65%" stop-color="#fbbf24"/>
+          <stop offset="100%" stop-color="#b45309"/>
+        </linearGradient>
+        <radialGradient id="afSakuraPetalGrad" cx="50%" cy="85%" r="85%">
+          <stop offset="0%" stop-color="#f43f5e"/>
+          <stop offset="35%" stop-color="#fbcfe8"/>
+          <stop offset="100%" stop-color="#fff5f8"/>
+        </radialGradient>
+        <linearGradient id="afSakuraBudGrad" x1="50%" y1="0%" x2="50%" y2="100%">
+          <stop offset="0%" stop-color="#fff1f5"/>
+          <stop offset="55%" stop-color="#f472b6"/>
+          <stop offset="100%" stop-color="#db2777"/>
+        </linearGradient>
+        <linearGradient id="afLeafGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#d9e89c"/>
+          <stop offset="100%" stop-color="#849b48"/>
+        </linearGradient>
+        <linearGradient id="afBranchWoodGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#d4a359"/>
+          <stop offset="50%" stop-color="#b47d34"/>
+          <stop offset="100%" stop-color="#fde68a"/>
+        </linearGradient>
+      </defs>
+
+      <!-- 1. FIXED CELESTIAL GOLDEN SUN-CLOCK AROUND THE ACTUAL BACKGROUND SUN (274, 148) -->
+      <g id="af-svg-sunclock" transform="translate(274, 148)">
+        <!-- Outer & Inner Astrolabe Rings (Framing the actual sun in the sky, completely still) -->
+        <circle
+          id="af-svg-ring-outer"
+          cx="0"
+          cy="0"
+          r="98"
+          stroke="url(#afGoldLineGrad)"
+          stroke-width="1.8"
+          pathLength="100"
+          stroke-dasharray="100"
+          stroke-dashoffset="100"
+          transform="rotate(-90)"
+        />
+        <circle
+          id="af-svg-ring-inner"
+          cx="0"
+          cy="0"
+          r="67"
+          stroke="url(#afGoldLineGrad)"
+          stroke-width="1.25"
+          pathLength="100"
+          stroke-dasharray="100"
+          stroke-dashoffset="100"
+          transform="rotate(-90)"
+        />
+        <circle
+          id="af-svg-ring-whisper"
+          cx="0"
+          cy="0"
+          r="105"
+          stroke="#fef08a"
+          stroke-width="0.75"
+          stroke-dasharray="2.5 6.5"
+          opacity="0"
+        />
+
+        <!-- Fixed Astrolabe Ticks & Roman Numerals (Zero rotation) -->
+        <g id="af-svg-dial-orbit">
+          ${ticksSvg}
+          ${numeralsSvg}
+        </g>
+
+        <!-- Fixed Clock Hands Facing In-Game Time (08:10 Morning: Hour at 245 deg [VIII], Minute at 60 deg [II]) -->
+        <g id="af-svg-hand-orbit">
+          <!-- Hour Hand pointing fixed at 08:10 (245 deg) -->
+          <g id="af-svg-hour-hand" transform="rotate(245)">
+            <line x1="0" y1="-36" x2="0" y2="-78" stroke="#fffbeb" stroke-width="2.1" stroke-linecap="round"/>
+            <polygon points="0,-84 -3.8,-74 0,-77 3.8,-74" fill="#fffbeb"/>
+          </g>
+          <!-- Minute Hand pointing fixed at :10 (60 deg) -->
+          <g id="af-svg-minute-hand" transform="rotate(60)">
+            <line x1="0" y1="-36" x2="0" y2="-93" stroke="#fde68a" stroke-width="1.4" stroke-linecap="round"/>
+            <polygon points="0,-99 -3.0,-90 0,-93 3.0,-90" fill="#fde68a"/>
+          </g>
+          <!-- Fixed Cardinal Markers -->
+          <polygon points="0,-98 -3,-104 0,-102 3,-104" fill="#fde047"/>
+          <polygon points="0,98 -3,104 0,102 3,104" fill="#fde047"/>
+          <polygon points="-98,0 -104,-3 -102,0 -104,3" fill="#fde047"/>
+          <polygon points="98,0 104,-3 102,0 104,3" fill="#fde047"/>
+        </g>
+
+        <!-- Fixed Outer Golden Rim Accent -->
+        <circle
+          id="af-sunclock-progress-arc"
+          class="af-sunclock-progress-arc"
+          cx="0"
+          cy="0"
+          r="98"
+          stroke="#fffbeb"
+          stroke-width="2.2"
+          stroke-linecap="round"
+          stroke-dasharray="615.8"
+          stroke-dashoffset="615.8"
+          filter="url(#afGoldGlow)"
+        />
+
+        <!-- 5 Sculpted Golden Lotus-Bud Crowns -->
+        ${crownsSvg}
+      </g>
+
+      <!-- 2. TRUE VECTOR 'AMARANTE' GLYPHS (3 Professional Reveal Options, Zero Yellow Dot) -->
+      <g id="af-svg-wordmark-mover">
+        <g id="af-svg-wordmark" filter="url(#afWordShadow)">
+          ${glyphGroupsSvg}
+          <line
+            id="af-opt3-gold-thread"
+            x1="310"
+            y1="296"
+            x2="698"
+            y2="296"
+            stroke="url(#afGoldLineGrad)"
+            stroke-width="1.35"
+            stroke-linecap="round"
+            pathLength="100"
+            stroke-dasharray="100 120"
+            stroke-dashoffset="105"
+            opacity="0"
+          />
+        </g>
+      </g>
+
+      <!-- 3. GOLDEN DIAMOND SWASH UNDERLINE (Draws outward from center diamond at 496, 308) -->
+      <g id="af-svg-swash">
+        <path
+          id="af-svg-swash-left"
+          d="M 480 308 C 432 308, 385 322, 315 315 C 262 310, 224 298, 196 290"
+          stroke="url(#afGoldLineGrad)"
+          stroke-width="1.85"
+          stroke-linecap="round"
+          pathLength="100"
+          stroke-dasharray="100"
+          stroke-dashoffset="100"
+        />
+        <path
+          id="af-svg-swash-right"
+          d="M 512 308 C 560 308, 612 294, 686 301 C 738 306, 774 316, 806 303"
+          stroke="url(#afGoldLineGrad)"
+          stroke-width="1.85"
+          stroke-linecap="round"
+          pathLength="100"
+          stroke-dasharray="100"
+          stroke-dashoffset="100"
+        />
+        <g id="af-svg-swash-diamond" transform="translate(496, 308) scale(0)">
+          <path d="M 0 -11 L 3.2 -3.2 L 11 0 L 3.2 3.2 L 0 11 L -3.2 3.2 L -11 0 L -3.2 -3.2 Z" fill="#fffbeb" stroke="#f59e0b" stroke-width="0.9"/>
+          <circle cx="0" cy="0" r="2.2" fill="#f59e0b"/>
+          <circle cx="-14" cy="0" r="1.6" fill="#fde68a"/>
+          <circle cx="14" cy="0" r="1.6" fill="#fde68a"/>
+        </g>
+      </g>
+
+      <!-- 4. VECTOR SAKURA BLOSSOM BRANCHES (Stems draw via stroke-dashoffset, then blossoms bloom) -->
+      <g id="af-svg-sakura-branches" filter="url(#afWordShadow)">
+        <!-- Branch A: Wrapping left stem of 'A' -->
+        <path
+          class="af-svg-branch-stem"
+          data-stem-idx="0"
+          d="M 314 278 C 258 270, 204 278, 142 256"
+          stroke="url(#afBranchWoodGrad)"
+          stroke-width="3.2"
+          stroke-linecap="round"
+          pathLength="100"
+          stroke-dasharray="100"
+          stroke-dashoffset="100"
+        />
+        <!-- Branch B: Sweeping directly from 'r-a' across 'n-t-e' -->
+        <path
+          class="af-svg-branch-stem"
+          data-stem-idx="1"
+          d="M 442 204 C 508 198, 566 166, 636 140 C 686 122, 728 110, 764 96"
+          stroke="url(#afBranchWoodGrad)"
+          stroke-width="3.4"
+          stroke-linecap="round"
+          pathLength="100"
+          stroke-dasharray="100"
+          stroke-dashoffset="100"
+        />
+        <path
+          class="af-svg-branch-stem"
+          data-stem-idx="2"
+          d="M 566 166 C 594 142, 612 116, 620 90"
+          stroke="url(#afBranchWoodGrad)"
+          stroke-width="2.2"
+          stroke-linecap="round"
+          pathLength="100"
+          stroke-dasharray="100"
+          stroke-dashoffset="100"
+        />
+        <!-- Branch C: Curling around right of 'e' -->
+        <path
+          class="af-svg-branch-stem"
+          data-stem-idx="3"
+          d="M 724 290 C 774 296, 808 276, 828 214"
+          stroke="url(#afBranchWoodGrad)"
+          stroke-width="2.8"
+          stroke-linecap="round"
+          pathLength="100"
+          stroke-dasharray="100"
+          stroke-dashoffset="100"
+        />
+
+        <!-- Leaves, Buds & 5-Petal Notched Sakura Blossoms (Ordered 0..17 for sequential bloom) -->
+        ${sakuraLeafSvg(0, 238, 272, 0.85, -48)}
+        ${sakuraBlossomSvg(1, 212, 272, 0.74, 18)}
+        ${sakuraLeafSvg(2, 190, 244, 0.9, 32)}
+        ${sakuraBlossomSvg(3, 174, 254, 1.05, -12)}
+        ${sakuraBudSvg(4, 146, 268, 0.85, -68)}
+
+        ${sakuraLeafSvg(5, 516, 190, 0.95, -36)}
+        ${sakuraBudSvg(6, 502, 166, 0.82, -18)}
+        ${sakuraBlossomSvg(7, 550, 170, 1.04, 14)}
+        ${sakuraBudSvg(8, 602, 116, 0.88, -14)}
+        ${sakuraLeafSvg(9, 620, 92, 0.82, 15)}
+        ${sakuraLeafSvg(10, 626, 146, 0.92, 58)}
+        ${sakuraBlossomSvg(11, 658, 134, 1.06, -8)}
+        ${sakuraLeafSvg(12, 698, 142, 0.88, 112)}
+        ${sakuraBudSvg(13, 732, 104, 0.84, 42)}
+        ${sakuraBudSvg(14, 764, 94, 0.76, 55)}
+
+        ${sakuraBlossomSvg(15, 792, 274, 0.78, -22)}
+        ${sakuraBlossomSvg(16, 816, 256, 0.94, 16)}
+        ${sakuraBudSvg(17, 828, 212, 0.82, 8)}
+      </g>
+    </svg>
+  `;
+}
 
 const SVG_AMARANTE_SWASH_FLOURISH = `
 <svg class="af-title-swash-svg" viewBox="0 0 420 50" fill="none" aria-hidden="true">
@@ -345,9 +869,9 @@ const APP_FLOW_CSS = `
       0 1px 4px rgba(15, 23, 42, 0.34);
     --af-accent: #b45309;
     --af-accent-gold: #f59e0b;
-    --af-cta-bg: #1a1714;
-    --af-cta-border: #d97706;
-    --af-cta-ink: #fef3c7;
+    --af-cta-bg: #f6d076;
+    --af-cta-border: #c9962c;
+    --af-cta-ink: #1f1c18;
   }
 
   html, body {
@@ -377,7 +901,7 @@ const APP_FLOW_CSS = `
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Fine-Grain Printmaker Dither Materialization Veil (Zero Chunky Blocks)  */
+  /* Pitch-Black Canvas + Smooth Organic Noise Dissolve (Zero Window Blinds) */
   /* ----------------------------------------------------------------------- */
   #af-pixel-veil {
     position: fixed;
@@ -385,17 +909,17 @@ const APP_FLOW_CSS = `
     z-index: 0;
     pointer-events: none;
     background: transparent;
-    backdrop-filter: blur(var(--af-blur-px, 12px)) saturate(1.14) brightness(1.02);
-    -webkit-backdrop-filter: blur(var(--af-blur-px, 12px)) saturate(1.14) brightness(1.02);
     opacity: 1;
-    transition: opacity 420ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: opacity;
+    transition: opacity 380ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   #af-pixel-veil-canvas {
     width: 100%;
     height: 100%;
     display: block;
-    image-rendering: auto;
+    opacity: 1;
+    pointer-events: none;
   }
 
   #haru-app-flow-root[data-step="in_game"] {
@@ -404,9 +928,7 @@ const APP_FLOW_CSS = `
 
   #af-pixel-veil.is-resolved {
     opacity: 0;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    display: none;
+    pointer-events: none;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -433,20 +955,21 @@ const APP_FLOW_CSS = `
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Shared Surface & Button Foundations                                     */
+  /* Shared Open-Air Ivory Hairline & Whisper Glass Foundations              */
   /* ----------------------------------------------------------------------- */
   .af-hairline-frame {
     position: relative;
     pointer-events: auto;
-    background: var(--af-surface);
-    border: 1.5px solid var(--af-border);
-    border-radius: 18px;
+    background: rgba(24, 22, 18, 0.24);
+    backdrop-filter: blur(14px) saturate(125%);
+    -webkit-backdrop-filter: blur(14px) saturate(125%);
+    border: 1px solid rgba(255, 253, 246, 0.78);
+    border-radius: 26px;
     box-shadow:
-      inset 0 1px 0 #ffffff,
-      inset 0 -2px 0 #ece1cf,
-      0 18px 42px rgba(20, 16, 10, 0.22),
-      0 4px 12px rgba(20, 16, 10, 0.10);
-    color: var(--af-ink);
+      inset 0 0 0 1px rgba(254, 240, 138, 0.20),
+      0 18px 42px rgba(15, 23, 42, 0.22),
+      0 4px 12px rgba(15, 23, 42, 0.12);
+    color: #fffdf9;
   }
 
   .af-hairline-pill-btn {
@@ -455,23 +978,26 @@ const APP_FLOW_CSS = `
     pointer-events: auto;
     cursor: pointer;
     border-radius: 999px;
-    border: 1.5px solid var(--af-border-strong);
-    background: var(--af-surface);
+    background: rgba(24, 22, 18, 0.22);
+    backdrop-filter: blur(12px) saturate(125%);
+    -webkit-backdrop-filter: blur(12px) saturate(125%);
+    border: 1px solid rgba(255, 253, 246, 0.82);
     box-shadow:
-      inset 0 1px 0 #ffffff,
-      0 10px 26px rgba(20, 16, 10, 0.20);
-    color: var(--af-ink);
-    font-family: var(--af-font-sans);
+      inset 0 0 0 1px rgba(254, 240, 138, 0.22),
+      0 8px 24px rgba(15, 23, 42, 0.18);
+    color: #fffdf9;
+    text-shadow: 0 1px 6px rgba(15, 23, 42, 0.38);
+    font-family: "Playfair Display", "Cormorant Garamond", Georgia, serif;
     font-weight: 700;
     letter-spacing: -0.01em;
     white-space: nowrap;
     -webkit-tap-highlight-color: transparent;
     transition:
-      transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
-      border-color 160ms ease-out,
-      background-color 160ms ease-out,
-      box-shadow 160ms ease-out,
-      color 160ms ease-out;
+      transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 180ms ease-out,
+      background-color 180ms ease-out,
+      box-shadow 180ms ease-out,
+      opacity 220ms ease-out;
   }
 
   .af-hairline-pill-btn:focus-visible,
@@ -501,198 +1027,199 @@ const APP_FLOW_CSS = `
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Screen 1: Unified Landing + Dither Reveal + Fixed Morphing Pill         */
+  /* Screen 1: Fixed Celestial Sun-Clock, Paintbrush Amarante & Glass Pill   */
   /* ----------------------------------------------------------------------- */
   .af-scene-title {
     flex-direction: column;
     align-items: center;
-    justify-content: flex-start;
-    padding-top: min(11vh, 88px);
+    justify-content: space-between;
+    padding: 0 !important;
   }
 
   .af-title-stack {
+    position: relative;
+    width: 100%;
+    height: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: space-between;
     text-align: center;
-    max-width: 780px;
   }
 
-  .af-sakura-divider-svg {
-    width: 236px;
-    height: 28px;
-    color: var(--af-sky-ink);
-    filter: drop-shadow(0 2px 8px rgba(15, 23, 42, 0.36));
-    margin-bottom: 6px;
+  .af-celestial-lockup-wrap {
+    position: absolute;
+    left: calc(50% - 56.39vh);
+    top: 0.80vh;
+    width: 113.96vh;
+    height: 40.88vh;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
   }
 
-  .af-main-title {
-    font-family: var(--af-font-sans);
-    font-size: clamp(4.2rem, 7.6vw, 6.2rem);
-    font-weight: 800;
-    line-height: 0.98;
-    letter-spacing: -0.04em;
-    color: var(--af-sky-ink);
-    text-shadow: var(--af-sky-shadow);
-    margin: 0;
-    padding: 0 14px 4px 14px;
+  .af-pure-celestial-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    overflow: visible;
+    filter: drop-shadow(0 4px 16px rgba(15, 23, 42, 0.16));
   }
 
+  .af-sunclock-progress-arc {
+    transform: rotate(-90deg);
+    transform-origin: 0px 0px;
+  }
+
+  #af-svg-wordmark-mover,
+  .af-svg-crown,
+  .af-svg-blossom,
+  .af-svg-numeral {
+    will-change: transform, opacity;
+  }
+
+  /* Drifting Sakura Petals across the Amarante Branch */
+  @keyframes afPetalDriftA {
+    0% { transform: translate3d(0, 0, 0) rotate(0deg); opacity: 0; }
+    20% { opacity: 0.92; }
+    80% { opacity: 0.88; }
+    100% { transform: translate3d(68px, 44px, 0) rotate(145deg); opacity: 0; }
+  }
+
+  @keyframes afPetalDriftB {
+    0% { transform: translate3d(0, 0, 0) rotate(0deg); opacity: 0; }
+    20% { opacity: 0.88; }
+    80% { opacity: 0.82; }
+    100% { transform: translate3d(-54px, 48px, 0) rotate(-130deg); opacity: 0; }
+  }
+
+  .af-branch-petal {
+    position: absolute;
+    width: 10px;
+    height: 6.5px;
+    border-radius: 80% 15% 80% 15%;
+    background: linear-gradient(135deg, #ffe4ee 0%, #f48fb1 100%);
+    box-shadow: 0 1px 4px rgba(244, 143, 177, 0.32);
+    pointer-events: none;
+    will-change: transform, opacity;
+  }
+
+  .af-branch-petal.p1 { left: 61%; top: 28%; animation: afPetalDriftA 4.4s ease-in-out infinite; }
+  .af-branch-petal.p2 { left: 72%; top: 22%; animation: afPetalDriftB 5.1s ease-in-out 1.1s infinite; }
+  .af-branch-petal.p3 { left: 21%; top: 64%; animation: afPetalDriftA 4.8s ease-in-out 0.6s infinite; }
+  .af-branch-petal.p4 { left: 82%; top: 56%; animation: afPetalDriftB 4.2s ease-in-out 1.9s infinite; }
+
+  .af-main-title.sr-only,
+  .af-subtitle.sr-only,
+  .af-sakura-divider-svg,
   .af-title-swash-svg {
-    width: clamp(230px, 27vw, 316px);
-    height: 32px;
-    color: var(--af-sky-ink);
-    filter: drop-shadow(0 2px 8px rgba(15, 23, 42, 0.34));
-    margin-top: -2px;
-    margin-bottom: 8px;
-  }
-
-  .af-subtitle {
-    font-family: var(--af-font-sans);
-    font-size: clamp(0.92rem, 1.35vw, 1.08rem);
-    font-weight: 700;
-    line-height: 1.35;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: #fef9ec;
-    text-shadow: 0 2px 10px rgba(15, 23, 42, 0.48), 0 1px 2px rgba(15, 23, 42, 0.42);
-    margin: 0 0 28px 0;
-    padding: 5px 18px;
-    border-radius: 999px;
-    background: rgba(24, 20, 14, 0.28);
-    border: 1px solid rgba(255, 251, 235, 0.32);
-  }
-
-  /* Strictly Fixed-Dimension Morphing Pill (224px x 50px — Never Jumps, <= 3 Words) */
-  .af-enter-btn {
-    position: relative;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
     overflow: hidden;
-    width: 224px;
-    min-width: 224px;
-    max-width: 224px;
-    height: 50px;
-    min-height: 50px;
-    max-height: 50px;
-    padding: 0 18px;
-    background: #faf6ee;
-    border: 1.5px solid #c8b494;
-    color: var(--af-ink);
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* ----------------------------------------------------------------------- */
+  /* Slightly Larger Open-Air Ivory Hairline & Whisper Glass Pill (Ready Only)*/
+  /* ----------------------------------------------------------------------- */
+  .af-enter-btn {
+    position: absolute;
+    left: 50%;
+    bottom: max(4.8vh, 22px);
+    transform: translateX(-50%);
+    width: clamp(268px, 26vw, 336px);
+    min-width: 268px;
+    max-width: 336px;
+    height: 54px;
+    min-height: 54px;
+    max-height: 54px;
+    padding: 0 28px;
+    border-radius: 999px;
+    background: rgba(24, 22, 18, 0.22) !important;
+    backdrop-filter: blur(12px) saturate(125%);
+    -webkit-backdrop-filter: blur(12px) saturate(125%);
+    border: 1px solid rgba(255, 253, 246, 0.82) !important;
+    box-shadow:
+      inset 0 0 0 1px rgba(254, 240, 138, 0.24),
+      0 8px 24px rgba(15, 23, 42, 0.18) !important;
+    color: #fffdf9;
+    text-shadow: 0 1px 6px rgba(15, 23, 42, 0.38);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.98rem;
-    font-weight: 700;
-    box-shadow:
-      inset 0 1px 0 #ffffff,
-      0 14px 32px rgba(15, 23, 42, 0.28);
+    overflow: hidden;
+    filter: none;
+    transition:
+      transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 240ms cubic-bezier(0.16, 1, 0.3, 1),
+      background-color 220ms ease,
+      border-color 220ms ease,
+      box-shadow 220ms ease;
   }
 
   .af-enter-btn.is-loading {
+    opacity: 0;
     pointer-events: none;
     cursor: default;
-    background: #faf6ee;
   }
 
   .af-enter-btn.is-ready {
+    opacity: 1;
     pointer-events: auto;
     cursor: pointer;
-    background: #1a1714;
-    border-color: #f59e0b;
-    color: #fef3c7;
-    box-shadow:
-      inset 0 0 0 1px rgba(251, 191, 36, 0.35),
-      0 14px 34px rgba(15, 23, 42, 0.36);
   }
 
   @media (hover: hover) {
     .af-enter-btn.is-ready:not(:disabled):hover {
-      background: #29241e;
-      border-color: #fbbf24;
-      transform: translateY(-1px);
+      transform: translateX(-50%) translateY(-1.5px);
+      background: rgba(24, 22, 18, 0.32) !important;
+      border-color: rgba(255, 253, 246, 0.96) !important;
+      box-shadow:
+        inset 0 0 0 1px rgba(254, 240, 138, 0.40),
+        0 12px 28px rgba(15, 23, 42, 0.24) !important;
     }
   }
 
-  /* Living bottom horizon bar across the fixed pill */
-  .af-morph-progress-fill {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 3.5px;
-    width: 100% !important;
-    background: linear-gradient(90deg, #d97706 0%, #fbbf24 50%, #d97706 100%);
-    transition: height 340ms cubic-bezier(0.22, 1, 0.36, 1), opacity 280ms ease;
-    pointer-events: none;
-    z-index: 0;
+  @media (prefers-reduced-motion: no-preference) {
+    .af-enter-btn.is-ready:not(:disabled):active {
+      transform: translateX(-50%) scale(0.975);
+    }
   }
 
-  .af-enter-btn.is-ready .af-morph-progress-fill {
-    height: 100%;
-    opacity: 0;
+  .af-morph-progress-fill,
+  .af-wax-seal-live-ring,
+  .af-morph-loading-layer {
+    display: none !important;
   }
 
-  .af-morph-loading-layer,
   .af-morph-ready-layer {
-    position: relative;
-    z-index: 1;
-    width: 100%;
+    position: absolute;
+    inset: 0;
+    z-index: 2;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    transition: opacity 260ms ease, transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .af-morph-loading-layer {
-    font-size: 0.91rem;
+    text-align: center;
+    padding: 0 24px;
+    font-family: "Playfair Display", "Cormorant Garamond", Georgia, serif;
+    font-style: normal;
     font-weight: 700;
-    color: #1f1c18;
-    white-space: nowrap;
-  }
-
-  .af-enter-btn.is-ready .af-morph-loading-layer {
-    position: absolute;
-    opacity: 0;
-    transform: translateY(-12px) scale(0.96);
-    pointer-events: none;
-  }
-
-  .af-morph-ready-layer {
-    position: absolute;
-    opacity: 0;
-    transform: translateY(12px) scale(0.96);
-    pointer-events: none;
-    font-size: 0.98rem;
-    font-weight: 700;
+    font-size: clamp(1.28rem, 2.0vw, 1.52rem);
+    letter-spacing: -0.01em;
     color: inherit;
     white-space: nowrap;
-  }
-
-  .af-enter-btn.is-ready .af-morph-ready-layer {
-    position: relative;
     opacity: 1;
-    transform: translateY(0) scale(1);
     pointer-events: auto;
   }
 
-  @keyframes afSpinSpark {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-
-  .af-prep-spark-svg {
-    width: 14px;
-    height: 14px;
-    color: #d97706;
-    animation: afSpinSpark 3.6s linear infinite;
-    flex-shrink: 0;
-  }
-
+  .af-prep-spark-svg,
   .af-btn-sprig-svg {
-    width: 18px;
-    height: 15px;
-    flex-shrink: 0;
-    color: #fbbf24;
+    display: none;
   }
 
   /* ----------------------------------------------------------------------- */
@@ -716,9 +1243,10 @@ const APP_FLOW_CSS = `
   .af-loading-title {
     font-size: 0.95rem;
     font-weight: 600;
-    color: var(--af-ink);
-    background: var(--af-surface);
-    border: 1px solid var(--af-border);
+    color: #fffdf9;
+    background: rgba(24, 22, 18, 0.24);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 253, 246, 0.78);
     border-radius: 999px;
     padding: 4px 14px;
     line-height: 1.2;
@@ -744,12 +1272,12 @@ const APP_FLOW_CSS = `
     height: 100%;
     width: 62%;
     border-radius: 999px;
-    background: var(--af-accent-gold);
+    background: #fde68a;
     transition: width 180ms ease-out;
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Screen 2: Meet in the Valley (FLOW_STEPS.CREATE_JOIN)                   */
+  /* Screen 2: Meet in the Valley (Glassy Hairline Pills & Whisper Cards)    */
   /* ----------------------------------------------------------------------- */
   .af-scene-create-join {
     flex-direction: column;
@@ -768,11 +1296,12 @@ const APP_FLOW_CSS = `
   }
 
   .af-create-join-header {
-    font-family: var(--af-font-sans);
-    font-size: clamp(2.2rem, 3.8vw, 3.0rem);
-    font-weight: 800;
+    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+    font-style: italic;
+    font-size: clamp(2.4rem, 4.2vw, 3.3rem);
+    font-weight: 600;
     line-height: 1.08;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.01em;
     color: var(--af-sky-ink);
     text-shadow: var(--af-sky-shadow);
     margin: 0;
@@ -806,7 +1335,6 @@ const APP_FLOW_CSS = `
     gap: 14px;
   }
 
-  /* Integrated Inset Medallion Header (Replaces clumsy protruding top border pill) */
   .af-tablet-top-emblem {
     display: inline-flex;
     align-items: center;
@@ -814,12 +1342,12 @@ const APP_FLOW_CSS = `
     width: 48px;
     height: 30px;
     border-radius: 999px;
-    background: #1a1714;
-    border: 1px solid #d97706;
-    color: #fbbf24;
+    background: rgba(255, 253, 246, 0.16);
+    border: 1px solid rgba(254, 240, 138, 0.65);
+    color: #fef08a;
     pointer-events: none;
     margin-bottom: 2px;
-    box-shadow: 0 3px 10px rgba(24, 20, 14, 0.14);
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.14);
   }
 
   .af-top-emblem-svg {
@@ -841,23 +1369,24 @@ const APP_FLOW_CSS = `
   }
 
   .af-tablet-heading {
-    font-family: var(--af-font-sans);
-    font-size: 1.36rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
+    font-family: "Playfair Display", "Cormorant Garamond", Georgia, serif;
+    font-size: 1.42rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
     line-height: 1.18;
-    color: var(--af-ink);
+    color: #fffdf9;
+    text-shadow: 0 1px 6px rgba(15, 23, 42, 0.35);
     margin: 0;
   }
 
   .af-card-thin-divider-svg {
     width: 168px;
     height: 10px;
-    color: var(--af-border-strong);
+    color: rgba(254, 240, 138, 0.72);
     opacity: 0.9;
   }
 
-  /* Interactive Phrase Selector Pill with Shuffle Glyph via ::after */
+  /* Glassy Hairline Phrase Selector Pill */
   .af-active-phrase-display {
     position: relative;
     display: inline-flex;
@@ -865,29 +1394,31 @@ const APP_FLOW_CSS = `
     justify-content: center;
     font-family: var(--af-font-sans);
     font-size: 0.94rem;
-    font-weight: 700;
+    font-weight: 600;
     line-height: 1.2;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--af-ink);
-    background: var(--af-surface-muted);
-    border: 1.5px solid var(--af-border-strong);
-    border-radius: 12px;
-    height: 42px;
-    padding: 0 36px 0 14px;
+    color: #fffdf9;
+    background: rgba(24, 22, 18, 0.22);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 253, 246, 0.65);
+    border-radius: 999px;
+    height: 44px;
+    padding: 0 36px 0 18px;
     margin: 8px 0 4px 0;
     cursor: pointer;
     user-select: none;
     width: 92%;
-    box-shadow: inset 0 1px 2px rgba(24, 20, 14, 0.06);
+    box-shadow: inset 0 0 0 1px rgba(254, 240, 138, 0.16);
     transition: border-color 150ms ease-out, background-color 150ms ease-out, transform 120ms ease-out;
   }
 
   .af-active-phrase-display::after {
     content: "";
     position: absolute;
-    right: 11px;
+    right: 13px;
     top: 50%;
     transform: translateY(-50%);
     width: 18px;
@@ -896,19 +1427,19 @@ const APP_FLOW_CSS = `
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
-    opacity: 0.85;
+    filter: brightness(1.85);
+    opacity: 0.9;
   }
 
   .af-active-phrase-display:hover {
-    border-color: var(--af-accent);
-    background: #ffffff;
+    border-color: rgba(255, 253, 246, 0.95);
+    background: rgba(24, 22, 18, 0.34);
   }
 
   .af-active-phrase-display:active {
     transform: scale(0.985);
   }
 
-  /* Keep [data-phrase-chip] in DOM for programmatic tests while hiding stacked boxes */
   .af-phrase-chips-wrap {
     position: absolute;
     width: 1px;
@@ -947,54 +1478,65 @@ const APP_FLOW_CSS = `
 
   .af-phrase-input {
     width: 92%;
-    height: 42px;
-    padding: 6px 14px;
-    border: 1.5px solid var(--af-border-strong);
-    border-radius: 12px;
-    background: #ffffff;
+    height: 44px;
+    padding: 6px 18px;
+    border: 1px solid rgba(255, 253, 246, 0.65);
+    border-radius: 999px;
+    background: rgba(24, 22, 18, 0.22);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     font-family: var(--af-font-sans);
     font-size: 0.94rem;
-    font-weight: 700;
+    font-weight: 600;
     text-align: center;
-    color: var(--af-ink);
-    box-shadow: inset 0 1px 3px rgba(24, 20, 14, 0.08);
-    transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+    color: #fffdf9;
+    box-shadow: inset 0 0 0 1px rgba(254, 240, 138, 0.16);
+    transition: border-color 150ms ease-out, box-shadow 150ms ease-out, background-color 150ms ease-out;
   }
 
   .af-phrase-input:focus {
-    border-color: var(--af-accent);
-    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22);
+    border-color: rgba(255, 253, 246, 0.96);
+    background: rgba(24, 22, 18, 0.34);
+    box-shadow: 0 0 0 3px rgba(254, 240, 138, 0.24);
     outline: none;
   }
 
   .af-phrase-input::placeholder {
-    color: var(--af-ink-muted);
+    color: rgba(255, 253, 249, 0.62);
     font-weight: 500;
-    opacity: 0.72;
   }
 
+  /* Glassy Hairline Action Pills for Create & Join */
   .af-domain-action-btn {
     width: 92%;
-    min-height: 46px;
-    padding: 10px 22px;
-    background: #1a1714;
-    color: #fef3c7;
-    border: 1.5px solid #d97706;
+    min-height: 48px;
+    padding: 10px 24px;
+    border-radius: 999px;
+    background: rgba(255, 253, 246, 0.16);
+    backdrop-filter: blur(12px) saturate(125%);
+    -webkit-backdrop-filter: blur(12px) saturate(125%);
+    color: #fffdf9;
+    border: 1px solid rgba(255, 253, 246, 0.86);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.14),
-      0 6px 16px rgba(24, 20, 14, 0.18);
-    font-size: 1.0rem;
+      inset 0 0 0 1px rgba(254, 240, 138, 0.26),
+      0 8px 22px rgba(15, 23, 42, 0.18);
+    font-family: "Playfair Display", "Cormorant Garamond", Georgia, serif;
+    font-size: 1.12rem;
     font-weight: 700;
     letter-spacing: 0.01em;
+    text-shadow: 0 1px 6px rgba(15, 23, 42, 0.36);
     margin: 0 auto;
   }
 
   @media (hover: hover) {
     .af-domain-action-btn:not(:disabled):hover {
-      background: #29241e;
-      border-color: #fbbf24;
-      color: #ffffff;
-      transform: translateY(-1px);
+      background: rgba(255, 253, 246, 0.28);
+      border-color: #ffffff;
+      color: #fffdf9;
+      transform: translateY(-1.5px);
+      box-shadow:
+        inset 0 0 0 1px rgba(254, 240, 138, 0.42),
+        0 12px 26px rgba(15, 23, 42, 0.24);
     }
   }
 
@@ -1005,9 +1547,10 @@ const APP_FLOW_CSS = `
     gap: 8px;
     padding: 8px 18px;
     border-radius: 999px;
-    background: #fff1f2;
-    border: 1.5px solid #f43f5e;
-    color: #9f1239;
+    background: rgba(159, 18, 57, 0.78);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 241, 242, 0.82);
+    color: #fff1f2;
     font-size: 0.95rem;
     font-weight: 600;
   }
@@ -1017,7 +1560,7 @@ const APP_FLOW_CSS = `
   }
 
   /* ----------------------------------------------------------------------- */
-  /* Screen 3: Flower Field 3D Hero Claim (FLOW_STEPS.FLOWER_LOBBY)          */
+  /* Screen 3: Flower Field 3D Hero Claim (Glassy Hairline Pills & Badges)   */
   /* ----------------------------------------------------------------------- */
   .af-scene-flower-lobby {
     flex-direction: column;
@@ -1031,7 +1574,6 @@ const APP_FLOW_CSS = `
     pointer-events: none;
   }
 
-  /* 3D-Projected Hero Hit Targets (Invisible hit box, never draws a box over hero face) */
   .af-hero-hit-target {
     position: absolute;
     transform: translate(-50%, -50%);
@@ -1044,7 +1586,7 @@ const APP_FLOW_CSS = `
     border-radius: 26px;
     background: transparent;
     border: none;
-    color: var(--af-ink);
+    color: #fffdf9;
     font-family: inherit;
     display: flex;
     flex-direction: column;
@@ -1084,19 +1626,21 @@ const APP_FLOW_CSS = `
     display: inline-flex;
     align-items: center;
     gap: 9px;
-    padding: 6px 15px 6px 8px;
+    padding: 7px 16px 7px 9px;
     border-radius: 999px;
-    background: #faf6ee;
-    border: 1.5px solid #c8b494;
+    background: rgba(24, 22, 18, 0.24);
+    backdrop-filter: blur(12px) saturate(125%);
+    -webkit-backdrop-filter: blur(12px) saturate(125%);
+    border: 1px solid rgba(255, 253, 246, 0.82);
     box-shadow:
-      inset 0 1px 0 #ffffff,
-      0 10px 24px rgba(20, 16, 10, 0.24);
+      inset 0 0 0 1px rgba(254, 240, 138, 0.22),
+      0 10px 24px rgba(15, 23, 42, 0.22);
     white-space: nowrap;
-    transition: opacity 150ms ease-out, transform 150ms ease-out;
+    transition: opacity 150ms ease-out, transform 150ms ease-out, border-color 150ms ease-out;
   }
 
   .af-hero-hit-target:hover .af-hero-ring-badge {
-    border-color: #d97706;
+    border-color: #ffffff;
     transform: translate(-50%, calc(-100% - 2px));
   }
 
@@ -1105,8 +1649,9 @@ const APP_FLOW_CSS = `
     height: 26px;
     padding: 4px;
     border-radius: 50%;
-    background: #1a1714;
-    color: #fbbf24;
+    background: rgba(255, 253, 246, 0.16);
+    border: 1px solid rgba(254, 240, 138, 0.72);
+    color: #fef08a;
     flex-shrink: 0;
   }
 
@@ -1119,18 +1664,19 @@ const APP_FLOW_CSS = `
   }
 
   .af-crest-role {
-    font-size: 0.94rem;
-    font-weight: 800;
-    color: var(--af-ink);
+    font-family: "Playfair Display", Georgia, serif;
+    font-size: 0.96rem;
+    font-weight: 700;
+    color: #fffdf9;
   }
 
   .af-crest-hint {
     font-size: 0.76rem;
     font-weight: 600;
-    color: #786954;
+    color: rgba(255, 253, 249, 0.78);
   }
 
-  /* Partner Name Pill above the other hero */
+  /* Partner Name Glassy Pill above the other hero */
   #app-flow-partner-tag {
     position: absolute;
     left: 64%;
@@ -1141,15 +1687,19 @@ const APP_FLOW_CSS = `
     flex-direction: column;
     align-items: center;
     gap: 2px;
-    background: #faf6ee;
-    border: 1.5px solid #c8b494;
-    border-radius: 14px;
-    padding: 6px 16px;
-    box-shadow: 0 10px 24px rgba(20, 16, 10, 0.22);
-    color: var(--af-ink);
-    font-family: var(--af-font-sans);
+    background: rgba(24, 22, 18, 0.24);
+    backdrop-filter: blur(12px) saturate(125%);
+    -webkit-backdrop-filter: blur(12px) saturate(125%);
+    border: 1px solid rgba(255, 253, 246, 0.82);
+    border-radius: 999px;
+    padding: 7px 18px;
+    box-shadow:
+      inset 0 0 0 1px rgba(254, 240, 138, 0.22),
+      0 10px 24px rgba(15, 23, 42, 0.22);
+    color: #fffdf9;
+    font-family: "Playfair Display", Georgia, serif;
     font-size: 1.02rem;
-    font-weight: 800;
+    font-weight: 700;
     line-height: 1.15;
     white-space: nowrap;
     opacity: 0;
@@ -1163,23 +1713,25 @@ const APP_FLOW_CSS = `
   .af-partner-blossom-svg {
     width: 110px;
     height: 16px;
-    color: #b45309;
+    color: #fef08a;
   }
 
-  /* Floating Shoulder Callout ("Your name: Vikas") */
+  /* Floating Glassy Hairline Shoulder Callout ("Your name: Vikas") */
   #app-flow-name-bubble {
     position: absolute;
     left: 28%;
     top: 26%;
     transform: translate(-50%, -50%);
-    width: min(296px, 86vw);
-    background: #faf6ee;
-    border: 1.5px solid #c8b494;
-    border-radius: 16px;
-    padding: 9px 12px 9px 16px;
+    width: min(304px, 86vw);
+    background: rgba(24, 22, 18, 0.26);
+    backdrop-filter: blur(14px) saturate(125%);
+    -webkit-backdrop-filter: blur(14px) saturate(125%);
+    border: 1px solid rgba(255, 253, 246, 0.84);
+    border-radius: 999px;
+    padding: 8px 10px 8px 18px;
     box-shadow:
-      inset 0 1px 0 #ffffff,
-      0 14px 30px rgba(20, 16, 10, 0.24);
+      inset 0 0 0 1px rgba(254, 240, 138, 0.24),
+      0 14px 30px rgba(15, 23, 42, 0.24);
     pointer-events: auto;
     z-index: 4;
     transition:
@@ -1218,8 +1770,8 @@ const APP_FLOW_CSS = `
   .af-inline-name-prompt {
     font-family: var(--af-font-sans);
     font-size: 0.9rem;
-    font-weight: 700;
-    color: #574e40;
+    font-weight: 600;
+    color: rgba(255, 253, 249, 0.82);
     white-space: nowrap;
     flex-shrink: 0;
   }
@@ -1230,46 +1782,45 @@ const APP_FLOW_CSS = `
     height: 32px;
     padding: 0 6px;
     border: none;
-    border-bottom: 2px solid #bca686;
+    border-bottom: 1.5px solid rgba(255, 253, 246, 0.55);
     background: transparent;
-    font-family: var(--af-font-sans);
-    font-size: 1.04rem;
-    font-weight: 800;
-    color: var(--af-ink);
+    font-family: "Playfair Display", Georgia, serif;
+    font-size: 1.06rem;
+    font-weight: 700;
+    color: #fffdf9;
   }
 
   .af-name-input:focus {
     outline: none;
-    border-bottom-color: #d97706;
+    border-bottom-color: #fef08a;
   }
 
   .af-name-input::placeholder {
-    color: #8c7e6a;
+    color: rgba(255, 253, 249, 0.58);
     font-weight: 600;
-    opacity: 0.72;
   }
 
   .af-name-submit-btn {
     appearance: none;
     cursor: pointer;
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
     border-radius: 50%;
-    border: 1.5px solid #d97706;
-    background: #1a1714;
-    color: #fef3c7;
+    border: 1px solid rgba(255, 253, 246, 0.88);
+    background: rgba(255, 253, 246, 0.20);
+    color: #fffdf9;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
     align-self: center;
     -webkit-tap-highlight-color: transparent;
-    transition: transform 150ms ease-out, background-color 150ms ease-out;
+    transition: transform 150ms ease-out, background-color 150ms ease-out, border-color 150ms ease-out;
   }
 
   .af-name-submit-btn:hover {
-    background: #29241e;
-    border-color: #fbbf24;
+    background: rgba(255, 253, 246, 0.34);
+    border-color: #ffffff;
   }
 
   .af-submit-arrow-svg {
@@ -1284,7 +1835,7 @@ const APP_FLOW_CSS = `
     transform: translateX(-50%);
     width: 210px;
     height: 48px;
-    color: #faf6ee;
+    color: rgba(255, 253, 246, 0.85);
     pointer-events: none;
     display: none;
   }
@@ -1297,7 +1848,7 @@ const APP_FLOW_CSS = `
     display: block;
   }
 
-  /* Bottom Sanctuary Room-Phrase Dock + Solo Escape Hatch */
+  /* Bottom Sanctuary Room-Phrase Dock + Solo Escape Hatch (Glassy Pills) */
   .af-lobby-bottom-row {
     position: relative;
     z-index: 3;
@@ -1315,30 +1866,32 @@ const APP_FLOW_CSS = `
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    background: #faf6ee;
-    border: 1.5px solid #c8b494;
+    background: rgba(24, 22, 18, 0.22);
+    backdrop-filter: blur(12px) saturate(125%);
+    -webkit-backdrop-filter: blur(12px) saturate(125%);
+    border: 1px solid rgba(255, 253, 246, 0.80);
     border-radius: 999px;
     padding: 6px 8px 6px 18px;
     box-shadow:
-      inset 0 1px 0 #ffffff,
-      0 10px 24px rgba(20, 16, 10, 0.20);
-    color: var(--af-ink);
+      inset 0 0 0 1px rgba(254, 240, 138, 0.20),
+      0 10px 24px rgba(15, 23, 42, 0.18);
+    color: #fffdf9;
   }
 
   .af-room-phrase-lbl {
     font-family: var(--af-font-sans);
     font-size: 0.94rem;
-    font-weight: 700;
-    color: var(--af-ink);
+    font-weight: 600;
+    color: #fffdf9;
     white-space: nowrap;
   }
 
   .af-copy-btn {
     position: relative;
     appearance: none;
-    border: 1px solid #bca686;
-    background: #f1e9d8;
-    color: var(--af-ink);
+    border: 1px solid rgba(255, 253, 246, 0.72);
+    background: rgba(255, 253, 246, 0.16);
+    color: #fffdf9;
     width: 30px;
     height: 30px;
     border-radius: 50%;
@@ -1351,8 +1904,8 @@ const APP_FLOW_CSS = `
   }
 
   .af-copy-btn:hover {
-    background: #ffffff;
-    border-color: #d97706;
+    background: rgba(255, 253, 246, 0.30);
+    border-color: #ffffff;
   }
 
   .af-copy-btn .af-icon-svg {
@@ -1365,7 +1918,7 @@ const APP_FLOW_CSS = `
   .af-copy-btn .af-check-svg {
     opacity: 0;
     transform: scale(0.4);
-    color: #16a34a;
+    color: #86efac;
   }
 
   .af-copy-btn.is-copied .af-copy-svg {
@@ -1383,20 +1936,24 @@ const APP_FLOW_CSS = `
     appearance: none;
     cursor: pointer;
     border-radius: 999px;
-    border: 1.5px solid #d97706;
-    background: #1a1714;
-    color: #fef3c7;
-    padding: 9px 20px;
-    font-family: var(--af-font-sans);
-    font-size: 0.92rem;
+    background: rgba(24, 22, 18, 0.22);
+    backdrop-filter: blur(12px) saturate(125%);
+    -webkit-backdrop-filter: blur(12px) saturate(125%);
+    border: 1px solid rgba(255, 253, 246, 0.82);
+    color: #fffdf9;
+    padding: 9px 22px;
+    font-family: "Playfair Display", Georgia, serif;
+    font-size: 0.96rem;
     font-weight: 700;
-    box-shadow: 0 10px 24px rgba(20, 16, 10, 0.24);
-    transition: transform 140ms ease-out, background-color 140ms ease-out;
+    box-shadow:
+      inset 0 0 0 1px rgba(254, 240, 138, 0.22),
+      0 10px 24px rgba(15, 23, 42, 0.18);
+    transition: transform 140ms ease-out, background-color 140ms ease-out, border-color 140ms ease-out;
   }
 
   .af-solo-dev-btn:hover {
-    background: #29241e;
-    border-color: #fbbf24;
+    background: rgba(24, 22, 18, 0.34);
+    border-color: #ffffff;
   }
 
   @media (max-width: 780px) {
@@ -1458,6 +2015,7 @@ export function createAppFlow({
   onCreateWorld = null,
   onJoinWorld = null,
   onRoleSelect = null,
+  onLobbyClaim = null,
   onToggleReady = null,
   onStartGame = null,
   onFlowStepChanged = null,
@@ -1497,7 +2055,7 @@ export function createAppFlow({
     lastDitherProgress: 0.05,
     roomPhrase: roomFromUrl || initialRoomPhrase || 'Rain on warm limestone',
     isHost: !roomFromUrl,
-    localRole: 'Knight',
+    localRole: roomFromUrl ? 'Mage' : 'Knight',
     hostRole: 'Knight',
     partnerRole: 'Mage',
     playerName: '',
@@ -1505,8 +2063,9 @@ export function createAppFlow({
     localClaimed: false,
     partnerClaimed: false,
     playerCount: 1,
-    guestReady: true,
+    guestReady: false,
     peerConnected: false,
+    expeditionStarted: false,
     loadingProgress: 0.62,
     error: '',
     heroScreenPositions: {
@@ -1529,17 +2088,26 @@ export function createAppFlow({
     .join('');
 
   root.innerHTML = `
+    <div id="app-flow-root" data-step="${state.step}" style="display:contents"></div>
     <div id="af-pixel-veil" aria-hidden="true">
       <canvas id="af-pixel-veil-canvas"></canvas>
     </div>
 
-    <!-- 1. UNIFIED LANDING + DITHER REVEAL + MORPHING PLAY SCREEN (FLOW_STEPS.TITLE) -->
-    <section class="af-scene af-scene-title" data-flow-scene="title" aria-label="Title Screen">
+    <!-- 1. FIXED CELESTIAL SUN-CLOCK + CALLIGRAPHIC PAINTBRUSH AMARANTE + GLASSY PILL -->
+    <section class="af-scene af-scene-title is-loading-active" data-flow-scene="title" aria-label="Title Screen">
       <div class="af-title-stack">
+        <div class="af-celestial-lockup-wrap" aria-hidden="true">
+          ${buildPureSvgCelestialTitleLockup()}
+          <span class="af-branch-petal p1"></span>
+          <span class="af-branch-petal p2"></span>
+          <span class="af-branch-petal p3"></span>
+          <span class="af-branch-petal p4"></span>
+        </div>
+
         ${SVG_OPEN_AIR_DIVIDER}
-        <h1 class="af-main-title">Amarante</h1>
+        <h1 class="af-main-title sr-only">Amarante</h1>
         ${SVG_AMARANTE_SWASH_FLOURISH}
-        <p class="af-subtitle">The Unfading Bloom · A Valley for Two</p>
+        <p class="af-subtitle sr-only">The Unfading Bloom · A Valley for Two</p>
 
         <button
           type="button"
@@ -1550,15 +2118,10 @@ export function createAppFlow({
         >
           <span class="af-morph-progress-fill" id="app-flow-morph-fill"></span>
           <span class="af-morph-loading-layer" id="app-flow-morph-loading">
-            <svg class="af-prep-spark-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 2L14.6 9.4L22 12L14.6 14.6L12 22L9.4 14.6L2 12L9.4 9.4L12 2Z" fill="currentColor"/>
-            </svg>
-            <span id="app-flow-prep-label">Shaping the valley</span>
+            <span id="app-flow-prep-label">Begin Journey</span>
           </span>
           <span class="af-morph-ready-layer" id="app-flow-morph-ready">
-            ${SVG_BOTANICAL_SPRIG_LEFT}
-            <span>Enter the Valley</span>
-            ${SVG_BOTANICAL_SPRIG_RIGHT}
+            <span>Begin Journey</span>
           </span>
         </button>
       </div>
@@ -1745,9 +2308,35 @@ export function createAppFlow({
   const mountTarget = container || document.getElementById('hud') || document.body;
   mountTarget.appendChild(root);
 
-  // Cache DOM references
+  // Cache DOM references for Plain-Black Paintbrush Reveal, Fixed Sun-Clock & Glassy Pills
+  const flowRootAliasEl = root.querySelector('#app-flow-root');
   const pixelVeil = root.querySelector('#af-pixel-veil');
   const pixelCanvas = root.querySelector('#af-pixel-veil-canvas');
+  const curtainBrushStrokeEls = Array.from(root.querySelectorAll('.af-curtain-brush-stroke'));
+  const curtainBristleEls = Array.from(root.querySelectorAll('.af-curtain-brush-bristle'));
+  const titleSceneEl = root.querySelector('.af-scene-title');
+  const svgRingOuterEl = root.querySelector('#af-svg-ring-outer');
+  const svgRingInnerEl = root.querySelector('#af-svg-ring-inner');
+  const svgRingWhisperEl = root.querySelector('#af-svg-ring-whisper');
+  const svgDialOrbitEl = root.querySelector('#af-svg-dial-orbit');
+  const svgHandOrbitEl = root.querySelector('#af-svg-hand-orbit');
+  const svgHourHandEl = root.querySelector('#af-svg-hour-hand');
+  const svgMinuteHandEl = root.querySelector('#af-svg-minute-hand');
+  const svgNumeralEls = Array.from(root.querySelectorAll('.af-svg-numeral'));
+  const svgCrownEls = Array.from(root.querySelectorAll('.af-svg-crown'));
+  const svgWordmarkMoverEl = root.querySelector('#af-svg-wordmark-mover');
+  const svgGlyphEls = Array.from(root.querySelectorAll('.af-svg-glyph'));
+  const svgContourEls = Array.from(root.querySelectorAll('.af-glyph-contour'));
+  const svgFillEls = Array.from(root.querySelectorAll('.af-glyph-fill'));
+  const svgDuctusEls = Array.from(root.querySelectorAll('.af-glyph-ductus'));
+  const opt3GoldThreadEl = root.querySelector('#af-opt3-gold-thread');
+  const svgSwashLeftEl = root.querySelector('#af-svg-swash-left');
+  const svgSwashRightEl = root.querySelector('#af-svg-swash-right');
+  const svgSwashDiamondEl = root.querySelector('#af-svg-swash-diamond');
+  const svgStemEls = Array.from(root.querySelectorAll('.af-svg-branch-stem'));
+  const svgBlossomEls = Array.from(root.querySelectorAll('.af-svg-blossom'));
+  const branchPetalEls = Array.from(root.querySelectorAll('.af-branch-petal'));
+  const sunClockArcEl = root.querySelector('#af-sunclock-progress-arc');
   const enterBtn = root.querySelector('#app-flow-enter-btn');
   const prepLabelEl = root.querySelector('#app-flow-prep-label');
   const loadingFill = root.querySelector('#app-flow-loading-fill');
@@ -1781,21 +2370,295 @@ export function createAppFlow({
   let copyTimer = null;
   let mosaicRafId = null;
 
-  // Reusable ImageData buffer for ultra-fast (< 1.2ms) 2px fine-grain stipple rendering
-  let cachedImgData = null;
-  let cachedU32 = null;
-  let cachedW = 0;
-  let cachedH = 0;
+  const SUN_ARC_CIRCUMFERENCE = 615.8;
 
-  const PREP_STAGES = [
-    { threshold: 0.0, text: 'Shaping the valley' },
-    { threshold: 0.28, text: 'Sowing meadow flowers' },
-    { threshold: 0.58, text: 'Raising timber eaves' },
-    { threshold: 0.84, text: 'Kindling sunfire' },
-  ];
+  function easeOutCubic(x) {
+    const u = Math.min(1, Math.max(0, x));
+    return 1 - Math.pow(1 - u, 3);
+  }
 
-  function packAbgr(r, g, b, a) {
-    return ((a & 255) << 24) | ((b & 255) << 16) | ((g & 255) << 8) | (r & 255);
+  function easeInOutCubic(x) {
+    const u = Math.min(1, Math.max(0, x));
+    return u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+  }
+
+  function easeOutBackSoft(x) {
+    const u = Math.min(1, Math.max(0, x));
+    if (u <= 0) return 0;
+    if (u >= 1) return 1;
+    const c1 = 1.25;
+    const c3 = c1 + 1;
+    return 1 + c3 * Math.pow(u - 1, 3) + c1 * Math.pow(u - 1, 2);
+  }
+
+  /**
+   * Syncs the Fixed Sun-Clock hands to the exact in-game time (defaulting to 08:10 Morning:
+   * Hour hand at 245 deg [VIII], Minute hand at 60 deg [II]). Never spins continuously.
+   */
+  function syncFixedClockHandsToGameTime() {
+    let hours24 = 8 + 10 / 60; // 08:10 default in TOD_PRESETS.day
+    const worldTod = typeof window !== 'undefined' ? window.__WORLD__?.skyState?.tod : undefined;
+    if (typeof worldTod === 'number' && Number.isFinite(worldTod)) {
+      hours24 = ((worldTod * 24) % 24 + 24) % 24;
+    }
+    const hours12 = hours24 % 12;
+    const mins = (hours24 - Math.floor(hours24)) * 60;
+    const hourDeg = hours12 * 30;
+    const minDeg = mins * 6;
+    if (svgHourHandEl) {
+      svgHourHandEl.setAttribute('transform', `rotate(${hourDeg.toFixed(1)})`);
+    }
+    if (svgMinuteHandEl) {
+      svgMinuteHandEl.setAttribute('transform', `rotate(${minDeg.toFixed(1)})`);
+    }
+  }
+
+  let noiseCtx = null;
+  let noiseImgData = null;
+  let noiseU32 = null;
+
+  /**
+   * Renders the pitch-black (#050507) screen and its smooth organic 2D noise dissolve
+   * directly on `#af-pixel-veil-canvas` (zero horizontal stripes or window blinds).
+   * - For `t <= 0.58`: 100% solid pitch black (`alpha = 255`).
+   * - For `t` in `0.58..0.94`: organic multi-octave noise + fine IGN grain dissolves smoothly to `0`.
+   */
+  function renderBlackNoiseDissolveCanvas(t) {
+    if (!pixelCanvas) return;
+    if (pixelCanvas.width !== DISSOLVE_W || pixelCanvas.height !== DISSOLVE_H) {
+      pixelCanvas.width = DISSOLVE_W;
+      pixelCanvas.height = DISSOLVE_H;
+      noiseCtx = pixelCanvas.getContext('2d');
+      noiseImgData = noiseCtx ? noiseCtx.createImageData(DISSOLVE_W, DISSOLVE_H) : null;
+      noiseU32 = noiseImgData ? new Uint32Array(noiseImgData.data.buffer) : null;
+    }
+    if (!noiseCtx || !noiseImgData || !noiseU32) return;
+
+    if (t <= 0.58) {
+      noiseU32.fill(0xff070505);
+      noiseCtx.putImageData(noiseImgData, 0, 0);
+      return;
+    }
+    if (t >= 0.96) {
+      noiseU32.fill(0x00000000);
+      noiseCtx.putImageData(noiseImgData, 0, 0);
+      return;
+    }
+
+    const thMap = getDissolveThresholdMap();
+    const uDissolve = easeInOutCubic((t - 0.58) / 0.36);
+    const band = 0.38;
+    const sweep = uDissolve * (1.0 + band);
+    const invBand = 1.0 / band;
+    const len = thMap.length;
+
+    for (let i = 0; i < len; i++) {
+      const th = thMap[i];
+      const d = (sweep - th) * invBand;
+      if (d <= 0) {
+        noiseU32[i] = 0xff070505;
+      } else if (d >= 1) {
+        noiseU32[i] = 0x00000000;
+      } else {
+        const s = d * d * (3.0 - 2.0 * d);
+        const a = ((1.0 - s) * 255) | 0;
+        noiseU32[i] = (a << 24) | 0x00070505;
+      }
+    }
+    noiseCtx.putImageData(noiseImgData, 0, 0);
+  }
+
+  /**
+   * Conducts the 4-Step Pitch-Black -> Brush-Written Amarante -> Glide Up -> Surrounding Flowers -> Smooth Noise Dissolve:
+   * - Step 1 (0.02..0.34): 100% Pitch-Black Screen; 9 true anatomical brush strokes write 'Amarante' letter-by-letter
+   * - Step 2 (0.34..0.50): Still on Pitch-Black Screen, 'Amarante' glides smoothly upward into its final sky position
+   * - Step 3 (0.48..0.74): Surrounding Fixed Sun-Clock (at 08:10), Golden Swash & Sakura Flowers bloom around 'Amarante'
+   * - Step 4 (0.58..0.94): Smooth 2D organic noise dissolve clears the pitch-black screen to reveal the live 3D valley,
+   *                        followed by the larger Glassy Hairline 'Begin Journey' pill rising at 0.90..1.00
+   */
+  function updateSunClockAndParchmentAtProgress(t) {
+    syncFixedClockHandsToGameTime();
+    renderBlackNoiseDissolveCanvas(t);
+
+    // 1. Step 1: 3 Professional Vector Reveal Options for 'Amarante' on Pitch-Black Screen (0.02..0.34, Zero Yellow Dot)
+    const opt = state.onboardingOption || 1;
+    const numG = svgGlyphEls.length || 8;
+
+    for (let i = 0; i < numG; i++) {
+      const gEl = svgGlyphEls[i];
+      const contourEl = svgContourEls[i];
+      const fillEl = svgFillEls[i];
+      const ductusEl = svgDuctusEls[i];
+
+      if (opt === 1) {
+        // Option 1: True Liquid-Gold Vector Contour Draw -> Warm Ivory Ink Fill
+        const startG = 0.02 + i * 0.026;
+        const pContour = easeOutCubic((t - startG) / 0.11);
+        const pFill = easeInOutCubic((t - (startG + 0.045)) / 0.085);
+        gEl?.setAttribute('transform', 'translate(0, 0)');
+        if (ductusEl) ductusEl.setAttribute('opacity', '0');
+        if (contourEl) {
+          if (pContour <= 0.001) {
+            contourEl.setAttribute('opacity', '0');
+            contourEl.setAttribute('stroke-dashoffset', '105');
+          } else {
+            const cOp = pFill >= 0.99 ? 0 : 1 - pFill * 0.65;
+            contourEl.setAttribute('opacity', cOp.toFixed(3));
+            contourEl.setAttribute('stroke-dashoffset', ((1 - pContour) * 100).toFixed(2));
+          }
+        }
+        if (fillEl) {
+          fillEl.setAttribute('opacity', pFill.toFixed(3));
+        }
+      } else if (opt === 2) {
+        // Option 2: Clip-Isolated Calligraphic Ribbon Ductus (True Per-Glyph Brush Stroke, Zero Bleed)
+        const startG = 0.02 + i * 0.032;
+        const pDuctus = easeInOutCubic((t - startG) / 0.072);
+        gEl?.setAttribute('transform', 'translate(0, 0)');
+        if (contourEl) contourEl.setAttribute('opacity', '0');
+        if (fillEl) fillEl.setAttribute('opacity', '0');
+        if (ductusEl) {
+          if (pDuctus <= 0.001) {
+            ductusEl.setAttribute('opacity', '0');
+            ductusEl.setAttribute('stroke-dashoffset', '105');
+          } else {
+            ductusEl.setAttribute('opacity', '1');
+            ductusEl.setAttribute('stroke-dashoffset', ((1 - pDuctus) * 100).toFixed(2));
+          }
+        }
+      } else {
+        // Option 3: Cinema Staggered Kerning & Golden Rim Bloom
+        const startG = 0.02 + i * 0.027;
+        const pFocus = easeOutCubic((t - startG) / 0.12);
+        const dx = (1 - pFocus) * (i - 3.5) * 9.0;
+        const dy = (1 - pFocus) * 16.0;
+        gEl?.setAttribute('transform', `translate(${dx.toFixed(2)}, ${dy.toFixed(2)})`);
+        if (ductusEl) ductusEl.setAttribute('opacity', '0');
+        if (fillEl) fillEl.setAttribute('opacity', pFocus.toFixed(3));
+        if (contourEl) {
+          const rimOp = pFocus > 0.01 && pFocus < 0.99 ? Math.sin(pFocus * Math.PI) * 0.85 : 0;
+          contourEl.setAttribute('opacity', rimOp.toFixed(3));
+          contourEl.setAttribute('stroke-dashoffset', '0');
+        }
+      }
+    }
+
+    if (opt3GoldThreadEl) {
+      if (opt === 3 && t >= 0.03 && t <= 0.42) {
+        const pThread = easeOutCubic((t - 0.03) / 0.24);
+        const fadeOut = t > 0.30 ? Math.max(0, 1 - (t - 0.30) / 0.12) : 1;
+        opt3GoldThreadEl.setAttribute('opacity', (fadeOut * 0.85).toFixed(3));
+        opt3GoldThreadEl.setAttribute('stroke-dashoffset', ((1 - pThread) * 100).toFixed(2));
+      } else {
+        opt3GoldThreadEl.setAttribute('opacity', '0');
+      }
+    }
+
+    // 2. Step 2: 'Amarante' glides smoothly upward from the dead center of the pitch-black screen (0.34..0.50)
+    if (svgWordmarkMoverEl) {
+      const pGlide = easeInOutCubic((t - 0.34) / 0.16);
+      const tx = (1 - pGlide) * -24;
+      const ty = (1 - pGlide) * 191;
+      const sc = 1.0 + (1 - pGlide) * 0.08;
+      svgWordmarkMoverEl.setAttribute(
+        'transform',
+        `translate(${tx.toFixed(2)}, ${ty.toFixed(2)}) scale(${sc.toFixed(4)})`
+      );
+    }
+
+    // 3. Step 3: Surrounding Fixed Sun-Clock, Golden Swash & Sakura Flowers bloom around 'Amarante' (0.48..0.76)
+    const pRingOuter = easeOutCubic((t - 0.48) / 0.18);
+    const pRingInner = easeOutCubic((t - 0.50) / 0.18);
+    if (svgRingOuterEl) {
+      svgRingOuterEl.setAttribute('opacity', pRingOuter > 0.001 ? '1' : '0');
+      svgRingOuterEl.setAttribute('stroke-dashoffset', ((1 - pRingOuter) * 100).toFixed(2));
+    }
+    if (svgRingInnerEl) {
+      svgRingInnerEl.setAttribute('opacity', pRingInner > 0.001 ? '1' : '0');
+      svgRingInnerEl.setAttribute('stroke-dashoffset', ((1 - pRingInner) * 100).toFixed(2));
+    }
+    if (svgRingWhisperEl) {
+      svgRingWhisperEl.setAttribute('opacity', (pRingOuter * 0.58).toFixed(3));
+    }
+    if (svgDialOrbitEl) {
+      svgDialOrbitEl.style.opacity = easeOutCubic((t - 0.49) / 0.16).toFixed(3);
+    }
+    if (svgHandOrbitEl) {
+      svgHandOrbitEl.style.opacity = easeOutCubic((t - 0.51) / 0.16).toFixed(3);
+    }
+    if (sunClockArcEl) {
+      const pArc = easeOutCubic((t - 0.49) / 0.24);
+      sunClockArcEl.setAttribute('opacity', pArc > 0.001 ? '1' : '0');
+      const dashOffset = SUN_ARC_CIRCUMFERENCE * (1.0 - pArc);
+      sunClockArcEl.setAttribute('stroke-dashoffset', dashOffset.toFixed(1));
+    }
+
+    for (let i = 0; i < svgNumeralEls.length; i++) {
+      const startT = 0.49 + i * 0.010;
+      const pn = easeOutCubic((t - startT) / 0.12);
+      svgNumeralEls[i].style.opacity = pn.toFixed(3);
+    }
+
+    for (let i = 0; i < svgCrownEls.length; i++) {
+      const startT = 0.52 + i * 0.026;
+      const pc = easeOutBackSoft((t - startT) / 0.15);
+      const pcOp = easeOutCubic((t - startT) / 0.12);
+      const baseScale = Number(svgCrownEls[i].dataset.baseScale || 1);
+      svgCrownEls[i].style.opacity = pcOp.toFixed(3);
+      svgCrownEls[i].setAttribute('transform', `scale(${(baseScale * pc).toFixed(4)})`);
+    }
+
+    const pDiamond = easeOutBackSoft((t - 0.50) / 0.14);
+    if (svgSwashDiamondEl) {
+      svgSwashDiamondEl.setAttribute('transform', `translate(496, 308) scale(${pDiamond.toFixed(4)})`);
+    }
+    const pSwashWing = easeOutCubic((t - 0.52) / 0.18);
+    const swashOffset = ((1 - pSwashWing) * 100).toFixed(2);
+    if (svgSwashLeftEl) {
+      svgSwashLeftEl.setAttribute('opacity', pSwashWing > 0.001 ? '1' : '0');
+      svgSwashLeftEl.setAttribute('stroke-dashoffset', swashOffset);
+    }
+    if (svgSwashRightEl) {
+      svgSwashRightEl.setAttribute('opacity', pSwashWing > 0.001 ? '1' : '0');
+      svgSwashRightEl.setAttribute('stroke-dashoffset', swashOffset);
+    }
+
+    const STEM_STARTS = [0.50, 0.52, 0.56, 0.54];
+    for (let i = 0; i < svgStemEls.length; i++) {
+      const ps = easeOutCubic((t - STEM_STARTS[i]) / 0.18);
+      svgStemEls[i].setAttribute('opacity', ps > 0.001 ? '1' : '0');
+      svgStemEls[i].setAttribute('stroke-dashoffset', ((1 - ps) * 100).toFixed(2));
+    }
+
+    for (let i = 0; i < svgBlossomEls.length; i++) {
+      const startT = 0.53 + i * 0.011;
+      const pb = easeOutBackSoft((t - startT) / 0.14);
+      const pbOp = easeOutCubic((t - startT) / 0.10);
+      const baseScale = Number(svgBlossomEls[i].dataset.baseScale || 1);
+      svgBlossomEls[i].style.opacity = pbOp.toFixed(3);
+      svgBlossomEls[i].setAttribute('transform', `scale(${(baseScale * pb).toFixed(4)})`);
+    }
+
+    // Hide drifting CSS petals completely until the valley has dissolved in
+    for (let i = 0; i < branchPetalEls.length; i++) {
+      branchPetalEls[i].style.display = t > 0.80 ? 'block' : 'none';
+    }
+
+    // 4. Step 4: Larger Glassy Hairline 'Begin Journey' Pill appears ONLY when ready (0.90..1.00)
+    if (enterBtn) {
+      if (t >= 0.999) {
+        enterBtn.style.opacity = '1';
+        enterBtn.style.transform = '';
+      } else if (t < 0.90) {
+        enterBtn.style.opacity = '0';
+        enterBtn.style.transform = 'translateX(-50%) translateY(18px)';
+      } else {
+        const pPill = easeOutCubic((t - 0.90) / 0.10);
+        const py = (1 - pPill) * 18;
+        enterBtn.style.opacity = pPill.toFixed(3);
+        enterBtn.style.transform = `translateX(-50%) translateY(${py.toFixed(1)}px)`;
+      }
+    }
   }
 
   function stopMosaicLoop() {
@@ -1808,8 +2671,13 @@ export function createAppFlow({
   function resolvePixelVeil() {
     stopMosaicLoop();
     state.lastDitherProgress = 1;
+    updateSunClockAndParchmentAtProgress(1);
+    titleSceneEl?.classList.remove('is-loading-active');
     pixelVeil?.classList.add('is-resolved');
-    pixelVeil?.style.setProperty('--af-blur-px', '0px');
+    pixelVeil?.style.setProperty('opacity', '0');
+    if (prepLabelEl) {
+      prepLabelEl.textContent = 'Begin Journey';
+    }
     if (enterBtn) {
       enterBtn.disabled = false;
       enterBtn.classList.remove('is-loading');
@@ -1818,11 +2686,10 @@ export function createAppFlow({
   }
 
   /**
-   * Renders the Artist-Grade Fine-Grain Printmaker Dither Materialization at progress `t` in [0..1].
-   * Zero chunky 24px pixel blocks: uses a 640x400 (~2px fine grain) stipple canvas + living vector overlays.
+   * Pure 60FPS GPU-Composited Plain-Black Paintbrush Reveal & Fixed Sun-Clock at `t` in [0..1].
    */
   function renderDitherVeilAtProgress(rawT) {
-    if (!pixelVeil || !pixelCanvas) return;
+    if (!pixelVeil) return;
     const t = Math.min(1, Math.max(0, Number(rawT) || 0));
     state.lastDitherProgress = t;
 
@@ -1831,197 +2698,27 @@ export function createAppFlow({
       return;
     }
 
+    titleSceneEl?.classList.add('is-loading-active');
     pixelVeil.classList.remove('is-resolved');
+    const veilOpacity = t < 0.84 ? 1.0 : Math.max(0, 1.0 - (t - 0.84) / 0.16);
+    pixelVeil.style.setProperty('opacity', veilOpacity.toFixed(3));
+
     if (enterBtn) {
       enterBtn.disabled = false;
-      enterBtn.classList.add('is-loading');
-      enterBtn.classList.remove('is-ready');
-    }
-
-    if (prepLabelEl) {
-      let activeStageText = PREP_STAGES[0].text;
-      for (const st of PREP_STAGES) {
-        if (t >= st.threshold) activeStageText = st.text;
-      }
-      if (prepLabelEl.textContent !== activeStageText) {
-        prepLabelEl.textContent = activeStageText;
+      if (t >= 0.92) {
+        enterBtn.classList.remove('is-loading');
+        enterBtn.classList.add('is-ready');
+      } else {
+        enterBtn.classList.add('is-loading');
+        enterBtn.classList.remove('is-ready');
       }
     }
 
-    // Gentle atmospheric mist-to-focus (12px -> 0px) so the real 3D valley shines through the fine dither weave
-    const blurPx = Math.max(0, Math.pow(1 - t, 1.55) * 12.5);
-    pixelVeil.style.setProperty('--af-blur-px', `${blurPx.toFixed(1)}px`);
-
-    const ctx = pixelCanvas.getContext?.('2d');
-    if (!ctx) return;
-
-    // Fine-grain lithograph stipple resolution (960x600 => ~1.5px crisp stipple grain on 1440x900, zero macro-grid!)
-    const vw = Math.max(1, window.innerWidth || 1440);
-    const vh = Math.max(1, window.innerHeight || 900);
-    const fineW = Math.min(960, Math.max(480, Math.floor(vw / 1.5)));
-    const fineH = Math.min(600, Math.max(300, Math.floor(vh / 1.5)));
-
-    if (pixelCanvas.width !== fineW || pixelCanvas.height !== fineH) {
-      pixelCanvas.width = fineW;
-      pixelCanvas.height = fineH;
-    }
-
-    const progress = Math.pow(t, 1.04);
-
-    if (
-      typeof ctx.createImageData === 'function' &&
-      typeof ctx.putImageData === 'function'
-    ) {
-      if (!cachedImgData || cachedW !== fineW || cachedH !== fineH) {
-        cachedImgData = ctx.createImageData(fineW, fineH);
-        cachedU32 = new Uint32Array(cachedImgData.data.buffer);
-        cachedW = fineW;
-        cachedH = fineH;
-      }
-
-      const buf = cachedU32;
-      const invW = 1.0 / Math.max(1, fineW - 1);
-      const invH = 1.0 / Math.max(1, fineH - 1);
-
-      // Precompute row & column organic wave tables to avoid trig inside the inner loop
-      const rowWaveA = new Float32Array(fineH);
-      const rowWaveB = new Float32Array(fineH);
-      for (let y = 0; y < fineH; y++) {
-        const ny = y * invH;
-        rowWaveA[y] = Math.sin(ny * 12.0 - t * 6.0) * 0.055;
-        rowWaveB[y] = Math.cos(ny * 23.0 + t * 4.2) * 0.028;
-      }
-      const colWaveA = new Float32Array(fineW);
-      for (let x = 0; x < fineW; x++) {
-        const nx = x * invW;
-        colWaveA[x] =
-          Math.cos(nx * 14.0 - t * 4.8) * 0.048 +
-          Math.sin(nx * 27.0 + t * 3.5) * 0.022;
-      }
-
-      const frontierWidth = 0.15;
-      let idx = 0;
-      for (let y = 0; y < fineH; y++) {
-        const ny = y * invH;
-        const rWave = rowWaveA[y] + rowWaveB[y];
-        const ignRow = (y & 63) << 6;
-        const b4Row = (y & 3) << 2;
-
-        for (let x = 0; x < fineW; x++, idx++) {
-          const nx = x * invW;
-          const ign = IGN_64X64[ignRow | (x & 63)];
-          const b4 = BAYER_4X4[b4Row | (x & 3)];
-
-          // Sunbeam Radial Lithograph Stipple radiating from the valley sun (0.50, 0.21) & central road
-          const dxSun = nx - 0.50 + rWave * 0.25;
-          const dySun = (ny - 0.21) * 0.85 + colWaveA[x] * 0.22;
-          const sunDist = Math.sqrt(dxSun * dxSun + dySun * dySun);
-          const roadDist =
-            Math.abs(nx - 0.50 + rWave * 0.40) * (0.48 + (1.0 - ny) * 0.62);
-          const waveField = Math.min(1.0, sunDist * 0.62 + roadDist * 0.38);
-          const stippleMix = ign * 0.78 + b4 * 0.22;
-          const unlockThreshold =
-            0.02 + 0.95 * (waveField * 0.64 + stippleMix * 0.36);
-
-          if (progress >= unlockThreshold) {
-            // Unlocked stipple pore — reveals the live 3D valley underneath
-            buf[idx] = 0;
-            continue;
-          }
-
-          const delta = unlockThreshold - progress;
-          const isFrontier = delta < frontierWidth;
-          const checker = ((x ^ y) & 1) === 0;
-
-          let r, g, b, alpha;
-
-          if (isFrontier) {
-            // Active Living Dissolve Frontier: Sunbeam Lithograph Gold & Alabaster corona
-            const fNorm = 1.0 - delta / frontierWidth;
-            r = checker ? 254 : 251;
-            g = checker ? 243 : 191;
-            b = checker ? 199 : 36;
-            alpha = Math.round((0.86 - fNorm * 0.36) * 255);
-          } else {
-            // Veiled Lithograph Underpainting with fine 1.5px breathing micro-pores
-            if (ign < 0.18 + progress * 0.25) {
-              buf[idx] = 0;
-              continue;
-            }
-
-            const stippleShift = checker ? 5 : -5;
-            if (ny < 0.46) {
-              const u = ny / 0.46;
-              r = Math.round(238 + (1 - u) * 12 + stippleShift);
-              g = Math.round(242 + (1 - u) * 8 + stippleShift);
-              b = Math.round(239 - (1 - u) * 8 + stippleShift);
-            } else {
-              const u = (ny - 0.46) / 0.54;
-              r = Math.round(240 - u * 10 + stippleShift);
-              g = Math.round(231 - u * 12 + stippleShift);
-              b = Math.round(212 - u * 16 + stippleShift);
-            }
-
-            const baseAlpha = Math.min(
-              0.86,
-              Math.max(0.42, (1.0 - progress * 0.45) * 0.84)
-            );
-            alpha = Math.round(baseAlpha * 255);
-          }
-
-          buf[idx] = packAbgr(
-            Math.max(0, Math.min(255, r)),
-            Math.max(0, Math.min(255, g)),
-            Math.max(0, Math.min(255, b)),
-            Math.max(0, Math.min(255, alpha))
-          );
-        }
-      }
-
-      ctx.putImageData(cachedImgData, 0, 0);
-    } else {
-      ctx.clearRect(0, 0, fineW, fineH);
-    }
-
-    // Living 2D Vector Accents: Shimmering Golden Sun-Motes & Radial Zenith Rays
-    if (typeof ctx.save === 'function') {
-      ctx.save();
-      const fadeOut = Math.min(1, (1 - t) * 2.2);
-      const sunX = fineW * 0.50;
-      const sunY = fineH * 0.21;
-      ctx.strokeStyle = `rgba(253, 230, 138, ${(0.22 * fadeOut).toFixed(3)})`;
-      ctx.lineWidth = 1.1;
-      for (let i = 0; i < 10; i++) {
-        const ang = (i / 10) * Math.PI * 2 + t * 0.35;
-        const r0 = fineW * (0.04 + progress * 0.22);
-        const r1 = r0 + fineW * 0.14;
-        ctx.beginPath();
-        ctx.moveTo(sunX + Math.cos(ang) * r0, sunY + Math.sin(ang) * r0);
-        ctx.lineTo(sunX + Math.cos(ang) * r1, sunY + Math.sin(ang) * r1);
-        ctx.stroke();
-      }
-      for (let i = 0; i < 32; i++) {
-        const seed = i * 1.6180339;
-        const ang = (seed * 4.7) % (Math.PI * 2);
-        const rad =
-          (0.06 + progress * 0.52 + ((seed * 0.31) % 0.14)) * fineW * 0.65;
-        const mx = sunX + Math.cos(ang) * rad;
-        const my = sunY + Math.sin(ang) * rad * 0.85;
-        const rDot = (i % 3 === 0 ? 2.2 : 1.4) * fadeOut;
-        ctx.fillStyle =
-          i % 2 === 0
-            ? `rgba(254, 243, 199, ${(0.85 * fadeOut).toFixed(3)})`
-            : `rgba(251, 191, 36, ${(0.80 * fadeOut).toFixed(3)})`;
-        ctx.beginPath();
-        ctx.arc(mx, my, rDot, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.restore();
-    }
+    updateSunClockAndParchmentAtProgress(t);
   }
 
   /**
-   * Living Printmaker Dither Materialization & Fixed-Width Morphing Preparation-to-Play Pill.
+   * Triggers the 60FPS Plain-Black Paintbrush Writing -> Glide Up -> Paintbrush Scene Reveal.
    */
   function triggerPixelVeilMaterialization(immediate = false) {
     if (!pixelVeil) return;
@@ -2042,11 +2739,11 @@ export function createAppFlow({
       enterBtn.classList.remove('is-ready');
     }
 
-    renderDitherVeilAtProgress(0.05);
+    renderDitherVeilAtProgress(0.0);
 
     const startTime =
       typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const durationMs = 2400;
+    const durationMs = 3400;
 
     const stepMosaic = (now) => {
       const t = Math.min(1, Math.max(0, (now - startTime) / durationMs));
@@ -2186,6 +2883,10 @@ export function createAppFlow({
       state.peerConnected || state.partnerName || state.partnerClaimed
     );
 
+    const waitingForPartner = Boolean(
+      state.peerConnected && state.localClaimed && !state.partnerClaimed
+    );
+
     if (claimKnightBtn) {
       claimKnightBtn.classList.toggle('is-claimed', claimedRole === 'Knight');
       claimKnightBtn.classList.toggle(
@@ -2203,9 +2904,11 @@ export function createAppFlow({
     if (claimKnightStatus) {
       claimKnightStatus.textContent =
         claimedRole === 'Knight'
-          ? customName
-            ? `${customName} · Claimed`
-            : 'Claimed'
+          ? waitingForPartner
+            ? 'Waiting for partner to ready...'
+            : customName
+              ? `${customName} · Claimed`
+              : 'Claimed'
           : state.partnerName && otherRole === 'Knight'
             ? `${state.partnerName} · Knight`
             : 'Tap to claim';
@@ -2213,12 +2916,24 @@ export function createAppFlow({
     if (claimMageStatus) {
       claimMageStatus.textContent =
         claimedRole === 'Mage'
-          ? customName
-            ? `${customName} · Claimed`
-            : 'Claimed'
+          ? waitingForPartner
+            ? 'Waiting for partner to ready...'
+            : customName
+              ? `${customName} · Claimed`
+              : 'Claimed'
           : state.partnerName && otherRole === 'Mage'
             ? `${state.partnerName} · Mage`
             : 'Tap to claim';
+    }
+    if (startBtn) {
+      const btnLabel = waitingForPartner
+        ? 'Waiting for partner to ready...'
+        : 'Confirm name and enter the valley';
+      startBtn.title = waitingForPartner
+        ? 'Waiting for partner to ready...'
+        : 'Enter the valley';
+      startBtn.setAttribute('aria-label', btnLabel);
+      startBtn.dataset.waiting = waitingForPartner ? '1' : '0';
     }
 
     if (nameBubble) {
@@ -2253,6 +2968,9 @@ export function createAppFlow({
 
     state.step = nextStep;
     root.dataset.step = nextStep;
+    if (flowRootAliasEl) {
+      flowRootAliasEl.dataset.step = nextStep;
+    }
 
     root.querySelectorAll('.af-scene').forEach((sec) => {
       sec.classList.toggle('is-active', sec.dataset.flowScene === nextStep);
@@ -2311,6 +3029,13 @@ export function createAppFlow({
     renderLobbyDom();
     if (typeof onRoleSelect === 'function') {
       onRoleSelect(state.localRole, { ...state });
+    }
+    if (typeof onLobbyClaim === 'function') {
+      onLobbyClaim({
+        role: state.localRole,
+        playerName: state.playerName,
+        claimed: state.localClaimed,
+      });
     }
   }
 
@@ -2406,6 +3131,10 @@ export function createAppFlow({
       state.roomPhrase = state.roomPhrase || generateRomanticRoomPhrase(0);
       state.isHost = true;
       state.localRole = state.hostRole;
+      state.localClaimed = false;
+      state.partnerClaimed = false;
+      state.guestReady = false;
+      state.expeditionStarted = false;
       state.playerCount = state.peerConnected ? 2 : 1;
       if (typeof onCreateWorld === 'function') {
         onCreateWorld({
@@ -2425,7 +3154,9 @@ export function createAppFlow({
     state.roomPhrase = typed || state.roomPhrase || 'Rain on warm limestone';
     state.isHost = false;
     state.localRole = state.partnerRole;
-    state.guestReady = true;
+    state.localClaimed = false;
+    state.partnerClaimed = false;
+    state.guestReady = false;
     state.playerCount = 2;
     if (typeof onJoinWorld === 'function') {
       onJoinWorld({
@@ -2466,17 +3197,25 @@ export function createAppFlow({
       state.playerName = nameInput.value.trim();
     }
     state.localClaimed = true;
-    state.guestReady = true;
+    if (!state.isHost) {
+      state.guestReady = true;
+    }
     renderLobbyDom();
 
+    if (typeof onLobbyClaim === 'function') {
+      onLobbyClaim({
+        role: state.localRole,
+        playerName: state.playerName,
+        claimed: true,
+      });
+    }
     if (typeof onToggleReady === 'function') {
       onToggleReady(true, { ...state });
     }
 
-    const isSoloMode =
-      forceSoloStart || (!state.peerConnected && (state.playerCount || 1) <= 1);
+    const isSoloMode = Boolean(forceSoloStart) || !state.peerConnected;
     const bothSeatsReady =
-      state.peerConnected && Boolean(state.partnerClaimed || state.guestReady);
+      state.peerConnected && Boolean(state.partnerClaimed || state.expeditionStarted);
 
     if (isSoloMode || bothSeatsReady) {
       setStep(FLOW_STEPS.IN_GAME);
@@ -2491,6 +3230,13 @@ export function createAppFlow({
       e.stopPropagation();
       state.playerName = nameInput.value.trim();
       renderLobbyDom();
+      if (typeof onLobbyClaim === 'function') {
+        onLobbyClaim({
+          role: state.localRole,
+          playerName: state.playerName,
+          claimed: state.localClaimed,
+        });
+      }
     });
     nameInput.addEventListener('keydown', (e) => {
       e.stopPropagation();
@@ -2574,6 +3320,9 @@ export function createAppFlow({
     if (typeof patch.partnerClaimed === 'boolean') {
       state.partnerClaimed = patch.partnerClaimed;
     }
+    if (typeof patch.expeditionStarted === 'boolean') {
+      state.expeditionStarted = patch.expeditionStarted;
+    }
     if (typeof patch.isHost === 'boolean') {
       state.isHost = patch.isHost;
     }
@@ -2583,7 +3332,9 @@ export function createAppFlow({
     }
 
     if (patch.partnerClaimedRole === 'Knight' || patch.partnerClaimedRole === 'Mage') {
-      state.partnerClaimed = true;
+      if (typeof patch.partnerClaimed !== 'boolean') {
+        state.partnerClaimed = true;
+      }
       const remainingRole = patch.partnerClaimedRole === 'Knight' ? 'Mage' : 'Knight';
       state.localRole = remainingRole;
       if (state.isHost) {
@@ -2620,7 +3371,12 @@ export function createAppFlow({
     }
     if (typeof patch.guestReady === 'boolean') {
       state.guestReady = patch.guestReady;
-      if (patch.guestReady && state.peerConnected) {
+      if (
+        typeof patch.partnerClaimed !== 'boolean' &&
+        patch.guestReady &&
+        state.peerConnected &&
+        state.isHost
+      ) {
         state.partnerClaimed = true;
       }
     }
@@ -2637,12 +3393,14 @@ export function createAppFlow({
     if (
       state.step === FLOW_STEPS.FLOWER_LOBBY &&
       state.peerConnected &&
-      state.localClaimed &&
-      state.partnerClaimed
+      ((state.localClaimed && state.partnerClaimed) || state.expeditionStarted)
     ) {
       setStep(FLOW_STEPS.IN_GAME);
       if (typeof onStartGame === 'function') {
-        onStartGame({ ...state });
+        onStartGame({
+          ...state,
+          fromRemoteExpeditionStart: Boolean(state.expeditionStarted && !state.partnerClaimed),
+        });
       }
     }
   }
@@ -2682,6 +3440,7 @@ export function createAppFlow({
     setHeroScreenPositions,
     resolvePixelVeil,
     renderDitherVeilAtProgress,
+    triggerPixelVeilMaterialization,
     stopMosaicLoop,
     setOnboardingOption,
     getOnboardingOption: () => state.onboardingOption,

@@ -1275,6 +1275,7 @@ export function createTimeOfDaySky({
   const sunbeamMesh = new THREE.Mesh(mergedBeamsGeo, sunbeamMat);
   sunbeamMesh.name = 'todCanopySunbeams';
   sunbeamMesh.frustumCulled = false;
+  sunbeamMesh.visible = false;
   group.add(sunbeamMesh);
 
   // -------------------------------------------------------------------------
@@ -1670,6 +1671,7 @@ export function createTimeOfDaySky({
   const windRibbonMesh = new THREE.Mesh(instRibbonGeo, windRibbonMat);
   windRibbonMesh.name = 'todWindRibbons3D';
   windRibbonMesh.frustumCulled = false;
+  windRibbonMesh.visible = false;
   group.add(windRibbonMesh);
 
   // Current interpolated state exposed for world materials sync
