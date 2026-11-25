@@ -1660,10 +1660,13 @@ export function createCampaignLoop({
     }
 
     // 4. MODE A: IN-PLACE FIELD PRAYER (`pat` +1% Max HP, `field_heal` `grace` +15% / `heal` +30% Max HP)
-    // Never triggers red Eclipse sky, never slows enemies, never revives downed partner, never activates 25s invincibility!
+    // Never triggers red Eclipse sky, never slows enemies, never revives downed partner, never activates 25s invincibility,
+    // and NEVER locks movement!
     if (resolvedPrayerMode === 'pat' || resolvedPrayerMode === 'field_heal') {
-      modeAHealCd = 25.0;
       const isPat = resolvedPrayerMode === 'pat' || verdict === 'sarcastic_pat';
+      if (!isPat) {
+        modeAHealCd = 25.0;
+      }
       const defaultPct = isPat ? 0.01 : verdict === 'heal' ? 0.3 : 0.15;
 
       const kGain =
@@ -1699,13 +1702,30 @@ export function createCampaignLoop({
       }
       if (speakerEntity) speakerEntity.praying = false;
       if (partnerEntity) partnerEntity.praying = false;
-      vfxKit?.artoriousVfx?.triggerHeal?.(speakerPos, partnerPos);
-      combatSfx?.playVerdict?.('heal');
+      const isSubtleWarmth =
+        isPat ||
+        (rawHpDelta !== null &&
+          rawHpDelta <= 2 &&
+          (rawHpDeltaPct === null || Math.abs(rawHpDeltaPct) <= 0.02)) ||
+        (rawHpDeltaPct !== null && Math.abs(rawHpDeltaPct) <= 0.02);
+      if (!isSubtleWarmth) {
+        vfxKit?.artoriousVfx?.triggerHeal?.(speakerPos, partnerPos);
+        combatSfx?.playVerdict?.('heal');
+      }
       addResonance(isPat ? 2 : 12);
       const speakerGain = speakerKey === 'Knight' ? kGain : mGain;
+      const vocalToneLower = String(judgment?.vocalTone || '').toLowerCase();
+      const patBannerTitle =
+        vocalToneLower === 'weird_absurd'
+          ? `THE SOVEREIGN IS BEMUSED · +${speakerGain} HP`
+          : vocalToneLower === 'off_topic'
+            ? `CASUAL CHATTER AT THE ALTAR · +${speakerGain} HP`
+            : vocalToneLower === 'playful_banter'
+              ? `AMUSED BY YOUR BANTER · +${speakerGain} HP`
+              : `AMUSED PAT ON THE HEAD · +${speakerGain} HP`;
       emitBanner(
         isPat
-          ? `AMUSED PAT ON THE HEAD · +${speakerGain} HP`
+          ? patBannerTitle
           : verdict === 'heal'
             ? `WARM FIELD HEAL · +${kGain} / +${mGain} HP`
             : `GENTLE GRACE · +${kGain} / +${mGain} HP`,

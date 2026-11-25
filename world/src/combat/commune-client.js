@@ -459,6 +459,43 @@ export function createCrimsonRoseRingTimer({
 }
 
 let sharedDivineAudioCtx = null;
+let sharedDivineAudioCtxCtor = null;
+
+/**
+ * Synchronously creates and resumes the shared divine `AudioContext` inside a
+ * user gesture (click/touch/keydown) so Chrome, Edge, Android, and iPad Safari
+ * never silently mute WebAudio voice playback after async `getUserMedia`/network calls.
+ */
+export function unlockDivineAudioContext(AudioContextClass = null) {
+  const AudioCtx =
+    AudioContextClass ||
+    (typeof window !== 'undefined' &&
+      (window.AudioContext || window.webkitAudioContext)) ||
+    null;
+  if (!AudioCtx) return null;
+  try {
+    if (
+      !sharedDivineAudioCtx ||
+      sharedDivineAudioCtx.state === 'closed' ||
+      (AudioContextClass && sharedDivineAudioCtxCtor !== AudioCtx)
+    ) {
+      sharedDivineAudioCtx = new AudioCtx();
+      sharedDivineAudioCtxCtor = AudioCtx;
+    }
+    if (
+      sharedDivineAudioCtx.state !== 'running' &&
+      typeof sharedDivineAudioCtx.resume === 'function'
+    ) {
+      const resumePromise = sharedDivineAudioCtx.resume();
+      if (resumePromise && typeof resumePromise.catch === 'function') {
+        resumePromise.catch(() => {});
+      }
+    }
+    return sharedDivineAudioCtx;
+  } catch {
+    return null;
+  }
+}
 
 function createCathedralImpulseBuffer(ctx, durationSec = 2.4, decay = 2.6) {
   const sampleRate = ctx.sampleRate || 48000;
@@ -478,14 +515,24 @@ function createCathedralImpulseBuffer(ctx, durationSec = 2.4, decay = 2.6) {
   return impulse;
 }
 
-const ARTORIOUS_CLIP_URLS = Object.freeze({
+export const ARTORIOUS_CLIP_URLS = Object.freeze({
   smite_nameless: '/world/assets/audio/artorious/smite_nameless.wav',
   smite_silence: '/world/assets/audio/artorious/smite_silence.wav',
   smite_monotone: '/world/assets/audio/artorious/smite_monotone.wav',
   smite_rushed: '/world/assets/audio/artorious/smite_rushed.wav',
   smite_cringe: '/world/assets/audio/artorious/smite_cringe.wav',
+  smite_insult_1: '/world/assets/audio/artorious/smite_insult_1.wav',
+  smite_insult_2: '/world/assets/audio/artorious/smite_insult_2.wav',
+  weird_absurd_1: '/world/assets/audio/artorious/weird_absurd_1.wav',
+  weird_absurd_2: '/world/assets/audio/artorious/weird_absurd_2.wav',
+  weird_offtopic: '/world/assets/audio/artorious/weird_offtopic.wav',
+  banter_tease_1: '/world/assets/audio/artorious/banter_tease_1.wav',
+  banter_flirt: '/world/assets/audio/artorious/banter_flirt.wav',
+  nudge_wrong_clue: '/world/assets/audio/artorious/nudge_wrong_clue.wav',
+  nudge_try_again: '/world/assets/audio/artorious/nudge_try_again.wav',
   heal_gentle: '/world/assets/audio/artorious/heal_gentle.wav',
   bless_sweet: '/world/assets/audio/artorious/bless_sweet.wav',
+  bless_tender: '/world/assets/audio/artorious/bless_tender.wav',
   bless_chivalrous: '/world/assets/audio/artorious/bless_chivalrous.wav',
   bless_amused: '/world/assets/audio/artorious/bless_amused.wav',
   miracle_dramatic: '/world/assets/audio/artorious/miracle_dramatic.wav',
@@ -608,15 +655,35 @@ export function playWideSurroundDivineVoice(verdictOrAudioUrl, options = {}) {
   }
 
   try {
-    if (!sharedDivineAudioCtx) {
-      sharedDivineAudioCtx = new AudioCtx();
-    }
-    const ctx = sharedDivineAudioCtx;
-    if (ctx.state === 'suspended' && typeof ctx.resume === 'function') {
-      ctx.resume().catch(() => {});
+    const ctx = unlockDivineAudioContext(AudioCtx);
+    const audioEl = new Audio(audioUrl);
+
+    // Real Chrome/Safari Autoplay Guard:
+    // If `ctx.state !== 'running'` (especially `'suspended'`), NEVER hijack `audioEl`
+    // with `ctx.createMediaElementSource(audioEl)`—doing so silently mutes playback!
+    // Instead play `audioEl` directly so the Sovereign's voice is 100% audible.
+    if (!ctx || ctx.state !== 'running') {
+      if (ctx && typeof ctx.resume === 'function') {
+        const resumePromise = ctx.resume();
+        if (resumePromise && typeof resumePromise.catch === 'function') {
+          resumePromise.catch(() => {});
+        }
+      }
+      if (!ctx || ctx.state === 'suspended' || ctx.state !== 'running') {
+        audioEl.volume = 0.95;
+        const finished = waitForAudioElementToFinish(audioEl, 15000, options.onPreClimax);
+        return {
+          played: true,
+          directAudioFallback: true,
+          fallbackAudio: true,
+          audioUrl,
+          audioElement: audioEl,
+          finished,
+          ...stereoSpec,
+        };
+      }
     }
 
-    const audioEl = new Audio(audioUrl);
     audioEl.crossOrigin = 'anonymous';
     const source = ctx.createMediaElementSource(audioEl);
 
@@ -1002,6 +1069,8 @@ export function createCommuneClient({
   }
 
   async function startCommune(options = {}) {
+    // Synchronously unlock WebAudio inside the user gesture before any `await getUserMedia()`
+    unlockDivineAudioContext(AudioContextClass);
     if (partnerCommuning) {
       emitState({ reason: 'commune_busy', activeSpeakerRole: partnerSpeakerRole });
       return { ok: false, started: false, error: 'commune_busy' };
@@ -1411,12 +1480,16 @@ export function createCommuneClient({
 
       const verdictMode = String(judgment?.prayerMode || judgment?.verdict || '').toLowerCase();
       const isDramaticCutsceneVoice =
-        verdictMode === 'awakening' ||
-        verdictMode === 'divine_miracle' ||
-        verdictMode === 'miracle' ||
-        verdictMode === 'smite' ||
-        verdictMode === 'rose_gommage' ||
-        verdictMode === 'rude_smite';
+        verdictMode !== 'retry' &&
+        verdictMode !== 'field_heal' &&
+        verdictMode !== 'pat' &&
+        verdictMode !== 'penalty' &&
+        (verdictMode === 'awakening' ||
+          verdictMode === 'divine_miracle' ||
+          verdictMode === 'miracle' ||
+          verdictMode === 'smite' ||
+          verdictMode === 'rose_gommage' ||
+          verdictMode === 'rude_smite');
 
       if (
         isDramaticCutsceneVoice &&
@@ -1507,6 +1580,8 @@ export function createCommuneClient({
    * - If already `state === 'listening'`, ALWAYS calls `stopAndSendOrCancel(options)`.
    */
   async function beginPress(options = {}) {
+    // Synchronously unlock WebAudio inside the pointer/key gesture before any `await`
+    unlockDivineAudioContext(AudioContextClass);
     if (state === 'idle') {
       pressReleasedWhileStarting = false;
       isStartingCommune = true;
@@ -1643,6 +1718,8 @@ export function createCommuneClient({
    * time to immediately stop and send (`state: 'judging' -> 'idle'`).
    */
   async function tapCommune(options = {}) {
+    // Synchronously unlock WebAudio inside the tap gesture before any `await`
+    unlockDivineAudioContext(AudioContextClass);
     if (state === 'idle') {
       pressReleasedWhileStarting = true;
       const res = await startCommune({

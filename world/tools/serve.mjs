@@ -35,6 +35,7 @@ import {
 import { getScriptureForStage } from '../../worker/scripture-catalog.js';
 import {
   GEMINI_MODEL,
+  GEMINI_MODEL_FALLBACKS,
   GEMINI_HEDGE_TIMEOUT_MS,
   GEMINI_HARD_TIMEOUT_MS,
   callSingleGeminiKey,
@@ -221,20 +222,33 @@ function readJsonBody(req, maxBytes = 12 * 1024 * 1024) {
 }
 
 async function callGeminiWithRotation(requestBody) {
-  const maxAttempts = Math.max(1, geminiKeys.length);
+  if (geminiKeys.length === 0) {
+    throw new Error('No Gemini API keys configured in environment');
+  }
+
+  const attemptedModels = new Set();
   let lastError = null;
 
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  for (let i = 0; i < GEMINI_MODEL_FALLBACKS.length; i++) {
+    const primaryModel = GEMINI_MODEL_FALLBACKS[i];
+    if (!primaryModel || attemptedModels.has(primaryModel)) continue;
+    attemptedModels.add(primaryModel);
+
     const apiKey = nextGeminiKey();
     if (!apiKey) {
       throw new Error('No Gemini API keys configured in environment');
     }
 
+    const nextFallbackModel =
+      GEMINI_MODEL_FALLBACKS.find((m) => m && !attemptedModels.has(m)) || null;
+
     try {
       const primaryPromise = callSingleGeminiKey(
         apiKey,
         requestBody,
-        GEMINI_HARD_TIMEOUT_MS
+        GEMINI_HARD_TIMEOUT_MS,
+        fetch,
+        primaryModel
       );
       const hedgedResult = await new Promise((resolve, reject) => {
         let settled = false;
@@ -242,14 +256,17 @@ async function callGeminiWithRotation(requestBody) {
         let primaryErr = null;
 
         const hedgeTimer = setTimeout(() => {
-          if (settled || geminiKeys.length < 2) return;
+          if (settled || !nextFallbackModel || attemptedModels.has(nextFallbackModel)) return;
           const backupKey = nextGeminiKey();
           if (!backupKey) return;
+          attemptedModels.add(nextFallbackModel);
           backupInFlight = true;
           callSingleGeminiKey(
             backupKey,
             requestBody,
-            Math.max(4000, GEMINI_HARD_TIMEOUT_MS - GEMINI_HEDGE_TIMEOUT_MS)
+            Math.max(4000, GEMINI_HARD_TIMEOUT_MS - GEMINI_HEDGE_TIMEOUT_MS),
+            fetch,
+            nextFallbackModel
           ).then(
             (res) => {
               if (!settled) {
@@ -292,7 +309,7 @@ async function callGeminiWithRotation(requestBody) {
     }
   }
 
-  throw lastError || new Error('All Gemini API keys failed');
+  throw lastError || new Error('All Gemini models and API keys failed');
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1154,7 +1171,6 @@ export function createWorldServer({ prewarmGemini = false } = {}) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text: 'ok' }] }],
-          generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' } },
         }),
       }
     ).catch(() => {});

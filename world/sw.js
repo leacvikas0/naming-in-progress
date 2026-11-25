@@ -9,7 +9,7 @@
 //   effect immediately on reload.
 // ============================================================================
 
-const CACHE_NAME = 'amarante-shell-v8';
+const CACHE_NAME = 'amarante-shell-v9';
 const IS_LOCAL_DEV =
   self.location.hostname === '127.0.0.1' ||
   self.location.hostname === 'localhost';

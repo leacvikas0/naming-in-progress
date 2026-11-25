@@ -157,6 +157,136 @@
       "ttsInput": "I hear the fire in your voice! <short pause> Neither death nor bone shall touch your beloved today. Rise and conquer!",
       "subtitle": "I hear the fire in your voice! Neither death nor bone shall touch your beloved today. Rise and conquer!",
       "audioUrl": "/world/assets/audio/artorious/miracle_desperate.wav"
+    },
+    {
+      "id": "smite_insult_1",
+      "verdict": "SMITE",
+      "scoreRange": [
+        1,
+        2
+      ],
+      "whenToPick": "The speaker insults, curses at, mocks, or speaks disrespectfully to the Ancient God in any language.",
+      "style": "deep, thunderous, offended ancient god of love unleashing theatrical wrath on an insolent mortal",
+      "ttsInput": "<sigh> Bold venom from such fragile lungs... <short pause> Watch how swiftly insolence turns to crimson ash!",
+      "subtitle": "Bold venom from such fragile lungs... Watch how swiftly insolence turns to crimson ash!",
+      "audioUrl": "/world/assets/audio/artorious/smite_insult_1.wav"
+    },
+    {
+      "id": "smite_insult_2",
+      "verdict": "SMITE",
+      "scoreRange": [
+        1,
+        2
+      ],
+      "whenToPick": "Alternate wrathful clip when the speaker swears at, disrespects, or provokes the Ancient God in any language.",
+      "style": "deep, dark, icy-then-booming ancient deity smiting a disrespectful mortal",
+      "ttsInput": "<chuckle> You dare curse the Sovereign of Love in His own sanctuary? <short pause> Then let the thorns answer your tongue!",
+      "subtitle": "You dare curse the Sovereign of Love in His own sanctuary? Then let the thorns answer your tongue!",
+      "audioUrl": "/world/assets/audio/artorious/smite_insult_2.wav"
+    },
+    {
+      "id": "weird_absurd_1",
+      "verdict": "PAT",
+      "scoreRange": [
+        4,
+        6
+      ],
+      "whenToPick": "The speaker says something hilariously weird, absurd, random, chaotic, or unhinged at the altar.",
+      "style": "deep, dryly bewildered, amused ancient god of love blinking at bizarre mortal nonsense",
+      "ttsInput": "<chuckle> Ten thousand years I have listened to prayers... <short pause> and somehow mortals still invent brand-new nonsense. Fascinating.",
+      "subtitle": "Ten thousand years I have listened to prayers... and somehow mortals still invent brand-new nonsense. Fascinating.",
+      "audioUrl": "/world/assets/audio/artorious/weird_absurd_1.wav"
+    },
+    {
+      "id": "weird_absurd_2",
+      "verdict": "PAT",
+      "scoreRange": [
+        4,
+        6
+      ],
+      "whenToPick": "Alternate bemused reaction when the speaker utters surreal, chaotic, or wonderfully bizarre remarks.",
+      "style": "deep, theatrical, playfully exasperated ancient deity entertained by chaos",
+      "ttsInput": "<sigh> What on earth did I just witness? <short pause> Strange little creatures... carry on before I lose my composure.",
+      "subtitle": "What on earth did I just witness? Strange little creatures... carry on before I lose my composure.",
+      "audioUrl": "/world/assets/audio/artorious/weird_absurd_2.wav"
+    },
+    {
+      "id": "weird_offtopic",
+      "verdict": "PAT",
+      "scoreRange": [
+        4,
+        6
+      ],
+      "whenToPick": "The speaker makes casual mundane or off-topic small talk (food, weather, testing mic, random modern chat).",
+      "style": "deep, deadpan, dryly witty ancient god of love amused by mundane mortal small talk",
+      "ttsInput": "<sigh> You summon an immortal Sovereign of Love... <short pause> for casual small talk? <chuckle> Bold. Truly bold.",
+      "subtitle": "You summon an immortal Sovereign of Love... for casual small talk? Bold. Truly bold.",
+      "audioUrl": "/world/assets/audio/artorious/weird_offtopic.wav"
+    },
+    {
+      "id": "banter_tease_1",
+      "verdict": "PAT",
+      "scoreRange": [
+        5,
+        7
+      ],
+      "whenToPick": "The couple playfully bickers, roasts, or lovingly teases each other while communing.",
+      "style": "deep, warm, chuckling ancient deity fond of a couple's playful bickering",
+      "ttsInput": "<chuckle> Bickering like two stubborn songbirds in the sun... <short pause> You cannot fool me—that spark is unmistakable.",
+      "subtitle": "Bickering like two stubborn songbirds in the sun... You cannot fool me—that spark is unmistakable.",
+      "audioUrl": "/world/assets/audio/artorious/banter_tease_1.wav"
+    },
+    {
+      "id": "banter_flirt",
+      "verdict": "BLESSING",
+      "scoreRange": [
+        6,
+        8
+      ],
+      "whenToPick": "The speaker delivers cheeky, bold flirting or shameless romantic cheesiness toward their partner.",
+      "style": "deep, smooth, delighted ancient god of love approving shameless flirting",
+      "ttsInput": "<laugh> Oh, how delightfully shameless! <short pause> Such brazen charm deserves a little golden favor.",
+      "subtitle": "Oh, how delightfully shameless! Such brazen charm deserves a little golden favor.",
+      "audioUrl": "/world/assets/audio/artorious/banter_flirt.wav"
+    },
+    {
+      "id": "nudge_wrong_clue",
+      "verdict": "PENALTY",
+      "scoreRange": [
+        3,
+        5
+      ],
+      "whenToPick": "The speaker prays earnestly near an unawakened stone, but misses the stone's carved poetic truth.",
+      "style": "deep, measured, poetic ancient god of love giving a firm yet warm hint",
+      "ttsInput": "<breath> Warm words, mortal... <short pause> yet they drift past the stone's true meaning. Read the carved lines once more.",
+      "subtitle": "Warm words, mortal... yet they drift past the stone's true meaning. Read the carved lines once more.",
+      "audioUrl": "/world/assets/audio/artorious/nudge_wrong_clue.wav"
+    },
+    {
+      "id": "nudge_try_again",
+      "verdict": "RETRY",
+      "scoreRange": [
+        0,
+        0
+      ],
+      "whenToPick": "Audio was unclear, cut off, or scattered by the wind; gently invites the speaker to try again without penalty.",
+      "style": "deep, calm, patient ancient god of love gently asking a mortal to repeat themselves",
+      "ttsInput": "<breath> The valley wind scattered your words before they reached me. <short pause> Draw a steady breath and speak once more.",
+      "subtitle": "The valley wind scattered your words before they reached me. Draw a steady breath and speak once more.",
+      "audioUrl": "/world/assets/audio/artorious/nudge_try_again.wav"
+    },
+    {
+      "id": "bless_tender",
+      "verdict": "BLESSING",
+      "scoreRange": [
+        6,
+        8
+      ],
+      "whenToPick": "The speaker offers quiet, soft, deeply tender affection and genuine warmth toward their partner.",
+      "style": "deep, soft, genuinely moved ancient god of love offering a quiet warm blessing",
+      "ttsInput": "<breath> Softly spoken, yet luminous to the core... <short pause> Keep that gentle warmth close, little lovers. My grace walks with you.",
+      "subtitle": "Softly spoken, yet luminous to the core... Keep that gentle warmth close, little lovers. My grace walks with you.",
+      "audioUrl": "/world/assets/audio/artorious/bless_tender.wav"
     }
   ]
 }

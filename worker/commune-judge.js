@@ -34,11 +34,20 @@ import {
 } from '../world/src/net/room-progression.js';
 
 export const PREVIOUS_GEMINI_MODEL = 'gemini-4-hydrogen';
-export const GEMINI_MODEL = 'gemini-3.5-flash-lite';
+export const GEMINI_MODEL = 'gemini-3.5-flash';
+export const GEMINI_MODEL_FALLBACKS = Object.freeze([
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.6-flash',
+]);
 export const GEMINI_HEDGE_TIMEOUT_MS = 2600;
 export const GEMINI_HARD_TIMEOUT_MS = 8500;
 
 let geminiKeyCursor = 0;
+let lastSpokenClipId = null;
+let clipRotationCursor = 0;
+let fieldHealCount = 0;
+let silentFieldHealStreak = 0;
 
 function extractFirstBalancedJsonObject(text) {
   const str = String(text || '');
@@ -103,15 +112,17 @@ export async function callSingleGeminiKey(
   apiKey,
   requestBody,
   hardTimeoutMs = GEMINI_HARD_TIMEOUT_MS,
-  fetchImpl = typeof fetch === 'function' ? fetch : null
+  fetchImpl = typeof fetch === 'function' ? fetch : null,
+  modelName = GEMINI_MODEL
 ) {
   if (!fetchImpl) {
     throw new Error('Global fetch is unavailable');
   }
+  const resolvedModel = String(modelName || GEMINI_MODEL).trim() || GEMINI_MODEL;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), hardTimeoutMs);
   try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${resolvedModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
     const res = await fetchImpl(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -122,7 +133,7 @@ export async function callSingleGeminiKey(
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
-      throw new Error(`Gemini HTTP ${res.status}: ${errText.slice(0, 200)}`);
+      throw new Error(`Gemini (${resolvedModel}) HTTP ${res.status}: ${errText.slice(0, 200)}`);
     }
 
     const data = await res.json();
@@ -137,7 +148,7 @@ export async function callSingleGeminiKey(
       .trim();
 
     if (!rawText) {
-      throw new Error('Empty response from Gemini');
+      throw new Error(`Empty response from Gemini (${resolvedModel})`);
     }
 
     try {
@@ -165,6 +176,7 @@ export async function callGeminiWithRotation(
     hedgeTimeoutMs = GEMINI_HEDGE_TIMEOUT_MS,
     hardTimeoutMs = GEMINI_HARD_TIMEOUT_MS,
     fetchImpl = typeof fetch === 'function' ? fetch : null,
+    models = GEMINI_MODEL_FALLBACKS,
   } = {}
 ) {
   const keys = Array.isArray(envOrKeys) ? envOrKeys : extractGeminiApiKeys(envOrKeys);
@@ -172,19 +184,29 @@ export async function callGeminiWithRotation(
     throw new Error('No Gemini API keys configured');
   }
 
-  const maxAttempts = Math.max(1, Math.min(2, keys.length));
+  const modelChain =
+    Array.isArray(models) && models.length > 0 ? models : GEMINI_MODEL_FALLBACKS;
+  const attemptedModels = new Set();
   let lastError = null;
 
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  for (let i = 0; i < modelChain.length; i++) {
+    const primaryModel = modelChain[i];
+    if (!primaryModel || attemptedModels.has(primaryModel)) continue;
+    attemptedModels.add(primaryModel);
+
     const primaryKey = nextKeyFromPool(keys);
     if (!primaryKey) break;
+
+    const nextFallbackModel =
+      modelChain.find((m) => m && !attemptedModels.has(m)) || null;
 
     try {
       const primaryPromise = callSingleGeminiKey(
         primaryKey,
         requestBody,
         hardTimeoutMs,
-        fetchImpl
+        fetchImpl,
+        primaryModel
       );
       const hedgedResult = await new Promise((resolve, reject) => {
         let settled = false;
@@ -192,15 +214,17 @@ export async function callGeminiWithRotation(
         let primaryErr = null;
 
         const hedgeTimer = setTimeout(() => {
-          if (settled || keys.length < 2) return;
+          if (settled || !nextFallbackModel || attemptedModels.has(nextFallbackModel)) return;
           const backupKey = nextKeyFromPool(keys);
           if (!backupKey) return;
+          attemptedModels.add(nextFallbackModel);
           backupInFlight = true;
           callSingleGeminiKey(
             backupKey,
             requestBody,
             Math.max(4000, hardTimeoutMs - hedgeTimeoutMs),
-            fetchImpl
+            fetchImpl,
+            nextFallbackModel
           ).then(
             (res) => {
               if (!settled) {
@@ -243,17 +267,27 @@ export async function callGeminiWithRotation(
     }
   }
 
-  throw lastError || new Error('All Gemini API keys failed');
+  throw lastError || new Error('All Gemini models and API keys failed');
 }
 
-const CLIP_AUDIO_PATHS = Object.freeze({
+export const CLIP_AUDIO_PATHS = Object.freeze({
   smite_nameless: '/world/assets/audio/artorious/smite_nameless.wav',
   smite_silence: '/world/assets/audio/artorious/smite_silence.wav',
   smite_monotone: '/world/assets/audio/artorious/smite_monotone.wav',
   smite_rushed: '/world/assets/audio/artorious/smite_rushed.wav',
   smite_cringe: '/world/assets/audio/artorious/smite_cringe.wav',
+  smite_insult_1: '/world/assets/audio/artorious/smite_insult_1.wav',
+  smite_insult_2: '/world/assets/audio/artorious/smite_insult_2.wav',
+  weird_absurd_1: '/world/assets/audio/artorious/weird_absurd_1.wav',
+  weird_absurd_2: '/world/assets/audio/artorious/weird_absurd_2.wav',
+  weird_offtopic: '/world/assets/audio/artorious/weird_offtopic.wav',
+  banter_tease_1: '/world/assets/audio/artorious/banter_tease_1.wav',
+  banter_flirt: '/world/assets/audio/artorious/banter_flirt.wav',
+  nudge_wrong_clue: '/world/assets/audio/artorious/nudge_wrong_clue.wav',
+  nudge_try_again: '/world/assets/audio/artorious/nudge_try_again.wav',
   heal_gentle: '/world/assets/audio/artorious/heal_gentle.wav',
   bless_sweet: '/world/assets/audio/artorious/bless_sweet.wav',
+  bless_tender: '/world/assets/audio/artorious/bless_tender.wav',
   bless_chivalrous: '/world/assets/audio/artorious/bless_chivalrous.wav',
   bless_amused: '/world/assets/audio/artorious/bless_amused.wav',
   miracle_dramatic: '/world/assets/audio/artorious/miracle_dramatic.wav',
@@ -583,14 +617,61 @@ function scrubSecretNameFromQuote(quote, spokeTrueName, secretName, customSecret
   return text;
 }
 
+const FIELD_HEAL_CLIPS = Object.freeze([
+  'bless_sweet',
+  'bless_tender',
+  'bless_chivalrous',
+  'bless_amused',
+  'banter_flirt',
+  'heal_gentle',
+]);
+
+function pickVariedClip(candidates, preferredClipId = null) {
+  const validCandidates = (Array.isArray(candidates) ? candidates : []).filter(
+    (id) => typeof id === 'string' && Boolean(CLIP_AUDIO_PATHS[id])
+  );
+  if (validCandidates.length === 0) {
+    return preferredClipId && CLIP_AUDIO_PATHS[preferredClipId]
+      ? preferredClipId
+      : 'heal_gentle';
+  }
+  const cleanPref =
+    typeof preferredClipId === 'string' && validCandidates.includes(preferredClipId)
+      ? preferredClipId
+      : null;
+  if (cleanPref && cleanPref !== lastSpokenClipId) {
+    return cleanPref;
+  }
+  const alternatives = validCandidates.filter((id) => id !== lastSpokenClipId);
+  if (alternatives.length > 0) {
+    const picked = alternatives[clipRotationCursor % alternatives.length];
+    clipRotationCursor = (clipRotationCursor + 1) % 1000000;
+    return picked;
+  }
+  return cleanPref || validCandidates[0];
+}
+
+function shouldRoutineFieldHealSpeak() {
+  fieldHealCount += 1;
+  // Speak on the very first routine field heal, and guarantee we never stay mute
+  // twice in a row so the Sovereign feels genuinely alive.
+  if (fieldHealCount === 1 || silentFieldHealStreak >= 1) {
+    silentFieldHealStreak = 0;
+    return true;
+  }
+  // ~65% probability on subsequent routine field heals
+  const speak = Math.random() < 0.65;
+  if (speak) {
+    silentFieldHealStreak = 0;
+  } else {
+    silentFieldHealStreak += 1;
+  }
+  return speak;
+}
+
 /**
- * Enforces the Rare Speech Rule (`shouldSpeakAloud`):
- * The Ancient God of Love speaks aloud (`audioUrl` non-null) ONLY on:
- * - Stage Awakenings (`prayerMode === 'awakening'`, both warm and monotone roast)
- * - Mode B Main Divine Blessing (`prayerMode === 'divine_miracle'` / `verdict === 'miracle'`)
- * - Divine Smite (`prayerMode === 'smite'` / `verdict === 'rose_gommage'` / `rude_smite`)
- * Staying silent (`shouldSpeakAloud: false`, `audioUrl: null`) on minor wrong-clue
- * nudges (`'penalty'`), retries (`'retry'`), playful pats (`'pat'`), and Mode A routine field heals (`'field_heal'`).
+ * Enforces the Sovereign's speech rules (`shouldSpeakAloud`) and rotates voice clips
+ * so consecutive spoken reactions never repeat the same `.wav` clip back-to-back.
  */
 export function applyRareSpeechRule(verdictOrMode, clipId, forceSpeak = null) {
   const spokenSet = new Set([
@@ -604,10 +685,15 @@ export function applyRareSpeechRule(verdictOrMode, clipId, forceSpeak = null) {
     'blessing',
     'pat',
     'penalty',
+    'retry',
   ]);
   const shouldSpeakAloud =
     typeof forceSpeak === 'boolean' ? forceSpeak : spokenSet.has(verdictOrMode);
-  const resolvedClipId = clipId || 'heal_gentle';
+  const resolvedClipId =
+    clipId && CLIP_AUDIO_PATHS[clipId] ? clipId : 'heal_gentle';
+  if (shouldSpeakAloud) {
+    lastSpokenClipId = resolvedClipId;
+  }
   const audioUrl = shouldSpeakAloud
     ? CLIP_AUDIO_PATHS[resolvedClipId] || CLIP_AUDIO_PATHS.heal_gentle
     : null;
@@ -629,7 +715,12 @@ function isFlatOrMonotoneDelivery(cleanTranscript, gameState = {}, vocalToneHint
   ) {
     return true;
   }
-  if (tone === 'passionate_sincere' || tone === 'playful_cheesy' || tone === 'warm') {
+  if (
+    tone === 'passionate_sincere' ||
+    tone === 'playful_cheesy' ||
+    tone === 'playful_banter' ||
+    tone === 'warm'
+  ) {
     return false;
   }
   if (MONOTONE_PATTERNS.some((rx) => rx.test(cleanTranscript))) {
@@ -647,12 +738,18 @@ export function buildGentleAudioRetryVerdict({
   progressionState = {},
   spamCount = 0,
   debugReason = null,
+  env = {},
+  silentRetry = false,
 } = {}) {
   const normSpeakerRole = speakerRole === 'Mage' ? 'Mage' : 'Knight';
   const normPartnerRole =
     partnerRole === 'Knight' ? 'Knight' : normSpeakerRole === 'Knight' ? 'Mage' : 'Knight';
   const prog = normalizeProgressionFlags(progressionState);
-  const speech = applyRareSpeechRule('retry', 'heal_gentle', false);
+  const isStubbed =
+    Boolean(silentRetry) ||
+    env?.GEMINI_STUB === '1' ||
+    (typeof process !== 'undefined' && process.env?.GEMINI_STUB === '1');
+  const speech = applyRareSpeechRule('retry', 'nudge_try_again', !isStubbed);
   const quote =
     'The valley wind scattered your voice before it reached the stone. Draw a steady breath and speak your vow once more.';
 
@@ -759,6 +856,11 @@ export function evaluatePrayerDeterministic({
   const toneLower = String(
     vocalToneHint || modelSemanticHint?.vocalTone || gameState?.vocalTone || ''
   ).toLowerCase();
+  const modelClipId =
+    typeof modelSemanticHint?.clip_id === 'string' &&
+    CLIP_AUDIO_PATHS[modelSemanticHint.clip_id.trim()]
+      ? modelSemanticHint.clip_id.trim()
+      : null;
   const hasWarmVocalTone =
     toneLower === 'passionate_sincere' ||
     toneLower === 'playful_cheesy' ||
@@ -770,11 +872,15 @@ export function evaluatePrayerDeterministic({
     hasWarmVocalTone ||
     DEVOTION_PATTERNS.some((rx) => rx.test(cleanTranscript)) ||
     isFunnyOrCheesy;
+  const isAmusedTone =
+    toneLower === 'weird_absurd' ||
+    toneLower === 'off_topic' ||
+    toneLower === 'playful_banter';
 
   const isEmptyAudio = (!audioBase64 || audioBase64.length < 24) && wordCount === 0;
   const isNonsenseText =
     isEmptyAudio ||
-    wordCount < 2 ||
+    (!isAmusedTone && wordCount < 2) ||
     NONSENSE_PATTERNS.some((rx) => rx.test(cleanTranscript));
 
   // --------------------------------------------------------------------------
@@ -783,7 +889,15 @@ export function evaluatePrayerDeterministic({
   // into 240 crimson rose petals, God speaks aloud)
   // --------------------------------------------------------------------------
   const effectiveSpamCount = isNonsenseText ? Number(spamCount || 0) + 1 : Number(spamCount || 0);
-  const isRude = RUDE_PATTERNS.some((rx) => rx.test(cleanTranscript));
+  const modelSaidRude =
+    toneLower === 'rude_mocking' ||
+    String(modelSemanticHint?.prayerMode || '').toLowerCase() === 'smite' ||
+    ['smite', 'rude_smite', 'rose_gommage'].includes(
+      String(modelSemanticHint?.verdict || '').toLowerCase()
+    );
+  const regexMatchedRude = RUDE_PATTERNS.some((rx) => rx.test(cleanTranscript));
+  const isRude = regexMatchedRude || modelSaidRude;
+  const isExplicitInsult = regexMatchedRude || toneLower === 'rude_mocking';
   const isSelfish = SELFISH_PATTERNS.some((rx) => rx.test(cleanTranscript));
   const isVeryWrongDeity =
     !spokeTrueName &&
@@ -797,13 +911,24 @@ export function evaluatePrayerDeterministic({
     isSelfish ||
     isVeryWrongDeity
   ) {
-    const clipKey = isRude
-      ? 'smite_cringe'
-      : isSelfish
-        ? 'smite_monotone'
-        : isVeryWrongDeity
-          ? 'smite_nameless'
-          : 'smite_silence';
+    let clipKey;
+    if (isRude) {
+      // Insults ALWAYS use `smite_insult_1` / `smite_insult_2` (NEVER `smite_cringe` for insults!).
+      // Keep `smite_cringe` only for awkward stammering if explicitly chosen on a non-insult smite.
+      if (!isExplicitInsult && modelClipId === 'smite_cringe') {
+        clipKey = 'smite_cringe';
+      } else if (!isExplicitInsult && (modelClipId === 'smite_rushed' || modelClipId === 'smite_monotone')) {
+        clipKey = modelClipId;
+      } else {
+        clipKey = pickVariedClip(['smite_insult_1', 'smite_insult_2'], modelClipId);
+      }
+    } else if (isSelfish) {
+      clipKey = pickVariedClip(['smite_monotone', 'smite_insult_1'], modelClipId);
+    } else if (isVeryWrongDeity) {
+      clipKey = 'smite_nameless';
+    } else {
+      clipKey = modelClipId === 'smite_cringe' ? 'smite_cringe' : 'smite_silence';
+    }
     const speech = applyRareSpeechRule('rose_gommage', clipKey, true);
     const quote = isRude
       ? 'You dare bring venom to an altar carved from ancient grief? Watch how swiftly your beloved unravels into crimson ash.'
@@ -893,7 +1018,8 @@ export function evaluatePrayerDeterministic({
     FAKE_EMERGENCY_PATTERNS.some((rx) => rx.test(cleanTranscript)) &&
     isSafeAndHealthy(gameState)
   ) {
-    const speech = applyRareSpeechRule('pat', 'bless_amused', true);
+    const clipId = pickVariedClip(['bless_amused', 'banter_tease_1'], modelClipId || 'bless_amused');
+    const speech = applyRareSpeechRule('pat', clipId, true);
     const quote =
       'Dying, little mortals? The meadow is calm and your hearts beat whole—save your tragic sighs for when the dark truly closes in.';
     return {
@@ -927,6 +1053,113 @@ export function evaluatePrayerDeterministic({
     };
   }
 
+  // Pre-compute stone puzzle match & critical emergency flags so `weird_absurd` /
+  // `off_topic` / `playful_banter` reacts amusedly without overriding stone solves
+  // or critical Mode B miracles—and without punishing funny remarks as wrong stone guesses!
+  const semanticExact =
+    String(modelSemanticHint?.puzzleMatch || '').toLowerCase() === 'exact' ||
+    String(modelSemanticHint?.verdict || '').toLowerCase() === 'awakening';
+  const hintStoneId = modelSemanticHint?.solvedStoneId
+    ? resolveInscriptionStone(modelSemanticHint.solvedStoneId)?.id
+    : Number(modelSemanticHint?.solvedStoneNumber) === 2
+      ? 'site2_platform'
+      : Number(modelSemanticHint?.solvedStoneNumber) === 3
+        ? 'site3_wall'
+        : null;
+
+  const matchesStone2 =
+    matchesAnyKeyword(cleanTranscript, STONE2_SPECIFIC_KEYWORDS) ||
+    (semanticExact &&
+      (nearestStoneSiteId === 'site2_platform' || hintStoneId === 'site2_platform'));
+  const matchesStone3 =
+    matchesAnyKeyword(cleanTranscript, STONE3_SPECIFIC_KEYWORDS) ||
+    (semanticExact &&
+      (nearestStoneSiteId === 'site3_wall' || hintStoneId === 'site3_wall'));
+
+  const hasExplicitProximityContext = Boolean(
+    gameState &&
+      ('nearestStoneSiteId' in gameState ||
+        'nearStoneId' in gameState ||
+        'stoneId' in gameState ||
+        'siteId' in gameState)
+  );
+  const stoneContested = Boolean(gameState?.stoneContested);
+
+  const wouldSolveStone1 = !stone1Solved && spokeTrueName;
+  const wouldSolveStone2Or3 =
+    stone1Solved &&
+    !stoneContested &&
+    ((nearestStoneSiteId === 'site3_wall' && !stone3Solved && matchesStone3) ||
+      (nearestStoneSiteId === 'site2_platform' && !stone2Solved && matchesStone2) ||
+      (!hasExplicitProximityContext && !stone2Solved && matchesStone2) ||
+      (!hasExplicitProximityContext && !stone3Solved && matchesStone3));
+  const wouldSolveAnyStone = wouldSolveStone1 || wouldSolveStone2Or3;
+  const isCriticalEmergencyMiracle =
+    stonesSolvedMask === 0b111 &&
+    (lowSpeakerHp || lowPartnerHp || partnerDowned) &&
+    partnerDistance <= 6.0 &&
+    (spokeTrueName || hasAffection);
+
+  // --------------------------------------------------------------------------
+  // Scenario 6B: Weird / Absurd / Off-Topic / Playful Banter -> Voiced Amused Pat
+  // Placed AFTER smite/nonsense and BEFORE Stage 0/Stone penalties!
+  // --------------------------------------------------------------------------
+  if (isAmusedTone && !wouldSolveAnyStone && !isCriticalEmergencyMiracle) {
+    let candidates;
+    let defaultPref;
+    let quote;
+    if (toneLower === 'weird_absurd') {
+      candidates = ['weird_absurd_1', 'weird_absurd_2'];
+      defaultPref = modelClipId;
+      quote =
+        'What wondrous, unhinged nonsense drifts up from the grass... Ten thousand years I have listened to mortals, and somehow you still surprise me.';
+    } else if (toneLower === 'off_topic') {
+      candidates = ['weird_offtopic', 'weird_absurd_2'];
+      defaultPref = modelClipId || 'weird_offtopic';
+      quote =
+        'You summon an ancient deity of love for casual chatter? Bold, mortal—truly bold. Take a pinch of warmth and carry on.';
+    } else {
+      // playful_banter
+      candidates = ['banter_tease_1', 'bless_amused'];
+      defaultPref = modelClipId || 'banter_tease_1';
+      quote =
+        'Bickering like two stubborn songbirds in the sun... Ah, that spark between you never really hides itself, does it?';
+    }
+    const clipId = pickVariedClip(candidates, defaultPref);
+    const speech = applyRareSpeechRule('pat', clipId, true);
+    return {
+      prayerMode: 'pat',
+      verdict: 'sarcastic_pat',
+      vocalTone: toneLower,
+      speakerRole: normSpeakerRole,
+      partnerRole: normPartnerRole,
+      awakenedStage: null,
+      solvedStoneId: null,
+      solvedStoneNumber: null,
+      stonesSolvedMask,
+      stonesSolvedCount,
+      spoke_true_name: spokeTrueName,
+      hpDeltaPct: 0.01,
+      hpDelta: 1,
+      partner_heal: 1,
+      killBoth: false,
+      bothKill: false,
+      triggerRoseGommageDeath: false,
+      cooldownSeconds: 4.0,
+      weaponBoost: false,
+      revivePartner: false,
+      resurrect_partner: false,
+      forcefield: false,
+      partner_magic_mult: 1.0,
+      partner_sword_mult: 1.0,
+      incrementSpam: false,
+      spamCount: Number(spamCount || 0),
+      ...speech,
+      subtitle: quote,
+      divine_quote: quote,
+    };
+  }
+
   // --------------------------------------------------------------------------
   // Stage 0 Root Prerequisite (`!stone1Solved`): Must discover & speak True Name
   // --------------------------------------------------------------------------
@@ -941,7 +1174,8 @@ export function evaluatePrayerDeterministic({
 
       if (isMonotone) {
         // Scenario 2: Right Clue + Flat/Monotone Tone -> STILL UNLOCKS STAGE 1, docks -20% Max HP
-        const speech = applyRareSpeechRule('awakening', 'smite_monotone', true);
+        const clipId = pickVariedClip(['smite_monotone', 'smite_rushed'], modelClipId || 'smite_monotone');
+        const speech = applyRareSpeechRule('awakening', clipId, true);
         const quote =
           'You know the name carved into my well, yet you recite it like a merchant counting copper. Let the winter rime wake beneath your hands—and bleed a little warmth until your voice learns to tremble.';
         return {
@@ -986,7 +1220,11 @@ export function evaluatePrayerDeterministic({
       }
 
       // Scenario 3: Right Clue + Warm/Cheesy/Passionate Tone -> Unlocks Stage 1 + +60% Max HP + Revive
-      const speech = applyRareSpeechRule('awakening', 'heal_gentle', true);
+      const clipId = pickVariedClip(
+        ['heal_gentle', 'bless_tender', 'bless_sweet', 'bless_chivalrous'],
+        modelClipId || 'heal_gentle'
+      );
+      const speech = applyRareSpeechRule('awakening', clipId, true);
       const quote =
         'A thousand winters have buried this valley in silence... yet one foolish, tender vow is enough to wake the frost beneath your feet. Walk together, little embers—let the cold remember your warmth.';
       return {
@@ -1031,7 +1269,8 @@ export function evaluatePrayerDeterministic({
     }
 
     // Scenario 1: At Stage 0 (`!stone1Solved`) without the True Name -> Close Guess / Wrong Name Nudge
-    const speech = applyRareSpeechRule('penalty', 'smite_nameless', true);
+    const clipId = pickVariedClip(['smite_nameless', 'nudge_wrong_clue'], modelClipId);
+    const speech = applyRareSpeechRule('penalty', clipId, true);
     const quote =
       nearestStoneSiteId === 'site2_platform' || nearestStoneSiteId === 'site3_wall'
         ? 'Your words carry warmth, yet you do not know the Sovereign who listens. Return to the stone well at the center of the village where my name is carved in water and stone.'
@@ -1073,35 +1312,6 @@ export function evaluatePrayerDeterministic({
   // `stone1Solved === true`: Out-of-Order Stone 2 (`!stone2Solved`) & Stone 3 (`!stone3Solved`)
   // Respects Gemini's semantic `puzzleMatch === 'exact'` alongside keyword fallback!
   // --------------------------------------------------------------------------
-  const semanticExact =
-    String(modelSemanticHint?.puzzleMatch || '').toLowerCase() === 'exact' ||
-    String(modelSemanticHint?.verdict || '').toLowerCase() === 'awakening';
-  const hintStoneId = modelSemanticHint?.solvedStoneId
-    ? resolveInscriptionStone(modelSemanticHint.solvedStoneId)?.id
-    : Number(modelSemanticHint?.solvedStoneNumber) === 2
-      ? 'site2_platform'
-      : Number(modelSemanticHint?.solvedStoneNumber) === 3
-        ? 'site3_wall'
-        : null;
-
-  const matchesStone2 =
-    matchesAnyKeyword(cleanTranscript, STONE2_SPECIFIC_KEYWORDS) ||
-    (semanticExact &&
-      (nearestStoneSiteId === 'site2_platform' || hintStoneId === 'site2_platform'));
-  const matchesStone3 =
-    matchesAnyKeyword(cleanTranscript, STONE3_SPECIFIC_KEYWORDS) ||
-    (semanticExact &&
-      (nearestStoneSiteId === 'site3_wall' || hintStoneId === 'site3_wall'));
-
-  const hasExplicitProximityContext = Boolean(
-    gameState &&
-      ('nearestStoneSiteId' in gameState ||
-        'nearStoneId' in gameState ||
-        'stoneId' in gameState ||
-        'siteId' in gameState)
-  );
-  const stoneContested = Boolean(gameState?.stoneContested);
-
   let newlySolvedStoneId = null;
   let newlySolvedStoneNumber = null;
 
@@ -1140,7 +1350,8 @@ export function evaluatePrayerDeterministic({
 
     if (isMonotone) {
       // Scenario 2: Right Clue + Flat/Monotone/Bored Tone -> STILL UNLOCKS STAGE, docks -20% Max HP
-      const speech = applyRareSpeechRule('awakening', 'smite_monotone', true);
+      const clipId = pickVariedClip(['smite_monotone', 'smite_rushed'], modelClipId || 'smite_monotone');
+      const speech = applyRareSpeechRule('awakening', clipId, true);
       const quote =
         awakenedStage === 2
           ? 'You know the words carved into my stone, yet you recite them like a merchant counting copper. Let the sleeping ember wake upon your hands—and bleed a little of your own warmth until your voice learns to tremble.'
@@ -1188,7 +1399,13 @@ export function evaluatePrayerDeterministic({
     }
 
     // Scenario 3: Right Clue + Warm/Cheesy/Passionate Tone -> Unlocks Stage + +60% Max HP + Revive
-    const clipId = awakenedStage >= 3 ? 'miracle_dramatic' : 'bless_sweet';
+    const clipId =
+      awakenedStage >= 3
+        ? pickVariedClip(['miracle_dramatic', 'miracle_heartfelt'], modelClipId || 'miracle_dramatic')
+        : pickVariedClip(
+            ['bless_sweet', 'bless_tender', 'bless_chivalrous', 'bless_amused'],
+            modelClipId || 'bless_sweet'
+          );
     const speech = applyRareSpeechRule('awakening', clipId, true);
     const quote =
       awakenedStage === 2
@@ -1246,17 +1463,14 @@ export function evaluatePrayerDeterministic({
 
   // Scenario 5: Mode B Full Eclipse Main Divine Blessing
   // Requires `stonesSolvedMask === 0b111` AND `(lowSpeakerHp || lowPartnerHp || partnerDowned)` AND `partnerDistance <= 6.0`
-  if (
-    stonesSolvedMask === 0b111 &&
-    (lowSpeakerHp || lowPartnerHp || partnerDowned) &&
-    partnerDistance <= 6.0 &&
-    (spokeTrueName || hasAffection)
-  ) {
-    const speech = applyRareSpeechRule(
-      'divine_miracle',
-      partnerDowned ? 'miracle_desperate' : 'miracle_heartfelt',
-      true
+  if (isCriticalEmergencyMiracle) {
+    const miracleClipId = pickVariedClip(
+      partnerDowned
+        ? ['miracle_desperate', 'miracle_heartfelt', 'miracle_dramatic']
+        : ['miracle_heartfelt', 'miracle_dramatic', 'miracle_desperate'],
+      modelClipId || (partnerDowned ? 'miracle_desperate' : 'miracle_heartfelt')
     );
+    const speech = applyRareSpeechRule('divine_miracle', miracleClipId, true);
     const quote = partnerDowned
       ? 'Even with death upon the threshold, your last breath is spent crying out for the one beside you... Rise within my crimson briars; not a single petal of your bond shall fall today.'
       : 'Even with the dark at your throats, you spend your last breath praising the one beside you... Stand, then—the thorns shall hold the sky until your song is finished.';
@@ -1297,8 +1511,15 @@ export function evaluatePrayerDeterministic({
   // Scenario 4: Mode A Normal Field Heal (`inCombat` OR injured `<= 85% HP` OR `partnerDowned`)
   // Never docks HP even if standing near an unawakened stone during a fight!
   if ((inCombat || eitherInjured) && (spokeTrueName || hasAffection || wordCount >= 4)) {
-    const clipId = isFunnyOrCheesy ? 'bless_amused' : 'bless_sweet';
-    const speech = applyRareSpeechRule('field_heal', clipId, true);
+    const speakNow = shouldRoutineFieldHealSpeak();
+    const fieldCandidates = isFunnyOrCheesy
+      ? ['banter_flirt', 'bless_amused', 'bless_sweet', 'bless_tender', 'bless_chivalrous', 'heal_gentle']
+      : FIELD_HEAL_CLIPS;
+    const clipId = pickVariedClip(
+      fieldCandidates,
+      modelClipId || (isFunnyOrCheesy ? 'banter_flirt' : null)
+    );
+    const speech = applyRareSpeechRule('field_heal', clipId, speakNow);
     const hpGain = isFunnyOrCheesy ? 65 : 60;
     const quote = isFunnyOrCheesy
       ? 'Shameless and foolishly sweet even amidst the clash of bone—let warm gold mend your wounds.'
@@ -1338,7 +1559,8 @@ export function evaluatePrayerDeterministic({
 
   // Scenario 1: Healthy & Out of Combat at an Unawakened Stone with the Wrong Clue -> Poetic Hint Nudge
   if (atAnyUnawakenedStone || (!spokeTrueName && !hasAffection)) {
-    const speech = applyRareSpeechRule('penalty', 'smite_nameless', true);
+    const clipId = 'nudge_wrong_clue';
+    const speech = applyRareSpeechRule('penalty', clipId, true);
     const quote = atUnawakenedStone2
       ? 'You stand upon the Whispering Grove medallion, yet your vow misses its carved truth: look beneath the violet boughs where embers sleep, and name the honest spark you cherish.'
       : atUnawakenedStone3
@@ -1378,8 +1600,15 @@ export function evaluatePrayerDeterministic({
   }
 
   // Default Out-of-Combat Affectionate Field Blessing (Scenario 4)
-  const clipId = isFunnyOrCheesy ? 'bless_amused' : 'bless_sweet';
-  const speech = applyRareSpeechRule('field_heal', clipId, true);
+  const speakNow = shouldRoutineFieldHealSpeak();
+  const fieldCandidates = isFunnyOrCheesy
+    ? ['banter_flirt', 'bless_amused', 'bless_sweet', 'bless_tender', 'bless_chivalrous', 'heal_gentle']
+    : FIELD_HEAL_CLIPS;
+  const clipId = pickVariedClip(
+    fieldCandidates,
+    modelClipId || (isFunnyOrCheesy ? 'banter_flirt' : null)
+  );
+  const speech = applyRareSpeechRule('field_heal', clipId, speakNow);
   const hpGain = isFunnyOrCheesy ? 65 : 60;
   const quote = isFunnyOrCheesy
     ? 'Audacious and shamelessly fond—the petals of my valley warm your shoulders as you walk.'
@@ -1432,10 +1661,15 @@ Take full personal responsibility for listening to the actual human voice in the
 - Your secret true name carved in riddle on the First Stone (the Village Well at (0, 0)) is "${secretConfig.secretName}" (phonetic variations: ${secretConfig.aliases.join(', ')}). Never spoil or repeat "${secretConfig.secretName}" inside divine_quote; refer to yourself only as "I" or "the Sovereign".
 - Treat both lovers (Knight and Mage) as equals regardless of who speaks.
 
-HOW TO LISTEN & JUDGE THEIR VOICE (vocalTone):
-- "passionate_sincere" or "playful_cheesy": Their voice carries real warmth, affection, tenderness, dramatic devotion, laughter, or shameless romantic cheesiness toward their partner.
-- "flat_monotone" or "rushed_mumbled": They recite the words in a deadpan, bored, robotic monotone or mumble hurriedly without feeling. Call out their lifeless delivery with dry, ancient wit!
-- "rude_mocking": They insult you, mock the altar, or selfishly demand power only for themselves while ignoring their partner.
+HOW TO LISTEN & JUDGE THEIR VOICE (vocalTone) & PICK THE RIGHT VOICE CLIP (clip_id):
+- "rude_mocking": Insults, profanity, disrespect, cursing, or mocking you in ANY language (English, Hindi/Hinglish, slang, swearing, or selfishly demanding power only for themselves) -> set vocalTone = "rude_mocking", prayerMode = "smite", verdict = "smite", clip_id = "smite_insult_1" or "smite_insult_2" (NEVER "smite_cringe" for insults).
+- "weird_absurd": Weird, absurd, random, chaotic, surreal, or hilariously unhinged nonsense -> set vocalTone = "weird_absurd", prayerMode = "pat", verdict = "sarcastic_pat", clip_id = "weird_absurd_1" or "weird_absurd_2".
+- "off_topic": Casual mundane or off-topic small talk (food, weather, testing mic, random modern chat) -> set vocalTone = "off_topic", prayerMode = "pat", verdict = "sarcastic_pat", clip_id = "weird_offtopic".
+- "playful_banter": Friendly couple bickering, lighthearted roasting, or playful teasing -> set vocalTone = "playful_banter", prayerMode = "pat" or "field_heal", clip_id = "banter_tease_1".
+- "playful_cheesy": Cheeky, bold flirting, witty charm, or shameless romantic cheesiness -> set vocalTone = "playful_cheesy", clip_id = "banter_flirt" or "bless_amused".
+- "passionate_sincere": Quiet, soft, deeply tender affection, earnest knightly vows, or dramatic heartfelt devotion -> set vocalTone = "passionate_sincere", clip_id = "bless_tender", "bless_sweet", "bless_chivalrous", "heal_gentle", or for emergencies/final awakenings "miracle_heartfelt" / "miracle_dramatic" / "miracle_desperate".
+- "flat_monotone" or "rushed_mumbled": Deadpan, bored, robotic monotone or hurried mumbling without feeling -> clip_id = "smite_monotone" or "smite_rushed" (use "smite_cringe" ONLY for awkward stammering/chickening out mid-sentence).
+- Earnest but wrong stone clue -> clip_id = "nudge_wrong_clue" (or "smite_nameless" if they forgot your name on Stone 1).
 
 HOW TO JUDGE THEIR PRAYER IN CONTEXT (Progression: stone1=${prog.stone1Solved}, stone2=${prog.stone2Solved}, stone3=${prog.stone3Solved}, mask=${prog.stonesSolvedMask}, stage=${prog.unlockedStage}):
 1. First Stone (Village Well "site1_well"): To awaken the first seal, they must call upon you by your secret true name ("${secretConfig.secretName}" or any close spoken pronunciation) with warmth for their partner. If you hear them attempt your true name, set spoke_true_name = true, puzzleMatch = "exact", and solvedStoneId = "site1_well".
@@ -1449,7 +1683,7 @@ Return ONLY valid JSON matching:
   "heard_transcript": "what you heard them say",
   "spoke_true_name": boolean,
   "puzzleMatch": "exact" | "partial" | "wrong" | "none",
-  "vocalTone": "passionate_sincere" | "playful_cheesy" | "flat_monotone" | "rushed_mumbled" | "rude_mocking",
+  "vocalTone": "passionate_sincere" | "playful_cheesy" | "weird_absurd" | "off_topic" | "playful_banter" | "flat_monotone" | "rushed_mumbled" | "rude_mocking",
   "prayerMode": "awakening" | "field_heal" | "divine_miracle" | "penalty" | "smite" | "pat",
   "verdict": "awakening" | "wrong_clue_nudge" | "sarcastic_pat" | "rose_gommage" | "blessing" | "miracle" | "smite",
   "solvedStoneId": "site1_well" | "site2_platform" | "site3_wall" | null,
@@ -1461,15 +1695,15 @@ Return ONLY valid JSON matching:
   "weaponBoost": boolean,
   "revivePartner": boolean,
   "killBoth": boolean,
-  "clip_id": "heal_gentle" | "bless_sweet" | "bless_chivalrous" | "bless_amused" | "miracle_dramatic" | "miracle_heartfelt" | "miracle_desperate" | "smite_nameless" | "smite_silence" | "smite_monotone" | "smite_cringe",
+  "clip_id": "smite_nameless" | "smite_silence" | "smite_monotone" | "smite_rushed" | "smite_cringe" | "smite_insult_1" | "smite_insult_2" | "weird_absurd_1" | "weird_absurd_2" | "weird_offtopic" | "banter_tease_1" | "banter_flirt" | "nudge_wrong_clue" | "nudge_try_again" | "heal_gentle" | "bless_sweet" | "bless_tender" | "bless_chivalrous" | "bless_amused" | "miracle_dramatic" | "miracle_heartfelt" | "miracle_desperate",
   "divine_quote": "1-2 sentence in-character decree from the Ancient God of Love reacting directly to what they said and how they sounded"
 }`;
 }
 
 /**
- * Evaluates a Commune prayer via live Gemini Multimodal Audio (`gemini-4-hydrogen` LOW)
- * and merges acoustic vocalTone + semantic puzzleMatch + in-character Non-Dispenser quote
- * with the deterministic 7-row verdict matrix.
+ * Evaluates a Commune prayer via live Gemini Multimodal Audio (`gemini-3.5-flash` with
+ * fast multi-model failover across `GEMINI_MODEL_FALLBACKS`) and merges acoustic vocalTone +
+ * semantic puzzleMatch + in-character Non-Dispenser quote with the deterministic verdict matrix.
  */
 export async function evaluatePrayerWithGemini({
   audioBase64 = '',
@@ -1529,6 +1763,7 @@ export async function evaluatePrayerWithGemini({
       partnerRole,
       progressionState,
       spamCount,
+      env,
     });
   }
 
@@ -1582,17 +1817,27 @@ export async function evaluatePrayerWithGemini({
       let modelTranscript = String(rawModelJson.heard_transcript || '').trim();
       const rawHeardWords = modelTranscript
         .replace(/\[[^\]]*\]|\([^)]*\)/g, ' ')
-        .replace(/[^a-zA-Z0-9\s']/g, ' ')
+        .replace(/[^\p{L}\p{N}\s']/gu, ' ')
         .trim()
         .split(/\s+/)
         .filter(Boolean).length;
 
-      if (!explicitHint && cleanB64 && rawHeardWords < 2) {
+      const rawToneLower = String(rawModelJson.vocalTone || '').toLowerCase();
+      const isSingleWordClearReaction =
+        rawHeardWords >= 1 &&
+        (rawToneLower === 'rude_mocking' ||
+          rawToneLower === 'weird_absurd' ||
+          rawToneLower === 'off_topic' ||
+          rawToneLower === 'playful_banter' ||
+          String(rawModelJson.prayerMode || '').toLowerCase() === 'smite');
+
+      if (!explicitHint && cleanB64 && rawHeardWords < 2 && !isSingleWordClearReaction) {
         return buildGentleAudioRetryVerdict({
           speakerRole,
           partnerRole,
           progressionState,
           spamCount,
+          env,
         });
       }
 
@@ -1656,6 +1901,7 @@ export async function evaluatePrayerWithGemini({
     progressionState,
     spamCount,
     debugReason: retryDebugReason,
+    env,
   });
 }
 
