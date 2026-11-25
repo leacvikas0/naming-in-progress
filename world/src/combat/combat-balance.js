@@ -223,8 +223,8 @@ export const SPELLS = {
     range: 18.0,
     minRange: 0.8,
     maxRange: 18.0,
-    width: 2.2,
-    eruptionRadius: 2.8,
+    width: 4.0,
+    eruptionRadius: 3.6,
     mark: 'rime',
     infusion: 'rime',
     detonatesMark: true,
@@ -382,7 +382,7 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Skeleton_Minion',
     poolRole: 'Skeleton_Minion',
     name: 'Skeleton Minion',
-    maxHp: 140,
+    maxHp: 185,
     dmg: 15,
     speed: 7.2,
     qEnergyReward: 18,
@@ -399,7 +399,7 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Skeleton_Warrior',
     poolRole: 'Skeleton_Warrior',
     name: 'Skeleton Warrior',
-    maxHp: 250,
+    maxHp: 320,
     dmg: 20,
     speed: 6.2,
     qEnergyReward: 24,
@@ -417,7 +417,7 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Skeleton_Rogue',
     poolRole: 'Skeleton_Rogue',
     name: 'Skeleton Rogue',
-    maxHp: 185,
+    maxHp: 240,
     dmg: 18,
     speed: 8.0,
     qEnergyReward: 24,
@@ -435,7 +435,7 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Skeleton_Mage',
     poolRole: 'Skeleton_Mage',
     name: 'Skeleton Mage',
-    maxHp: 175,
+    maxHp: 225,
     dmg: 19,
     speed: 5.2,
     qEnergyReward: 26,
@@ -454,7 +454,7 @@ export const ENEMY_ARCHETYPES = {
     charId: 'OrcRaider',
     poolRole: 'OrcRaider',
     name: 'Valley Orc Raider',
-    maxHp: 310,
+    maxHp: 390,
     dmg: 23,
     speed: 7.6,
     qEnergyReward: 30,
@@ -473,7 +473,7 @@ export const ENEMY_ARCHETYPES = {
     charId: 'PlantWarrior',
     poolRole: 'PlantWarrior',
     name: 'Briar Plant Warrior',
-    maxHp: 280,
+    maxHp: 350,
     dmg: 21,
     speed: 6.4,
     qEnergyReward: 28,
@@ -495,7 +495,7 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Werewolf_Wolf',
     poolRole: 'Werewolf_Wolf',
     name: 'Moonlit Werewolf',
-    maxHp: 350,
+    maxHp: 430,
     dmg: 25,
     speed: 8.4,
     qEnergyReward: 32,
@@ -514,7 +514,7 @@ export const ENEMY_ARCHETYPES = {
     charId: 'BlackKnight',
     poolRole: 'BlackKnight',
     name: 'Obsidian Black Knight',
-    maxHp: 580,
+    maxHp: 720,
     dmg: 28,
     speed: 6.0,
     qEnergyReward: 50,
@@ -535,7 +535,7 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Necromancer',
     poolRole: 'Necromancer',
     name: 'Grove Necromancer Sovereign',
-    maxHp: 1250,
+    maxHp: 1650,
     dmg: 30,
     speed: 5.2,
     qEnergyReward: 90,
@@ -560,7 +560,7 @@ export const ENEMY_ARCHETYPES = {
     charId: 'OrcBrute',
     poolRole: 'OrcBrute',
     name: 'Ironcrag Orc Brute',
-    maxHp: 1350,
+    maxHp: 1800,
     dmg: 32,
     speed: 5.8,
     qEnergyReward: 80,
@@ -580,7 +580,7 @@ export const ENEMY_ARCHETYPES = {
     charId: 'FrostGolem',
     poolRole: 'FrostGolem',
     name: 'Ancient Frost Golem',
-    maxHp: 2200,
+    maxHp: 2800,
     dmg: 36,
     speed: 5.6,
     qEnergyReward: 120,
@@ -600,7 +600,7 @@ export const ENEMY_ARCHETYPES = {
     charId: 'Skeleton_Golem',
     poolRole: 'Skeleton_Golem',
     name: 'Ossuary Skeleton Golem',
-    maxHp: 1650,
+    maxHp: 2200,
     dmg: 34,
     speed: 5.6,
     qEnergyReward: 100,
@@ -783,12 +783,14 @@ export const STONE_STRONGHOLDS = Object.freeze({
       Object.freeze({ archetype: 'skeleton_minion', x: 5.5, z: 7.5 }),
       Object.freeze({ archetype: 'skeleton_warrior', x: 0.0, z: 9.2 }),
       Object.freeze({ archetype: 'skeleton_rogue', x: -6.8, z: 3.4 }),
+      Object.freeze({ archetype: 'skeleton_mage', x: 6.4, z: 4.2 }),
     ]),
     spawns: Object.freeze([
       Object.freeze({ archetype: 'skeleton_minion', x: -5.5, z: 7.5 }),
       Object.freeze({ archetype: 'skeleton_minion', x: 5.5, z: 7.5 }),
       Object.freeze({ archetype: 'skeleton_warrior', x: 0.0, z: 9.2 }),
       Object.freeze({ archetype: 'skeleton_rogue', x: -6.8, z: 3.4 }),
+      Object.freeze({ archetype: 'skeleton_mage', x: 6.4, z: 4.2 }),
     ]),
   }),
   site2_platform: Object.freeze({
@@ -797,17 +799,17 @@ export const STONE_STRONGHOLDS = Object.freeze({
     name: 'Whispering Grove Platform Stronghold',
     bannerTitle: 'WHISPERING GROVE MEDALLION',
     bannerSubtitle: 'Vanquish the Grove Necromancer Sovereign to Unseal the Floor Inscription',
-    center: Object.freeze({ x: 114.0, z: 32.0, y: 0.42 }),
+    center: Object.freeze({ x: 142.0, z: 44.0, y: 0.52 }),
     triggerRadius: 22.0,
     bossArchetype: 'grove_necromancer',
     summonCooldown: 10.0,
     maxActiveSummons: 2,
     spawns: Object.freeze([
-      Object.freeze({ archetype: 'grove_necromancer', x: 114.0, z: 32.0, isBoss: true }),
-      Object.freeze({ archetype: 'plant_warrior', x: 109.8, z: 34.8 }),
-      Object.freeze({ archetype: 'plant_warrior', x: 118.2, z: 34.8 }),
-      Object.freeze({ archetype: 'skeleton_rogue', x: 111.2, z: 29.2 }),
-      Object.freeze({ archetype: 'werewolf', x: 116.8, z: 29.2 }),
+      Object.freeze({ archetype: 'grove_necromancer', x: 142.0, z: 44.0, isBoss: true }),
+      Object.freeze({ archetype: 'plant_warrior', x: 137.8, z: 46.8 }),
+      Object.freeze({ archetype: 'plant_warrior', x: 146.2, z: 46.8 }),
+      Object.freeze({ archetype: 'skeleton_rogue', x: 139.2, z: 41.2 }),
+      Object.freeze({ archetype: 'werewolf', x: 144.8, z: 41.2 }),
     ]),
   }),
   site3_wall: Object.freeze({
@@ -816,15 +818,15 @@ export const STONE_STRONGHOLDS = Object.freeze({
     name: "Hidden Lovers' Wall Stronghold",
     bannerTitle: "HIDDEN LOVERS' WALL",
     bannerSubtitle: 'Shatter the Obsidian Guard & Heavy Breaker to Reach the Sanctuary Wall',
-    center: Object.freeze({ x: -92.0, z: 64.0, y: 0.65 }),
+    center: Object.freeze({ x: -124.0, z: 84.0, y: 0.72 }),
     triggerRadius: 22.0,
     spawns: Object.freeze([
-      Object.freeze({ archetype: 'black_knight', x: -90.2, z: 66.0, isElite: true }),
-      Object.freeze({ archetype: 'orc_brute', x: -93.8, z: 66.4, isBoss: true }),
-      Object.freeze({ archetype: 'skeleton_rogue', x: -87.9, z: 65.4 }),
-      Object.freeze({ archetype: 'skeleton_rogue', x: -94.6, z: 67.2 }),
-      Object.freeze({ archetype: 'orc_raider', x: -92.0, z: 68.0 }),
-      Object.freeze({ archetype: 'skeleton_mage', x: -88.9, z: 69.2 }),
+      Object.freeze({ archetype: 'black_knight', x: -122.2, z: 86.0, isElite: true }),
+      Object.freeze({ archetype: 'orc_brute', x: -125.8, z: 86.4, isBoss: true }),
+      Object.freeze({ archetype: 'skeleton_rogue', x: -119.9, z: 85.4 }),
+      Object.freeze({ archetype: 'skeleton_rogue', x: -126.6, z: 87.2 }),
+      Object.freeze({ archetype: 'orc_raider', x: -124.0, z: 88.0 }),
+      Object.freeze({ archetype: 'skeleton_mage', x: -120.9, z: 89.2 }),
     ]),
   }),
   apex_finale: Object.freeze({
@@ -910,17 +912,48 @@ export const SAFE_HAVEN_WAYPOINTS = Object.freeze([
     id: 'haven_east_meadow',
     name: 'East Meadow Approach Haven',
     forSiteId: 'site2_platform',
-    x: 86.0,
-    z: 26.0,
-    y: 0.42,
+    x: 108.0,
+    z: 34.0,
+    y: 0.52,
   }),
   Object.freeze({
     id: 'haven_west_mill',
     name: 'Southwest Highland Trail Haven',
     forSiteId: 'site3_wall',
-    x: -68.0,
-    z: 48.0,
-    y: 0.65,
+    x: -92.0,
+    z: 65.0,
+    y: 0.72,
+  }),
+]);
+
+export const ROUTE_PATROLS = Object.freeze([
+  Object.freeze({
+    id: 'east_trail_ambush',
+    name: 'East Trail Raider Pack',
+    bannerTitle: 'EAST GROVE TRAIL AMBUSH',
+    bannerSubtitle: 'Valley Raiders Guard the Road to the Whispering Grove!',
+    center: Object.freeze({ x: 96.0, z: 30.0, y: 0.45 }),
+    triggerRadius: 22.0,
+    spawns: Object.freeze([
+      Object.freeze({ archetype: 'orc_raider', x: 93.2, z: 28.4 }),
+      Object.freeze({ archetype: 'skeleton_warrior', x: 98.4, z: 29.0 }),
+      Object.freeze({ archetype: 'skeleton_rogue', x: 94.8, z: 32.8 }),
+      Object.freeze({ archetype: 'skeleton_mage', x: 98.6, z: 32.6 }),
+    ]),
+  }),
+  Object.freeze({
+    id: 'sw_trail_ambush',
+    name: 'Southwest Trail Hunt Pack',
+    bannerTitle: 'SOUTHWEST TRAIL AMBUSH',
+    bannerSubtitle: 'Werewolf & Bone Scouts Prowl the Path to the Lovers’ Wall!',
+    center: Object.freeze({ x: -78.0, z: 56.0, y: 0.55 }),
+    triggerRadius: 22.0,
+    spawns: Object.freeze([
+      Object.freeze({ archetype: 'werewolf', x: -75.4, z: 54.4 }),
+      Object.freeze({ archetype: 'skeleton_warrior', x: -80.4, z: 54.8 }),
+      Object.freeze({ archetype: 'skeleton_rogue', x: -76.2, z: 58.6 }),
+      Object.freeze({ archetype: 'skeleton_minion', x: -80.2, z: 58.2 }),
+    ]),
   }),
 ]);
 
@@ -1099,19 +1132,28 @@ export function tickPoise(e, dt) {
   e.poise = Math.min(e.poiseMax, e.poise + e.poiseMax * POISE_REGEN_PER_SEC * dt);
 }
 
-const HEAVY_KNIGHT_SOURCES = new Set(['charged', 'heavy']);
+const HEAVY_KNIGHT_SOURCES = new Set(['charged', 'heavy', 'intercept']);
 const MAGE_PROJECTILE_SOURCES = new Set(['mage_attack1', 'mage_attack2', 'mage_attack3']);
+const SHIELD_PIERCE_SPELL_SOURCES = new Set([
+  'frost_lance',
+  'shatterlance',
+  'cinder_fall',
+  'storm_lance',
+  'storm_cataclysm',
+  'couples_ultimate',
+  'knight_sky_lightning',
+]);
 
 export function isPoiseHeavyHit(hit = {}) {
   return HEAVY_KNIGHT_SOURCES.has(hit.source) || hit.source === 'combo4' || Boolean(hit.spellId);
 }
 
 /**
- * Pre-damage reaction: 'dodge' (Rogue sidesteps a Mage bolt), 'blocked' (shield front arc),
- * 'pierce' (Shatterlance through a shield), 'guardbreak' (Knight heavy vs shield), or 'hit'.
+ * Pre-damage reaction: 'dodge' (Rogue sidesteps basic Mage bolts), 'blocked' (shield front arc),
+ * 'pierce' (Shatterlance & signature Elemental spells through a shield), 'guardbreak' (Knight heavy vs shield), or 'hit'.
  */
 export function resolvePreHit(e, hit = {}) {
-  const fromMageBolt = MAGE_PROJECTILE_SOURCES.has(hit.source) || hit.spellId === 'frost_lance';
+  const fromMageBolt = MAGE_PROJECTILE_SOURCES.has(hit.source);
   if (
     (e.dodges ?? e.hunter) &&
     fromMageBolt &&
@@ -1122,10 +1164,15 @@ export function resolvePreHit(e, hit = {}) {
   ) {
     return 'dodge';
   }
-  if (e.shieldUp && hit.attackerPos) {
+  if (e.shieldUp && !e.directionalShieldConeDeg && hit.attackerPos) {
     const inFront = isInAttackArc(e, e.yaw || 0, hit.attackerPos, 999, 140);
     if (inFront) {
-      if (hit.spellId === 'shatterlance' || hit.source === 'shatterlance') return 'pierce';
+      if (
+        SHIELD_PIERCE_SPELL_SOURCES.has(hit.spellId) ||
+        SHIELD_PIERCE_SPELL_SOURCES.has(hit.source)
+      ) {
+        return 'pierce';
+      }
       if (HEAVY_KNIGHT_SOURCES.has(hit.source)) return 'guardbreak';
       if (!hit.detonation) return 'blocked';
     }

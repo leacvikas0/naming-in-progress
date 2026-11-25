@@ -170,15 +170,15 @@ await check('2. HERO_STATS (incl. 120 HP Mage & 12s Knight Q), SPELLS & DETONATI
 
   assert.equal(MAX_CONCURRENT_ENEMIES, 8);
   assert.equal(MAX_ATTACK_TOKENS, 3);
-  assert.equal(ENEMY_ARCHETYPES.skeleton_minion.maxHp, 140);
+  assert.equal(ENEMY_ARCHETYPES.skeleton_minion.maxHp, 185);
   assert.equal(ENEMY_ARCHETYPES.skeleton_minion.speed, 7.2);
-  assert.equal(ENEMY_ARCHETYPES.skeleton_rogue.maxHp, 185);
+  assert.equal(ENEMY_ARCHETYPES.skeleton_rogue.maxHp, 240);
   assert.equal(ENEMY_ARCHETYPES.skeleton_rogue.speed, 8.0);
-  assert.equal(ENEMY_ARCHETYPES.skeleton_warrior.maxHp, 250);
+  assert.equal(ENEMY_ARCHETYPES.skeleton_warrior.maxHp, 320);
   assert.equal(ENEMY_ARCHETYPES.skeleton_warrior.speed, 6.2);
-  assert.equal(ENEMY_ARCHETYPES.werewolf.maxHp, 350);
+  assert.equal(ENEMY_ARCHETYPES.werewolf.maxHp, 430);
   assert.equal(ENEMY_ARCHETYPES.werewolf.speed, 8.4);
-  assert.equal(ENEMY_ARCHETYPES.black_knight.maxHp, 580);
+  assert.equal(ENEMY_ARCHETYPES.black_knight.maxHp, 720);
 });
 
 await check('3. ACT_DEFINITIONS match exact geography.js coordinates & obstacle clearances', () => {
@@ -1024,6 +1024,7 @@ await check('13. Final Playable Master Plan: Knight E Summon Lock on Tab, Shared
 
   // Kill a fodder minion (qEnergyReward = 18) with Knight -> +18 to Knight (100%), +11 to Mage (60%)
   const fodder = em.spawnImmediateFromSpec({ archetype: 'skeleton_minion', x: 0, z: 12.0 });
+  fodder.hp = 140; // lethal on 2nd combo4's rime_shatter finisher
   loop.performKnightSwing('combo4', hStates.Knight, 0, hStates.Mage);
   loop.performKnightSwing('combo4', hStates.Knight, 0, hStates.Mage);
   assert.equal(fodder.dead, true);

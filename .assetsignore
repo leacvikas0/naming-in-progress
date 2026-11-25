@@ -68,8 +68,14 @@ world/assets/audio/music
 world/assets/audio/music/**
 world/assets/audio/h3-sfx
 world/assets/audio/h3-sfx/**
-world/assets/audio/sfx
-world/assets/audio/sfx/**
+world/assets/audio/mage-h3-lab
+world/assets/audio/mage-h3-lab/**
+world/assets/audio/sword-lab
+world/assets/audio/sword-lab/**
+world/assets/audio/tts-test
+world/assets/audio/tts-test/**
+cloudflared.log
+=
 node_modules/*
 !node_modules/three
 !node_modules/three/**

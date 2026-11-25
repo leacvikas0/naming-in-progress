@@ -12,20 +12,23 @@
 
 import { UNSPOILED_SACRED_POEMS } from '../world/src/ui/sacred-poems-unspoiled.js';
 
-const DEFAULT_SECRET_PARTS = ['Ice', 'way'];
-const DEFAULT_SECRET_NAME = DEFAULT_SECRET_PARTS.join('');
+function decodeB64Utf8(b64) {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(b64, 'base64').toString('utf8');
+  }
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+const DEFAULT_SECRET_NAME = decodeB64Utf8('U29sYXJpdXM=');
+const PRIMARY_ALIASES = decodeB64Utf8(
+  'c29sYXJpdXMsY29sYXJpYXMsc29sYXJpYXMsc29sYXJpcyxzb2xhcmlhbixzb2xhcmlvLHNvbCBhcmllcyxzb2wgYXJpYSxzb2wgYXJpdXMsc29sIGFyaWFzLGxvcmQgc29sYXJpdXMsa2luZyBzb2xhcml1cw=='
+).split(',');
 const DEFAULT_SECRET_ALIASES = [
   DEFAULT_SECRET_NAME,
-  'Ice Way',
-  'Icy Way',
-  'Icepath',
-  'Ice Path',
-  'Frostway',
-  'Frost Way',
-  'Frostpath',
-  'Frost Path',
-  'Lord Iceway',
-  'King Iceway',
+  ...PRIMARY_ALIASES,
   // Legacy compatibility aliases for automated test suites
   'Valdor',
   'Valdore',

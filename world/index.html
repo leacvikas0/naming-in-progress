@@ -14,7 +14,15 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400;1,600;1,700&family=Playfair+Display:ital,wght@0,600;0,700;1,500;1,600&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap"
     rel="stylesheet"
+    media="print"
+    onload="this.media='all'"
   />
+  <noscript>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400;1,600;1,700&family=Playfair+Display:ital,wght@0,600;0,700;1,500;1,600&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </noscript>
   <title>Amarante - The Unfading Bloom</title>
   <script>
     if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
@@ -33,7 +41,7 @@
   <script type="importmap">
     {
       "imports": {
-        "three": "/world/vendor/three/build/three.module.js",
+        "three": "/world/vendor/three/build/three.module.min.js",
         "three/addons/": "/world/vendor/three/examples/jsm/"
       }
     }
@@ -133,1057 +141,159 @@
       visibility: hidden;
     }
 
-    /* --------------------------------------------------------------------- */
-    /* Top Bar Layout (Left Party/Co-Op, Center Objective/Boss, Right Debug) */
-    /* --------------------------------------------------------------------- */
-    #top-bar {
-      position: absolute;
-      top: 12px;
-      left: 14px;
-      right: 14px;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 10px;
-      pointer-events: none;
-    }
-
-    .top-col-left,
-    .top-col-right {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      pointer-events: none;
-    }
-
-    .top-col-right {
-      align-items: flex-end;
-    }
-
-    /* Hide all developer/debug buttons by default; toggle with F3 */
-    #debug-dev-pill {
+    #debug-dev-pill, #boss-hud-bar, #combat-banner, #victory-modal {
       display: none;
-    }
-    #debug-dev-pill.visible {
-      display: inline-flex;
-    }
-
-    .top-col-center {
-      position: absolute;
-      top: 0;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      pointer-events: none;
-      z-index: 22;
-    }
-
-    .hud-pill {
-      pointer-events: auto;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--surface-hud);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid var(--border-hud);
-      border-radius: 999px;
-      padding: 4px 8px;
-      box-shadow: var(--shadow-hud);
-    }
-
-    .hud-card {
-      pointer-events: auto;
-      background: var(--surface-hud);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid var(--border-hud);
-      border-radius: 14px;
-      padding: 6px 10px;
-      box-shadow: var(--shadow-hud);
-    }
-
-    .seg-group {
-      display: inline-flex;
-      align-items: center;
-      gap: 2px;
-      background: var(--surface-control);
-      border-radius: 999px;
-      padding: 2px;
-    }
-
-    .divider {
-      width: 1px;
-      height: 14px;
-      background: var(--border-hud);
-    }
-
-    .btn {
-      appearance: none;
-      border: none;
-      background: transparent;
-      color: var(--text-secondary);
-      border-radius: 999px;
-      padding: 4px 10px;
-      font-family: inherit;
-      font-size: 0.72rem;
-      font-weight: 600;
-      line-height: 1.2;
-      cursor: pointer;
-      white-space: nowrap;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    .btn:focus-visible,
-    .view-select:focus-visible,
-    .spell-slot-btn:focus-visible {
-      outline: 2px solid var(--focus-ring);
-      outline-offset: 2px;
-    }
-
-    .btn.active {
-      background: var(--surface-accent);
-      color: var(--text-on-accent);
-    }
-
-    #hud-swap-hero-btn {
-      background: var(--surface-accent);
-      color: var(--text-on-accent);
-      font-weight: 700;
-      padding: 4px 10px;
-    }
-
-    #hud-swap-hero-btn .kbd {
-      background: rgba(255, 255, 255, 0.18);
-      border-color: rgba(255, 255, 255, 0.28);
-      color: #faf8f3;
-    }
-
-    .kbd {
-      display: inline-block;
-      font-family: "Cinzel", "Cormorant Garamond", Georgia, serif;
-      font-variant-numeric: tabular-nums;
-      font-size: 0.68rem;
-      font-weight: 700;
-      line-height: 1;
-      padding: 2px 5px;
-      border-radius: 5px;
-      background: rgba(255, 255, 255, 0.78);
-      border: 1px solid var(--border-kbd);
-      color: var(--text-primary);
-    }
-
-    #stats-readout {
-      font-family: "Cormorant Garamond", "Cinzel", Georgia, serif;
-      font-variant-numeric: tabular-nums;
-      font-size: 0.78rem;
-      font-weight: 600;
-      color: var(--text-secondary);
-      padding: 0 6px 0 2px;
-      white-space: nowrap;
-    }
-
-    /* --------------------------------------------------------------------- */
-    /* Top-Left Party Status Bars & Sword Breathing Style Badge              */
-    /* --------------------------------------------------------------------- */
-    #party-status-card {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-      min-width: 288px;
-    }
-
-    .party-header-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-    }
-
-    .hero-bars-stack {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .hero-bar-row {
-      display: grid;
-      grid-template-columns: 54px 1fr auto;
-      align-items: center;
-      gap: 7px;
-      font-size: 0.72rem;
-    }
-
-    .hero-bar-row.is-leader .hero-role-lbl {
-      font-weight: 700;
-      color: #1c1917;
-    }
-
-    .hero-role-lbl {
-      font-weight: 600;
-      color: var(--text-secondary);
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .hp-track {
-      position: relative;
-      height: 9px;
-      background: rgba(28, 25, 23, 0.14);
-      border-radius: 999px;
-      overflow: hidden;
-      border: 1px solid rgba(28, 25, 23, 0.12);
-    }
-
-    .hp-fill {
-      height: 100%;
-      width: 100%;
-      background: linear-gradient(90deg, #16a34a, #22c55e);
-      border-radius: 999px;
-      transition: width 140ms ease-out;
-    }
-
-    .hp-fill.mage-hp {
-      background: linear-gradient(90deg, #0284c7, #38bdf8);
-    }
-
-    .shield-fill {
-      position: absolute;
-      top: 0;
-      left: 0;
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, rgba(250, 204, 21, 0.92), rgba(254, 240, 138, 0.96));
-      border-right: 1.5px solid #ca8a04;
-      pointer-events: none;
-      transition: width 140ms ease-out;
-    }
-
-    .hp-num {
-      font-family: "Cormorant Garamond", "Cinzel", Georgia, serif;
-      font-variant-numeric: tabular-nums;
-      font-size: 0.76rem;
-      font-weight: 700;
-      color: var(--text-primary);
-      min-width: 58px;
-      text-align: right;
-    }
-
-    .breathing-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 0.68rem;
-      font-weight: 700;
-      padding: 2px 8px;
-      border-radius: 999px;
-      background: rgba(241, 245, 249, 0.9);
-      border: 1px solid rgba(100, 116, 139, 0.3);
-      color: #334155;
-      white-space: nowrap;
-    }
-
-    .breathing-badge[data-style="rime"] {
-      background: #e0f2fe;
-      border-color: #38bdf8;
-      color: #0369a1;
-    }
-
-    .breathing-badge[data-style="solar"] {
-      background: #ffedd5;
-      border-color: #fb923c;
-      color: #c2410c;
-    }
-
-    .breathing-badge[data-style="tempest"] {
-      background: #f3e8ff;
-      border-color: #c084fc;
-      color: #6b21a8;
-    }
-
-    .breathing-badge[data-style="eclipse"] {
-      background: linear-gradient(90deg, #ffedd5, #e0f2fe);
-      border-color: #f59e0b;
-      color: #9a3412;
-      box-shadow: 0 0 10px rgba(245, 158, 11, 0.28);
-    }
-
-    /* --------------------------------------------------------------------- */
-    /* Co-Op Room Pill                                                       */
-    /* --------------------------------------------------------------------- */
-    #coop-room-pill {
-      padding: 3px 8px;
-      gap: 6px;
-      font-size: 0.70rem;
-    }
-
-    .coop-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #f59e0b;
-      box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.22);
-      flex-shrink: 0;
-    }
-
-    .coop-dot.linked {
-      background: #16a34a;
-      box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.25);
-    }
-
-    #coop-status-label {
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-
-    #coop-room-btn {
-      background: var(--surface-control);
-      color: var(--text-primary);
-      padding: 2px 8px;
-      font-family: "Cinzel", "Cormorant Garamond", Georgia, serif;
-      font-weight: 700;
-      font-size: 0.68rem;
-      border: 1px solid var(--border-kbd);
-    }
-
-    #coop-share-btn {
-      background: #e0f2fe;
-      color: #0369a1;
-      border: 1px solid #7dd3fc;
-      padding: 2px 8px;
-      font-size: 0.68rem;
-      font-weight: 700;
-    }
-
-    /* --------------------------------------------------------------------- */
-    /* Top-Center Objective Pill, Boss Health Bar & Action Banner            */
-    /* --------------------------------------------------------------------- */
-    #act-objective-pill {
-      padding: 5px 14px;
-      gap: 8px;
-      background: var(--surface-hud-strong);
-      border: 1px solid rgba(28, 25, 23, 0.14);
-    }
-
-    .act-tag {
-      font-size: 0.68rem;
-      font-weight: 800;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: #b45309;
-      background: #fef3c7;
-      border: 1px solid #fcd34d;
-      padding: 1px 7px;
-      border-radius: 999px;
-    }
-
-    #act-objective-text {
-      font-size: 0.76rem;
-      font-weight: 700;
-      color: var(--text-primary);
-      white-space: nowrap;
-    }
-
-    #boss-hud-bar {
-      display: none;
-      flex-direction: column;
-      gap: 4px;
-      width: min(420px, 52vw);
-      background: var(--surface-dark);
-      color: #faf8f3;
-      border: 1.5px solid rgba(250, 204, 21, 0.55);
-      border-radius: 12px;
-      padding: 6px 12px;
-      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
-    }
-
-    #boss-hud-bar.visible {
-      display: flex;
-    }
-
-    .boss-top-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-    }
-
-    #boss-name-label {
-      font-size: 0.76rem;
-      font-weight: 800;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      color: #fde047;
-    }
-
-    #boss-aegis-badge {
-      font-size: 0.68rem;
-      font-weight: 800;
-      padding: 1px 8px;
-      border-radius: 999px;
-      background: rgba(225, 29, 72, 0.28);
-      border: 1px solid #fb7185;
-      color: #ffe4e6;
-    }
-
-    .boss-hp-track {
-      height: 10px;
-      background: rgba(255, 255, 255, 0.14);
-      border-radius: 999px;
-      overflow: hidden;
-      border: 1px solid rgba(250, 204, 21, 0.35);
-    }
-
-    #boss-hp-fill {
-      height: 100%;
-      width: 100%;
-      background: linear-gradient(90deg, #be123c, #f43f5e, #fb923c);
-      border-radius: 999px;
-      transition: width 140ms ease-out;
-    }
-
-    #combat-banner {
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      gap: 2px;
-      padding: 6px 18px;
-      border-radius: 999px;
-      background: rgba(24, 20, 22, 0.90);
-      border: 1.5px solid rgba(251, 191, 36, 0.78);
-      color: #fffbeb;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
-      pointer-events: none;
-      max-width: min(680px, 90vw);
-      text-align: center;
-    }
-
-    #combat-banner.visible {
-      display: inline-flex;
-    }
-
-    #combat-banner-title {
-      font-size: 0.78rem;
-      font-weight: 800;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: #fde047;
-    }
-
-    #combat-banner-sub {
-      font-size: 0.69rem;
-      font-weight: 600;
-      color: #f5f5f4;
-    }
-
-    .view-select {
-      appearance: none;
-      border: 1px solid transparent;
-      background: var(--surface-control);
-      color: var(--text-primary);
-      border-radius: 999px;
-      padding: 4px 24px 4px 10px;
-      font-family: inherit;
-      font-size: 0.72rem;
-      font-weight: 600;
-      line-height: 1.2;
-      cursor: pointer;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%2357534e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 8px center;
-    }
-
-    /* --------------------------------------------------------------------- */
-    /* Diegetic Plaza Stele Interaction Prompt                               */
-    /* --------------------------------------------------------------------- */
-    #stele-interact-prompt {
-      display: none;
-      align-items: center;
-      gap: 8px;
-      padding: 5px 14px;
-      border-radius: 999px;
-      background: rgba(24, 20, 22, 0.90);
-      border: 1.5px solid #f59e0b;
-      color: #fef3c7;
-      font-size: 0.74rem;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.26);
-      cursor: pointer;
-      pointer-events: auto;
-    }
-
-    #stele-interact-prompt.visible {
-      display: inline-flex;
-    }
-
-    #stele-interact-prompt .kbd {
-      background: #f59e0b;
-      border-color: #fde047;
-      color: #1c1917;
-    }
-
-    /* --------------------------------------------------------------------- */
-    /* Bottom-Center 4-Spell, Cataclysm & Hold-to-Commune Deck               */
-    /* --------------------------------------------------------------------- */
-    #bottom-bar {
-      position: absolute;
-      bottom: 12px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      max-width: 96vw;
-      z-index: 22;
-    }
-
-    #hud.profile-tablet #bottom-bar {
-      left: 45%;
-      bottom: 14px;
-      max-width: calc(100vw - 450px);
-    }
-
-    #hud.profile-tablet .desktop-hints {
-      display: none;
-    }
-
-    .spell-deck-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 5px 8px;
-      border-radius: 16px;
-      background: var(--surface-hud-strong);
-      border: 1px solid rgba(28, 25, 23, 0.14);
-      box-shadow: var(--shadow-hud);
-      pointer-events: auto;
-    }
-
-    .spell-slot-btn {
-      position: relative;
-      appearance: none;
-      border: 1.5px solid rgba(28, 25, 23, 0.14);
-      background: #ffffff;
-      color: var(--text-primary);
-      border-radius: 11px;
-      padding: 5px 10px;
-      min-width: 104px;
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      cursor: pointer;
-      overflow: hidden;
-      font-family: inherit;
-      text-align: left;
-    }
-
-    .spell-key-badge {
-      width: 22px;
-      height: 22px;
-      border-radius: 6px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-family: "Cinzel", "Cormorant Garamond", Georgia, serif;
-      font-variant-numeric: tabular-nums;
-      font-size: 0.72rem;
-      font-weight: 800;
-      color: #ffffff;
-      flex-shrink: 0;
-    }
-
-    .spell-slot-btn[data-spell-slot="1"] .spell-key-badge {
-      background: #0284c7;
-    }
-    .spell-slot-btn[data-spell-slot="2"] .spell-key-badge {
-      background: #0891b2;
-    }
-    .spell-slot-btn[data-spell-slot="3"] .spell-key-badge {
-      background: #ea580c;
-    }
-    .spell-slot-btn[data-spell-slot="4"] .spell-key-badge {
-      background: #7c3aed;
-    }
-
-    .spell-slot-btn.active-cast {
-      border-color: #0284c7;
-      box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
-    }
-
-    .spell-meta {
-      display: flex;
-      flex-direction: column;
-      line-height: 1.15;
-    }
-
-    .spell-name {
-      font-size: 0.72rem;
-      font-weight: 700;
-      color: var(--text-primary);
-      white-space: nowrap;
-    }
-
-    .spell-sub {
-      font-size: 0.62rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      white-space: nowrap;
-    }
-
-    .spell-cd-overlay {
-      margin-left: auto;
-      background: #1c1917;
-      color: #fde047;
-      border: 1px solid rgba(250, 204, 21, 0.55);
-      border-radius: 999px;
-      padding: 2px 6px;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      font-family: "Cormorant Garamond", "Cinzel", Georgia, serif;
-      font-variant-numeric: tabular-nums;
-      font-size: 0.68rem;
-      font-weight: 700;
-      line-height: 1;
-      flex-shrink: 0;
-    }
-
-    .spell-slot-btn.on-cooldown {
-      background: rgba(245, 245, 244, 0.92);
-    }
-
-    .spell-slot-btn.on-cooldown .spell-key-badge {
-      opacity: 0.68;
-    }
-
-    .spell-slot-btn.on-cooldown .spell-cd-overlay {
-      display: inline-flex;
-    }
-
-    /* Heart Resonance & Q Ultimate Button */
-    #ult-q-btn {
-      position: relative;
-      appearance: none;
-      border: 1.5px solid rgba(217, 119, 6, 0.45);
-      background: linear-gradient(135deg, #fffbeb, #fef3c7);
-      color: #92400e;
-      border-radius: 11px;
-      padding: 5px 10px;
-      min-width: 116px;
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      cursor: pointer;
-      font-family: inherit;
-    }
-
-    #ult-q-btn.ult-ready {
-      background: linear-gradient(135deg, #f59e0b, #eab308);
-      border-color: #fef08a;
-      color: #1c1917;
-      box-shadow: 0 0 16px rgba(245, 158, 11, 0.45);
-    }
-
-    #ult-q-btn .spell-key-badge {
-      background: #b45309;
-      color: #fffbeb;
-    }
-
-    #ult-q-btn.ult-ready .spell-key-badge {
-      background: #1c1917;
-      color: #fde047;
-    }
-
-    /* Hold-to-Commune Medallion Button (R) */
-    #commune-r-btn {
-      position: relative;
-      appearance: none;
-      border: 1.5px solid #d97706;
-      background: linear-gradient(135deg, #1c1917, #292524);
-      color: #fef3c7;
-      border-radius: 11px;
-      padding: 4px 10px 4px 7px;
-      min-width: 122px;
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      cursor: pointer;
-      font-family: inherit;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-
-    #commune-r-btn .commune-crest-img {
-      width: 26px;
-      height: 26px;
-      object-fit: contain;
-      flex-shrink: 0;
-      pointer-events: none;
-    }
-
-    #commune-r-btn .spell-name {
-      color: #fde047;
-    }
-
-    #commune-r-btn .spell-sub {
-      color: #d6d3d1;
-    }
-
-    #commune-r-btn.channeling {
-      border-color: #fde047;
-      box-shadow: 0 0 18px rgba(251, 191, 36, 0.72);
-      background: linear-gradient(135deg, #451a03, #78350f);
-    }
-
-    .desktop-hints {
-      padding: 3px 12px;
-      gap: 12px;
-      font-size: 0.70rem;
-      color: var(--text-secondary);
-    }
-
-    .keybind-item {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      white-space: nowrap;
-    }
-
-    /* --------------------------------------------------------------------- */
-    /* Sanctuary Lobby Overlay (#sanctuary-lobby)                            */
-    /* --------------------------------------------------------------------- */
-    #sanctuary-lobby {
-      position: fixed;
-      inset: 0;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: rgba(18, 15, 18, 0.62);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      pointer-events: auto;
-      z-index: 45;
-      padding: 16px;
-    }
-
-    #sanctuary-lobby.visible {
-      display: flex;
-    }
-
-    .lobby-card {
-      background: linear-gradient(180deg, rgba(252, 249, 242, 0.97), rgba(244, 238, 226, 0.97));
-      border: 2px solid #d97706;
-      border-radius: 22px;
-      padding: 22px 28px;
-      width: min(470px, 94vw);
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.42);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 14px;
-      text-align: center;
-    }
-
-    .lobby-crest-img {
-      width: 84px;
-      height: 84px;
-      object-fit: contain;
-      filter: drop-shadow(0 6px 14px rgba(28, 25, 23, 0.22));
-    }
-
-    .lobby-title {
-      font-size: 1.25rem;
-      font-weight: 800;
-      letter-spacing: 0.03em;
-      color: #1c1917;
-    }
-
-    .lobby-sub {
-      font-size: 0.78rem;
-      color: var(--text-secondary);
-      max-width: 380px;
-    }
-
-    .lobby-section {
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      text-align: left;
-    }
-
-    .lobby-section-label {
-      font-size: 0.70rem;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: #78350f;
-    }
-
-    .lobby-role-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-    }
-
-    .lobby-role-btn {
-      appearance: none;
-      border: 1.5px solid rgba(28, 25, 23, 0.18);
-      background: rgba(255, 255, 255, 0.86);
-      border-radius: 12px;
-      padding: 9px 8px;
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2px;
-      font-family: inherit;
-    }
-
-    .lobby-role-btn .r-name {
-      font-size: 0.78rem;
-      font-weight: 800;
-      color: #1c1917;
-    }
-
-    .lobby-role-btn .r-desc {
-      font-size: 0.64rem;
-      font-weight: 600;
-      color: var(--text-muted);
-    }
-
-    .lobby-role-btn.active {
-      border-color: #d97706;
-      background: linear-gradient(135deg, #fffbeb, #fef3c7);
-      box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.25);
-    }
-
-    .lobby-mic-row {
-      display: flex;
-      gap: 6px;
-      width: 100%;
-    }
-
-    #lobby-mic-select {
-      flex: 1;
-      appearance: none;
-      border: 1.5px solid rgba(28, 25, 23, 0.18);
-      background: #ffffff;
-      color: #1c1917;
-      border-radius: 10px;
-      padding: 7px 10px;
-      font-family: inherit;
-      font-size: 0.74rem;
-      font-weight: 600;
-    }
-
-    #lobby-mic-refresh-btn {
-      appearance: none;
-      border: 1.5px solid rgba(28, 25, 23, 0.18);
-      background: #ffffff;
-      color: #1c1917;
-      border-radius: 10px;
-      padding: 7px 11px;
-      font-family: inherit;
-      font-size: 0.72rem;
-      font-weight: 700;
-      cursor: pointer;
-    }
-
-    #lobby-enter-btn {
-      width: 100%;
-      margin-top: 4px;
-      appearance: none;
-      border: 1.5px solid #fde047;
-      background: linear-gradient(135deg, #1c1917, #292524);
-      color: #fde047;
-      border-radius: 999px;
-      padding: 10px 20px;
-      font-family: inherit;
-      font-size: 0.84rem;
-      font-weight: 800;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      cursor: pointer;
-      box-shadow: 0 8px 20px rgba(28, 25, 23, 0.26);
-    }
-
-    /* --------------------------------------------------------------------- */
-    /* Inscribed Sanctuary Stele Modal (#altar-stele-modal)                  */
-    /* --------------------------------------------------------------------- */
-    #altar-stele-modal {
-      position: fixed;
-      inset: 0;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: rgba(15, 13, 18, 0.68);
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-      pointer-events: auto;
-      z-index: 42;
-      padding: 16px;
-    }
-
-    #altar-stele-modal.visible {
-      display: flex;
-    }
-
-    .stele-tablet-card {
-      background: linear-gradient(180deg, rgba(30, 27, 34, 0.96), rgba(20, 18, 24, 0.98));
-      border: 2px solid #d97706;
-      border-radius: 22px;
-      padding: 24px 30px;
-      width: min(500px, 94vw);
-      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 14px;
-      text-align: center;
-      color: #faf8f3;
-    }
-
-    .stele-tablet-img {
-      width: 96px;
-      height: 96px;
-      object-fit: contain;
-      filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.45));
-    }
-
-    #altar-stele-title {
-      font-size: 1.05rem;
-      font-weight: 800;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: #fde047;
-    }
-
-    #altar-stele-poem {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      font-size: 0.84rem;
-      line-height: 1.55;
-      color: #f5f5f4;
-      font-style: italic;
-      padding: 10px 14px;
-      border-top: 1px solid rgba(251, 191, 36, 0.28);
-      border-bottom: 1px solid rgba(251, 191, 36, 0.28);
-      width: 100%;
-    }
-
-    .stele-hint-sub {
-      font-size: 0.72rem;
-      color: #d6d3d1;
-    }
-
-    #altar-stele-close-btn {
-      appearance: none;
-      border: 1.5px solid #f59e0b;
-      background: rgba(251, 191, 36, 0.14);
-      color: #fde047;
-      border-radius: 999px;
-      padding: 7px 20px;
-      font-family: inherit;
-      font-size: 0.76rem;
-      font-weight: 700;
-      cursor: pointer;
-    }
-
-    /* --------------------------------------------------------------------- */
-    /* Victory Dawn Celebration Modal                                        */
-    /* --------------------------------------------------------------------- */
-    #victory-modal {
-      position: absolute;
-      inset: 0;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: rgba(28, 25, 23, 0.35);
-      backdrop-filter: blur(4px);
-      pointer-events: auto;
-      z-index: 30;
-    }
-
-    #victory-modal.visible {
-      display: flex;
-    }
-
-    .victory-card {
-      background: var(--surface-hud-strong);
-      border: 2px solid #f59e0b;
-      border-radius: 20px;
-      padding: 24px 32px;
-      text-align: center;
-      max-width: 440px;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .victory-card h2 {
-      font-size: 1.25rem;
-      font-weight: 800;
-      color: #1c1917;
-    }
-
-    .victory-card p {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-    }
-
-    #replay-expedition-btn {
-      margin-top: 6px;
-      background: #1c1917;
-      color: #fde047;
-      font-size: 0.82rem;
-      font-weight: 700;
-      padding: 8px 20px;
-      border-radius: 999px;
-      border: 1.5px solid #f59e0b;
-      cursor: pointer;
-    }
-
-    @media (hover: hover) {
-      .btn:not(.active):hover,
-      .view-select:hover,
-      .spell-slot-btn:hover {
-        background-color: var(--surface-control-hover);
-      }
     }
 
     /* 0ms Plain Black Canvas Boot Layer (Zero Static JPEG, Zero Jank) */
     #haru-boot-splash {
       position: fixed;
       inset: 0;
-      z-index: 37;
+      z-index: 45;
       pointer-events: none;
-      background: #08080a;
+      background: #050507;
       overflow: hidden;
+    }
+
+    #haru-boot-splash .hb-lockup-wrap {
+      position: fixed;
+      left: calc(50% - 56.39vh);
+      top: 0.80vh;
+      width: 113.96vh;
+      height: 40.88vh;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    #haru-boot-splash .hb-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+
+    @keyframes hbContourDraw {
+      0% {
+        opacity: 0.14;
+        stroke-dashoffset: 103.5;
+      }
+      8% {
+        opacity: 1;
+        stroke-dashoffset: 100;
+      }
+      72% {
+        opacity: 0.88;
+      }
+      100% {
+        opacity: 0;
+        stroke-dashoffset: 0;
+      }
+    }
+
+    @keyframes hbFillIn {
+      0% {
+        opacity: 0;
+      }
+      100% {
+        opacity: 1;
+      }
+    }
+
+    @keyframes hbWordmarkGlide {
+      0% {
+        transform: translate(-24px, 191px) scale(1.08);
+      }
+      100% {
+        transform: translate(0px, 0px) scale(1);
+      }
+    }
+
+    #haru-boot-splash .hb-wordmark-mover {
+      transform: translate(-24px, 191px) scale(1.08);
+      will-change: transform;
+      animation: hbWordmarkGlide 780ms cubic-bezier(0.45, 0, 0.55, 1) 2450ms both;
+    }
+
+    #haru-boot-splash .af-glyph-contour {
+      will-change: stroke-dashoffset, opacity;
+      animation: hbContourDraw 820ms cubic-bezier(0.22, 1, 0.36, 1) var(--hb-cd, 0ms) both;
+    }
+
+    #haru-boot-splash .af-glyph-fill {
+      will-change: opacity;
+      animation: hbFillIn 520ms ease-in-out var(--hb-fd, 280ms) both;
     }
   </style>
 </head>
 <body>
   <canvas id="world-canvas"></canvas>
 
-  <!-- 0ms Plain Black Boot Layer -->
-  <div id="haru-boot-splash" aria-hidden="true"></div>
+  <!-- 0ms Compositor-Driven Plain Black & Amarante Brush Boot Layer -->
+  <div id="haru-boot-splash" aria-hidden="true">
+    <div class="hb-lockup-wrap">
+      <svg class="hb-svg" viewBox="0 0 970 348" fill="none" aria-hidden="true">
+        <defs>
+          <filter id="hbWordShadow" x="-15%" y="-15%" width="130%" height="135%">
+            <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#0f172a" flood-opacity="0.32"/>
+          </filter>
+          <linearGradient id="hbGoldLineGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#fffbeb"/>
+            <stop offset="50%" stop-color="#fde68a"/>
+            <stop offset="100%" stop-color="#eab308"/>
+          </linearGradient>
+        </defs>
+        <g id="hb-wordmark-mover" class="hb-wordmark-mover">
+          <g id="af-svg-wordmark">
+            <g class="af-svg-glyph" style="--hb-cd:0ms; --hb-fd:280ms;">
+              <path class="af-glyph-contour" d="M 205.68 274 Q 205.03 274 205.03 273.02 Q 205.03 272.03 205.68 272.03 Q 209.95 272.03 215.93 267.52 Q 221.92 263.01 227.82 252.35 L 273.91 170.02 Q 274.24 169.37 275.47 169.53 Q 276.7 169.7 276.86 170.19 L 293.59 260.22 Q 294.41 264.65 295.23 267.28 Q 296.05 269.9 298.18 270.97 Q 300.31 272.03 304.74 272.03 Q 305.4 272.03 305.4 273.02 Q 305.4 274 304.74 274 Q 300.64 274 296.38 273.67 Q 292.11 273.34 287.03 273.34 Q 282.11 273.34 278.17 273.67 Q 274.24 274 270.14 274 Q 269.48 274 269.48 273.02 Q 269.48 272.03 270.14 272.03 Q 276.86 272.03 278.75 269.57 Q 280.63 267.11 279.32 260.22 L 265.87 188.23 L 273.42 178.39 L 232.58 252.68 Q 228.48 259.9 228.07 264.16 Q 227.66 268.42 230.69 270.23 Q 233.73 272.03 239.96 272.03 Q 240.62 272.03 240.62 273.02 Q 240.62 274 239.8 274 Q 236.19 274 230.94 273.67 Q 225.69 273.34 220.77 273.34 Q 216.02 273.34 212.98 273.67 Q 209.95 274 205.68 274 Z M 240.62 233.82 L 243.08 229.72 L 278.66 229.72 L 278.99 233.82 Z" fill="none" stroke="url(#hbGoldLineGrad)" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" pathLength="100" stroke-dasharray="100 120" stroke-dashoffset="103.5" opacity="0.14"/>
+              <path class="af-glyph-fill" d="M 205.68 274 Q 205.03 274 205.03 273.02 Q 205.03 272.03 205.68 272.03 Q 209.95 272.03 215.93 267.52 Q 221.92 263.01 227.82 252.35 L 273.91 170.02 Q 274.24 169.37 275.47 169.53 Q 276.7 169.7 276.86 170.19 L 293.59 260.22 Q 294.41 264.65 295.23 267.28 Q 296.05 269.9 298.18 270.97 Q 300.31 272.03 304.74 272.03 Q 305.4 272.03 305.4 273.02 Q 305.4 274 304.74 274 Q 300.64 274 296.38 273.67 Q 292.11 273.34 287.03 273.34 Q 282.11 273.34 278.17 273.67 Q 274.24 274 270.14 274 Q 269.48 274 269.48 273.02 Q 269.48 272.03 270.14 272.03 Q 276.86 272.03 278.75 269.57 Q 280.63 267.11 279.32 260.22 L 265.87 188.23 L 273.42 178.39 L 232.58 252.68 Q 228.48 259.9 228.07 264.16 Q 227.66 268.42 230.69 270.23 Q 233.73 272.03 239.96 272.03 Q 240.62 272.03 240.62 273.02 Q 240.62 274 239.8 274 Q 236.19 274 230.94 273.67 Q 225.69 273.34 220.77 273.34 Q 216.02 273.34 212.98 273.67 Q 209.95 274 205.68 274 Z M 240.62 233.82 L 243.08 229.72 L 278.66 229.72 L 278.99 233.82 Z" fill="#fffdf9" opacity="0"/>
+            </g>
+            <g class="af-svg-glyph" style="--hb-cd:240ms; --hb-fd:520ms;">
+              <path class="af-glyph-contour" d="M 398.55 275.48 Q 393.46 275.48 392.15 271.54 Q 390.84 267.6 392.15 259.4 L 397.07 233.33 Q 398.55 224.96 397.4 220.95 Q 396.25 216.93 392.64 216.93 Q 388.38 216.93 383.3 223.16 Q 378.21 229.39 373.54 241.69 Q 368.86 253.99 365.75 272.36 L 363.29 272.2 Q 366.57 252.35 372.14 238.08 Q 377.72 223.82 384.94 216.19 Q 392.15 208.56 400.02 208.56 Q 406.42 208.56 408.96 213.73 Q 411.5 218.9 409.54 230.21 L 404.29 259.4 Q 403.47 264.16 404.21 265.96 Q 404.94 267.77 406.42 267.77 Q 408.39 267.77 410.68 265.96 Q 412.98 264.16 415.77 261.37 Q 416.42 260.72 417.08 261.37 Q 417.74 262.03 417.08 262.68 Q 412 268.75 407.57 272.11 Q 403.14 275.48 398.55 275.48 Z M 321.8 275.31 Q 318.84 275.31 317.86 274.98 Q 316.88 274.66 316.88 274.16 Q 316.88 273.51 317.78 269.9 Q 318.68 266.29 319.34 262.19 L 326.06 225.29 Q 327.54 216.76 323.6 216.76 Q 321.8 216.76 319.25 218.49 Q 316.71 220.21 313.43 223.65 Q 312.94 224.31 312.2 223.57 Q 311.46 222.83 312.12 222.18 Q 317.86 215.29 322.62 212.25 Q 327.37 209.22 331.8 209.22 Q 336.56 209.22 338.03 212.83 Q 339.51 216.44 338.03 223.82 L 329.5 272.36 Q 328.85 275.31 321.8 275.31 Z M 358.04 275.31 Q 355.25 275.31 354.27 274.98 Q 353.28 274.66 353.28 274.16 Q 353.28 273.51 354.19 269.74 Q 355.09 265.96 355.74 261.86 L 360.99 233.16 Q 362.47 224.64 361.16 220.78 Q 359.84 216.93 356.24 216.93 Q 351.81 216.93 346.64 223.41 Q 341.48 229.88 336.97 242.27 Q 332.46 254.65 329.5 272.36 L 326.88 272.2 Q 330 252.68 335.57 238.41 Q 341.15 224.14 348.45 216.35 Q 355.74 208.56 363.78 208.56 Q 370.01 208.56 372.72 213.65 Q 375.42 218.73 373.46 230.05 L 365.75 272.36 Q 365.42 275.31 358.04 275.31 Z" fill="none" stroke="url(#hbGoldLineGrad)" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" pathLength="100" stroke-dasharray="100 120" stroke-dashoffset="105" opacity="0"/>
+              <path class="af-glyph-fill" d="M 398.55 275.48 Q 393.46 275.48 392.15 271.54 Q 390.84 267.6 392.15 259.4 L 397.07 233.33 Q 398.55 224.96 397.4 220.95 Q 396.25 216.93 392.64 216.93 Q 388.38 216.93 383.3 223.16 Q 378.21 229.39 373.54 241.69 Q 368.86 253.99 365.75 272.36 L 363.29 272.2 Q 366.57 252.35 372.14 238.08 Q 377.72 223.82 384.94 216.19 Q 392.15 208.56 400.02 208.56 Q 406.42 208.56 408.96 213.73 Q 411.5 218.9 409.54 230.21 L 404.29 259.4 Q 403.47 264.16 404.21 265.96 Q 404.94 267.77 406.42 267.77 Q 408.39 267.77 410.68 265.96 Q 412.98 264.16 415.77 261.37 Q 416.42 260.72 417.08 261.37 Q 417.74 262.03 417.08 262.68 Q 412 268.75 407.57 272.11 Q 403.14 275.48 398.55 275.48 Z M 321.8 275.31 Q 318.84 275.31 317.86 274.98 Q 316.88 274.66 316.88 274.16 Q 316.88 273.51 317.78 269.9 Q 318.68 266.29 319.34 262.19 L 326.06 225.29 Q 327.54 216.76 323.6 216.76 Q 321.8 216.76 319.25 218.49 Q 316.71 220.21 313.43 223.65 Q 312.94 224.31 312.2 223.57 Q 311.46 222.83 312.12 222.18 Q 317.86 215.29 322.62 212.25 Q 327.37 209.22 331.8 209.22 Q 336.56 209.22 338.03 212.83 Q 339.51 216.44 338.03 223.82 L 329.5 272.36 Q 328.85 275.31 321.8 275.31 Z M 358.04 275.31 Q 355.25 275.31 354.27 274.98 Q 353.28 274.66 353.28 274.16 Q 353.28 273.51 354.19 269.74 Q 355.09 265.96 355.74 261.86 L 360.99 233.16 Q 362.47 224.64 361.16 220.78 Q 359.84 216.93 356.24 216.93 Q 351.81 216.93 346.64 223.41 Q 341.48 229.88 336.97 242.27 Q 332.46 254.65 329.5 272.36 L 326.88 272.2 Q 330 252.68 335.57 238.41 Q 341.15 224.14 348.45 216.35 Q 355.74 208.56 363.78 208.56 Q 370.01 208.56 372.72 213.65 Q 375.42 218.73 373.46 230.05 L 365.75 272.36 Q 365.42 275.31 358.04 275.31 Z" fill="#fffdf9" opacity="0"/>
+            </g>
+            <g class="af-svg-glyph" style="--hb-cd:480ms; --hb-fd:760ms;">
+              <path class="af-glyph-contour" d="M 432.17 276.13 Q 426.76 276.13 423.64 272.11 Q 420.52 268.1 421.84 259.08 Q 422.98 250.55 427.49 241.69 Q 432 232.84 438.48 225.29 Q 444.96 217.75 452.34 213.16 Q 459.72 208.56 466.44 208.56 Q 469.56 208.56 472.84 209.71 Q 476.12 210.86 478.5 213.57 Q 480.88 216.27 481.2 220.54 L 472.35 215.45 Q 474.81 215.12 477.76 212.83 Q 480.71 210.53 482.35 207.25 Q 482.68 206.76 483.58 207.01 Q 484.48 207.25 484.32 207.58 L 474.81 259.4 Q 473.33 267.77 476.94 267.77 Q 478.58 267.77 481.04 266.05 Q 483.5 264.32 486.45 261.37 Q 486.94 260.88 487.6 261.54 Q 488.26 262.19 487.76 262.68 Q 482.68 268.75 478.17 272.11 Q 473.66 275.48 469.4 275.48 Q 464.64 275.48 463 271.7 Q 461.36 267.93 462.67 259.4 L 466.77 236.44 L 470.05 233.66 Q 465.79 246.78 459.39 256.29 Q 453 265.8 445.94 270.97 Q 438.89 276.13 432.17 276.13 Z M 441.19 265.47 Q 445.29 265.47 449.55 262.19 Q 453.82 258.91 457.59 253.66 Q 461.36 248.42 464.07 242.43 Q 466.77 236.44 467.76 231.2 Q 469.07 224.14 466.69 219.96 Q 464.31 215.78 459.06 215.78 Q 454.14 215.94 449.14 220.13 Q 444.14 224.31 440.37 231.44 Q 436.6 238.58 434.96 247.76 Q 433.48 257.44 435.37 261.45 Q 437.25 265.47 441.19 265.47 Z" fill="none" stroke="url(#hbGoldLineGrad)" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" pathLength="100" stroke-dasharray="100 120" stroke-dashoffset="105" opacity="0"/>
+              <path class="af-glyph-fill" d="M 432.17 276.13 Q 426.76 276.13 423.64 272.11 Q 420.52 268.1 421.84 259.08 Q 422.98 250.55 427.49 241.69 Q 432 232.84 438.48 225.29 Q 444.96 217.75 452.34 213.16 Q 459.72 208.56 466.44 208.56 Q 469.56 208.56 472.84 209.71 Q 476.12 210.86 478.5 213.57 Q 480.88 216.27 481.2 220.54 L 472.35 215.45 Q 474.81 215.12 477.76 212.83 Q 480.71 210.53 482.35 207.25 Q 482.68 206.76 483.58 207.01 Q 484.48 207.25 484.32 207.58 L 474.81 259.4 Q 473.33 267.77 476.94 267.77 Q 478.58 267.77 481.04 266.05 Q 483.5 264.32 486.45 261.37 Q 486.94 260.88 487.6 261.54 Q 488.26 262.19 487.76 262.68 Q 482.68 268.75 478.17 272.11 Q 473.66 275.48 469.4 275.48 Q 464.64 275.48 463 271.7 Q 461.36 267.93 462.67 259.4 L 466.77 236.44 L 470.05 233.66 Q 465.79 246.78 459.39 256.29 Q 453 265.8 445.94 270.97 Q 438.89 276.13 432.17 276.13 Z M 441.19 265.47 Q 445.29 265.47 449.55 262.19 Q 453.82 258.91 457.59 253.66 Q 461.36 248.42 464.07 242.43 Q 466.77 236.44 467.76 231.2 Q 469.07 224.14 466.69 219.96 Q 464.31 215.78 459.06 215.78 Q 454.14 215.94 449.14 220.13 Q 444.14 224.31 440.37 231.44 Q 436.6 238.58 434.96 247.76 Q 433.48 257.44 435.37 261.45 Q 437.25 265.47 441.19 265.47 Z" fill="#fffdf9" opacity="0"/>
+            </g>
+            <g class="af-svg-glyph" style="--hb-cd:720ms; --hb-fd:1000ms;">
+              <path class="af-glyph-contour" d="M 509.9 272.36 L 508.26 272.2 Q 509.9 263.83 512.12 255.06 Q 514.33 246.28 517.04 238.08 Q 519.74 229.88 523.02 223.41 Q 526.3 216.93 529.99 213.07 Q 533.68 209.22 537.62 209.22 Q 540.08 209.22 542.7 210.53 Q 545.33 211.84 546.97 214.06 Q 548.61 216.27 548.12 218.9 Q 547.79 221.03 546.07 223 Q 544.34 224.96 541.56 224.96 Q 539.1 224.96 537.54 223.65 Q 535.98 222.34 534.59 221.03 Q 533.19 219.72 531.55 219.72 Q 529.58 219.72 527.12 223.41 Q 524.66 227.1 522.04 233 Q 519.42 238.9 517.04 245.96 Q 514.66 253.01 512.86 259.98 Q 511.05 266.95 509.9 272.36 Z M 502.2 275.31 Q 499.24 275.31 498.26 274.98 Q 497.28 274.66 497.28 274.16 Q 497.28 273.51 498.26 269.74 Q 499.24 265.96 499.9 261.86 L 506.13 227.42 Q 506.95 223.32 506.71 221.03 Q 506.46 218.73 505.64 217.75 Q 504.82 216.76 503.51 216.76 Q 501.7 216.76 499.24 218.49 Q 496.78 220.21 493.83 223.16 Q 493.34 223.65 492.68 223 Q 492.03 222.34 492.52 221.68 Q 498.1 215.12 502.69 212.17 Q 507.28 209.22 511.71 209.22 Q 515.15 209.22 516.87 210.94 Q 518.6 212.66 518.92 216.35 Q 519.25 220.04 518.27 226.11 L 509.9 272.36 Q 509.58 275.31 502.2 275.31 Z" fill="none" stroke="url(#hbGoldLineGrad)" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" pathLength="100" stroke-dasharray="100 120" stroke-dashoffset="105" opacity="0"/>
+              <path class="af-glyph-fill" d="M 509.9 272.36 L 508.26 272.2 Q 509.9 263.83 512.12 255.06 Q 514.33 246.28 517.04 238.08 Q 519.74 229.88 523.02 223.41 Q 526.3 216.93 529.99 213.07 Q 533.68 209.22 537.62 209.22 Q 540.08 209.22 542.7 210.53 Q 545.33 211.84 546.97 214.06 Q 548.61 216.27 548.12 218.9 Q 547.79 221.03 546.07 223 Q 544.34 224.96 541.56 224.96 Q 539.1 224.96 537.54 223.65 Q 535.98 222.34 534.59 221.03 Q 533.19 219.72 531.55 219.72 Q 529.58 219.72 527.12 223.41 Q 524.66 227.1 522.04 233 Q 519.42 238.9 517.04 245.96 Q 514.66 253.01 512.86 259.98 Q 511.05 266.95 509.9 272.36 Z M 502.2 275.31 Q 499.24 275.31 498.26 274.98 Q 497.28 274.66 497.28 274.16 Q 497.28 273.51 498.26 269.74 Q 499.24 265.96 499.9 261.86 L 506.13 227.42 Q 506.95 223.32 506.71 221.03 Q 506.46 218.73 505.64 217.75 Q 504.82 216.76 503.51 216.76 Q 501.7 216.76 499.24 218.49 Q 496.78 220.21 493.83 223.16 Q 493.34 223.65 492.68 223 Q 492.03 222.34 492.52 221.68 Q 498.1 215.12 502.69 212.17 Q 507.28 209.22 511.71 209.22 Q 515.15 209.22 516.87 210.94 Q 518.6 212.66 518.92 216.35 Q 519.25 220.04 518.27 226.11 L 509.9 272.36 Q 509.58 275.31 502.2 275.31 Z" fill="#fffdf9" opacity="0"/>
+            </g>
+            <g class="af-svg-glyph" style="--hb-cd:960ms; --hb-fd:1240ms;">
+              <path class="af-glyph-contour" d="M 558.61 276.13 Q 553.2 276.13 550.08 272.11 Q 546.97 268.1 548.28 259.08 Q 549.43 250.55 553.94 241.69 Q 558.45 232.84 564.93 225.29 Q 571.4 217.75 578.78 213.16 Q 586.16 208.56 592.89 208.56 Q 596 208.56 599.28 209.71 Q 602.56 210.86 604.94 213.57 Q 607.32 216.27 607.65 220.54 L 598.79 215.45 Q 601.25 215.12 604.2 212.83 Q 607.16 210.53 608.8 207.25 Q 609.12 206.76 610.03 207.01 Q 610.93 207.25 610.76 207.58 L 601.25 259.4 Q 599.78 267.77 603.38 267.77 Q 605.02 267.77 607.48 266.05 Q 609.94 264.32 612.9 261.37 Q 613.39 260.88 614.04 261.54 Q 614.7 262.19 614.21 262.68 Q 609.12 268.75 604.61 272.11 Q 600.1 275.48 595.84 275.48 Q 591.08 275.48 589.44 271.7 Q 587.8 267.93 589.12 259.4 L 593.22 236.44 L 596.5 233.66 Q 592.23 246.78 585.84 256.29 Q 579.44 265.8 572.39 270.97 Q 565.34 276.13 558.61 276.13 Z M 567.63 265.47 Q 571.73 265.47 576 262.19 Q 580.26 258.91 584.03 253.66 Q 587.8 248.42 590.51 242.43 Q 593.22 236.44 594.2 231.2 Q 595.51 224.14 593.13 219.96 Q 590.76 215.78 585.51 215.78 Q 580.59 215.94 575.59 220.13 Q 570.58 224.31 566.81 231.44 Q 563.04 238.58 561.4 247.76 Q 559.92 257.44 561.81 261.45 Q 563.7 265.47 567.63 265.47 Z" fill="none" stroke="url(#hbGoldLineGrad)" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" pathLength="100" stroke-dasharray="100 120" stroke-dashoffset="105" opacity="0"/>
+              <path class="af-glyph-fill" d="M 558.61 276.13 Q 553.2 276.13 550.08 272.11 Q 546.97 268.1 548.28 259.08 Q 549.43 250.55 553.94 241.69 Q 558.45 232.84 564.93 225.29 Q 571.4 217.75 578.78 213.16 Q 586.16 208.56 592.89 208.56 Q 596 208.56 599.28 209.71 Q 602.56 210.86 604.94 213.57 Q 607.32 216.27 607.65 220.54 L 598.79 215.45 Q 601.25 215.12 604.2 212.83 Q 607.16 210.53 608.8 207.25 Q 609.12 206.76 610.03 207.01 Q 610.93 207.25 610.76 207.58 L 601.25 259.4 Q 599.78 267.77 603.38 267.77 Q 605.02 267.77 607.48 266.05 Q 609.94 264.32 612.9 261.37 Q 613.39 260.88 614.04 261.54 Q 614.7 262.19 614.21 262.68 Q 609.12 268.75 604.61 272.11 Q 600.1 275.48 595.84 275.48 Q 591.08 275.48 589.44 271.7 Q 587.8 267.93 589.12 259.4 L 593.22 236.44 L 596.5 233.66 Q 592.23 246.78 585.84 256.29 Q 579.44 265.8 572.39 270.97 Q 565.34 276.13 558.61 276.13 Z M 567.63 265.47 Q 571.73 265.47 576 262.19 Q 580.26 258.91 584.03 253.66 Q 587.8 248.42 590.51 242.43 Q 593.22 236.44 594.2 231.2 Q 595.51 224.14 593.13 219.96 Q 590.76 215.78 585.51 215.78 Q 580.59 215.94 575.59 220.13 Q 570.58 224.31 566.81 231.44 Q 563.04 238.58 561.4 247.76 Q 559.92 257.44 561.81 261.45 Q 563.7 265.47 567.63 265.47 Z" fill="#fffdf9" opacity="0"/>
+            </g>
+            <g class="af-svg-glyph" style="--hb-cd:1200ms; --hb-fd:1480ms;">
+              <path class="af-glyph-contour" d="M 671.28 275.48 Q 666.36 275.48 664.97 271.54 Q 663.57 267.6 665.05 259.4 L 669.8 233.33 Q 673.08 216.93 664.88 216.93 Q 659.96 216.93 654.63 223.32 Q 649.3 229.72 644.63 242.1 Q 639.96 254.48 637 272.36 L 634.22 272.2 Q 637.66 252.68 643.32 238.41 Q 648.98 224.14 656.44 216.35 Q 663.9 208.56 672.1 208.56 Q 679.15 208.56 681.78 213.73 Q 684.4 218.9 682.43 230.21 L 677.02 259.4 Q 676.2 264.16 676.94 265.96 Q 677.68 267.77 679.32 267.77 Q 681.12 267.77 683.5 265.96 Q 685.88 264.16 688.66 261.37 Q 689.16 260.72 689.89 261.37 Q 690.63 262.03 689.98 262.68 Q 684.89 268.75 680.46 272.11 Q 676.04 275.48 671.28 275.48 Z M 629.13 275.31 Q 626.18 275.31 625.2 274.98 Q 624.21 274.66 624.21 274.16 Q 624.21 273.51 625.11 269.82 Q 626.02 266.13 626.67 261.86 L 633.4 225.29 Q 634.87 216.76 630.94 216.76 Q 629.13 216.76 626.59 218.49 Q 624.05 220.21 620.77 223.65 Q 620.28 224.31 619.54 223.57 Q 618.8 222.83 619.46 222.18 Q 625.2 215.29 629.95 212.25 Q 634.71 209.22 639.14 209.22 Q 643.89 209.22 645.37 212.83 Q 646.84 216.44 645.37 223.82 L 637 272.36 Q 636.18 275.31 629.13 275.31 Z" fill="none" stroke="url(#hbGoldLineGrad)" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" pathLength="100" stroke-dasharray="100 120" stroke-dashoffset="105" opacity="0"/>
+              <path class="af-glyph-fill" d="M 671.28 275.48 Q 666.36 275.48 664.97 271.54 Q 663.57 267.6 665.05 259.4 L 669.8 233.33 Q 673.08 216.93 664.88 216.93 Q 659.96 216.93 654.63 223.32 Q 649.3 229.72 644.63 242.1 Q 639.96 254.48 637 272.36 L 634.22 272.2 Q 637.66 252.68 643.32 238.41 Q 648.98 224.14 656.44 216.35 Q 663.9 208.56 672.1 208.56 Q 679.15 208.56 681.78 213.73 Q 684.4 218.9 682.43 230.21 L 677.02 259.4 Q 676.2 264.16 676.94 265.96 Q 677.68 267.77 679.32 267.77 Q 681.12 267.77 683.5 265.96 Q 685.88 264.16 688.66 261.37 Q 689.16 260.72 689.89 261.37 Q 690.63 262.03 689.98 262.68 Q 684.89 268.75 680.46 272.11 Q 676.04 275.48 671.28 275.48 Z M 629.13 275.31 Q 626.18 275.31 625.2 274.98 Q 624.21 274.66 624.21 274.16 Q 624.21 273.51 625.11 269.82 Q 626.02 266.13 626.67 261.86 L 633.4 225.29 Q 634.87 216.76 630.94 216.76 Q 629.13 216.76 626.59 218.49 Q 624.05 220.21 620.77 223.65 Q 620.28 224.31 619.54 223.57 Q 618.8 222.83 619.46 222.18 Q 625.2 215.29 629.95 212.25 Q 634.71 209.22 639.14 209.22 Q 643.89 209.22 645.37 212.83 Q 646.84 216.44 645.37 223.82 L 637 272.36 Q 636.18 275.31 629.13 275.31 Z" fill="#fffdf9" opacity="0"/>
+            </g>
+            <g class="af-svg-glyph" style="--hb-cd:1440ms; --hb-fd:1720ms;">
+              <path class="af-glyph-contour" d="M 711.95 275.97 Q 708.34 275.97 705.06 274.66 Q 701.78 273.34 700.31 269.82 Q 698.83 266.29 699.98 259.73 L 706.54 223.82 Q 707.52 218.24 706.62 216.6 Q 705.72 214.96 700.96 214.96 Q 700.31 214.96 700.39 213.81 Q 700.47 212.66 700.96 212.66 Q 708.18 212.66 712.85 208.48 Q 717.53 204.3 719.99 198.72 Q 720.15 198.23 721.63 198.4 Q 723.1 198.56 722.94 199.22 L 712.77 256.12 Q 711.62 262.19 713.59 265.06 Q 715.56 267.93 720.64 267.93 Q 724.42 267.93 727.94 266.21 Q 731.47 264.49 735.08 261.37 Q 735.4 261.04 736.14 261.7 Q 736.88 262.36 736.39 262.85 Q 729.01 269.9 723.27 272.93 Q 717.53 275.97 711.95 275.97 Z M 736.55 218.4 Q 736.22 218.4 733.11 217.99 Q 729.99 217.58 725.65 217.09 Q 721.3 216.6 716.87 216.6 L 717.2 212.17 Q 722.28 212.17 727.04 211.84 Q 731.8 211.52 735.49 211.19 Q 739.18 210.86 740.65 210.86 Q 741.47 210.86 741.72 211.43 Q 741.96 212.01 741.8 212.66 Q 741.64 213.98 739.91 216.19 Q 738.19 218.4 736.55 218.4 Z" fill="none" stroke="url(#hbGoldLineGrad)" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" pathLength="100" stroke-dasharray="100 120" stroke-dashoffset="105" opacity="0"/>
+              <path class="af-glyph-fill" d="M 711.95 275.97 Q 708.34 275.97 705.06 274.66 Q 701.78 273.34 700.31 269.82 Q 698.83 266.29 699.98 259.73 L 706.54 223.82 Q 707.52 218.24 706.62 216.6 Q 705.72 214.96 700.96 214.96 Q 700.31 214.96 700.39 213.81 Q 700.47 212.66 700.96 212.66 Q 708.18 212.66 712.85 208.48 Q 717.53 204.3 719.99 198.72 Q 720.15 198.23 721.63 198.4 Q 723.1 198.56 722.94 199.22 L 712.77 256.12 Q 711.62 262.19 713.59 265.06 Q 715.56 267.93 720.64 267.93 Q 724.42 267.93 727.94 266.21 Q 731.47 264.49 735.08 261.37 Q 735.4 261.04 736.14 261.7 Q 736.88 262.36 736.39 262.85 Q 729.01 269.9 723.27 272.93 Q 717.53 275.97 711.95 275.97 Z M 736.55 218.4 Q 736.22 218.4 733.11 217.99 Q 729.99 217.58 725.65 217.09 Q 721.3 216.6 716.87 216.6 L 717.2 212.17 Q 722.28 212.17 727.04 211.84 Q 731.8 211.52 735.49 211.19 Q 739.18 210.86 740.65 210.86 Q 741.47 210.86 741.72 211.43 Q 741.96 212.01 741.8 212.66 Q 741.64 213.98 739.91 216.19 Q 738.19 218.4 736.55 218.4 Z" fill="#fffdf9" opacity="0"/>
+            </g>
+            <g class="af-svg-glyph" style="--hb-cd:1680ms; --hb-fd:1960ms;">
+              <path class="af-glyph-contour" d="M 764.92 275.97 Q 755.74 275.97 750.49 271.29 Q 745.24 266.62 743.69 259.24 Q 742.13 251.86 743.77 243.66 Q 744.92 237.43 748.36 231.11 Q 751.8 224.8 756.97 219.72 Q 762.14 214.63 768.7 211.6 Q 775.26 208.56 782.8 208.56 Q 789.2 208.56 792.39 210.86 Q 795.59 213.16 795.1 217.42 Q 794.61 221.52 790.75 225.37 Q 786.9 229.23 780.59 232.26 Q 774.27 235.3 766.56 237.43 Q 758.86 239.56 750.66 240.54 L 750.98 238.41 Q 762.96 236.61 771.07 232.43 Q 779.19 228.24 780.5 220.86 Q 781.32 216.93 779.52 214.96 Q 777.72 212.99 774.6 212.99 Q 770.34 212.99 766.89 216.35 Q 763.45 219.72 761.07 225.46 Q 758.69 231.2 757.54 238.25 Q 756.07 246.94 757.3 253.91 Q 758.53 260.88 762.63 265.06 Q 766.73 269.24 773.45 269.24 Q 776.9 269.24 781 268.1 Q 785.1 266.95 788.87 264.16 Q 789.2 263.83 789.77 264.49 Q 790.34 265.14 790.02 265.47 Q 783.78 271.21 777.39 273.59 Q 770.99 275.97 764.92 275.97 Z" fill="none" stroke="url(#hbGoldLineGrad)" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" pathLength="100" stroke-dasharray="100 120" stroke-dashoffset="105" opacity="0"/>
+              <path class="af-glyph-fill" d="M 764.92 275.97 Q 755.74 275.97 750.49 271.29 Q 745.24 266.62 743.69 259.24 Q 742.13 251.86 743.77 243.66 Q 744.92 237.43 748.36 231.11 Q 751.8 224.8 756.97 219.72 Q 762.14 214.63 768.7 211.6 Q 775.26 208.56 782.8 208.56 Q 789.2 208.56 792.39 210.86 Q 795.59 213.16 795.1 217.42 Q 794.61 221.52 790.75 225.37 Q 786.9 229.23 780.59 232.26 Q 774.27 235.3 766.56 237.43 Q 758.86 239.56 750.66 240.54 L 750.98 238.41 Q 762.96 236.61 771.07 232.43 Q 779.19 228.24 780.5 220.86 Q 781.32 216.93 779.52 214.96 Q 777.72 212.99 774.6 212.99 Q 770.34 212.99 766.89 216.35 Q 763.45 219.72 761.07 225.46 Q 758.69 231.2 757.54 238.25 Q 756.07 246.94 757.3 253.91 Q 758.53 260.88 762.63 265.06 Q 766.73 269.24 773.45 269.24 Q 776.9 269.24 781 268.1 Q 785.1 266.95 788.87 264.16 Q 789.2 263.83 789.77 264.49 Q 790.34 265.14 790.02 265.47 Q 783.78 271.21 777.39 273.59 Q 770.99 275.97 764.92 275.97 Z" fill="#fffdf9" opacity="0"/>
+            </g>
+          </g>
+        </g>
+      </svg>
+    </div>
+  </div>
   <script>
-    if (location.search.includes('shot=') || location.search.includes('nolobby=1')) {
-      const s = document.getElementById('haru-boot-splash');
-      if (s) s.remove();
-    }
+    window.__BOOT_STROKE_T0__ = performance.now();
+    window.__WORLD_VISUAL_READY__ = false;
+    (function () {
+      var q = location.search || '';
+      var hasFlow = q.includes('flow=1') || q.includes('opening=1') || q.includes('step=');
+      var skipBootSplash = !hasFlow && (q.includes('shot=') || q.includes('nolobby=1'));
+      window.__SKIP_BOOT_SPLASH__ = skipBootSplash;
+      if (skipBootSplash) {
+        var s = document.getElementById('haru-boot-splash');
+        if (s) s.remove();
+      }
+    })();
   </script>
 
   <div id="hud">
@@ -1414,6 +524,56 @@
     </div>
   </div>
 
-  <script type="module" src="/world/src/main.js"></script>
+  <style id="legacy-hud-deferred" media="print" onload="this.media='all'">
+    #top-bar { position: absolute; top: 12px; left: 14px; right: 14px; display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; pointer-events: none; }
+    .top-col-left, .top-col-right { display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+    .top-col-right { align-items: flex-end; }
+    #debug-dev-pill.visible { display: inline-flex; }
+    .top-col-center { position: absolute; top: 0; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; z-index: 22; }
+    .hud-pill { pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; background: var(--surface-hud); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--border-hud); border-radius: 999px; padding: 4px 8px; box-shadow: var(--shadow-hud); }
+    .seg-group { display: inline-flex; align-items: center; gap: 2px; background: var(--surface-control); border-radius: 999px; padding: 2px; }
+    .btn { appearance: none; border: none; background: transparent; color: var(--text-secondary); border-radius: 999px; padding: 4px 10px; font-family: inherit; font-size: 0.72rem; font-weight: 600; line-height: 1.2; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+    .btn.active { background: var(--surface-accent); color: var(--text-on-accent); }
+    .view-select { appearance: none; border: 1px solid transparent; background: var(--surface-control); color: var(--text-primary); border-radius: 999px; padding: 4px 24px 4px 10px; font-family: inherit; font-size: 0.72rem; font-weight: 600; line-height: 1.2; cursor: pointer; }
+    #stats-readout { font-family: "Cormorant Garamond", "Cinzel", Georgia, serif; font-variant-numeric: tabular-nums; font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); padding: 0 6px 0 2px; white-space: nowrap; }
+    #boss-hud-bar { display: none; flex-direction: column; gap: 4px; width: min(420px, 52vw); background: var(--surface-dark); color: #faf8f3; border: 1.5px solid rgba(250, 204, 21, 0.55); border-radius: 12px; padding: 6px 12px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32); }
+    #boss-hud-bar.visible { display: flex; }
+    .boss-top-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    #boss-name-label { font-size: 0.76rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #fde047; }
+    #boss-aegis-badge { font-size: 0.68rem; font-weight: 800; padding: 1px 8px; border-radius: 999px; background: rgba(225, 29, 72, 0.28); border: 1px solid #fb7185; color: #ffe4e6; }
+    .boss-hp-track { height: 10px; background: rgba(255, 255, 255, 0.14); border-radius: 999px; overflow: hidden; border: 1px solid rgba(250, 204, 21, 0.35); }
+    #boss-hp-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #be123c, #f43f5e, #fb923c); border-radius: 999px; transition: width 140ms ease-out; }
+    #combat-banner { display: none; flex-direction: column; align-items: center; gap: 2px; padding: 6px 18px; border-radius: 999px; background: rgba(24, 20, 22, 0.90); border: 1.5px solid rgba(251, 191, 36, 0.78); color: #fffbeb; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28); pointer-events: none; max-width: min(680px, 90vw); text-align: center; }
+    #combat-banner.visible { display: inline-flex; }
+    #combat-banner-title { font-size: 0.78rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #fde047; }
+    #combat-banner-sub { font-size: 0.69rem; font-weight: 600; color: #f5f5f4; }
+    #victory-modal { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(28, 25, 23, 0.35); backdrop-filter: blur(4px); pointer-events: auto; z-index: 30; }
+    #victory-modal.visible { display: flex; }
+    .victory-card { background: var(--surface-hud-strong); border: 2px solid #f59e0b; border-radius: 20px; padding: 24px 32px; text-align: center; max-width: 440px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .victory-card h2 { font-size: 1.25rem; font-weight: 800; color: #1c1917; }
+    .victory-card p { font-size: 0.85rem; color: var(--text-secondary); }
+    #replay-expedition-btn { margin-top: 6px; background: #1c1917; color: #fde047; font-size: 0.82rem; font-weight: 700; padding: 8px 20px; border-radius: 999px; border: 1.5px solid #f59e0b; cursor: pointer; }
+    .hud-card { pointer-events: auto; background: var(--surface-hud); border: 1px solid var(--border-hud); border-radius: 14px; padding: 6px 10px; box-shadow: var(--shadow-hud); }
+    .divider { width: 1px; height: 14px; background: var(--border-hud); }
+    .btn:focus-visible, .view-select:focus-visible, .spell-slot-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+    .kbd { display: inline-block; font-family: "Cinzel", "Cormorant Garamond", Georgia, serif; font-variant-numeric: tabular-nums; font-size: 0.68rem; font-weight: 700; line-height: 1; padding: 2px 5px; border-radius: 5px; background: rgba(255,255,255,0.78); border: 1px solid var(--border-kbd); color: var(--text-primary); }
+    #party-status-card, #coop-room-pill, #act-objective-pill, #bottom-bar, #stele-interact-prompt, #altar-stele-modal, #sanctuary-lobby { display: none; }
+    #sanctuary-lobby.visible, #altar-stele-modal.visible { display: flex; }
+  </style>
+  <script type="module">
+    if (window.__SKIP_BOOT_SPLASH__) {
+      window.__PRELOADED_THREE__ = await import('three');
+      await import('/world/src/main.js');
+    } else {
+      requestAnimationFrame(() => {
+        setTimeout(async () => {
+          window.__PRELOADED_THREE__ = await import('three');
+          setTimeout(() => {
+            import('/world/src/main.js');
+          }, 0);
+        }, 0);
+      });
+    }
+  </script>
 </body>
 </html>

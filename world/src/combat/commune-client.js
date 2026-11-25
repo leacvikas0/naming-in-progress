@@ -492,7 +492,7 @@ const ARTORIOUS_CLIP_URLS = Object.freeze({
   miracle_desperate: '/world/assets/audio/artorious/miracle_desperate.wav',
 });
 
-function waitForAudioElementToFinish(audioEl, maxSafetyTimeoutMs = 15000) {
+function waitForAudioElementToFinish(audioEl, maxSafetyTimeoutMs = 15000, onPreClimax = null) {
   return new Promise((resolve) => {
     if (!audioEl || typeof audioEl.addEventListener !== 'function') {
       resolve({ finished: true, reason: 'no_events', duration: 0 });
@@ -500,12 +500,17 @@ function waitForAudioElementToFinish(audioEl, maxSafetyTimeoutMs = 15000) {
     }
     let settled = false;
     let safetyTimer = null;
+    let preClimaxTimer = null;
     const done = (reason = 'ended') => {
       if (settled) return;
       settled = true;
       if (safetyTimer !== null) {
         clearTimeout(safetyTimer);
         safetyTimer = null;
+      }
+      if (preClimaxTimer !== null) {
+        clearTimeout(preClimaxTimer);
+        preClimaxTimer = null;
       }
       audioEl.removeEventListener?.('ended', onEnded);
       audioEl.removeEventListener?.('error', onError);
@@ -527,6 +532,12 @@ function waitForAudioElementToFinish(audioEl, maxSafetyTimeoutMs = 15000) {
         if (Number.isFinite(dur) && dur > 0) {
           if (safetyTimer !== null) clearTimeout(safetyTimer);
           safetyTimer = setTimeout(() => done('duration_timeout'), Math.ceil(dur * 1000) + 600);
+          if (typeof onPreClimax === 'function' && dur > 1.8) {
+            if (preClimaxTimer !== null) clearTimeout(preClimaxTimer);
+            preClimaxTimer = setTimeout(() => {
+              if (!settled) onPreClimax(dur);
+            }, Math.max(200, Math.round((dur - 1.65) * 1000)));
+          }
         }
       },
       { once: true }
@@ -547,8 +558,8 @@ function waitForAudioElementToFinish(audioEl, maxSafetyTimeoutMs = 15000) {
 
 /**
  * Plays Artorious's rare voice clips through a WebAudio stereo widener
- * (Haas `14ms` L/R micro-delay + `185Hz` low-shelf warmth + `2.4s` cathedral
- * stereo impulse). Respects the Rare Speech Rule (`shouldSpeakAloud`) and
+ * (phase-pure centered dry vocal + Haas `14ms` L/R early-reflection send into
+ * open-air sanctuary impulse). Respects the Rare Speech Rule (`shouldSpeakAloud`) and
  * returns a `finished` Promise that resolves only after the voice clip ends
  * so gameplay verdict actions (`applyCommuneVerdict`) wait for His dialogue.
  */
@@ -565,7 +576,7 @@ export function playWideSurroundDivineVoice(verdictOrAudioUrl, options = {}) {
   const stereoSpec = {
     haasDelayMs: 14,
     lowShelfHz: 185,
-    lowShelfGainDb: 4.5,
+    lowShelfGainDb: 3.2,
     cathedralDecaySec: 2.4,
     stereoWidth: 0.88,
   };
@@ -608,13 +619,14 @@ export function playWideSurroundDivineVoice(verdictOrAudioUrl, options = {}) {
     audioEl.crossOrigin = 'anonymous';
     const source = ctx.createMediaElementSource(audioEl);
 
-    // 1. Warmth Low-Shelf Filter (185 Hz, +4.5 dB)
+    // 1. Warmth Low-Shelf Filter (185 Hz, +3.2 dB)
     const lowShelf = ctx.createBiquadFilter();
     lowShelf.type = 'lowshelf';
     lowShelf.frequency.value = stereoSpec.lowShelfHz;
     lowShelf.gain.value = stereoSpec.lowShelfGainDb;
 
-    // 2. Haas Stereo Widener (0ms Left, 14ms Right micro-delay)
+    // 2. Stereo Early-Reflection Spread (0ms Left, 14ms Right micro-delay on WET send only —
+    //    dry direct vocal stays 100% phase-pure at 0ms so "s"/"t" transients never comb-filter!)
     const delayLeft = ctx.createDelay(0.1);
     delayLeft.delayTime.value = 0.0;
     const delayRight = ctx.createDelay(0.1);
@@ -626,26 +638,27 @@ export function playWideSurroundDivineVoice(verdictOrAudioUrl, options = {}) {
     delayLeft.connect(merger, 0, 0);
     delayRight.connect(merger, 0, 1);
 
-    // 3. Cathedral Stereo Impulse Convolver (2.4s)
+    // 3. Open-Air Sanctuary Convolver (1.65s warm natural decay)
     const convolver = ctx.createConvolver();
     convolver.buffer = createCathedralImpulseBuffer(
       ctx,
-      stereoSpec.cathedralDecaySec
+      1.65,
+      3.4
     );
 
     const dryGain = ctx.createGain();
-    dryGain.gain.value = 0.88;
+    dryGain.gain.value = 0.90;
     const wetGain = ctx.createGain();
-    wetGain.gain.value = 0.34;
+    wetGain.gain.value = 0.22;
 
     source.connect(lowShelf);
-    merger.connect(dryGain);
+    lowShelf.connect(dryGain);
     merger.connect(convolver);
     convolver.connect(wetGain);
     dryGain.connect(ctx.destination);
     wetGain.connect(ctx.destination);
 
-    const finished = waitForAudioElementToFinish(audioEl);
+    const finished = waitForAudioElementToFinish(audioEl, 15000, options.onPreClimax);
 
     return {
       played: true,
@@ -1214,6 +1227,11 @@ export function createCommuneClient({
 
       const voicePlayback = playWideSurroundDivineVoice(judgment, {
         AudioContextClass,
+        onPreClimax: () => {
+          if (state === 'speaking') {
+            emitState({ judgment, voicePlayback, speaking: true, preClimax: true });
+          }
+        },
       });
 
       if (voicePlayback?.played && !voicePlayback?.simulatedHeadless && voicePlayback?.finished) {

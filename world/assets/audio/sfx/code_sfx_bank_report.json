@@ -1,0 +1,408 @@
+{
+  "mage_bolt_cast_1": {
+    "duration_s": 0.27,
+    "peak_dbfs": -4.48,
+    "rms_dbfs": -17.86,
+    "crest_db": 13.37,
+    "centroid_hz": 1812.1
+  },
+  "mage_bolt_impact_1": {
+    "duration_s": 0.28,
+    "peak_dbfs": -7.17,
+    "rms_dbfs": -17.85,
+    "crest_db": 10.68,
+    "centroid_hz": 2124.6
+  },
+  "mage_bolt_cast_2": {
+    "duration_s": 0.29,
+    "peak_dbfs": -1.59,
+    "rms_dbfs": -18.25,
+    "crest_db": 16.66,
+    "centroid_hz": 1680.2
+  },
+  "mage_bolt_impact_2": {
+    "duration_s": 0.28,
+    "peak_dbfs": -7.21,
+    "rms_dbfs": -17.86,
+    "crest_db": 10.65,
+    "centroid_hz": 2372.8
+  },
+  "mage_bolt_cast_3": {
+    "duration_s": 0.31,
+    "peak_dbfs": -3.83,
+    "rms_dbfs": -17.85,
+    "crest_db": 14.03,
+    "centroid_hz": 1760.9
+  },
+  "mage_bolt_impact_3": {
+    "duration_s": 0.28,
+    "peak_dbfs": -6.43,
+    "rms_dbfs": -17.85,
+    "crest_db": 11.42,
+    "centroid_hz": 2637.2
+  },
+  "mage_bolt_nova_cast": {
+    "duration_s": 0.44,
+    "peak_dbfs": -5.63,
+    "rms_dbfs": -16.55,
+    "crest_db": 10.92,
+    "centroid_hz": 1025.9
+  },
+  "mage_nova_impact": {
+    "duration_s": 0.52,
+    "peak_dbfs": -4.71,
+    "rms_dbfs": -16.33,
+    "crest_db": 11.62,
+    "centroid_hz": 2385.4
+  },
+  "spell_frost_lance_cast": {
+    "duration_s": 0.64,
+    "peak_dbfs": -2.33,
+    "rms_dbfs": -16.44,
+    "crest_db": 14.12,
+    "centroid_hz": 1344.1
+  },
+  "spell_frost_lance_erupt": {
+    "duration_s": 1.86,
+    "peak_dbfs": -1.69,
+    "rms_dbfs": -14.92,
+    "crest_db": 13.23,
+    "centroid_hz": 1677.0
+  },
+  "spell_shatterlance_charge": {
+    "duration_s": 1.75,
+    "peak_dbfs": -2.48,
+    "rms_dbfs": -16.08,
+    "crest_db": 13.59,
+    "centroid_hz": 1308.9
+  },
+  "spell_shatterlance_release": {
+    "duration_s": 0.76,
+    "peak_dbfs": -3.02,
+    "rms_dbfs": -15.53,
+    "crest_db": 12.51,
+    "centroid_hz": 1756.4
+  },
+  "spell_shatterlance_impact": {
+    "duration_s": 1.88,
+    "peak_dbfs": -0.8,
+    "rms_dbfs": -15.76,
+    "crest_db": 14.96,
+    "centroid_hz": 1950.1
+  },
+  "spell_cinder_fall_launch": {
+    "duration_s": 0.68,
+    "peak_dbfs": -3.63,
+    "rms_dbfs": -15.93,
+    "crest_db": 12.3,
+    "centroid_hz": 1510.9
+  },
+  "spell_cinder_fall_impact": {
+    "duration_s": 2.05,
+    "peak_dbfs": -1.11,
+    "rms_dbfs": -15.18,
+    "crest_db": 14.07,
+    "centroid_hz": 1475.1
+  },
+  "mage_q_starfall_seal": {
+    "duration_s": 1.65,
+    "peak_dbfs": -1.47,
+    "rms_dbfs": -15.61,
+    "crest_db": 14.14,
+    "centroid_hz": 1805.1
+  },
+  "mage_q_starfall_meteor": {
+    "duration_s": 1.58,
+    "peak_dbfs": -0.91,
+    "rms_dbfs": -15.32,
+    "crest_db": 14.41,
+    "centroid_hz": 1495.2
+  },
+  "knight_e_ice_dragon_wide": {
+    "duration_s": 1.92,
+    "peak_dbfs": -1.33,
+    "rms_dbfs": -15.19,
+    "crest_db": 13.86,
+    "centroid_hz": 1789.2
+  },
+  "knight_e_ice_dragon_close": {
+    "duration_s": 1.92,
+    "peak_dbfs": -1.4,
+    "rms_dbfs": -15.18,
+    "crest_db": 13.78,
+    "centroid_hz": 1733.6
+  },
+  "knight_e_fire_dragon_wide": {
+    "duration_s": 1.92,
+    "peak_dbfs": -0.8,
+    "rms_dbfs": -15.93,
+    "crest_db": 15.13,
+    "centroid_hz": 1432.2
+  },
+  "knight_e_fire_dragon_close": {
+    "duration_s": 1.92,
+    "peak_dbfs": -0.8,
+    "rms_dbfs": -15.52,
+    "crest_db": 14.72,
+    "centroid_hz": 1476.9
+  },
+  "knight_q_phase1_coil": {
+    "duration_s": 0.64,
+    "peak_dbfs": -2.5,
+    "rms_dbfs": -15.29,
+    "crest_db": 12.79,
+    "centroid_hz": 1128.2
+  },
+  "knight_q_phase2_cut1": {
+    "duration_s": 0.58,
+    "peak_dbfs": -0.9,
+    "rms_dbfs": -15.41,
+    "crest_db": 14.51,
+    "centroid_hz": 2039.8
+  },
+  "knight_q_phase3_crossbite": {
+    "duration_s": 2.35,
+    "peak_dbfs": -0.7,
+    "rms_dbfs": -16.11,
+    "crest_db": 15.41,
+    "centroid_hz": 1388.7
+  },
+  "knight_q_twin_dragon_wide": {
+    "duration_s": 3.05,
+    "peak_dbfs": -0.7,
+    "rms_dbfs": -17.19,
+    "crest_db": 16.49,
+    "centroid_hz": 1552.6
+  },
+  "detonation_shatterblow": {
+    "duration_s": 1.95,
+    "peak_dbfs": -1.23,
+    "rms_dbfs": -14.95,
+    "crest_db": 13.72,
+    "centroid_hz": 1811.1
+  },
+  "detonation_solar_flare": {
+    "duration_s": 1.95,
+    "peak_dbfs": -1.01,
+    "rms_dbfs": -14.96,
+    "crest_db": 13.95,
+    "centroid_hz": 1494.6
+  },
+  "detonation_thunderchain": {
+    "duration_s": 2.05,
+    "peak_dbfs": -0.7,
+    "rms_dbfs": -15.61,
+    "crest_db": 14.91,
+    "centroid_hz": 1787.6
+  },
+  "footstep_cobble_1": {
+    "duration_s": 0.2,
+    "peak_dbfs": -9.02,
+    "rms_dbfs": -32.13,
+    "crest_db": 23.12,
+    "centroid_hz": 1972.2
+  },
+  "footstep_cobble_2": {
+    "duration_s": 0.2,
+    "peak_dbfs": -7.52,
+    "rms_dbfs": -32.52,
+    "crest_db": 25.0,
+    "centroid_hz": 1244.4
+  },
+  "footstep_cobble_3": {
+    "duration_s": 0.2,
+    "peak_dbfs": -4.19,
+    "rms_dbfs": -20.46,
+    "crest_db": 16.27,
+    "centroid_hz": 2897.7
+  },
+  "footstep_cobble_4": {
+    "duration_s": 0.2,
+    "peak_dbfs": -4.47,
+    "rms_dbfs": -22.21,
+    "crest_db": 17.74,
+    "centroid_hz": 3457.7
+  },
+  "player_hit_damage_thud": {
+    "duration_s": 0.44,
+    "peak_dbfs": -1.9,
+    "rms_dbfs": -17.89,
+    "crest_db": 15.98,
+    "centroid_hz": 2577.2
+  },
+  "enemy_skeleton_warrior_shield_and_chop": {
+    "duration_s": 0.36,
+    "peak_dbfs": -2.71,
+    "rms_dbfs": -18.6,
+    "crest_db": 15.88,
+    "centroid_hz": 2892.1
+  },
+  "enemy_werewolf_stalk_and_pounce": {
+    "duration_s": 0.4,
+    "peak_dbfs": -1.97,
+    "rms_dbfs": -17.74,
+    "crest_db": 15.77,
+    "centroid_hz": 790.2
+  },
+  "boss_orc_brute_slam": {
+    "duration_s": 0.62,
+    "peak_dbfs": -0.9,
+    "rms_dbfs": -19.05,
+    "crest_db": 18.15,
+    "centroid_hz": 2147.9
+  },
+  "death_foley_knight": {
+    "duration_s": 0.82,
+    "peak_dbfs": -2.75,
+    "rms_dbfs": -17.21,
+    "crest_db": 14.46,
+    "centroid_hz": 2900.6
+  },
+  "death_foley_mage": {
+    "duration_s": 0.72,
+    "peak_dbfs": -5.28,
+    "rms_dbfs": -18.91,
+    "crest_db": 13.62,
+    "centroid_hz": 1132.0
+  },
+  "death_foley_skeleton_pile": {
+    "duration_s": 0.62,
+    "peak_dbfs": -1.96,
+    "rms_dbfs": -18.54,
+    "crest_db": 16.58,
+    "centroid_hz": 2824.4
+  },
+  "death_foley_skeleton_shatter": {
+    "duration_s": 0.68,
+    "peak_dbfs": -1.1,
+    "rms_dbfs": -19.18,
+    "crest_db": 18.08,
+    "centroid_hz": 2924.1
+  },
+  "death_foley_orc": {
+    "duration_s": 0.66,
+    "peak_dbfs": -3.26,
+    "rms_dbfs": -17.26,
+    "crest_db": 14.0,
+    "centroid_hz": 2366.3
+  },
+  "death_foley_werewolf": {
+    "duration_s": 0.66,
+    "peak_dbfs": -4.4,
+    "rms_dbfs": -17.18,
+    "crest_db": 12.78,
+    "centroid_hz": 2333.9
+  },
+  "death_foley_black_knight": {
+    "duration_s": 0.8,
+    "peak_dbfs": -1.0,
+    "rms_dbfs": -19.63,
+    "crest_db": 18.63,
+    "centroid_hz": 2868.6
+  },
+  "death_foley_plant": {
+    "duration_s": 0.64,
+    "peak_dbfs": -3.17,
+    "rms_dbfs": -17.42,
+    "crest_db": 14.25,
+    "centroid_hz": 2203.6
+  },
+  "death_foley_necromancer": {
+    "duration_s": 0.72,
+    "peak_dbfs": -2.14,
+    "rms_dbfs": -17.72,
+    "crest_db": 15.59,
+    "centroid_hz": 1315.7
+  },
+  "death_foley_boss_brute": {
+    "duration_s": 0.96,
+    "peak_dbfs": -0.8,
+    "rms_dbfs": -17.83,
+    "crest_db": 17.03,
+    "centroid_hz": 2390.1
+  },
+  "death_foley_boss_golem": {
+    "duration_s": 0.98,
+    "peak_dbfs": -2.54,
+    "rms_dbfs": -16.24,
+    "crest_db": 13.7,
+    "centroid_hz": 1689.4
+  },
+  "knight_enzo__death": {
+    "duration_s": 0.579,
+    "peak_dbfs": -8.28,
+    "rms_dbfs": -18.55,
+    "crest_db": 10.27,
+    "centroid_hz": 925.9
+  },
+  "mage_lumi__death": {
+    "duration_s": 0.827,
+    "peak_dbfs": -6.34,
+    "rms_dbfs": -20.64,
+    "crest_db": 14.3,
+    "centroid_hz": 1157.1
+  },
+  "skeleton_warrior__death": {
+    "duration_s": 2.2,
+    "peak_dbfs": -5.21,
+    "rms_dbfs": -23.62,
+    "crest_db": 18.41,
+    "centroid_hz": 790.5
+  },
+  "skeleton_minion__death": {
+    "duration_s": 0.598,
+    "peak_dbfs": -4.38,
+    "rms_dbfs": -18.54,
+    "crest_db": 14.15,
+    "centroid_hz": 695.6
+  },
+  "orc_raider__death": {
+    "duration_s": 0.374,
+    "peak_dbfs": -7.02,
+    "rms_dbfs": -19.67,
+    "crest_db": 12.65,
+    "centroid_hz": 791.4
+  },
+  "plant_warrior__death": {
+    "duration_s": 0.6,
+    "peak_dbfs": -6.71,
+    "rms_dbfs": -18.34,
+    "crest_db": 11.63,
+    "centroid_hz": 288.1
+  },
+  "werewolf__death": {
+    "duration_s": 0.365,
+    "peak_dbfs": -7.79,
+    "rms_dbfs": -19.98,
+    "crest_db": 12.19,
+    "centroid_hz": 311.2
+  },
+  "black_knight__death": {
+    "duration_s": 0.495,
+    "peak_dbfs": -4.55,
+    "rms_dbfs": -19.72,
+    "crest_db": 15.17,
+    "centroid_hz": 349.9
+  },
+  "necromancer__death": {
+    "duration_s": 0.975,
+    "peak_dbfs": -1.4,
+    "rms_dbfs": -23.62,
+    "crest_db": 22.22,
+    "centroid_hz": 1411.8
+  },
+  "boss_brute__death": {
+    "duration_s": 2.254,
+    "peak_dbfs": -5.9,
+    "rms_dbfs": -18.73,
+    "crest_db": 12.83,
+    "centroid_hz": 465.5
+  },
+  "boss_frost_golem__death": {
+    "duration_s": 2.282,
+    "peak_dbfs": -6.18,
+    "rms_dbfs": -18.86,
+    "crest_db": 12.68,
+    "centroid_hz": 376.4
+  }
+}

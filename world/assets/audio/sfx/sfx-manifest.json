@@ -1,0 +1,470 @@
+{
+  "schemaVersion": "1.0.0-amarante-runtime-sfx",
+  "cues": {
+    "sword_none_c1": [
+      "./assets/audio/sfx/swords/sword_steel_combo1_varA.mp3",
+      "./assets/audio/sfx/swords/sword_steel_combo1_varB.mp3",
+      "./assets/audio/sfx/swords/sword_steel_combo1_varC.mp3"
+    ],
+    "sword_none_c2": [
+      "./assets/audio/sfx/swords/sword_steel_combo2_varA.mp3",
+      "./assets/audio/sfx/swords/sword_steel_combo2_varB.mp3",
+      "./assets/audio/sfx/swords/sword_steel_combo2_varC.mp3"
+    ],
+    "sword_none_c3": [
+      "./assets/audio/sfx/swords/sword_steel_combo3_varA.mp3",
+      "./assets/audio/sfx/swords/sword_steel_combo3_varB.mp3",
+      "./assets/audio/sfx/swords/sword_steel_combo3_varC.mp3"
+    ],
+    "sword_heavy_none": [
+      "./assets/audio/sfx/swords/sword_steel_combo4_heavy_varA.mp3",
+      "./assets/audio/sfx/swords/sword_steel_combo4_heavy_varB.mp3",
+      "./assets/audio/sfx/swords/sword_steel_combo4_heavy_varC.mp3"
+    ],
+    "sword_rime_c1": [
+      "./assets/audio/sfx/swords/sword_ice_combo1_varA.mp3",
+      "./assets/audio/sfx/swords/sword_ice_combo1_varB.mp3",
+      "./assets/audio/sfx/swords/sword_ice_combo1_varC.mp3"
+    ],
+    "sword_rime_c2": [
+      "./assets/audio/sfx/swords/sword_ice_combo2_varA.mp3",
+      "./assets/audio/sfx/swords/sword_ice_combo2_varB.mp3",
+      "./assets/audio/sfx/swords/sword_ice_combo2_varC.mp3"
+    ],
+    "sword_rime_c3": [
+      "./assets/audio/sfx/swords/sword_ice_combo3_varA.mp3",
+      "./assets/audio/sfx/swords/sword_ice_combo3_varB.mp3",
+      "./assets/audio/sfx/swords/sword_ice_combo3_varC.mp3"
+    ],
+    "sword_heavy_rime": [
+      "./assets/audio/sfx/swords/sword_ice_combo4_heavy_varA.mp3",
+      "./assets/audio/sfx/swords/sword_ice_combo4_heavy_varB.mp3",
+      "./assets/audio/sfx/swords/sword_ice_combo4_heavy_varC.mp3"
+    ],
+    "sword_solar_c1": [
+      "./assets/audio/sfx/swords/sword_fire_combo1_varA.mp3",
+      "./assets/audio/sfx/swords/sword_fire_combo1_varB.mp3",
+      "./assets/audio/sfx/swords/sword_fire_combo1_varC.mp3"
+    ],
+    "sword_solar_c2": [
+      "./assets/audio/sfx/swords/sword_fire_combo2_varA.mp3",
+      "./assets/audio/sfx/swords/sword_fire_combo2_varB.mp3",
+      "./assets/audio/sfx/swords/sword_fire_combo2_varC.mp3"
+    ],
+    "sword_solar_c3": [
+      "./assets/audio/sfx/swords/sword_fire_combo3_varA.mp3",
+      "./assets/audio/sfx/swords/sword_fire_combo3_varB.mp3",
+      "./assets/audio/sfx/swords/sword_fire_combo3_varC.mp3"
+    ],
+    "sword_heavy_solar": [
+      "./assets/audio/sfx/swords/sword_fire_combo4_heavy_varA.mp3",
+      "./assets/audio/sfx/swords/sword_fire_combo4_heavy_varB.mp3",
+      "./assets/audio/sfx/swords/sword_fire_combo4_heavy_varC.mp3"
+    ],
+    "dragon_ice": [
+      "./assets/audio/sfx/dragons/knight_e_ice_dragon_wide.mp3",
+      "./assets/audio/sfx/dragons/knight_e_ice_dragon_close.mp3"
+    ],
+    "dragon_fire": [
+      "./assets/audio/sfx/dragons/knight_e_fire_dragon_wide.mp3",
+      "./assets/audio/sfx/dragons/knight_e_fire_dragon_close.mp3"
+    ],
+    "knight_q_ult": [
+      "./assets/audio/sfx/dragons/knight_q_twin_dragon_wide.mp3",
+      "./assets/audio/sfx/dragons/knight_q_twin_dragon_close.mp3"
+    ],
+    "shield_raise": [
+      "./assets/audio/sfx/shield/knight_shield_raise.mp3"
+    ],
+    "shield_block": [
+      "./assets/audio/sfx/shield/knight_shield_block_clang.mp3"
+    ],
+    "shield_parry": [
+      "./assets/audio/sfx/shield/knight_shield_parry_ring.mp3"
+    ],
+    "shield_bash": [
+      "./assets/audio/sfx/shield/knight_shield_bash.mp3"
+    ],
+    "perfect_dodge": [
+      "./assets/audio/sfx/shield/perfect_dodge_time_dilation.mp3"
+    ],
+    "mage_bolt_1": [
+      "./assets/audio/sfx/mage/mage_bolt_combo1.mp3"
+    ],
+    "mage_bolt_2": [
+      "./assets/audio/sfx/mage/mage_bolt_combo2.mp3"
+    ],
+    "mage_bolt_3": [
+      "./assets/audio/sfx/mage/mage_bolt_combo3.mp3"
+    ],
+    "mage_bolt_nova": [
+      "./assets/audio/sfx/mage/mage_bolt_combo4_nova.mp3"
+    ],
+    "spell_frost_lance": [
+      "./assets/audio/sfx/mage/mage_e_frost_lance_corridor.mp3",
+      "./assets/audio/sfx/mage/mage_e_frost_lance_apex_close.mp3"
+    ],
+    "spell_shatterlance_charge": [
+      "./assets/audio/sfx/mage/mage_shatterlance_charge.mp3"
+    ],
+    "spell_shatterlance": [
+      "./assets/audio/sfx/mage/mage_shatterlance_launch_shatter.mp3"
+    ],
+    "spell_cinder_fall": [
+      "./assets/audio/sfx/mage/mage_e_cinder_fall_wide.mp3",
+      "./assets/audio/sfx/mage/mage_e_cinder_fall_impact_close.mp3"
+    ],
+    "spell_storm_lance": [
+      "./assets/audio/sfx/mage/mage_storm_lance_wide.mp3",
+      "./assets/audio/sfx/mage/mage_storm_lance_cluster_close.mp3"
+    ],
+    "mage_q_ult": [
+      "./assets/audio/sfx/mage/mage_q_starfall_invocation.mp3"
+    ],
+    "mage_q_meteor": [
+      "./assets/audio/sfx/mage/mage_q_starfall_single_meteor.mp3"
+    ],
+    "detonation_shatterblow": [
+      "./assets/audio/sfx/detonations/detonation_shatterblow.mp3"
+    ],
+    "detonation_solar_flare": [
+      "./assets/audio/sfx/detonations/detonation_solar_flare.mp3"
+    ],
+    "detonation_thunderchain": [
+      "./assets/audio/sfx/detonations/detonation_thunderchain.mp3"
+    ],
+    "hit_bone": [
+      "./assets/audio/sfx/impacts/hit_bone_1.mp3",
+      "./assets/audio/sfx/impacts/hit_bone_2.mp3",
+      "./assets/audio/sfx/impacts/hit_bone_3.mp3",
+      "./assets/audio/sfx/impacts/hit_impact_skeleton_bone.mp3"
+    ],
+    "hit_armor": [
+      "./assets/audio/sfx/impacts/hit_armor_1.mp3",
+      "./assets/audio/sfx/impacts/hit_armor_2.mp3",
+      "./assets/audio/sfx/impacts/hit_armor_3.mp3",
+      "./assets/audio/sfx/impacts/hit_impact_armored_knight.mp3"
+    ],
+    "hit_flesh": [
+      "./assets/audio/sfx/impacts/hit_flesh_1.mp3",
+      "./assets/audio/sfx/impacts/hit_flesh_2.mp3",
+      "./assets/audio/sfx/impacts/hit_flesh_3.mp3",
+      "./assets/audio/sfx/impacts/hit_impact_flesh_beast.mp3"
+    ],
+    "player_hit": [
+      "./assets/audio/sfx/impacts/player_hit_thud.mp3"
+    ],
+    "player_hit_heavy": [
+      "./assets/audio/sfx/impacts/player_hit_damage_thud.mp3"
+    ],
+    "dodge_knight": [
+      "./assets/audio/sfx/foley/dodge_knight.mp3",
+      "./assets/audio/sfx/foley/knight_dodge_roll_heavy.mp3"
+    ],
+    "dodge_mage": [
+      "./assets/audio/sfx/foley/dodge_mage.mp3",
+      "./assets/audio/sfx/foley/mage_dodge_dash_silk.mp3"
+    ],
+    "footstep_grass": [
+      "./assets/audio/sfx/foley/footstep_grass_1.mp3",
+      "./assets/audio/sfx/foley/footstep_grass_2.mp3",
+      "./assets/audio/sfx/foley/footstep_grass_3.mp3",
+      "./assets/audio/sfx/foley/footstep_grass_4.mp3"
+    ],
+    "footstep_cobble": [
+      "./assets/audio/sfx/foley/footstep_cobble_1.mp3",
+      "./assets/audio/sfx/foley/footstep_cobble_2.mp3",
+      "./assets/audio/sfx/foley/footstep_cobble_3.mp3",
+      "./assets/audio/sfx/foley/footstep_cobble_4.mp3"
+    ],
+    "footstep_stone": [
+      "./assets/audio/sfx/foley/footstep_stone_1.mp3",
+      "./assets/audio/sfx/foley/footstep_stone_2.mp3",
+      "./assets/audio/sfx/foley/footstep_stone_3.mp3",
+      "./assets/audio/sfx/foley/footstep_stone_4.mp3"
+    ],
+    "ui_hover": [
+      "./assets/audio/sfx/ui/ui_hover.mp3"
+    ],
+    "ui_click": [
+      "./assets/audio/sfx/ui/ui_click.mp3"
+    ],
+    "ui_tab_ice": [
+      "./assets/audio/sfx/ui/ui_element_tab_ice.mp3"
+    ],
+    "ui_tab_fire": [
+      "./assets/audio/sfx/ui/ui_element_tab_fire.mp3"
+    ],
+    "ui_hero_swap": [
+      "./assets/audio/sfx/ui/ui_hero_swap.mp3"
+    ],
+    "ui_locked": [
+      "./assets/audio/sfx/ui/ui_locked_thud.mp3"
+    ],
+    "ui_modal_open": [
+      "./assets/audio/sfx/ui/ui_modal_open.mp3"
+    ],
+    "ui_modal_close": [
+      "./assets/audio/sfx/ui/ui_modal_close.mp3"
+    ],
+    "ui_level_up": [
+      "./assets/audio/sfx/ui/ui_level_up.mp3"
+    ],
+    "ui_victory": [
+      "./assets/audio/sfx/ui/ui_victory_fanfare.mp3"
+    ],
+    "stone_inspect": [
+      "./assets/audio/sfx/sacred/stone_inspect.mp3"
+    ],
+    "commune_start": [
+      "./assets/audio/sfx/sacred/commune_start.mp3"
+    ],
+    "verdict_heal": [
+      "./assets/audio/sfx/sacred/heal_verdict.mp3"
+    ],
+    "verdict_miracle": [
+      "./assets/audio/sfx/sacred/miracle_verdict.mp3"
+    ],
+    "verdict_smite": [
+      "./assets/audio/sfx/sacred/smite_verdict.mp3"
+    ],
+    "enemy_foley_skeleton_warrior": [
+      "./assets/audio/sfx/enemies/enemy_skeleton_warrior_shield_and_chop.mp3"
+    ],
+    "enemy_foley_werewolf": [
+      "./assets/audio/sfx/enemies/enemy_werewolf_stalk_and_pounce.mp3"
+    ],
+    "enemy_foley_boss_brute": [
+      "./assets/audio/sfx/enemies/boss_orc_brute_slam.mp3"
+    ]
+  },
+  "voices": {
+    "knight_enzo": {
+      "atk_1": [
+        "./assets/audio/sfx/voices/knight_enzo__atk_1.mp3"
+      ],
+      "atk_2": [
+        "./assets/audio/sfx/voices/knight_enzo__atk_2.mp3"
+      ],
+      "finisher_1": [
+        "./assets/audio/sfx/voices/knight_enzo__finisher_1.mp3"
+      ],
+      "dodge_1": [
+        "./assets/audio/sfx/voices/knight_enzo__dodge_1.mp3"
+      ],
+      "dodge_2": [
+        "./assets/audio/sfx/voices/knight_enzo__dodge_2.mp3"
+      ],
+      "atk_3": [
+        "./assets/audio/sfx/voices/knight_enzo__atk_3.mp3"
+      ],
+      "atk_4": [
+        "./assets/audio/sfx/voices/knight_enzo__atk_4.mp3"
+      ],
+      "hurt_1": [
+        "./assets/audio/sfx/voices/knight_enzo__hurt_1.mp3"
+      ]
+    },
+    "knight_enzo_pray": {
+      "pray_1": [
+        "./assets/audio/sfx/voices/knight_enzo_pray__pray_1.mp3"
+      ],
+      "pray_2": [
+        "./assets/audio/sfx/voices/knight_enzo_pray__pray_2.mp3"
+      ],
+      "pray_3": [
+        "./assets/audio/sfx/voices/knight_enzo_pray__pray_3.mp3"
+      ],
+      "pray_4": [
+        "./assets/audio/sfx/voices/knight_enzo_pray__pray_4.mp3"
+      ]
+    },
+    "mage_lumi": {
+      "cast_1": [
+        "./assets/audio/sfx/voices/mage_lumi__cast_1.mp3"
+      ],
+      "cast_2": [
+        "./assets/audio/sfx/voices/mage_lumi__cast_2.mp3"
+      ],
+      "finisher_1": [
+        "./assets/audio/sfx/voices/mage_lumi__finisher_1.mp3"
+      ],
+      "cast_3": [
+        "./assets/audio/sfx/voices/mage_lumi__cast_3.mp3"
+      ],
+      "dodge_1": [
+        "./assets/audio/sfx/voices/mage_lumi__dodge_1.mp3"
+      ],
+      "dodge_2": [
+        "./assets/audio/sfx/voices/mage_lumi__dodge_2.mp3"
+      ],
+      "dodge_3": [
+        "./assets/audio/sfx/voices/mage_lumi__dodge_3.mp3"
+      ],
+      "hurt_1": [
+        "./assets/audio/sfx/voices/mage_lumi__hurt_1.mp3"
+      ]
+    },
+    "mage_lumi_pray": {
+      "pray_1": [
+        "./assets/audio/sfx/voices/mage_lumi_pray__pray_1.mp3"
+      ],
+      "pray_2": [
+        "./assets/audio/sfx/voices/mage_lumi_pray__pray_2.mp3"
+      ],
+      "pray_3": [
+        "./assets/audio/sfx/voices/mage_lumi_pray__pray_3.mp3"
+      ],
+      "pray_4": [
+        "./assets/audio/sfx/voices/mage_lumi_pray__pray_4.mp3"
+      ]
+    },
+    "orc_raider": {
+      "appear": [
+        "./assets/audio/sfx/voices/orc_raider__appear.mp3"
+      ],
+      "idle_cackle": [
+        "./assets/audio/sfx/voices/orc_raider__idle_cackle.mp3"
+      ],
+      "attack": [
+        "./assets/audio/sfx/voices/orc_raider__attack.mp3"
+      ],
+      "hurt": [
+        "./assets/audio/sfx/voices/orc_raider__hurt.mp3"
+      ]
+    },
+    "plant_warrior": {
+      "appear": [
+        "./assets/audio/sfx/voices/plant_warrior__appear.mp3"
+      ],
+      "idle_hop": [
+        "./assets/audio/sfx/voices/plant_warrior__idle_hop.mp3"
+      ],
+      "attack": [
+        "./assets/audio/sfx/voices/plant_warrior__attack.mp3"
+      ],
+      "hurt": [
+        "./assets/audio/sfx/voices/plant_warrior__hurt.mp3"
+      ]
+    },
+    "skeleton_warrior": {
+      "appear": [
+        "./assets/audio/sfx/voices/skeleton_warrior__appear.mp3"
+      ],
+      "attack": [
+        "./assets/audio/sfx/voices/skeleton_warrior__attack.mp3"
+      ],
+      "hurt": [
+        "./assets/audio/sfx/voices/skeleton_warrior__hurt.mp3"
+      ]
+    },
+    "skeleton_minion": {
+      "appear": [
+        "./assets/audio/sfx/voices/skeleton_minion__appear.mp3"
+      ],
+      "idle_giggle": [
+        "./assets/audio/sfx/voices/skeleton_minion__idle_giggle.mp3"
+      ],
+      "attack": [
+        "./assets/audio/sfx/voices/skeleton_minion__attack.mp3"
+      ],
+      "hurt": [
+        "./assets/audio/sfx/voices/skeleton_minion__hurt.mp3"
+      ]
+    },
+    "werewolf": {
+      "appear": [
+        "./assets/audio/sfx/voices/werewolf__appear.mp3"
+      ],
+      "windup_snarl": [
+        "./assets/audio/sfx/voices/werewolf__windup_snarl.mp3"
+      ],
+      "attack_roar": [
+        "./assets/audio/sfx/voices/werewolf__attack_roar.mp3"
+      ],
+      "hurt": [
+        "./assets/audio/sfx/voices/werewolf__hurt.mp3"
+      ],
+      "yelp": [
+        "./assets/audio/sfx/voices/werewolf__yelp.mp3"
+      ]
+    },
+    "black_knight": {
+      "appear": [
+        "./assets/audio/sfx/voices/black_knight__appear.mp3"
+      ],
+      "block_brace": [
+        "./assets/audio/sfx/voices/black_knight__block_brace.mp3"
+      ],
+      "attack": [
+        "./assets/audio/sfx/voices/black_knight__attack.mp3"
+      ],
+      "hurt": [
+        "./assets/audio/sfx/voices/black_knight__hurt.mp3"
+      ]
+    },
+    "necromancer": {
+      "appear": [
+        "./assets/audio/sfx/voices/necromancer__appear.mp3"
+      ],
+      "channel_hum": [
+        "./assets/audio/sfx/voices/necromancer__channel_hum.mp3"
+      ],
+      "attack_cast": [
+        "./assets/audio/sfx/voices/necromancer__attack_cast.mp3"
+      ],
+      "hurt": [
+        "./assets/audio/sfx/voices/necromancer__hurt.mp3"
+      ],
+      "hiss": [
+        "./assets/audio/sfx/voices/necromancer__hiss.mp3"
+      ]
+    },
+    "boss_brute": {
+      "appear": [
+        "./assets/audio/sfx/voices/boss_brute__appear.mp3"
+      ],
+      "stomp_huff": [
+        "./assets/audio/sfx/voices/boss_brute__stomp_huff.mp3"
+      ],
+      "attack_heavy": [
+        "./assets/audio/sfx/voices/boss_brute__attack_heavy.mp3"
+      ],
+      "attack_finisher": [
+        "./assets/audio/sfx/voices/boss_brute__attack_finisher.mp3"
+      ],
+      "roar_phase": [
+        "./assets/audio/sfx/voices/boss_brute__roar_phase.mp3"
+      ],
+      "hurt": [
+        "./assets/audio/sfx/voices/boss_brute__hurt.mp3"
+      ]
+    },
+    "boss_frost_golem": {
+      "appear": [
+        "./assets/audio/sfx/voices/boss_frost_golem__appear.mp3"
+      ],
+      "stomp_huff": [
+        "./assets/audio/sfx/voices/boss_frost_golem__stomp_huff.mp3"
+      ],
+      "attack_heavy": [
+        "./assets/audio/sfx/voices/boss_frost_golem__attack_heavy.mp3"
+      ],
+      "attack_finisher": [
+        "./assets/audio/sfx/voices/boss_frost_golem__attack_finisher.mp3"
+      ],
+      "roar_phase": [
+        "./assets/audio/sfx/voices/boss_frost_golem__roar_phase.mp3"
+      ],
+      "hurt": [
+        "./assets/audio/sfx/voices/boss_frost_golem__hurt.mp3"
+      ]
+    }
+  },
+  "summary": {
+    "totalCueGroups": 62,
+    "totalCueFiles": 112,
+    "totalVoiceActors": 13,
+    "totalVoiceFiles": 65
+  }
+}

@@ -295,7 +295,7 @@ async function main() {
         w.appFlow.resolvePixelVeil();
         document.querySelector('#app-flow-enter-btn')?.click();
         document.querySelector('#app-flow-create-btn')?.click();
-        // Click regular Start/Enter in Solo mode (without ?dev=1 in URL)
+        // Click regular Start/Enter in Solo mode (without ?dev=1 in URL) -> Stage 0 parity
         document.querySelector('#app-flow-start-btn')?.click();
         const prog = w.coopClient.getProgressionState();
         const kHero = w.campaignLoop.combatHeroes.Knight;
@@ -303,6 +303,7 @@ async function main() {
         return {
           step: w.appFlow.getStep(),
           unlockedStage: prog.unlockedStage,
+          stonesSolvedMask: prog.stonesSolvedMask,
           iceUnlocked: prog.iceUnlocked,
           fireUnlocked: prog.fireUnlocked,
           ultimateUnlocked: prog.ultimateUnlocked,
@@ -314,22 +315,58 @@ async function main() {
       assert.equal(soloResult.step, 'in_game', 'Solo launch must transition immediately to in_game');
       assert.equal(
         soloResult.unlockedStage,
-        3,
-        'Solo launch without ?dev=1 must auto-unlock Stage 3 (devStageOverride === 3)'
+        0,
+        'Regular Solo launch without ?dev=1 must start cleanly at Stage 0 (same as 2P Co-Op)'
       );
-      assert.equal(soloResult.iceUnlocked, true);
-      assert.equal(soloResult.fireUnlocked, true);
-      assert.equal(soloResult.ultimateUnlocked, true);
-      assert.equal(soloResult.knightQ, 100, 'Solo launch must set Knight.qEnergy === 100');
-      assert.equal(soloResult.mageQ, 160, 'Solo launch must set Mage.qEnergy === 160');
+      assert.equal(soloResult.stonesSolvedMask, 0);
+      assert.equal(soloResult.iceUnlocked, false);
+      assert.equal(soloResult.fireUnlocked, false);
+      assert.equal(soloResult.ultimateUnlocked, false);
+      assert.equal(soloResult.knightQ, 0, 'Regular Solo launch must start Knight.qEnergy === 0');
+      assert.equal(soloResult.mageQ, 0, 'Regular Solo launch must start Mage.qEnergy === 0');
 
       await soloPage.waitForFunction(
         () => Boolean(window.__WORLD__?.coopClient?.getState?.()?.connected),
         null,
         { timeout: 5000 }
       );
+
+      // Explicit #app-flow-solo-test-btn check -> Stage 3 abilities unlocked with stonesSolvedMask === 0
+      const testSoloPage = await soloCtx.newPage();
+      await testSoloPage.goto(`${proxy.url}/world/index.html?flow=1`, {
+        waitUntil: 'domcontentloaded',
+        timeout: 45000,
+      });
+      await waitForWorldReady(testSoloPage);
+      const devSoloRes = await testSoloPage.evaluate(() => {
+        const w = window.__WORLD__;
+        w.appFlow.resolvePixelVeil();
+        document.querySelector('#app-flow-enter-btn')?.click();
+        document.querySelector('#app-flow-create-btn')?.click();
+        document.querySelector('#app-flow-solo-test-btn')?.click();
+        const prog = w.coopClient.getProgressionState();
+        return {
+          step: w.appFlow.getStep(),
+          unlockedStage: prog.unlockedStage,
+          stonesSolvedMask: prog.stonesSolvedMask,
+          iceUnlocked: prog.iceUnlocked,
+          fireUnlocked: prog.fireUnlocked,
+          ultimateUnlocked: prog.ultimateUnlocked,
+          knightQ: w.campaignLoop.combatHeroes.Knight.qEnergy,
+          mageQ: w.campaignLoop.combatHeroes.Mage.qEnergy,
+        };
+      });
+      assert.equal(devSoloRes.step, 'in_game');
+      assert.equal(devSoloRes.unlockedStage, 3, 'Test Solo button must unlock Stage 3 test abilities');
+      assert.equal(devSoloRes.stonesSolvedMask, 0, 'Test Solo button must keep stonesSolvedMask === 0');
+      assert.equal(devSoloRes.iceUnlocked, true);
+      assert.equal(devSoloRes.fireUnlocked, true);
+      assert.equal(devSoloRes.ultimateUnlocked, true);
+      assert.equal(devSoloRes.knightQ, 100);
+      assert.equal(devSoloRes.mageQ, 160);
+
       await soloCtx.close();
-      console.log('✓ 1. Solo Mode Dev Override Check (Stage 3 + Knight Q=100, Mage Q=160) verified');
+      console.log('✓ 1. Solo Mode Stage 0 Parity + Test Solo Stage 3 Override verified');
     }
 
     // =========================================================================

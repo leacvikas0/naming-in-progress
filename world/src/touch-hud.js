@@ -38,6 +38,11 @@ export function createTouchHud({
     #touch-hud-layer.visible {
       display: block;
     }
+    body.sculpted-hud-mounted #touch-hud-layer,
+    body.sculpted-hud-mounted #touch-hud-layer * {
+      display: none !important;
+      pointer-events: none !important;
+    }
 
     /* Left Floating Virtual Thumbstick */
     #touch-joystick-zone {
@@ -469,11 +474,11 @@ export function createTouchHud({
   });
 
   function setProfileMode(profileName) {
-    const isTouchCapable =
-      typeof window !== 'undefined' &&
-      ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0));
-    const shouldShow = profileName === 'tablet' || isTouchCapable;
-    layer.classList.toggle('visible', shouldShow);
+    const isDesktopForced = profileName === 'desktop';
+    const shouldShow = profileName === 'tablet' && !isDesktopForced;
+    const mounted =
+      typeof document !== 'undefined' && document.body?.classList?.contains('sculpted-hud-mounted');
+    layer.classList.toggle('visible', shouldShow && !mounted);
     if (hudRoot) {
       hudRoot.classList.toggle('profile-tablet', shouldShow);
     }

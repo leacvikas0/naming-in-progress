@@ -32,6 +32,7 @@ import {
   STONE_STRONGHOLDS,
   SURVIVAL_WAVE_POOLS,
   SAFE_HAVEN_WAYPOINTS,
+  ROUTE_PATROLS,
   selectNearestSafeHavenWaypoint,
   COMMUNE_MAX_DISTANCE,
   COMMUNE_RESURRECT_DISTANCE,
@@ -422,6 +423,8 @@ export function createCampaignLoop({
       : Boolean(getProgressionState);
   let strongholdClearedMask = 0;
   const activeStrongholdIds = new Set();
+  const strongholdSpawnedEnemies = new Map();
+  const triggeredRoutePatrolIds = new Set();
   const strongholdWaveIndex = {
     site1_well: -1,
     site2_platform: -1,
@@ -431,6 +434,7 @@ export function createCampaignLoop({
   let survivalWaveTimer = 6.0;
   let survivalWaveSeed = 0;
   let roadVanguardSpawned = false;
+  let stoneInspecting = false;
   let manualUnlockedStage = null;
   let manualStonesSolvedMask = null;
 
@@ -465,6 +469,15 @@ export function createCampaignLoop({
     return true;
   }
 
+  function areAllStonesSolvedForApex() {
+    const hasStoneProgressionSource =
+      typeof getProgressionState === 'function' || manualStonesSolvedMask !== null;
+    if (hasStoneProgressionSource) {
+      return (getStonesSolvedMask() & 0b111) === 0b111;
+    }
+    return isStage3Unlocked();
+  }
+
   function addHeroQEnergy(heroId, amount) {
     if (!Number.isFinite(amount) || amount <= 0) return 0;
     if (!isStage3Unlocked()) return 0;
@@ -497,12 +510,20 @@ export function createCampaignLoop({
     openValleyMode = Boolean(enabled);
     if (openValleyMode) {
       activeStrongholdIds.clear();
+      strongholdSpawnedEnemies.clear();
+      triggeredRoutePatrolIds.clear();
       strongholdClearedMask = 0;
+      stoneInspecting = false;
       for (const k of Object.keys(strongholdWaveIndex)) {
         strongholdWaveIndex[k] = -1;
       }
     }
     return openValleyMode;
+  }
+
+  function setStoneInspecting(active) {
+    stoneInspecting = Boolean(active);
+    return stoneInspecting;
   }
 
   const verdictSequence = {
@@ -623,6 +644,7 @@ export function createCampaignLoop({
       leveledUp = true;
     }
     if (leveledUp) {
+      combatSfx?.playLevelUp?.();
       const stats = getKnightLevelStats(combatHeroes.Knight.level);
       emitBanner(
         `KNIGHT LEVEL ${combatHeroes.Knight.level} AWAKENED`,
@@ -673,6 +695,7 @@ export function createCampaignLoop({
     const bonus = Q_ENERGY_CONFIG.bossPhaseBonusBoth || 35;
     addHeroQEnergy('Knight', bonus);
     addHeroQEnergy('Mage', bonus);
+    combatSfx?.playEnemyEvent?.(enemy, 'roar');
     const pctLabel = Math.round((Number(phasePct) || 0.7) * 100);
     emitBanner(
       `BOSS PHASE THRESHOLD (${pctLabel}% HP) · +${bonus} Q ENERGY`,
@@ -736,13 +759,18 @@ export function createCampaignLoop({
           : rawId.includes('well') || rawId.includes('plaza') || rawId.includes('site1')
             ? 'site1_well'
             : null;
-    if (
-      shKey &&
-      activeStrongholdIds.has(shKey) &&
-      (enemyManager.activeEnemies.some((e) => e && !e.dead && e.active !== false) ||
-        (Array.isArray(enemyManager.spawnQueue) && enemyManager.spawnQueue.length > 0))
-    ) {
-      return true;
+    if (shKey && activeStrongholdIds.has(shKey)) {
+      const tracked = strongholdSpawnedEnemies.get(shKey) || [];
+      const activeSet = new Set(enemyManager.activeEnemies);
+      const hasTrackedActiveOrPile =
+        tracked.length > 0
+          ? tracked.some((e) => e && !e.dead && e.active !== false && activeSet.has(e))
+          : enemyManager.activeEnemies.some((e) => e && !e.dead && e.active !== false);
+      const hasPendingSpawn =
+        Array.isArray(enemyManager.spawnQueue) && enemyManager.spawnQueue.length > 0;
+      if (hasTrackedActiveOrPile || hasPendingSpawn) {
+        return true;
+      }
     }
     return false;
   }
@@ -916,7 +944,7 @@ export function createCampaignLoop({
     return heartResonance;
   }
 
-  function setKnightBreathing(styleId, duration = KNIGHT_POWER_SWORD_DURATION) {
+  function setKnightBreathing(styleId, duration = KNIGHT_POWER_SWORD_DURATION, options = {}) {
     const mapped =
       styleId === 'ice' ? 'rime' : styleId === 'fire' ? 'solar' : styleId;
     const validStyle = BREATHING_STYLES[mapped] ? mapped : 'none';
@@ -934,7 +962,7 @@ export function createCampaignLoop({
       vfxKit.swordVfx.setInfusion(validStyle, duration);
     }
     if (combatSfx?.playBreathingIgnition && validStyle !== 'none') {
-      combatSfx.playBreathingIgnition(validStyle);
+      combatSfx.playBreathingIgnition(validStyle, options);
     }
     if (onInfusionChanged) {
       onInfusionChanged(validStyle, duration, BREATHING_STYLES[validStyle]);
@@ -987,6 +1015,7 @@ export function createCampaignLoop({
     const k = combatHeroes.Knight;
     k.guard = KNIGHT_GUARD_MAX;
     k.guardRegenDelay = 0;
+    combatSfx?.interruptActor?.(enemy);
     combatSfx?.playShieldChime?.();
     emitBanner('PARRY!', `${enemy?.name || 'The enemy'} reels from the perfectly timed guard.`, 'detonation');
   }
@@ -994,7 +1023,16 @@ export function createCampaignLoop({
   enemyManager?.setOnWindup?.((enemy, attackId, atk) => {
     const kind =
       atk?.blockable === false || atk?.hyperArmor || enemy?.isBoss ? 'heavy' : atk?.area ? 'area' : atk?.ranged ? 'cast' : 'melee';
-    combatSfx?.playEnemyWindup?.(kind);
+    combatSfx?.playEnemyWindup?.(kind, enemy);
+  });
+  enemyManager?.setOnEnemyInterrupted?.((enemy) => {
+    combatSfx?.interruptActor?.(enemy);
+  });
+  enemyManager?.setOnEnemyDeath?.((enemy, opts = {}) => {
+    combatSfx?.playEnemyDeath?.(enemy, opts);
+  });
+  enemyManager?.setOnEnemySpawn?.((enemy) => {
+    combatSfx?.playEnemyEvent?.(enemy, 'appear');
   });
 
   // Frontal-arc test: is `pos` within the Knight's block arc?
@@ -1203,14 +1241,22 @@ export function createCampaignLoop({
     h.hp = Math.max(0, h.hp - rem);
     const partnerOfHit = combatHeroes[heroId === 'Knight' ? 'Mage' : 'Knight'];
     if (rem > 0 && !isBlockedKnightChip && partnerOfHit?.downed) partnerOfHit.reviveProgress *= 0.5;
+    const fatalHit = h.hp <= 0;
     if (combatSfx?.playPlayerHit) {
-      combatSfx.playPlayerHit();
+      combatSfx.playPlayerHit({
+        heroId,
+        blockedByShield,
+        damageDealt: rem,
+        heavy: rem >= 22 || fatalHit,
+        killed: fatalHit,
+      });
     }
-    if (h.hp <= 0) {
+    if (fatalHit) {
       h.hp = 0;
       h.downed = true;
       h.reviveProgress = 0;
       h.reviveTimer = 0;
+      combatSfx?.playHeroDeath?.(heroId);
       if (targetHeroState?.char?.play) {
         targetHeroState.char.play('death', { loop: false, fade: 0.1, force: true });
       }
@@ -1421,7 +1467,11 @@ export function createCampaignLoop({
           partnerEntity.actionTimer = 2.8;
           partnerEntity.char?.play?.('death', { loop: false, fade: 0.08, force: true });
         }
-        combatSfx?.playPlayerHit?.();
+        if (combatSfx?.playVerdict) {
+          combatSfx.playVerdict('smite');
+        } else {
+          combatSfx?.playPlayerHit?.();
+        }
         emitBanner(
           'DIVINE SMITE · TOTAL PARTY WIPE!',
           judgment?.divine_quote ||
@@ -1456,7 +1506,11 @@ export function createCampaignLoop({
           partnerEntity.actionTimer = 2.8;
           partnerEntity.char?.play?.('death', { loop: false, fade: 0.08, force: true });
         }
-        combatSfx?.playPlayerHit?.();
+        if (combatSfx?.playVerdict) {
+          combatSfx.playVerdict('smite');
+        } else {
+          combatSfx?.playPlayerHit?.();
+        }
         emitBanner(
           `DIVINE SMITE · ${partnerKey.toUpperCase()} DISSOLVED!`,
           judgment?.divine_quote ||
@@ -1549,7 +1603,11 @@ export function createCampaignLoop({
       }
 
       vfxKit?.artoriousVfx?.triggerHeal?.(speakerPos, partnerPos);
-      combatSfx?.playShieldChime?.();
+      if (combatSfx?.playVerdict) {
+        combatSfx.playVerdict('awakening');
+      } else {
+        combatSfx?.playShieldChime?.();
+      }
       addResonance(35);
       emitBanner(
         judgment?.stoneSolvedId
@@ -1617,7 +1675,11 @@ export function createCampaignLoop({
       if (speakerEntity) speakerEntity.praying = false;
       if (partnerEntity) partnerEntity.praying = false;
       vfxKit?.artoriousVfx?.triggerHeal?.(speakerPos, partnerPos);
-      combatSfx?.playShieldChime?.();
+      if (combatSfx?.playVerdict) {
+        combatSfx.playVerdict('heal');
+      } else {
+        combatSfx?.playShieldChime?.();
+      }
       addResonance(isPat ? 2 : 12);
       const speakerGain = speakerKey === 'Knight' ? kGain : mGain;
       emitBanner(
@@ -1699,8 +1761,12 @@ export function createCampaignLoop({
       addResonance(50);
     }
 
-    setKnightBreathing('eclipse', DIVINE_BLESSING_DURATION);
-    combatSfx?.playShieldChime?.();
+    setKnightBreathing('eclipse', DIVINE_BLESSING_DURATION, { passive: true });
+    if (combatSfx?.playVerdict) {
+      combatSfx.playVerdict('miracle');
+    } else {
+      combatSfx?.playShieldChime?.();
+    }
     emitBanner(
       verdictSequence.knightWasDowned || verdictSequence.mageWasDowned
         ? 'DIVINE RESURRECTION · COURT OF DARK FLOWERS'
@@ -1765,12 +1831,9 @@ export function createCampaignLoop({
     ) {
       setKnightBreathing(
         combatHeroes.Knight.sunSwornBreathing ? 'eclipse' : spell.infusion,
-        Math.max(KNIGHT_POWER_SWORD_DURATION, combatHeroes.Knight.sunSwornTimer)
+        Math.max(KNIGHT_POWER_SWORD_DURATION, combatHeroes.Knight.sunSwornTimer),
+        { passive: true }
       );
-    }
-
-    if (combatSfx?.playSpellCast) {
-      combatSfx.playSpellCast(spell.id);
     }
 
     const explicitDistance =
@@ -1791,6 +1854,10 @@ export function createCampaignLoop({
           : explicitDistance !== null
             ? clamp(explicitDistance, 3.0, 16.0)
             : spell.range;
+
+    if (combatSfx?.playSpellCast) {
+      combatSfx.playSpellCast(spell.id, { distance: effectiveRange });
+    }
 
     const enemies = enemyManager ? enemyManager.activeEnemies : [];
     const softTarget =
@@ -1854,6 +1921,7 @@ export function createCampaignLoop({
     if (enemyManager && !options.remoteVisualOnly) {
       const commonHitSpec = {
         source: spell.id,
+        spellId: spell.id,
         baseDmg: spell.dmg,
         applyMark: spell.mark,
         detonatesMark: Boolean(spell.detonatesMark),
@@ -1870,25 +1938,55 @@ export function createCampaignLoop({
           hitSpec: commonHitSpec,
         });
       } else if (spell.id === 'shatterlance') {
-        // Hybrid 3D Piercing Ice Lance Ray (`0 .. effectiveRange`) + Ground Crystal Eruption (`radius = 2.8m`)
-        // Deduplicated with `alreadyHitSet` so NO enemy takes duplicate damage from a single cast!
+        // Hybrid 3D Piercing Ice Lance Ray + Lateral Crystal Shards (`width >= 3.8m`)
+        // plus Ground Crystal Eruption (`radius >= 3.6m`), deduplicated with `alreadyHitSet`.
         const rayHits = enemyManager.applyAreaOrLineHit({
           origin: casterPos,
           direction: { x: dirX, z: dirZ },
           range: effectiveRange,
-          width: spell.width || 2.2,
+          width: Math.max(3.8, spell.width || 4.0),
           maxHeightDiff: 3.5,
           hitSpec: commonHitSpec,
         });
         const alreadyHitSet = new Set(rayHits.map((h) => h.enemy));
         const eruptionHits = enemyManager.applyAreaOrLineHit({
           origin: targetPos,
-          radius: spell.eruptionRadius || 2.8,
+          radius: Math.max(3.6, spell.eruptionRadius || 3.6),
           maxHeightDiff: 3.5,
           excludeEnemies: alreadyHitSet,
           hitSpec: commonHitSpec,
         });
         hits = [...rayHits, ...eruptionHits];
+      } else if (spell.id === 'frost_lance') {
+        // Tapered Swept Crystal Glacier Wall (`half-width 1.0m -> 3.0m` across `15.5m`)
+        // + Circular Apex Crown Burst (`radius = 4.4m` around `origin + dir * min(14.5, effectiveRange)`),
+        // deduplicated so every touched enemy takes full damage + `rime` mark exactly once.
+        const corridorRange = Math.max(15.5, effectiveRange);
+        const corridorHits = enemyManager.applyAreaOrLineHit({
+          origin: casterPos,
+          direction: { x: dirX, z: dirZ },
+          range: corridorRange,
+          widthNear: 2.0,
+          widthFar: 6.0,
+          widthCurve: 0.74,
+          maxHeightDiff: 3.5,
+          hitSpec: commonHitSpec,
+        });
+        const alreadyHitSet = new Set(corridorHits.map((h) => h.enemy));
+        const apexDist = Math.min(14.5, Math.max(12.5, effectiveRange));
+        const apexCenter = {
+          x: casterPos.x + dirX * apexDist,
+          y: targetPos?.y ?? casterPos.y,
+          z: casterPos.z + dirZ * apexDist,
+        };
+        const apexHits = enemyManager.applyAreaOrLineHit({
+          origin: apexCenter,
+          radius: 4.4,
+          maxHeightDiff: 3.5,
+          excludeEnemies: alreadyHitSet,
+          hitSpec: commonHitSpec,
+        });
+        hits = [...corridorHits, ...apexHits];
       } else {
         hits = enemyManager.applyAreaOrLineHit({
           origin: casterPos,
@@ -1904,6 +2002,9 @@ export function createCampaignLoop({
         addHeroQEnergy('Knight', Q_ENERGY_CONFIG.heavyHitBossPartner);
       }
 
+      if (hits.length > 0 && combatSfx?.playEnemyHit) {
+        combatSfx.playEnemyHit(hits[0].enemy, { killed: Boolean(hits[0].result?.killed) });
+      }
       for (const h of hits) {
         if (Array.isArray(h.result?.bossPhasesCrossed)) {
           for (const phasePct of h.result.bossPhasesCrossed) {
@@ -2070,6 +2171,10 @@ export function createCampaignLoop({
         addHeroQEnergy('Mage', Q_ENERGY_CONFIG.heavyHitBossPartner);
       }
 
+      if (hits.length > 0 && combatSfx?.playEnemyHit) {
+        combatSfx.playEnemyHit(hits[0].enemy, { killed: Boolean(hits[0].result?.killed) });
+      }
+
       for (const h of hits) {
         addResonance(h.result?.resonanceGain || 4);
         if (Array.isArray(h.result?.bossPhasesCrossed)) {
@@ -2150,7 +2255,9 @@ export function createCampaignLoop({
     }
 
     if (combatSfx) {
-      if (comboIndex === 3 || ascendedActive) {
+      if (combatSfx.playMageBolt) {
+        combatSfx.playMageBolt(comboIndex, { ascended: ascendedActive });
+      } else if (comboIndex === 3 || ascendedActive) {
         combatSfx.playHeavyFinisher?.('rime');
       } else {
         combatSfx.playSwordSlash?.(comboIndex, 'rime');
@@ -2225,6 +2332,12 @@ export function createCampaignLoop({
         addHeroQEnergy('Knight', Q_ENERGY_CONFIG.heavyHitBossPartner);
       }
 
+      if (hits.length > 0) {
+        combatSfx?.playMageBoltImpact?.(comboIndex, { ascended: ascendedActive });
+        if (combatSfx?.playEnemyHit) {
+          combatSfx.playEnemyHit(hits[0].enemy, { killed: Boolean(hits[0].result?.killed) });
+        }
+      }
       for (const h of hits) {
         if (Array.isArray(h.result?.bossPhasesCrossed)) {
           for (const phasePct of h.result.bossPhasesCrossed) {
@@ -2404,7 +2517,8 @@ export function createCampaignLoop({
     const styleId = 'eclipse';
     setKnightBreathing(
       styleId,
-      Math.max(combatHeroes.Knight.breathingTimer, KNIGHT_ULT_DURATION)
+      Math.max(combatHeroes.Knight.breathingTimer, KNIGHT_ULT_DURATION),
+      { passive: true }
     );
 
     const kPos = heroStates?.Knight || { x: 0, y: 0, z: 0, yaw: 0 };
@@ -2427,7 +2541,11 @@ export function createCampaignLoop({
         );
       }
     }
-    combatSfx?.playCouplesUltimate?.();
+    if (combatSfx?.playKnightUltimate) {
+      combatSfx.playKnightUltimate('full');
+    } else {
+      combatSfx?.playCouplesUltimate?.('knight');
+    }
 
     let hits = [];
     if (enemyManager && !options.remoteVisualOnly) {
@@ -2447,6 +2565,9 @@ export function createCampaignLoop({
         radius: 3.8,
         hitSpec: ultHitSpec,
       });
+      if (hits.length > 0 && combatSfx?.playEnemyHit) {
+        combatSfx.playEnemyHit(hits[0].enemy, { killed: Boolean(hits[0].result?.killed) });
+      }
       for (const h of hits) {
         if (Array.isArray(h.result?.bossPhasesCrossed)) {
           for (const phasePct of h.result.bossPhasesCrossed) {
@@ -2549,6 +2670,7 @@ export function createCampaignLoop({
     const strikeZ = pClamped.sz;
     const strikeY = walkableHeightAt(strikeX, strikeZ);
     const strikePos = { x: strikeX, y: strikeY, z: strikeZ };
+    combatSfx?.playStarfallMeteor?.(meteorIndex);
 
     if (vfxKit?.cinderFall?.cast) {
       // Primary meteor streaking diagonally down from the sky at ~72 deg (skyHeight 14.5, range 4.8)
@@ -2748,7 +2870,11 @@ export function createCampaignLoop({
     combatHeroes.Mage.stormCataclysmHitCounts = new Map();
     combatHeroes.Mage.ultCd = effectiveCataclysmCd; // 24.0s (8.0s during Blessing)
 
-    combatSfx?.playCouplesUltimate?.();
+    if (combatSfx?.playMageUltimate) {
+      combatSfx.playMageUltimate();
+    } else {
+      combatSfx?.playCouplesUltimate?.('mage');
+    }
     const hits = fireSkyMeteorStrike(mPos, 0, heroStates);
     updateIndicatorsInstancedMeshes();
 
@@ -3001,11 +3127,32 @@ export function createCampaignLoop({
     return [];
   }
 
+  function pruneStaleStrongholdsWithoutKills() {
+    if (!enemyManager || activeStrongholdIds.size === 0) return;
+    if (Array.isArray(enemyManager.spawnQueue) && enemyManager.spawnQueue.length > 0) return;
+    const activeSet = new Set(enemyManager.activeEnemies || []);
+    for (const shKey of [...activeStrongholdIds]) {
+      const tracked = strongholdSpawnedEnemies.get(shKey) || [];
+      if (tracked.length === 0) continue;
+      const anyTrackedInActive = tracked.some((e) => e && activeSet.has(e));
+      const allTrackedDead = tracked.every(
+        (e) => !e || e.dead || (typeof e.hp === 'number' && e.hp <= 0)
+      );
+      if (!anyTrackedInActive && !allTrackedDead) {
+        activeStrongholdIds.delete(shKey);
+        strongholdWaveIndex[shKey] = -1;
+        strongholdSpawnedEnemies.delete(shKey);
+      }
+    }
+  }
+
   function checkStrongholdTriggers(leaderPos, partnerPos = null) {
-    if (!leaderPos || !enemyManager) return null;
+    if (!leaderPos || !enemyManager || stoneInspecting) return null;
+    pruneStaleStrongholdsWithoutKills();
+    if (activeStrongholdIds.size > 0) return [];
     const triggeredNow = [];
     for (const [key, bit] of Object.entries(STRONGHOLD_BITS)) {
-      if (key === 'apex_finale' && !isStage3Unlocked()) continue;
+      if (key === 'apex_finale' && !areAllStonesSolvedForApex()) continue;
       if ((strongholdClearedMask & bit) !== 0) continue;
       if (activeStrongholdIds.has(key)) continue;
       const sh = STONE_STRONGHOLDS[key];
@@ -3022,8 +3169,10 @@ export function createCampaignLoop({
         strongholdWaveIndex[key] = 0;
         enemyManager.setCurrentActId?.(key);
         enemyManager.spawnWave?.(shWaves[0], key);
+        strongholdSpawnedEnemies.set(key, [...(enemyManager.activeEnemies || [])]);
         emitBanner(sh.name.toUpperCase(), shWaves[0].label || 'Guardian Forces Awaken!', 'wave');
         triggeredNow.push(key);
+        break;
       }
     }
     return triggeredNow;
@@ -3053,9 +3202,39 @@ export function createCampaignLoop({
     return spawned;
   }
 
+  function checkRoutePatrols(leaderPos, partnerPos = null) {
+    if (!leaderPos || !enemyManager || !Array.isArray(ROUTE_PATROLS) || stoneInspecting) return [];
+    const triggeredNow = [];
+    for (let i = 0; i < ROUTE_PATROLS.length; i++) {
+      const patrol = ROUTE_PATROLS[i];
+      if (!patrol || triggeredRoutePatrolIds.has(patrol.id)) continue;
+      if ((enemyManager.activeEnemies?.length || 0) >= 6) continue;
+      const dLeader = Math.hypot(leaderPos.x - patrol.center.x, leaderPos.z - patrol.center.z);
+      const dPartner =
+        partnerPos && Number.isFinite(partnerPos.x) && Number.isFinite(partnerPos.z)
+          ? Math.hypot(partnerPos.x - patrol.center.x, partnerPos.z - patrol.center.z)
+          : Infinity;
+      if (Math.min(dLeader, dPartner) <= (patrol.triggerRadius || 22.0)) {
+        triggeredRoutePatrolIds.add(patrol.id);
+        for (let j = 0; j < patrol.spawns.length; j++) {
+          enemyManager.spawnImmediateFromSpec?.(patrol.spawns[j]);
+        }
+        emitBanner(
+          patrol.bannerTitle || patrol.name.toUpperCase(),
+          patrol.bannerSubtitle || 'Ambush Along the Valley Road!',
+          'wave'
+        );
+        triggeredNow.push(patrol.id);
+      }
+    }
+    return triggeredNow;
+  }
+
   function startExpedition(centerPos = { x: 0, z: 102 }) {
     survivalWaveTimer = 6.0;
     activeStrongholdIds.clear();
+    strongholdSpawnedEnemies.clear();
+    triggeredRoutePatrolIds.clear();
     strongholdClearedMask = 0;
     for (const k of Object.keys(strongholdWaveIndex)) {
       strongholdWaveIndex[k] = -1;
@@ -3080,8 +3259,8 @@ export function createCampaignLoop({
 
     let archetypes = [];
     if (Array.isArray(poolDef.pool) && poolDef.pool.length > 0) {
-      const minC = vfxKit ? 3 : poolDef.minCount || 4;
-      const maxC = vfxKit ? 4 : poolDef.maxCount || 7;
+      const minC = poolDef.minCount || 4;
+      const maxC = poolDef.maxCount || 7;
       const count = minC + (survivalWaveSeed % Math.max(1, maxC - minC + 1));
       let eliteAdded = 0;
       const maxElites = poolDef.maxElites ?? 2;
@@ -3103,10 +3282,10 @@ export function createCampaignLoop({
     if (archetypes.length === 0) return null;
 
     survivalWaveSeed += 1;
-    survivalWaveTimer = 22.0 + (survivalWaveSeed % 3) * 3.0; // 22..28s (88..112s in live 3D play)
+    survivalWaveTimer = 22.0 + (survivalWaveSeed % 3) * 3.0; // 22..28s real-time cadence
 
-    const rMin = vfxKit ? 24.0 : poolDef.spawnRadiusMin || 14.0;
-    const rMax = vfxKit ? 32.0 : poolDef.spawnRadiusMax || 20.0;
+    const rMin = poolDef.spawnRadiusMin || 14.0;
+    const rMax = poolDef.spawnRadiusMax || 20.0;
     const spawns = archetypes.map((archetype, idx, arr) => {
       const angle = (idx / Math.max(1, arr.length)) * Math.PI * 2 + survivalWaveSeed * 0.85;
       const dist = rMin + (idx % 3) * ((rMax - rMin) * 0.5);
@@ -3607,6 +3786,7 @@ export function createCampaignLoop({
               strongholdWaveIndex[shKey] = -1;
             }
             activeStrongholdIds.clear();
+            strongholdSpawnedEnemies.clear();
           }
 
           combatSfx?.playShieldChime?.();
@@ -3673,6 +3853,7 @@ export function createCampaignLoop({
     if (!isRemoteGuestMode && openValleyMode && !indicatorsHiddenForShot && leaderPos) {
       const checkRoadZone = (pos) =>
         pos &&
+        Math.abs(pos.x) <= 18.0 &&
         (vfxKit ? pos.z <= 106.0 && pos.z > 65.0 : pos.z > 65.0);
       const vanguardHero = checkRoadZone(leaderPos)
         ? leaderPos
@@ -3686,6 +3867,7 @@ export function createCampaignLoop({
         });
       }
       checkStrongholdTriggers(leaderPos, partnerPos);
+      checkRoutePatrols(leaderPos, partnerPos);
     } else if (!isRemoteGuestMode && act && leaderPos && !actTriggered && currentActId !== 'victory_dawn') {
       const dCenter = Math.hypot(
         leaderPos.x - act.center.x,
@@ -3726,34 +3908,60 @@ export function createCampaignLoop({
 
       // Advance or complete Open-Valley Strongholds & Survival Waves
       if (!isRemoteGuestMode && openValleyMode && !indicatorsHiddenForShot) {
-        if (
-          activeStrongholdIds.size > 0 &&
-          enemyManager.activeEnemies.length === 0 &&
-          enemyManager.spawnQueue.length === 0
-        ) {
+        if (activeStrongholdIds.size > 0 && enemyManager.spawnQueue.length === 0) {
+          const activeSet = new Set(enemyManager.activeEnemies || []);
           for (const shKey of [...activeStrongholdIds]) {
+            const trackedEnemies = strongholdSpawnedEnemies.get(shKey) || [];
+            const anyTrackedAliveOrPile = trackedEnemies.some(
+              (e) => e && activeSet.has(e) && (!e.dead || e.isPile)
+            );
+            const anyLivingActive = enemyManager.activeEnemies.some(
+              (e) => e && (!e.dead || e.isPile)
+            );
+            if (trackedEnemies.length > 0 ? anyTrackedAliveOrPile : anyLivingActive) {
+              continue;
+            }
+            const clearedExternallyWithoutKills =
+              trackedEnemies.length > 0 &&
+              !trackedEnemies.every(
+                (e) => !e || e.dead || (typeof e.hp === 'number' && e.hp <= 0)
+              );
+            if (clearedExternallyWithoutKills) {
+              activeStrongholdIds.delete(shKey);
+              strongholdWaveIndex[shKey] = -1;
+              strongholdSpawnedEnemies.delete(shKey);
+              continue;
+            }
             const sh = STONE_STRONGHOLDS[shKey];
             const shWaves = getStrongholdWaves(sh);
             const nextW = (strongholdWaveIndex[shKey] ?? 0) + 1;
             if (sh && shWaves.length > 0 && nextW < shWaves.length) {
+              if (
+                trackedEnemies.some((e) => e && activeSet.has(e)) ||
+                enemyManager.activeEnemies.length > 0
+              ) {
+                continue;
+              }
               strongholdWaveIndex[shKey] = nextW;
               enemyManager.setCurrentActId?.(shKey);
               enemyManager.spawnWave?.(shWaves[nextW], shKey);
+              strongholdSpawnedEnemies.set(shKey, [...(enemyManager.activeEnemies || [])]);
               emitBanner(sh.name.toUpperCase(), shWaves[nextW].label, 'wave');
             } else {
               activeStrongholdIds.delete(shKey);
               strongholdWaveIndex[shKey] = -1;
+              strongholdSpawnedEnemies.delete(shKey);
               strongholdClearedMask |= STRONGHOLD_BITS[shKey] || 0;
-              survivalWaveTimer = 28.0; // Grant ~112s of calm sanctuary time after clearing a stronghold
+              survivalWaveTimer = 28.0; // Grant ~28s of calm sanctuary breather after clearing a stronghold
               reviveAllInstant();
-              if (shKey === 'apex_finale') {
+              if (shKey === 'apex_finale' && areAllStonesSolvedForApex()) {
                 transitionToAct('victory_dawn');
                 emitBanner(
                   'DAWN OVER AMARANTE · EXPEDITION COMPLETE',
                   'The Hollow Sovereign & Ashen Court Are Vanquished — Love Prevails Across the Valley!',
                   'blessing'
                 );
-              } else if (sh) {
+              } else if (sh && shKey !== 'apex_finale') {
                 emitBanner(
                   `${sh.name.toUpperCase()} SANCTIFIED`,
                   'Guardian Forces Vanquished — Inspect the Sacred Stone [G] and Speak [R]',
@@ -3764,10 +3972,11 @@ export function createCampaignLoop({
           }
         } else if (
           activeStrongholdIds.size === 0 &&
+          !stoneInspecting &&
           !isControlLocked() &&
           currentActId !== 'victory_dawn' &&
           leaderPos &&
-          enemyManager.activeEnemies.length < (vfxKit ? 1 : 3) &&
+          enemyManager.activeEnemies.length < 3 &&
           enemyManager.spawnQueue.length === 0
         ) {
           const nearestHaven = selectNearestSafeHavenWaypoint(leaderPos);
@@ -3775,14 +3984,12 @@ export function createCampaignLoop({
             leaderPos.x - nearestHaven.x,
             leaderPos.z - nearestHaven.z
           );
-          const nearSacredStone = vfxKit
-            ? ['site1_well', 'site2_platform', 'site3_wall'].some((sk) => {
-                const c = STONE_STRONGHOLDS[sk]?.center;
-                return c && Math.hypot(leaderPos.x - c.x, leaderPos.z - c.z) <= 18.0;
-              })
-            : false;
+          const nearSacredStone = ['site1_well', 'site2_platform', 'site3_wall'].some((sk) => {
+            const c = STONE_STRONGHOLDS[sk]?.center;
+            return c && Math.hypot(leaderPos.x - c.x, leaderPos.z - c.z) <= 18.0;
+          });
           if (distHaven > 8.5 && !nearSacredStone) {
-            survivalWaveTimer -= vfxKit ? dt * 0.25 : dt;
+            survivalWaveTimer -= dt;
             if (survivalWaveTimer <= 0) {
               triggerSurvivalWave(leaderPos);
             }
@@ -3811,10 +4018,11 @@ export function createCampaignLoop({
       }
     }
 
-    // 4. Role-Symmetric Smart Solo Wingman AI (NEVER hijacks the human player's active hero!)
+    // 4. Role-Symmetric Smart Solo Wingman AI (NEVER hijacks the human player's active hero or shouts over a dying leader!)
     if (
       !isRemoteGuestMode &&
       soloWingmanActive &&
+      !combatHeroes[activeHeroId]?.downed &&
       enemyManager &&
       enemyManager.activeEnemies.length > 0 &&
       !isControlLocked()
@@ -4471,11 +4679,23 @@ export function createCampaignLoop({
     tetherOutTimer = 0;
     strongholdClearedMask = 0;
     activeStrongholdIds.clear();
+    strongholdSpawnedEnemies.clear();
+    triggeredRoutePatrolIds.clear();
     for (const k of Object.keys(strongholdWaveIndex)) {
       strongholdWaveIndex[k] = -1;
     }
+    if (lastHeroStates) {
+      for (const hSt of [lastHeroStates.Knight, lastHeroStates.Mage]) {
+        if (!hSt) continue;
+        hSt.hitFlashTimer = 0;
+        hSt.hitFlashBlocked = false;
+        hSt.hitKnockbackX = 0;
+        hSt.hitKnockbackZ = 0;
+      }
+    }
     survivalWaveTimer = 6.0;
     roadVanguardSpawned = false;
+    stoneInspecting = false;
     enemyManager?.setGlobalEnemyTimeScale?.(1.0);
     heartResonance = 25;
     transitionToAct('act1_arena');
@@ -4492,6 +4712,7 @@ export function createCampaignLoop({
   function setCommuneChannelActive(active, heroStates = null, options = {}) {
     const nextActive = Boolean(active);
     communeChannelActive = nextActive;
+    combatSfx?.setAmbienceState?.(nextActive ? 'commune' : 'valley');
     if (nextActive) {
       const modeB = Boolean(
         !options.nearStoneId && (options.forceMiracle || isMiracleReady(heroStates))
@@ -4566,6 +4787,9 @@ export function createCampaignLoop({
     get soloWingmanActive() {
       return lastSoloWingmanActive;
     },
+    get stoneInspecting() {
+      return stoneInspecting;
+    },
     isControlLocked,
     isDivineBlessingActive,
     getDivineBlessingRemaining,
@@ -4578,6 +4802,7 @@ export function createCampaignLoop({
     isStage3Unlocked,
     setUnlockedStage,
     setOpenValleyMode,
+    setStoneInspecting,
     awardKnightKillXp,
     handleBossPhaseThreshold,
     awardPerfectDodgeEnergy,

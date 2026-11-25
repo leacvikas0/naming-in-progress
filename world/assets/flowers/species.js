@@ -1,6 +1,39 @@
 import * as THREE from 'three';
 import { BLENDER_VOLUMETRIC_FLOWERS } from './blender-flower-data.js';
 
+function createLocalTimeSlicer(opts = {}) {
+  const yieldFrame =
+    typeof opts.yieldFrame === 'function'
+      ? opts.yieldFrame
+      : () => new Promise((r) => setTimeout(r, 0));
+  const sliceBudgetMs = Number(opts.sliceBudgetMs) > 0 ? Number(opts.sliceBudgetMs) : 5.0;
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  let sliceStart = now();
+  return {
+    async maybeYield() {
+      if (now() - sliceStart >= sliceBudgetMs) {
+        await yieldFrame();
+        sliceStart = now();
+      }
+    },
+  };
+}
+
+function runSync(gen) {
+  let step = gen.next();
+  while (!step.done) step = gen.next();
+  return step.value;
+}
+
+async function runAsync(gen, slicer) {
+  let step = gen.next();
+  while (!step.done) {
+    await slicer.maybeYield();
+    step = gen.next();
+  }
+  return step.value;
+}
+
 /**
  * Amarante Botanical Species Kit (`world/assets/flowers/species.js`)
  *
@@ -532,7 +565,7 @@ export function buildGrassTuftTablet() {
 //    Cupped Rose with Pure Ruby Blood-Crimson Linear RGB for Sacred Stone Rings
 //    & Frame 41 Divine Smite Monochrome)
 // ============================================================================
-export function buildCrimsonRose(opts = {}) {
+function* buildCrimsonRoseGen(opts = {}) {
   const isTablet = opts?.profile === 'tablet';
   const leafSegsV = isTablet ? 0 : 2;
   const sSegs = isTablet ? 1 : 3;
@@ -563,6 +596,7 @@ export function buildCrimsonRose(opts = {}) {
       segsV: leafSegsV,
     });
   }
+  yield;
 
   const heads = [
     { pos: [ 0.00, 0.52,  0.00], tiltX: 0.36, tiltY:  0.00, tiltZ:  0.05, sc: 1.05 },
@@ -570,7 +604,8 @@ export function buildCrimsonRose(opts = {}) {
     { pos: [ 0.14, 0.39, -0.07], tiltX: 0.40, tiltY:  0.38, tiltZ: -0.12, sc: 0.84 },
   ];
 
-  heads.forEach((h, hIdx) => {
+  for (let hIdx = 0; hIdx < heads.length; hIdx++) {
+    const h = heads[hIdx];
     appendStemMesh(arrays, [[0, 0, 0], h.pos], 0.015, 0.010, [0.20, 0.38, 0.18], [0.39, 0.60, 0.29], sSegs);
     const headStartIdx = arrays.pos.length / 3;
     const outerSegsV = isTablet ? (hIdx === 0 ? 1 : 0) : 2;
@@ -614,11 +649,20 @@ export function buildCrimsonRose(opts = {}) {
       });
     }
     tiltVerticesAroundPivot(arrays, headStartIdx, h.pos, h.tiltX, h.tiltY, h.tiltZ);
-  });
+    yield;
+  }
 
   const geo = finalizeGeometry('crimsonRose', arrays); // 182 triangles desktop / 51 tablet
   geo.userData.profile = isTablet ? 'tablet' : 'desktop';
   return geo;
+}
+
+export function buildCrimsonRose(opts = {}) {
+  return runSync(buildCrimsonRoseGen(opts));
+}
+
+export async function buildCrimsonRoseAsync(opts = {}) {
+  return runAsync(buildCrimsonRoseGen(opts), createLocalTimeSlicer(opts));
 }
 
 // ============================================================================
@@ -999,17 +1043,40 @@ export function buildToonShrub(opts = {}) {
   return geo;
 }
 
-export function createSpeciesGeometries(opts = {}) {
+function* createSpeciesGeometriesGen(opts = {}) {
   // Keep BLENDER_VOLUMETRIC_FLOWERS referenced so bundlers/tests preserve it
   void BLENDER_VOLUMETRIC_FLOWERS;
+  const grassTuft = buildGrassTuft(opts);
+  yield;
+  const grassTuftTablet = buildGrassTuftTablet();
+  yield;
+  const crimsonRose = yield* buildCrimsonRoseGen(opts);
+  yield;
+  const bellflower = buildBellflower(opts);
+  yield;
+  const daisy = buildDaisy(opts);
+  yield;
+  const lupine = buildLupine(opts);
+  yield;
+  const cosmos = buildCosmos(opts);
+  yield;
+  const toonShrub = buildToonShrub(opts);
   return {
-    grassTuft:       buildGrassTuft(opts),
-    grassTuftTablet: buildGrassTuftTablet(),
-    crimsonRose:     buildCrimsonRose(opts),
-    bellflower:      buildBellflower(opts),
-    daisy:           buildDaisy(opts),
-    lupine:          buildLupine(opts),
-    cosmos:          buildCosmos(opts),
-    toonShrub:       buildToonShrub(opts),
+    grassTuft,
+    grassTuftTablet,
+    crimsonRose,
+    bellflower,
+    daisy,
+    lupine,
+    cosmos,
+    toonShrub,
   };
+}
+
+export function createSpeciesGeometries(opts = {}) {
+  return runSync(createSpeciesGeometriesGen(opts));
+}
+
+export async function createSpeciesGeometriesAsync(opts = {}) {
+  return runAsync(createSpeciesGeometriesGen(opts), createLocalTimeSlicer(opts));
 }

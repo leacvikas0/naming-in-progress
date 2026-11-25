@@ -33,7 +33,9 @@ import {
   getSharedCharacterToonGradient,
   createSkinnedOutlineMesh,
   prepareUnifiedCharacterSource,
+  prepareUnifiedCharacterSourceAsync,
   rebuildUnifiedCharacterSkin,
+  rebuildUnifiedCharacterSkinAsync,
   OUTLINE_INK_HEX,
   CHARACTER_OUTLINE_THICKNESS,
   WEAPON_OUTLINE_THICKNESS,
@@ -46,7 +48,9 @@ export {
   getSharedCharacterToonGradient,
   createSkinnedOutlineMesh,
   prepareUnifiedCharacterSource,
+  prepareUnifiedCharacterSourceAsync,
   rebuildUnifiedCharacterSkin,
+  rebuildUnifiedCharacterSkinAsync,
   OUTLINE_INK_HEX,
   CHARACTER_OUTLINE_THICKNESS,
   WEAPON_OUTLINE_THICKNESS,
@@ -1173,31 +1177,319 @@ function findBankClip(clipsByName, name) {
   return null;
 }
 
+function createTimeBudgetYielder(options = {}) {
+  const enabled =
+    typeof setTimeout === 'function' &&
+    options?.sync !== true &&
+    options?.yieldSlice !== false &&
+    typeof window !== 'undefined';
+  if (!enabled) {
+    return { enabled: false, maybeYield: async () => {}, yieldNow: async () => {} };
+  }
+  const yieldFn =
+    typeof options?.yieldFrame === 'function'
+      ? options.yieldFrame
+      : typeof options?.yieldSlice === 'function'
+        ? options.yieldSlice
+        : () => new Promise((r) => setTimeout(r, 0));
+  const budgetMs = Number(options?.sliceBudgetMs) > 0 ? Number(options.sliceBudgetMs) : 3.2;
+  let sliceStart = Date.now();
+  return {
+    enabled: true,
+    async maybeYield() {
+      if (Date.now() - sliceStart >= budgetMs) {
+        await yieldFn();
+        sliceStart = Date.now();
+      }
+    },
+    async yieldNow() {
+      await yieldFn();
+      sliceStart = Date.now();
+    },
+  };
+}
+
+let _animWorker = null;
+let _animWorkerUrl = null;
+let _animWorkerSeq = 0;
+const _animWorkerPending = new Map();
+
+function getAnimGlbWorker() {
+  if (_animWorker) return _animWorker;
+  if (typeof window === 'undefined' || typeof Worker !== 'function' || typeof Blob !== 'function') {
+    return null;
+  }
+  try {
+    const workerSrc = `
+      const TYPE_COUNT = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 };
+      function readFloatAccessor(json, binU8, accIdx) {
+        const acc = json.accessors?.[accIdx];
+        if (!acc || acc.componentType !== 5126 || acc.sparse) return null;
+        const comps = TYPE_COUNT[acc.type];
+        if (!comps) return null;
+        const bv = json.bufferViews?.[acc.bufferView];
+        if (!bv) return null;
+        const byteOff = (bv.byteOffset || 0) + (acc.byteOffset || 0);
+        const stride = bv.byteStride || comps * 4;
+        const count = acc.count || 0;
+        const out = new Float32Array(count * comps);
+        if (stride === comps * 4 && (byteOff & 3) === 0) {
+          out.set(new Float32Array(binU8.buffer, binU8.byteOffset + byteOff, count * comps));
+          return out;
+        }
+        const dv = new DataView(binU8.buffer, binU8.byteOffset, binU8.byteLength);
+        for (let i = 0; i < count; i++) {
+          const base = byteOff + i * stride;
+          for (let c = 0; c < comps; c++) {
+            out[i * comps + c] = dv.getFloat32(base + c * 4, true);
+          }
+        }
+        return out;
+      }
+      self.onmessage = async (ev) => {
+        const { id, absUrl, needRest } = ev.data || {};
+        try {
+          const resp = await fetch(absUrl);
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const buf = await resp.arrayBuffer();
+          const dv = new DataView(buf);
+          if (dv.getUint32(0, true) !== 0x46546c67) throw new Error('Not GLB');
+          let off = 12;
+          let json = null;
+          let binU8 = null;
+          while (off + 8 <= buf.byteLength) {
+            const cLen = dv.getUint32(off, true);
+            const cType = dv.getUint32(off + 4, true);
+            off += 8;
+            if (cType === 0x4e4f534a && !json) {
+              json = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, off, cLen)));
+            } else if (cType === 0x004e4942 && !binU8) {
+              binU8 = new Uint8Array(buf, off, cLen);
+            }
+            off += (cLen + 3) & ~3;
+          }
+          if (!json || !binU8) throw new Error('Missing GLB chunks');
+          const nodes = json.nodes || [];
+          const animSpecs = [];
+          const rawSlices = [];
+          let totalFloats = 0;
+          for (const anim of json.animations || []) {
+            if (!anim?.name) continue;
+            const tracks = [];
+            for (const ch of anim.channels || []) {
+              const path = ch?.target?.path;
+              const node = nodes[ch?.target?.node];
+              const sampler = anim.samplers?.[ch?.sampler];
+              if (!node?.name || !sampler) continue;
+              if (path !== 'translation' && path !== 'rotation' && path !== 'scale') {
+                throw new Error('Unsupported path ' + path);
+              }
+              const times = readFloatAccessor(json, binU8, sampler.input);
+              const values = readFloatAccessor(json, binU8, sampler.output);
+              if (!times || !values) throw new Error('Unsupported accessor');
+              const tOff = totalFloats;
+              totalFloats += times.length;
+              const vOff = totalFloats;
+              totalFloats += values.length;
+              rawSlices.push(times, values);
+              tracks.push({
+                nodeName: node.name,
+                path,
+                tOff,
+                tLen: times.length,
+                vOff,
+                vLen: values.length,
+                interpolation: sampler.interpolation || 'LINEAR',
+              });
+            }
+            animSpecs.push({ name: anim.name, tracks });
+          }
+          const packedFloats = new Float32Array(totalFloats);
+          let cursor = 0;
+          for (let i = 0; i < rawSlices.length; i++) {
+            const arr = rawSlices[i];
+            packedFloats.set(arr, cursor);
+            cursor += arr.length;
+          }
+          let restEntries = null;
+          if (needRest) {
+            restEntries = [];
+            const jointSet = json.skins?.[0]?.joints ? new Set(json.skins[0].joints) : null;
+            for (let i = 0; i < nodes.length; i++) {
+              if (jointSet && !jointSet.has(i)) continue;
+              const n = nodes[i];
+              if (!n?.name) continue;
+              const t = n.translation || [0, 0, 0];
+              restEntries.push([n.name, t[0] || 0, t[1] || 0, t[2] || 0]);
+            }
+          }
+          self.postMessage(
+            { id, ok: true, animSpecs, packedFloats, restEntries },
+            [packedFloats.buffer]
+          );
+        } catch (err) {
+          self.postMessage({ id, ok: false, error: String(err?.message || err) });
+        }
+      };
+    `;
+    const blob = new Blob([workerSrc], { type: 'application/javascript' });
+    _animWorkerUrl = URL.createObjectURL(blob);
+    _animWorker = new Worker(_animWorkerUrl);
+    _animWorker.onmessage = (ev) => {
+      const { id, ok, animSpecs, packedFloats, restEntries, error } = ev.data || {};
+      const p = _animWorkerPending.get(id);
+      if (!p) return;
+      _animWorkerPending.delete(id);
+      if (ok) p.resolve({ animSpecs, packedFloats, restEntries });
+      else p.reject(new Error(error || 'Worker parse failed'));
+    };
+    _animWorker.onerror = (err) => {
+      for (const [, p] of _animWorkerPending) p.reject(err);
+      _animWorkerPending.clear();
+      _animWorker = null;
+    };
+    return _animWorker;
+  } catch {
+    return null;
+  }
+}
+
+async function loadAnimationPackViaWorker(url, needRest = false) {
+  const w = getAnimGlbWorker();
+  if (!w) return null;
+  const absUrl = new URL(url, window.location.href).href;
+  const id = ++_animWorkerSeq;
+  return new Promise((resolve, reject) => {
+    _animWorkerPending.set(id, { resolve, reject });
+    w.postMessage({ id, absUrl, needRest });
+  });
+}
+
+function buildAnimationClipFromSpec(spec, packedFloats) {
+  const tracks = [];
+  for (let i = 0; i < spec.tracks.length; i++) {
+    const tr = spec.tracks[i];
+    const cleanName = THREE.PropertyBinding.sanitizeNodeName(tr.nodeName);
+    const interp =
+      tr.interpolation === 'STEP'
+        ? THREE.InterpolateDiscrete
+        : THREE.InterpolateLinear;
+    const times = packedFloats
+      ? packedFloats.subarray(tr.tOff, tr.tOff + tr.tLen)
+      : tr.times;
+    const values = packedFloats
+      ? packedFloats.subarray(tr.vOff, tr.vOff + tr.vLen)
+      : tr.values;
+    if (tr.path === 'rotation') {
+      tracks.push(
+        new THREE.QuaternionKeyframeTrack(`${cleanName}.quaternion`, times, values, interp)
+      );
+    } else if (tr.path === 'translation') {
+      tracks.push(
+        new THREE.VectorKeyframeTrack(`${cleanName}.position`, times, values, interp)
+      );
+    } else if (tr.path === 'scale') {
+      tracks.push(
+        new THREE.VectorKeyframeTrack(`${cleanName}.scale`, times, values, interp)
+      );
+    }
+  }
+  return new THREE.AnimationClip(spec.name, -1, tracks);
+}
+
 /**
  * Loads every KayKit 1.1 animation pack for one rig (`'medium'` default, or
  * `'large'` for the Golem) into a shared clip bank. Duplicate names (T-Pose)
  * keep the first pack's clip.
  */
-export async function loadAnimationPacks(loader = new GLTFLoader(), rig = 'medium') {
+export async function loadAnimationPacks(loader = new GLTFLoader(), rig = 'medium', options = {}) {
   const rigKey = rigKeyOf(rig);
   if (!clipBankPromises.has(rigKey)) {
     const packs = Object.values(ANIMATION_PACKS).filter((pack) => pack.rig === rigKey);
-    const promise = Promise.all(packs.map((pack) => loadRawGltf(loader, pack.url))).then((gltfs) => {
+    const yielder = createTimeBudgetYielder(options);
+    const canUseWorker =
+      yielder.enabled &&
+      typeof window !== 'undefined' &&
+      typeof Worker === 'function' &&
+      loader?.loadAsync === GLTFLoader.prototype.loadAsync;
+
+    const promise = (async () => {
       const clipsByName = new Map();
       const clipPack = new Map();
-      gltfs.forEach((gltf, i) => {
-        for (const clip of gltf.animations || []) {
-          if (clip && clip.name && !clipsByName.has(clip.name)) {
-            clipsByName.set(clip.name, stabilizeCombatRootMotion(clip));
-            clipPack.set(clip.name, packs[i].id);
+      const restPositions = new Map();
+
+      if (canUseWorker) {
+        let nextWorkerPromise = loadAnimationPackViaWorker(packs[0].url, true).catch(() => null);
+        for (let i = 0; i < packs.length; i++) {
+          const wRes = await nextWorkerPromise;
+          if (i + 1 < packs.length) {
+            nextWorkerPromise = loadAnimationPackViaWorker(packs[i + 1].url, false).catch(() => null);
+          }
+          await yielder.maybeYield();
+          if (wRes && Array.isArray(wRes.animSpecs)) {
+            if (i === 0 && Array.isArray(wRes.restEntries)) {
+              for (const [bName, x, y, z] of wRes.restEntries) {
+                if (!restPositions.has(bName)) {
+                  restPositions.set(bName, new THREE.Vector3(x, y, z));
+                }
+              }
+            }
+            for (const spec of wRes.animSpecs) {
+              if (spec?.name && !clipsByName.has(spec.name)) {
+                const clip = buildAnimationClipFromSpec(spec, wRes.packedFloats);
+                clipsByName.set(spec.name, stabilizeCombatRootMotion(clip));
+                clipPack.set(spec.name, packs[i].id);
+                await yielder.maybeYield();
+              }
+            }
+          } else {
+            const gltf = await loadRawGltf(loader, packs[i].url);
+            await yielder.yieldNow();
+            if (i === 0) {
+              gltf?.scene?.traverse((obj) => {
+                if (obj.isBone && !restPositions.has(obj.name)) {
+                  restPositions.set(obj.name, obj.position.clone());
+                }
+              });
+            }
+            for (const clip of gltf.animations || []) {
+              if (clip && clip.name && !clipsByName.has(clip.name)) {
+                clipsByName.set(clip.name, stabilizeCombatRootMotion(clip));
+                clipPack.set(clip.name, packs[i].id);
+                await yielder.maybeYield();
+              }
+            }
+          }
+          if (i + 1 < packs.length) {
+            await yielder.maybeYield();
           }
         }
-      });
-      // Pack mannequin rest translations, used to re-base clips onto each character's own bone lengths
-      const restPositions = new Map();
-      gltfs[0]?.scene.traverse((obj) => {
-        if (obj.isBone && !restPositions.has(obj.name)) restPositions.set(obj.name, obj.position.clone());
-      });
+      } else {
+        const gltfs = [];
+        for (let i = 0; i < packs.length; i++) {
+          gltfs.push(await loadRawGltf(loader, packs[i].url));
+          if (typeof setTimeout === 'function') {
+            await yielder.yieldNow();
+          }
+        }
+        for (let i = 0; i < gltfs.length; i++) {
+          const gltf = gltfs[i];
+          for (const clip of gltf.animations || []) {
+            if (clip && clip.name && !clipsByName.has(clip.name)) {
+              clipsByName.set(clip.name, stabilizeCombatRootMotion(clip));
+              clipPack.set(clip.name, packs[i].id);
+              await yielder.maybeYield();
+            }
+          }
+          if (typeof setTimeout === 'function' && i + 1 < gltfs.length) {
+            await yielder.yieldNow();
+          }
+        }
+        gltfs[0]?.scene.traverse((obj) => {
+          if (obj.isBone && !restPositions.has(obj.name)) restPositions.set(obj.name, obj.position.clone());
+        });
+      }
+
       const bank = {
         rig: rigKey,
         packs: Object.fromEntries(packs.map((pack) => [pack.id, pack])),
@@ -1208,7 +1500,7 @@ export async function loadAnimationPacks(loader = new GLTFLoader(), rig = 'mediu
       };
       loadedClipBanks.set(rigKey, bank);
       return bank;
-    });
+    })();
     promise.catch(() => clipBankPromises.delete(rigKey));
     clipBankPromises.set(rigKey, promise);
   }
@@ -1286,6 +1578,45 @@ function adaptClipBankToRig(bank, modelRoot, cacheKey) {
         return shifted;
       });
       clipsByName.set(name, changed ? new THREE.AnimationClip(clip.name, clip.duration, tracks) : clip);
+    }
+    adapted = { ...bank, clipsByName, allClips: Array.from(clipsByName.values()) };
+  }
+  adaptedClipBanks.set(key, adapted);
+  return adapted;
+}
+
+async function adaptClipBankToRigAsync(bank, modelRoot, cacheKey, yielder) {
+  const key = `${bank.rig}:${cacheKey}`;
+  if (adaptedClipBanks.has(key)) return adaptedClipBanks.get(key);
+  if (!yielder?.enabled) return adaptClipBankToRig(bank, modelRoot, cacheKey);
+
+  const deltas = new Map();
+  modelRoot.traverse((obj) => {
+    const packRest = obj.isBone && bank.restPositions.get(obj.name);
+    if (packRest && packRest.distanceToSquared(obj.position) > 1e-8) {
+      deltas.set(obj.name, obj.position.clone().sub(packRest));
+    }
+  });
+
+  let adapted = bank;
+  if (deltas.size) {
+    const clipsByName = new Map();
+    for (const [name, clip] of bank.clipsByName) {
+      let changed = false;
+      const tracks = clip.tracks.map((track) => {
+        const delta = track.name.endsWith('.position') && deltas.get(trackBoneName(track.name));
+        if (!delta) return track;
+        changed = true;
+        const shifted = track.clone();
+        for (let i = 0; i < shifted.values.length; i += 3) {
+          shifted.values[i] += delta.x;
+          shifted.values[i + 1] += delta.y;
+          shifted.values[i + 2] += delta.z;
+        }
+        return shifted;
+      });
+      clipsByName.set(name, changed ? new THREE.AnimationClip(clip.name, clip.duration, tracks) : clip);
+      await yielder.maybeYield();
     }
     adapted = { ...bank, clipsByName, allClips: Array.from(clipsByName.values()) };
   }
@@ -1456,53 +1787,8 @@ export async function attachWeaponToSocket(
   return weaponRoot;
 }
 
-/**
- * Builds the `THREE.AnimationMixer` and weapon-style-aware semantic clip
- * dictionary for a character instance (`Rig_Medium` or `Rig_Large`).
- */
-export function createCharacterAnimationController(instanceRoot, clipBank, options = {}) {
-  const weaponStyle = options.weaponStyle || '1h';
-  const rig = rigKeyOf(options.rig || clipBank.rig);
-  const mixer = new THREE.AnimationMixer(instanceRoot);
-  const rawActions = new Map();
-  const semanticActions = new Map();
-  const semanticClips = new Map();
-
-  for (const clip of clipBank.allClips) {
-    if (!clip || !clip.name) continue;
-    const action = mixer.clipAction(clip);
-    rawActions.set(clip.name, action);
-  }
-
-  // 1.0 clip names keep playing through their 1.1 substitutes
-  for (const legacyName of Object.keys(LEGACY_CLIP_ALIASES)) {
-    if (rawActions.has(legacyName)) continue;
-    const clip = findBankClip(clipBank.clipsByName, legacyName);
-    if (clip) rawActions.set(legacyName, rawActions.get(clip.name));
-  }
-
-  for (const [semKey, def] of Object.entries(SEMANTIC_ANIMATIONS)) {
-    let matchedClip = null;
-    for (const candidateName of semanticCandidates(def, rig, weaponStyle)) {
-      matchedClip = findBankClip(clipBank.clipsByName, candidateName);
-      if (matchedClip) break;
-    }
-    if (!matchedClip) continue;
-
-    const action = rawActions.get(matchedClip.name) || mixer.clipAction(matchedClip);
-    semanticClips.set(semKey, matchedClip);
-    semanticActions.set(semKey, action);
-
-    for (const alias of def.aliases || []) {
-      // Never shadow a real 1.1 clip of the same name
-      if (clipBank.clipsByName.has(alias)) continue;
-      semanticClips.set(alias, matchedClip);
-      semanticActions.set(alias, action);
-      if (!rawActions.has(alias)) {
-        rawActions.set(alias, action);
-      }
-    }
-  }
+function finalizeCharacterAnimationController(instanceRoot, clipBank, options, state) {
+  const { rig, mixer, rawActions, semanticActions, semanticClips } = state;
 
   let currentAction = null;
   let currentKey = null;
@@ -1647,6 +1933,109 @@ export function createCharacterAnimationController(instanceRoot, clipBank, optio
   };
 }
 
+function registerControllerActionsSync(instanceRoot, clipBank, options = {}) {
+  const weaponStyle = options.weaponStyle || '1h';
+  const rig = rigKeyOf(options.rig || clipBank.rig);
+  const mixer = new THREE.AnimationMixer(instanceRoot);
+  const rawActions = new Map();
+  const semanticActions = new Map();
+  const semanticClips = new Map();
+
+  for (const clip of clipBank.allClips) {
+    if (!clip || !clip.name) continue;
+    rawActions.set(clip.name, mixer.clipAction(clip));
+  }
+
+  for (const legacyName of Object.keys(LEGACY_CLIP_ALIASES)) {
+    if (rawActions.has(legacyName)) continue;
+    const clip = findBankClip(clipBank.clipsByName, legacyName);
+    if (clip) rawActions.set(legacyName, rawActions.get(clip.name));
+  }
+
+  for (const [semKey, def] of Object.entries(SEMANTIC_ANIMATIONS)) {
+    let matchedClip = null;
+    for (const candidateName of semanticCandidates(def, rig, weaponStyle)) {
+      matchedClip = findBankClip(clipBank.clipsByName, candidateName);
+      if (matchedClip) break;
+    }
+    if (!matchedClip) continue;
+
+    const action = rawActions.get(matchedClip.name) || mixer.clipAction(matchedClip);
+    semanticClips.set(semKey, matchedClip);
+    semanticActions.set(semKey, action);
+
+    for (const alias of def.aliases || []) {
+      if (clipBank.clipsByName.has(alias)) continue;
+      semanticClips.set(alias, matchedClip);
+      semanticActions.set(alias, action);
+      if (!rawActions.has(alias)) {
+        rawActions.set(alias, action);
+      }
+    }
+  }
+
+  return { rig, mixer, rawActions, semanticActions, semanticClips };
+}
+
+async function registerControllerActionsAsync(instanceRoot, clipBank, options = {}, yielder = null) {
+  if (!yielder?.enabled) {
+    return registerControllerActionsSync(instanceRoot, clipBank, options);
+  }
+  const weaponStyle = options.weaponStyle || '1h';
+  const rig = rigKeyOf(options.rig || clipBank.rig);
+  const mixer = new THREE.AnimationMixer(instanceRoot);
+  const rawActions = new Map();
+  const semanticActions = new Map();
+  const semanticClips = new Map();
+
+  for (const clip of clipBank.allClips) {
+    if (!clip || !clip.name) continue;
+    rawActions.set(clip.name, mixer.clipAction(clip));
+    await yielder.maybeYield();
+  }
+
+  for (const legacyName of Object.keys(LEGACY_CLIP_ALIASES)) {
+    if (rawActions.has(legacyName)) continue;
+    const clip = findBankClip(clipBank.clipsByName, legacyName);
+    if (clip) rawActions.set(legacyName, rawActions.get(clip.name));
+  }
+  await yielder.maybeYield();
+
+  for (const [semKey, def] of Object.entries(SEMANTIC_ANIMATIONS)) {
+    let matchedClip = null;
+    for (const candidateName of semanticCandidates(def, rig, weaponStyle)) {
+      matchedClip = findBankClip(clipBank.clipsByName, candidateName);
+      if (matchedClip) break;
+    }
+    if (!matchedClip) continue;
+
+    const action = rawActions.get(matchedClip.name) || mixer.clipAction(matchedClip);
+    semanticClips.set(semKey, matchedClip);
+    semanticActions.set(semKey, action);
+
+    for (const alias of def.aliases || []) {
+      if (clipBank.clipsByName.has(alias)) continue;
+      semanticClips.set(alias, matchedClip);
+      semanticActions.set(alias, action);
+      if (!rawActions.has(alias)) {
+        rawActions.set(alias, action);
+      }
+    }
+    await yielder.maybeYield();
+  }
+
+  return { rig, mixer, rawActions, semanticActions, semanticClips };
+}
+
+/**
+ * Builds the `THREE.AnimationMixer` and weapon-style-aware semantic clip
+ * dictionary for a character instance (`Rig_Medium` or `Rig_Large`).
+ */
+export function createCharacterAnimationController(instanceRoot, clipBank, options = {}) {
+  const state = registerControllerActionsSync(instanceRoot, clipBank, options);
+  return finalizeCharacterAnimationController(instanceRoot, clipBank, options, state);
+}
+
 /**
  * Instantiates a cel-shaded, outlined KayKit Adventurer, Skeleton, or Enemy/Boss
  * consolidated into 1 unified `SkinnedMesh` + 1 unified outline `SkinnedMesh`
@@ -1656,18 +2045,27 @@ export async function createCharacter(idOrName, options = {}) {
   const baseSpec = resolveCharacterSpec(idOrName);
   const rigKey = rigKeyOf(baseSpec.rig);
   const loader = options.loader || new GLTFLoader();
+  const yielder = createTimeBudgetYielder(options);
   const [{ gltf: charGltf, spec }, rigClipBank] = await Promise.all([
     loadCharacterModel(loader, baseSpec),
-    loadAnimationPacks(loader, rigKey),
+    loadAnimationPacks(loader, rigKey, options),
   ]);
-  const clipBank = adaptClipBankToRig(rigClipBank, charGltf.scene, spec.glb);
+  await yielder.maybeYield();
+
+  const clipBank = yielder.enabled
+    ? await adaptClipBankToRigAsync(rigClipBank, charGltf.scene, spec.glb, yielder)
+    : adaptClipBankToRig(rigClipBank, charGltf.scene, spec.glb);
+  await yielder.maybeYield();
+
   const externalTex = spec.textureUrl ? await loadExternalTexture(spec.textureUrl) : null;
+  await yielder.maybeYield();
 
   const group = new THREE.Group();
   group.name = `character-${spec.id}`;
 
   const modelRoot = cloneSkeleton(charGltf.scene);
   modelRoot.name = `${spec.id}-rig`;
+  await yielder.maybeYield();
 
   if (externalTex) {
     modelRoot.traverse((obj) => {
@@ -1690,7 +2088,12 @@ export async function createCharacter(idOrName, options = {}) {
   };
 
   // Capture bind-pose skinned parts & rigid accessories before attaching weapons or posing
-  prepareUnifiedCharacterSource(modelRoot, toonOpts);
+  if (yielder.enabled) {
+    await prepareUnifiedCharacterSourceAsync(modelRoot, toonOpts, () => yielder.maybeYield());
+  } else {
+    prepareUnifiedCharacterSource(modelRoot, toonOpts);
+  }
+  await yielder.maybeYield();
   sockets.__rebuildUnifiedSkin = () => rebuildUnifiedCharacterSkin(modelRoot, sockets, toonOpts);
 
   const weaponsCfg = {
@@ -1712,6 +2115,7 @@ export async function createCharacter(idOrName, options = {}) {
       spec.role,
       { deferRebuild: true }
     );
+    await yielder.maybeYield();
   }
   if (weaponsCfg['handSlot.l']) {
     equippedWeapons['handSlot.l'] = await attachWeaponToSocket(
@@ -1722,17 +2126,37 @@ export async function createCharacter(idOrName, options = {}) {
       spec.role,
       { deferRebuild: true }
     );
+    await yielder.maybeYield();
   }
 
   // Merge all body parts + accessories + equipped weapons into 1 SkinnedMesh + 1 Outline SkinnedMesh
-  const toonStats = rebuildUnifiedCharacterSkin(modelRoot, sockets, toonOpts);
+  const toonStats = yielder.enabled
+    ? await rebuildUnifiedCharacterSkinAsync(modelRoot, sockets, toonOpts, () => yielder.maybeYield())
+    : rebuildUnifiedCharacterSkin(modelRoot, sockets, toonOpts);
+  await yielder.maybeYield();
 
   group.add(modelRoot);
 
-  const anim = createCharacterAnimationController(modelRoot, clipBank, {
-    rig: rigKey,
-    weaponStyle: options.weaponStyle || spec.weaponStyle || '1h',
-  });
+  const animState = await registerControllerActionsAsync(
+    modelRoot,
+    clipBank,
+    {
+      rig: rigKey,
+      weaponStyle: options.weaponStyle || spec.weaponStyle || '1h',
+    },
+    yielder
+  );
+  const anim = finalizeCharacterAnimationController(
+    modelRoot,
+    clipBank,
+    {
+      rig: rigKey,
+      weaponStyle: options.weaponStyle || spec.weaponStyle || '1h',
+    },
+    animState
+  );
+  await yielder.maybeYield();
+
   const initialClip = options.initialClip || 'idle';
   const initialTime = options.initialTime;
   if (initialTime !== undefined) {
@@ -1776,6 +2200,11 @@ export async function createCharacter(idOrName, options = {}) {
  */
 export function createCharactersKit(options = {}) {
   const loader = options.loader || new GLTFLoader();
+  const defaultSliceOpts = {
+    ...(options.sliceBudgetMs ? { sliceBudgetMs: options.sliceBudgetMs } : {}),
+    ...(options.yieldFrame ? { yieldFrame: options.yieldFrame } : {}),
+    ...(options.sync !== undefined ? { sync: options.sync } : {}),
+  };
   return {
     CHARACTER_ROSTER,
     CHARACTER_DEFS,
@@ -1787,9 +2216,11 @@ export function createCharactersKit(options = {}) {
     ANIMATION_PACKS,
     SEMANTIC_ANIMATIONS,
     LEGACY_CLIP_ALIASES,
-    loadAnimationPacks: (rig = 'medium') => loadAnimationPacks(loader, rig),
+    loadAnimationPacks: (rig = 'medium', opts = {}) =>
+      loadAnimationPacks(loader, rig, { ...defaultSliceOpts, ...opts }),
     listAvailableClips,
     resolveClipNameForRig,
-    createCharacter: (id, opts = {}) => createCharacter(id, { loader, ...opts }),
+    createCharacter: (id, opts = {}) =>
+      createCharacter(id, { loader, ...defaultSliceOpts, ...opts }),
   };
 }

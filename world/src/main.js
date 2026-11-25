@@ -13,62 +13,51 @@
 // ============================================================================
 
 import * as THREE from 'three';
-import {
-  PLAY_BOUNDARY_RADIUS,
-  INNER_EXTENT,
-  ZONES,
-  BUILDINGS,
-  walkableHeightAt,
-  terrainHeightAt,
-  sampleWorld,
-  buildTreeShadowUniformArray,
-  createTerrainAndLandmarks,
-} from '../assets/terrain/index.js';
-import { INSCRIPTION_STONES } from '../assets/terrain/geography.js';
-import { createHousesKit, setHouseCutoutPlayerPos } from '../assets/houses/index.js';
-import {
-  createToroidalMeadow,
-  MEADOW_PROFILES,
-  buildGrassTuft,
-} from '../assets/flowers/index.js';
-import { createTimeOfDaySky, TOD_PRESETS } from './sky-tod.js';
-import {
-  evalVerdictSky,
-  evalChannelSky,
-  evalChannelReleaseSky,
-  evalSmiteSky,
-  evalBlessingSky,
-  idleVerdictSky,
-  VERDICT_SKY_TAILS,
-} from './verdict-sky-choreo.js';
-import { createWorldPost } from './post.js';
-import {
-  createCoopPlayerSystem,
-  STAGE5_GAMEPLAY_SHOTS,
-} from './player-controller.js';
-import { createTouchHud } from './touch-hud.js';
-import {
-  createAppFlow,
-  FLOW_STEPS,
-  getOpeningCameraPose,
-} from './ui/app-flow.js';
-import { createSculptedHud } from './ui/sculpted-hud.js';
-import { UNSPOILED_SACRED_POEM_BY_STONE_ID } from './ui/sacred-poems-unspoiled.js';
-import * as DamageNumbersModule from './ui/damage-numbers.js';
-import {
-  createCommuneClient,
-  playWideSurroundDivineVoice,
-} from './combat/commune-client.js';
-import {
-  BREATHING_STYLES,
-  SPELL_BY_SLOT,
-  ACT_DEFINITIONS,
-} from './combat/combat-balance.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-const createDamageNumbers =
-  DamageNumbersModule.createDamageNumbers ||
-  DamageNumbersModule.createDamageNumbersOverlay;
+let PLAY_BOUNDARY_RADIUS = 165;
+let INNER_EXTENT = 300;
+let ZONES = { plaza: { x: 0, z: 0, radius: 30 }, arena: { x: 74, z: -2, radius: 18 }, shrine: { x: 0, z: -86, radius: 18 } };
+let BUILDINGS = [];
+let INSCRIPTION_STONES = [];
+let walkableHeightAt = () => 0;
+let terrainHeightAt = () => 0;
+let sampleWorld = () => ({ foliageMask: 0 });
+
+let evalVerdictSky = () => ({ active: false, weight: 0, front: 0, clear: 0, compression: 0, windTimeScale: 1, monochrome: 0 });
+let evalChannelSky = evalVerdictSky;
+let evalChannelReleaseSky = evalVerdictSky;
+let evalSmiteSky = evalVerdictSky;
+let evalBlessingSky = evalVerdictSky;
+let idleVerdictSky = () => ({ active: false, weight: 0, front: 0, clear: 0, compression: 0, windTimeScale: 1, monochrome: 0 });
+let VERDICT_SKY_TAILS = {};
+
+let createAppFlow = null;
+let FLOW_STEPS = {
+  TITLE: 'title',
+  LOADING: 'loading',
+  CREATE_JOIN: 'create_join',
+  FLOWER_LOBBY: 'flower_lobby',
+  IN_GAME: 'in_game',
+};
+let getOpeningCameraPose = (step) => ({
+  mode: step === 'flower_lobby' ? 'lobby' : 'vista',
+  pos: [0, 4.5, 136.5],
+  target: [0, 5.0, 24.0],
+  fov: 50,
+});
+
+let UNSPOILED_SACRED_POEM_BY_STONE_ID = null;
+let SPELL_BY_SLOT = {};
+
+const TOD_PRESETS = Object.freeze({
+  midnight: { t: 0.0 },
+  dawn: { t: 0.2 },
+  day: { t: 0.34 },
+  afternoon: { t: 0.54 },
+  evening: { t: 0.76 },
+  twilight: { t: 0.84 },
+  night: { t: 0.96 },
+});
 
 if (typeof document !== 'undefined') {
   let legacyHideStyle = document.getElementById('amarante-legacy-hud-cleanup');
@@ -119,11 +108,7 @@ function hash(n) {
 /* ------------------------------------------------------------------------- */
 
 const canvas = document.getElementById('world-canvas');
-const renderer = new THREE.WebGLRenderer({
-  canvas,
-  antialias: true,
-  powerPreference: 'high-performance',
-});
+let renderer = null;
 
 const PROFILES = {
   desktop: {
@@ -154,12 +139,16 @@ function detectInitialDeviceProfile() {
   if (explicit === 'tablet' || explicit === 'desktop') return explicit;
   const ua = typeof navigator !== 'undefined' ? String(navigator.userAgent || '') : '';
   const isMobileUa = /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(ua);
-  const isTouchScreen =
+  const hasCoarsePrimary = Boolean(window.matchMedia?.('(pointer: coarse)')?.matches);
+  const hasFinePrimary = Boolean(window.matchMedia?.('(pointer: fine)')?.matches);
+  const hasTouchInput =
     typeof navigator !== 'undefined' &&
-    !navigator.webdriver &&
-    (navigator.maxTouchPoints > 0 || window.matchMedia?.('(pointer: coarse)')?.matches) &&
-    window.innerWidth <= 1366;
-  return isMobileUa || isTouchScreen ? 'tablet' : 'desktop';
+    ((navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window);
+  const isTouchTablet =
+    isMobileUa ||
+    hasCoarsePrimary ||
+    (hasTouchInput && !hasFinePrimary && window.innerWidth <= 1920);
+  return isTouchTablet ? 'tablet' : 'desktop';
 }
 
 let activeProfile = detectInitialDeviceProfile();
@@ -173,13 +162,6 @@ if (typeof window !== 'undefined') {
   };
   window.addEventListener('touchstart', onFirstTouchAutoSwitch, { passive: true });
 }
-renderer.setPixelRatio(PROFILES[activeProfile].dpr);
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-// Keep linear HDR into EffectComposer; post.js performs the single unified filmic view transform
-renderer.toneMapping = THREE.NoToneMapping;
-renderer.toneMappingExposure = 1.0;
-renderer.shadowMap.enabled = false;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xd8eef5);
@@ -193,88 +175,213 @@ const camera = new THREE.PerspectiveCamera(
 );
 
 /* ------------------------------------------------------------------------- */
-/* 1. Time-of-Day Sky (Stylized Sun, Moon, Stars & 10 Cumulus Clouds)        */
+/* Non-Blocking Frame-Budget Slicer & Early Opening Flow Curtain             */
 /* ------------------------------------------------------------------------- */
 
-const sky = createTimeOfDaySky({
-  quality: 'high',
-  camera,
-});
-scene.add(sky.group);
+const isFastBoot =
+  typeof window !== 'undefined' &&
+  (Boolean(window.__vt) || Boolean(window.__SKIP_BOOT_SPLASH__));
+const BOOT_SLICE_BUDGET_MS = isFastBoot ? 14.0 : 7.5;
 
-/* ------------------------------------------------------------------------- */
-/* 2. Terrain, Water, Landmarks & Botanical Trees (Zero Duplicate Houses)    */
-/* ------------------------------------------------------------------------- */
-
-const terrainKit = createTerrainAndLandmarks(renderer, {
-  includeBuildings: false,
-  includeHorizonClouds: false,
-});
-scene.add(terrainKit.group);
-
-const landmarkEmissiveMats = [];
-terrainKit.landmarksGroup.traverse((obj) => {
-  if (obj.isMesh && obj.name.endsWith('-emissive') && obj.material) {
-    landmarkEmissiveMats.push(obj.material);
-  }
-});
-
-/* ------------------------------------------------------------------------- */
-/* 3. Tudor Village Houses Kit (5 Detailed Buildings + Colliders)            */
-/* ------------------------------------------------------------------------- */
-
-const housesKit = createHousesKit(renderer);
-const village = housesKit.buildAllVillageBuildings(BUILDINGS);
-scene.add(village.group);
-
-for (const c of village.colliders) {
-  terrainKit.colliders.push({
-    ...c,
-    hx: c.hx ?? c.halfW,
-    hz: c.hz ?? c.halfD,
-  });
+if (typeof window !== 'undefined' && window.__WORLD_VISUAL_READY__ === undefined) {
+  window.__WORLD_VISUAL_READY__ = false;
 }
 
-function indexLosslessGeometry(geo) {
+let lastBootHeartbeatRafAt = Date.now();
+if (!isFastBoot && typeof requestAnimationFrame === 'function') {
+  const bootHeartbeat = () => {
+    lastBootHeartbeatRafAt = Date.now();
+    if (typeof window !== 'undefined' && window.__WORLD_VISUAL_READY__ === false) {
+      requestAnimationFrame(bootHeartbeat);
+    }
+  };
+  requestAnimationFrame(bootHeartbeat);
+}
+
+const yieldBootSlice = () => {
+  if (
+    !isFastBoot &&
+    typeof requestAnimationFrame === 'function' &&
+    Date.now() - lastBootHeartbeatRafAt >= 13
+  ) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      requestAnimationFrame(finish);
+      setTimeout(finish, 30);
+    });
+  }
+  return new Promise((resolve) => setTimeout(resolve, 0));
+};
+
+function createBootSlicer(budgetMs = BOOT_SLICE_BUDGET_MS) {
+  let sliceStart = Date.now();
+  return {
+    sliceBudgetMs: budgetMs,
+    yieldFrame: yieldBootSlice,
+    async maybeYield() {
+      if (Date.now() - sliceStart >= budgetMs) {
+        await yieldBootSlice();
+        sliceStart = Date.now();
+      }
+    },
+    async yieldNow() {
+      await yieldBootSlice();
+      sliceStart = Date.now();
+    },
+    reset() {
+      sliceStart = Date.now();
+    },
+  };
+}
+
+const bootSlicer = createBootSlicer();
+
+let sky = null;
+let terrainKit = null;
+const landmarkEmissiveMats = [];
+let housesKit = null;
+let setHouseCutoutPlayerPos = () => {};
+let village = null;
+let meadow = null;
+let buildMeadowForProfile = () => {};
+let stoneDecals = null;
+let post = null;
+let coopSystem = null;
+let player = null;
+let STAGE5_GAMEPLAY_SHOTS = null;
+let playWideSurroundDivineVoice = () => null;
+let damageNumbers = null;
+let touchHud = null;
+let sculptedHud = null;
+let appFlow = null;
+let communeClient = null;
+let devStageOverride = null;
+
+async function indexLosslessGeometryAsync(geo, slicer) {
   if (!geo || geo.index || !geo.attributes?.position) return geo;
   const pos = geo.attributes.position;
   const vCount = pos.count;
   if (vCount < 6 || vCount % 3 !== 0) return geo;
 
-  const norm = geo.attributes.normal;
-  const uv = geo.attributes.uv;
-  const col = geo.attributes.color;
-  const extraNames = Object.keys(geo.attributes).filter(
-    (k) => k !== 'position' && k !== 'normal' && k !== 'uv' && k !== 'color'
-  );
+  const norm = geo.attributes.normal || null;
+  const uv = geo.attributes.uv || null;
+  const col = geo.attributes.color || null;
+  const extraAttrs = [];
+  for (const k of Object.keys(geo.attributes)) {
+    if (k !== 'position' && k !== 'normal' && k !== 'uv' && k !== 'color') {
+      if (geo.attributes[k]) extraAttrs.push(geo.attributes[k]);
+    }
+  }
 
-  const map = new Map();
+  const buckets = new Map();
   const indices = new Uint32Array(vCount);
-  const keepIndices = [];
+  const keepIndices = new Int32Array(vCount);
+  const outIdxOfSrc = new Int32Array(vCount);
   let uniqueCount = 0;
 
+  const sameVert = (a, b) => {
+    if (
+      Math.round(pos.getX(a) * 500) !== Math.round(pos.getX(b) * 500) ||
+      Math.round(pos.getY(a) * 500) !== Math.round(pos.getY(b) * 500) ||
+      Math.round(pos.getZ(a) * 500) !== Math.round(pos.getZ(b) * 500)
+    ) {
+      return false;
+    }
+    if (
+      norm &&
+      (Math.round(norm.getX(a) * 100) !== Math.round(norm.getX(b) * 100) ||
+        Math.round(norm.getY(a) * 100) !== Math.round(norm.getY(b) * 100) ||
+        Math.round(norm.getZ(a) * 100) !== Math.round(norm.getZ(b) * 100))
+    ) {
+      return false;
+    }
+    if (
+      uv &&
+      (Math.round(uv.getX(a) * 200) !== Math.round(uv.getX(b) * 200) ||
+        Math.round(uv.getY(a) * 200) !== Math.round(uv.getY(b) * 200))
+    ) {
+      return false;
+    }
+    if (
+      col &&
+      (Math.round(col.getX(a) * 100) !== Math.round(col.getX(b) * 100) ||
+        Math.round(col.getY(a) * 100) !== Math.round(col.getY(b) * 100) ||
+        Math.round(col.getZ(a) * 100) !== Math.round(col.getZ(b) * 100))
+    ) {
+      return false;
+    }
+    for (let e = 0; e < extraAttrs.length; e++) {
+      const attr = extraAttrs[e];
+      if (Math.round(attr.getX(a) * 100) !== Math.round(attr.getX(b) * 100)) return false;
+    }
+    return true;
+  };
+
   for (let i = 0; i < vCount; i++) {
-    let key = `${Math.round(pos.getX(i) * 500)},${Math.round(pos.getY(i) * 500)},${Math.round(pos.getZ(i) * 500)}`;
+    let h =
+      (Math.imul(Math.round(pos.getX(i) * 500), 73856093) ^
+        Math.imul(Math.round(pos.getY(i) * 500), 19349663) ^
+        Math.imul(Math.round(pos.getZ(i) * 500), 83492791)) |
+      0;
     if (norm) {
-      key += `,${Math.round(norm.getX(i) * 100)},${Math.round(norm.getY(i) * 100)},${Math.round(norm.getZ(i) * 100)}`;
+      h =
+        (Math.imul(h ^ Math.round(norm.getX(i) * 100), 16777619) ^
+          Math.imul(Math.round(norm.getY(i) * 100), 2246822519) ^
+          Math.round(norm.getZ(i) * 100)) |
+        0;
     }
     if (uv) {
-      key += `,${Math.round(uv.getX(i) * 200)},${Math.round(uv.getY(i) * 200)}`;
+      h =
+        (Math.imul(h ^ Math.round(uv.getX(i) * 200), 2654435761) ^
+          Math.round(uv.getY(i) * 200)) |
+        0;
     }
     if (col) {
-      key += `,${Math.round(col.getX(i) * 100)},${Math.round(col.getY(i) * 100)},${Math.round(col.getZ(i) * 100)}`;
+      h =
+        (Math.imul(h ^ Math.round(col.getX(i) * 100), 3266489917) ^
+          Math.imul(Math.round(col.getY(i) * 100), 668265263) ^
+          Math.round(col.getZ(i) * 100)) |
+        0;
     }
-    for (let e = 0; e < extraNames.length; e++) {
-      const attr = geo.attributes[extraNames[e]];
-      if (attr) key += `,${Math.round(attr.getX(i) * 100)}`;
+    for (let e = 0; e < extraAttrs.length; e++) {
+      h = Math.imul(h ^ Math.round(extraAttrs[e].getX(i) * 100), 16777619) | 0;
     }
-    let idx = map.get(key);
-    if (idx === undefined) {
+
+    const bucket = buckets.get(h);
+    let idx = -1;
+    if (bucket !== undefined) {
+      if (typeof bucket === 'number') {
+        if (sameVert(bucket, i)) {
+          idx = outIdxOfSrc[bucket];
+        } else {
+          buckets.set(h, [bucket, i]);
+        }
+      } else {
+        for (let b = 0; b < bucket.length; b++) {
+          const cand = bucket[b];
+          if (sameVert(cand, i)) {
+            idx = outIdxOfSrc[cand];
+            break;
+          }
+        }
+        if (idx === -1) bucket.push(i);
+      }
+    } else {
+      buckets.set(h, i);
+    }
+
+    if (idx === -1) {
       idx = uniqueCount++;
-      map.set(key, idx);
-      keepIndices.push(i);
+      keepIndices[idx] = i;
+      outIdxOfSrc[i] = idx;
     }
     indices[i] = idx;
+    if (slicer && (i & 127) === 127) await slicer.maybeYield();
   }
 
   if (uniqueCount >= vCount * 0.92) return geo;
@@ -290,6 +397,7 @@ function indexLosslessGeometry(geo) {
       for (let c = 0; c < itemSize; c++) {
         nextArr[dstIdx + c] = attr.array[srcIdx + c];
       }
+      if (slicer && (u & 255) === 255) await slicer.maybeYield();
     }
     out.setAttribute(name, new THREE.BufferAttribute(nextArr, itemSize, attr.normalized));
   }
@@ -395,6 +503,119 @@ function buildWeldedCloudGeometry(srcGeo, cellSize = 1.6) {
     outMeta[c3] = sumMeta[c3] * inv;
     outMeta[c3 + 1] = sumMeta[c3 + 1] * inv;
     outMeta[c3 + 2] = sumMeta[c3 + 2] * inv;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(outNorm, 3));
+  if (meta) {
+    geo.setAttribute('aCloudMeta', new THREE.BufferAttribute(outMeta, 3));
+  }
+  geo.setIndex(outIdx);
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+async function buildWeldedCloudGeometryAsync(srcGeo, cellSize = 1.6, slicer = null) {
+  if (!srcGeo?.attributes?.position) return srcGeo;
+  if (!slicer) return buildWeldedCloudGeometry(srcGeo, cellSize);
+  const pos = srcGeo.attributes.position;
+  const norm = srcGeo.attributes.normal;
+  const meta = srcGeo.attributes.aCloudMeta;
+  const vCount = pos.count;
+  const idxArr = srcGeo.index ? srcGeo.index.array : null;
+  const triCount = idxArr ? idxArr.length / 3 : Math.floor(vCount / 3);
+
+  const invCellXZ = 1.0 / cellSize;
+  const invCellY = 1.0 / (cellSize * 0.35);
+  const clusterMap = new Map();
+  const vertToCluster = new Int32Array(vCount).fill(-1);
+  const sumPos = [];
+  const sumNorm = [];
+  const sumMeta = [];
+  const counts = [];
+  let clusterCount = 0;
+
+  const getCluster = (vi) => {
+    let ci = vertToCluster[vi];
+    if (ci !== -1) return ci;
+    const x = pos.getX(vi);
+    const y = pos.getY(vi);
+    const z = pos.getZ(vi);
+    const hFactor = meta ? meta.getX(vi) : 0.5;
+    const phase = meta ? Math.round(meta.getZ(vi) * 10) : 0;
+    const hBucket = Math.round(hFactor * 10);
+    const nyBucket = norm ? Math.round(norm.getY(vi) * 4) : 0;
+    const key = `${Math.round(x * invCellXZ)},${Math.round(y * invCellY)},${Math.round(z * invCellXZ)},${hBucket},${nyBucket},${phase}`;
+    ci = clusterMap.get(key);
+    if (ci === undefined) {
+      ci = clusterCount++;
+      clusterMap.set(key, ci);
+      sumPos.push(0, 0, 0);
+      sumNorm.push(0, 0, 0);
+      sumMeta.push(0, 0, 0);
+      counts.push(0);
+    }
+    vertToCluster[vi] = ci;
+    const c3 = ci * 3;
+    sumPos[c3] += x;
+    sumPos[c3 + 1] += y;
+    sumPos[c3 + 2] += z;
+    if (norm) {
+      sumNorm[c3] += norm.getX(vi);
+      sumNorm[c3 + 1] += norm.getY(vi);
+      sumNorm[c3 + 2] += norm.getZ(vi);
+    }
+    if (meta) {
+      sumMeta[c3] += meta.getX(vi);
+      sumMeta[c3 + 1] += meta.getY(vi);
+      sumMeta[c3 + 2] += meta.getZ(vi);
+    }
+    counts[ci] += 1;
+    return ci;
+  };
+
+  const outIdx = [];
+  const seenTris = new Set();
+  for (let t = 0; t < triCount; t++) {
+    const i0 = idxArr ? idxArr[t * 3] : t * 3;
+    const i1 = idxArr ? idxArr[t * 3 + 1] : t * 3 + 1;
+    const i2 = idxArr ? idxArr[t * 3 + 2] : t * 3 + 2;
+    const a = getCluster(i0);
+    const b = getCluster(i1);
+    const c = getCluster(i2);
+    if (a === b || b === c || c === a) continue;
+    const min = Math.min(a, b, c);
+    const max = Math.max(a, b, c);
+    const mid = a + b + c - min - max;
+    const tk = `${min},${mid},${max}`;
+    if (!seenTris.has(tk)) {
+      seenTris.add(tk);
+      outIdx.push(a, b, c);
+    }
+    if ((t & 255) === 255) await slicer.maybeYield();
+  }
+
+  const outPos = new Float32Array(clusterCount * 3);
+  const outNorm = new Float32Array(clusterCount * 3);
+  const outMeta = new Float32Array(clusterCount * 3);
+  for (let i = 0; i < clusterCount; i++) {
+    const inv = 1.0 / Math.max(1, counts[i]);
+    const c3 = i * 3;
+    outPos[c3] = sumPos[c3] * inv;
+    outPos[c3 + 1] = sumPos[c3 + 1] * inv;
+    outPos[c3 + 2] = sumPos[c3 + 2] * inv;
+    const nx = sumNorm[c3];
+    const ny = sumNorm[c3 + 1];
+    const nz = sumNorm[c3 + 2];
+    const nLen = Math.hypot(nx, ny, nz) || 1.0;
+    outNorm[c3] = nx / nLen;
+    outNorm[c3 + 1] = ny / nLen;
+    outNorm[c3 + 2] = nz / nLen;
+    outMeta[c3] = sumMeta[c3] * inv;
+    outMeta[c3 + 1] = sumMeta[c3 + 1] * inv;
+    outMeta[c3 + 2] = sumMeta[c3 + 2] * inv;
+    if ((i & 511) === 511) await slicer.maybeYield();
   }
 
   const geo = new THREE.BufferGeometry();
@@ -530,6 +751,136 @@ function buildWeldedHorizonGeometry(srcGeo, cellSize = 15.0) {
   return geo;
 }
 
+async function buildWeldedHorizonGeometryAsync(srcGeo, cellSize = 15.0, slicer = null) {
+  if (!srcGeo?.attributes?.position) return srcGeo;
+  if (!slicer) return buildWeldedHorizonGeometry(srcGeo, cellSize);
+  const pos = srcGeo.attributes.position;
+  const norm = srcGeo.attributes.normal;
+  const col = srcGeo.attributes.color;
+  const vCount = pos.count;
+  const idxArr = srcGeo.index ? srcGeo.index.array : null;
+  const triCount = idxArr ? idxArr.length / 3 : Math.floor(vCount / 3);
+
+  const invCell = 1.0 / cellSize;
+  const clusterMap = new Map();
+  const vertToCluster = new Int32Array(vCount).fill(-1);
+  const sumPos = [];
+  const sumNorm = [];
+  const sumCol = [];
+  const counts = [];
+  let clusterCount = 0;
+
+  const getCluster = (vi, isNearHydro) => {
+    let ci = vertToCluster[vi];
+    if (ci !== -1) return ci;
+    const x = pos.getX(vi);
+    const y = pos.getY(vi);
+    const z = pos.getZ(vi);
+    const nx = norm ? norm.getX(vi) : 0;
+    const ny = norm ? norm.getY(vi) : 1;
+    const nz = norm ? norm.getZ(vi) : 0;
+    const r = col ? col.getX(vi) : 1;
+    const g = col ? col.getY(vi) : 1;
+    const b = col ? col.getZ(vi) : 1;
+
+    const key = isNearHydro
+      ? `H:${Math.round(x * 200)},${Math.round(y * 200)},${Math.round(z * 200)},${Math.round(nx * 50)},${Math.round(ny * 50)},${Math.round(nz * 50)},${Math.round(r * 50)},${Math.round(g * 50)},${Math.round(b * 50)}`
+      : `M:${Math.round(x * invCell)},${Math.round(y * invCell)},${Math.round(z * invCell)},${Math.round(r * 10)},${Math.round(g * 10)},${Math.round(b * 10)}`;
+
+    ci = clusterMap.get(key);
+    if (ci === undefined) {
+      ci = clusterCount++;
+      clusterMap.set(key, ci);
+      sumPos.push(0, 0, 0);
+      sumNorm.push(0, 0, 0);
+      sumCol.push(0, 0, 0);
+      counts.push(0);
+    }
+    vertToCluster[vi] = ci;
+    const c3 = ci * 3;
+    sumPos[c3] += x;
+    sumPos[c3 + 1] += y;
+    sumPos[c3 + 2] += z;
+    sumNorm[c3] += nx;
+    sumNorm[c3 + 1] += ny;
+    sumNorm[c3 + 2] += nz;
+    sumCol[c3] += r;
+    sumCol[c3 + 1] += g;
+    sumCol[c3 + 2] += b;
+    counts[ci] += 1;
+    return ci;
+  };
+
+  const outIdx = [];
+  const seenTris = new Set();
+  for (let t = 0; t < triCount; t++) {
+    const i0 = idxArr ? idxArr[t * 3] : t * 3;
+    const i1 = idxArr ? idxArr[t * 3 + 1] : t * 3 + 1;
+    const i2 = idxArr ? idxArr[t * 3 + 2] : t * 3 + 2;
+    const cx = (pos.getX(i0) + pos.getX(i1) + pos.getX(i2)) / 3;
+    const cz = (pos.getZ(i0) + pos.getZ(i1) + pos.getZ(i2)) / 3;
+    const rDist = Math.hypot(cx, cz);
+    const isNearHydro = rDist <= 185.0;
+
+    let skip = false;
+    if (!isNearHydro && norm && rDist > 265.0) {
+      const cnx = (norm.getX(i0) + norm.getX(i1) + norm.getX(i2)) / 3;
+      const cnz = (norm.getZ(i0) + norm.getZ(i1) + norm.getZ(i2)) / 3;
+      const radialDot = (cx * cnx + cz * cnz) / Math.max(1.0, rDist);
+      if (radialDot > 0.32) skip = true;
+    }
+
+    if (!skip) {
+      const a = getCluster(i0, isNearHydro);
+      const b = getCluster(i1, isNearHydro);
+      const c = getCluster(i2, isNearHydro);
+      if (a !== b && b !== c && c !== a) {
+        const min = Math.min(a, b, c);
+        const max = Math.max(a, b, c);
+        const mid = a + b + c - min - max;
+        const tk = `${min},${mid},${max}`;
+        if (!seenTris.has(tk)) {
+          seenTris.add(tk);
+          outIdx.push(a, b, c);
+        }
+      }
+    }
+    if ((t & 255) === 255) await slicer.maybeYield();
+  }
+
+  const outPos = new Float32Array(clusterCount * 3);
+  const outNorm = new Float32Array(clusterCount * 3);
+  const outCol = new Float32Array(clusterCount * 3);
+  for (let i = 0; i < clusterCount; i++) {
+    const inv = 1.0 / Math.max(1, counts[i]);
+    const c3 = i * 3;
+    outPos[c3] = sumPos[c3] * inv;
+    outPos[c3 + 1] = sumPos[c3 + 1] * inv;
+    outPos[c3 + 2] = sumPos[c3 + 2] * inv;
+    const nx = sumNorm[c3];
+    const ny = sumNorm[c3 + 1];
+    const nz = sumNorm[c3 + 2];
+    const nLen = Math.hypot(nx, ny, nz) || 1.0;
+    outNorm[c3] = nx / nLen;
+    outNorm[c3 + 1] = ny / nLen;
+    outNorm[c3 + 2] = nz / nLen;
+    outCol[c3] = sumCol[c3] * inv;
+    outCol[c3 + 1] = sumCol[c3 + 1] * inv;
+    outCol[c3 + 2] = sumCol[c3 + 2] * inv;
+    if ((i & 511) === 511) await slicer.maybeYield();
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(outNorm, 3));
+  if (col) {
+    geo.setAttribute('color', new THREE.BufferAttribute(outCol, 3));
+  }
+  geo.setIndex(outIdx);
+  geo.computeBoundingSphere();
+  return geo;
+}
+
 function buildTabletRoofTileGeometry() {
   const hw = 0.24;
   const hl = 0.22;
@@ -551,61 +902,15 @@ function buildTabletRoofTileGeometry() {
 
 let _staticSceneIndexed = false;
 let roofTilesCombinedMesh = null;
-function syncStaticSceneProfile(profileName) {
-  const isTablet = profileName === 'tablet';
 
-  if (!_staticSceneIndexed) {
-    _staticSceneIndexed = true;
-    const staticRoots = [sky?.group, terrainKit?.group, village?.group];
-    for (const root of staticRoots) {
-      if (!root) continue;
-      root.traverse((obj) => {
-        if (!obj.isMesh || !obj.geometry) return;
-        if (obj.name === 'todCumulusRing') {
-          if (obj.material) obj.material.side = THREE.FrontSide;
-          const indexedDesktop = indexLosslessGeometry(obj.geometry);
-          obj.userData._desktopGeo = indexedDesktop;
-          obj.userData._tabletGeo = buildWeldedCloudGeometry(obj.geometry, 1.6);
-          obj.geometry = indexedDesktop;
-          return;
-        }
-        let isAlpineHorizon = false;
-        let p = obj;
-        while (p) {
-          if (p.name === 'sky-and-alpine-horizon') {
-            isAlpineHorizon = true;
-            break;
-          }
-          p = p.parent;
-        }
-        if (
-          isAlpineHorizon &&
-          !obj.userData?.isOutline &&
-          !obj.name?.toLowerCase().includes('outline') &&
-          obj.geometry.attributes?.position?.count > 10000
-        ) {
-          const indexedDesktop = indexLosslessGeometry(obj.geometry);
-          obj.userData._desktopGeo = indexedDesktop;
-          obj.userData._tabletGeo = buildWeldedHorizonGeometry(obj.geometry, 15.0);
-          obj.geometry = indexedDesktop;
-          return;
-        }
-        if (obj.isInstancedMesh && (obj.name === 'roof-tiles-combined' || obj.userData?.isRoofTiles)) {
-          const indexedDesktop = indexLosslessGeometry(obj.geometry);
-          obj.userData._desktopGeo = indexedDesktop;
-          obj.userData._tabletGeo = buildTabletRoofTileGeometry();
-          obj.geometry = indexedDesktop;
-          return;
-        }
-        if (!obj.geometry.index) {
-          obj.geometry = indexLosslessGeometry(obj.geometry);
-        }
-      });
-    }
-  }
+function applyProfileToStaticMeshes(profileName) {
+  const isTablet = profileName === 'tablet';
 
   sky?.group?.traverse?.((obj) => {
     if (obj.isMesh && obj.name === 'todCumulusRing') {
+      if (isTablet && !obj.userData._tabletGeo && obj.userData._desktopGeo) {
+        obj.userData._tabletGeo = buildWeldedCloudGeometry(obj.userData._desktopGeo, 1.6);
+      }
       if (obj.userData._tabletGeo && obj.userData._desktopGeo) {
         obj.geometry = isTablet ? obj.userData._tabletGeo : obj.userData._desktopGeo;
       }
@@ -621,6 +926,9 @@ function syncStaticSceneProfile(profileName) {
     ) {
       obj.visible = !isTablet;
       return;
+    }
+    if (isTablet && obj.userData._needsTabletHorizonWeld && !obj.userData._tabletGeo && obj.userData._desktopGeo) {
+      obj.userData._tabletGeo = buildWeldedHorizonGeometry(obj.userData._desktopGeo, 15.0);
     }
     if (obj.userData._tabletGeo && obj.userData._desktopGeo) {
       obj.geometry = isTablet ? obj.userData._tabletGeo : obj.userData._desktopGeo;
@@ -639,6 +947,9 @@ function syncStaticSceneProfile(profileName) {
     }
     if (obj.isInstancedMesh && (obj.name === 'roof-tiles-combined' || obj.userData?.isRoofTiles)) {
       roofTilesCombinedMesh = obj;
+      if (isTablet && !obj.userData._tabletGeo && obj.userData._desktopGeo) {
+        obj.userData._tabletGeo = buildTabletRoofTileGeometry();
+      }
       if (obj.userData._tabletGeo && obj.userData._desktopGeo) {
         obj.geometry = isTablet ? obj.userData._tabletGeo : obj.userData._desktopGeo;
       }
@@ -646,142 +957,262 @@ function syncStaticSceneProfile(profileName) {
   });
 }
 
-syncStaticSceneProfile(activeProfile);
+function syncStaticSceneProfile(profileName) {
+  applyProfileToStaticMeshes(profileName);
+}
+
+async function syncStaticSceneProfileAsync(profileName, slicer) {
+  const isTablet = profileName === 'tablet';
+
+  if (!_staticSceneIndexed) {
+    _staticSceneIndexed = true;
+    const staticRoots = [sky?.group, terrainKit?.group, village?.group];
+    const staticMeshes = [];
+    for (const root of staticRoots) {
+      if (!root) continue;
+      root.traverse((obj) => {
+        if (obj.isMesh && obj.geometry) staticMeshes.push(obj);
+      });
+    }
+    for (let m = 0; m < staticMeshes.length; m++) {
+      const obj = staticMeshes[m];
+      if (obj.name === 'todCumulusRing') {
+        if (obj.material) obj.material.side = THREE.FrontSide;
+        const indexedDesktop = await indexLosslessGeometryAsync(obj.geometry, slicer);
+        obj.userData._desktopGeo = indexedDesktop;
+        if (isTablet) {
+          obj.userData._tabletGeo = await buildWeldedCloudGeometryAsync(indexedDesktop, 1.6, slicer);
+        }
+        obj.geometry = indexedDesktop;
+        await slicer.maybeYield();
+        continue;
+      }
+      let isAlpineHorizon = false;
+      let p = obj;
+      while (p) {
+        if (p.name === 'sky-and-alpine-horizon') {
+          isAlpineHorizon = true;
+          break;
+        }
+        p = p.parent;
+      }
+      if (
+        isAlpineHorizon &&
+        !obj.userData?.isOutline &&
+        !obj.name?.toLowerCase().includes('outline') &&
+        obj.geometry.attributes?.position?.count > 10000
+      ) {
+        const indexedDesktop = await indexLosslessGeometryAsync(obj.geometry, slicer);
+        obj.userData._desktopGeo = indexedDesktop;
+        obj.userData._needsTabletHorizonWeld = true;
+        if (isTablet) {
+          obj.userData._tabletGeo = await buildWeldedHorizonGeometryAsync(indexedDesktop, 15.0, slicer);
+        }
+        obj.geometry = indexedDesktop;
+        await slicer.maybeYield();
+        continue;
+      }
+      if (obj.isInstancedMesh && (obj.name === 'roof-tiles-combined' || obj.userData?.isRoofTiles)) {
+        const indexedDesktop = await indexLosslessGeometryAsync(obj.geometry, slicer);
+        obj.userData._desktopGeo = indexedDesktop;
+        if (isTablet) {
+          obj.userData._tabletGeo = buildTabletRoofTileGeometry();
+        }
+        obj.geometry = indexedDesktop;
+        await slicer.maybeYield();
+        continue;
+      }
+      if (!obj.geometry.index) {
+        obj.geometry = await indexLosslessGeometryAsync(obj.geometry, slicer);
+      }
+      await slicer.maybeYield();
+    }
+  }
+
+  applyProfileToStaticMeshes(profileName);
+}
 
 /* ------------------------------------------------------------------------- */
 /* 4. Toroidal Gouache Meadow & Valley-Wide Wildflower Drifts                */
 /* ------------------------------------------------------------------------- */
 
-function populateValleyWildflowerDrifts(meadowInstance) {
-  const colonies = [
-    // Zone E: Southern Flower Field Lobby (0, 128) — Roadside Verge & Meadow Drifts (Option 3 + Option 4 framing!)
-    { x: -5.4, z: 135.5, r: 4.8 },
-    { x: 5.4, z: 135.5, r: 4.8 },
-    { x: -6.2, z: 129.0, r: 5.2 },
-    { x: 6.2, z: 129.0, r: 5.2 },
-    { x: -5.8, z: 122.0, r: 5.2 },
-    { x: 5.8, z: 122.0, r: 5.2 },
-    { x: -11.5, z: 133.5, r: 8.5 },
-    { x: 11.5, z: 133.5, r: 8.5 },
-    { x: -14.0, z: 121.0, r: 9.0 },
-    { x: 14.0, z: 121.0, r: 9.0 },
-    { x: -8.5, z: 140.5, r: 8.5 },
-    { x: 8.5, z: 140.5, r: 8.5 },
-    { x: -16.5, z: 102.0, r: 8.5 },
-    { x: 11.5, z: 98.0, r: 8.5 },
-    { x: -24.0, z: 82.0, r: 8.5 },
-    { x: 16.5, z: 76.0, r: 8.5 },
-    { x: -12.5, z: 58.0, r: 8.5 },
-    { x: 26.5, z: 48.0, r: 8.5 },
-    // Zone A: Hamlet Well Plaza & Cottage Perimeter Meadows
-    { x: -7.5, z: 16.5, r: 7.5 },
-    { x: 8.5, z: 17.0, r: 7.5 },
-    { x: -23.5, z: -2.0, r: 8.0 },
-    { x: 24.5, z: -1.5, r: 8.0 },
-    { x: -18.5, z: 22.5, r: 7.5 },
-    { x: 19.5, z: 22.0, r: 7.5 },
-    { x: -5.5, z: 32.0, r: 9.0 },
-    { x: 6.5, z: 34.0, r: 9.0 },
-    // Zone B: West Millpond, Waterfall & Pier Meadow
-    { x: -24.5, z: 13.5, r: 7.5 },
-    { x: -31.0, z: 15.0, r: 7.0 },
-    { x: -29.5, z: -11.5, r: 8.0 },
-    { x: -36.5, z: -28.0, r: 8.0 },
-    { x: -82.0, z: -12.0, r: 8.5 },
-    { x: -86.0, z: 12.0, r: 8.5 },
-    // Zone C: East Wisteria Combat Ring & Approach Way
-    { x: 32.0, z: 3.5, r: 8.0 },
-    { x: 42.0, z: -9.5, r: 8.0 },
-    { x: 45.5, z: 6.5, r: 7.5 },
-    { x: 68.0, z: -27.5, r: 8.5 },
-    { x: 68.0, z: 19.5, r: 8.5 },
-    { x: 91.0, z: -11.0, r: 8.0 },
-    { x: 89.5, z: 7.0, r: 8.0 },
-    { x: 98.0, z: -20.0, r: 8.5 },
-    { x: 98.0, z: 15.0, r: 8.5 },
-    // Zone D: Outer North Shrine Summit & Far Valley Meadows (zero flowers on staircase hillside!)
-    { x: -42.0, z: -46.0, r: 7.0 },
-    { x: 42.0, z: -46.0, r: 7.0 },
-    { x: -38.5, z: -64.0, r: 7.0 },
-    { x: 38.5, z: -64.0, r: 7.0 },
-    { x: -21.5, z: -84.0, r: 7.0 },
-    { x: 21.5, z: -84.0, r: 7.0 },
-    { x: -16.0, z: -96.0, r: 7.0 },
-    { x: 16.0, z: -96.0, r: 7.0 },
-  ];
+const WILDFLOWER_DRIFT_COLONIES = [
+  // Zone E: Southern Flower Field Lobby (0, 128) — Roadside Verge & Meadow Drifts (Option 3 + Option 4 framing!)
+  { x: -5.4, z: 135.5, r: 4.8 },
+  { x: 5.4, z: 135.5, r: 4.8 },
+  { x: -6.2, z: 129.0, r: 5.2 },
+  { x: 6.2, z: 129.0, r: 5.2 },
+  { x: -5.8, z: 122.0, r: 5.2 },
+  { x: 5.8, z: 122.0, r: 5.2 },
+  { x: -11.5, z: 133.5, r: 8.5 },
+  { x: 11.5, z: 133.5, r: 8.5 },
+  { x: -14.0, z: 121.0, r: 9.0 },
+  { x: 14.0, z: 121.0, r: 9.0 },
+  { x: -8.5, z: 140.5, r: 8.5 },
+  { x: 8.5, z: 140.5, r: 8.5 },
+  { x: -16.5, z: 102.0, r: 8.5 },
+  { x: 11.5, z: 98.0, r: 8.5 },
+  { x: -24.0, z: 82.0, r: 8.5 },
+  { x: 16.5, z: 76.0, r: 8.5 },
+  { x: -12.5, z: 58.0, r: 8.5 },
+  { x: 26.5, z: 48.0, r: 8.5 },
+  // Zone A: Hamlet Well Plaza & Cottage Perimeter Meadows
+  { x: -7.5, z: 16.5, r: 7.5 },
+  { x: 8.5, z: 17.0, r: 7.5 },
+  { x: -23.5, z: -2.0, r: 8.0 },
+  { x: 24.5, z: -1.5, r: 8.0 },
+  { x: -18.5, z: 22.5, r: 7.5 },
+  { x: 19.5, z: 22.0, r: 7.5 },
+  { x: -5.5, z: 32.0, r: 9.0 },
+  { x: 6.5, z: 34.0, r: 9.0 },
+  // Zone B: West Millpond, Waterfall & Pier Meadow
+  { x: -24.5, z: 13.5, r: 7.5 },
+  { x: -31.0, z: 15.0, r: 7.0 },
+  { x: -29.5, z: -11.5, r: 8.0 },
+  { x: -36.5, z: -28.0, r: 8.0 },
+  { x: -82.0, z: -12.0, r: 8.5 },
+  { x: -86.0, z: 12.0, r: 8.5 },
+  // Zone C: East Wisteria Combat Ring & Approach Way
+  { x: 32.0, z: 3.5, r: 8.0 },
+  { x: 42.0, z: -9.5, r: 8.0 },
+  { x: 45.5, z: 6.5, r: 7.5 },
+  { x: 68.0, z: -27.5, r: 8.5 },
+  { x: 68.0, z: 19.5, r: 8.5 },
+  { x: 91.0, z: -11.0, r: 8.0 },
+  { x: 89.5, z: 7.0, r: 8.0 },
+  { x: 98.0, z: -20.0, r: 8.5 },
+  { x: 98.0, z: 15.0, r: 8.5 },
+  // Zone D: Outer North Shrine Summit & Far Valley Meadows (zero flowers on staircase hillside!)
+  { x: -42.0, z: -46.0, r: 7.0 },
+  { x: 42.0, z: -46.0, r: 7.0 },
+  { x: -38.5, z: -64.0, r: 7.0 },
+  { x: 38.5, z: -64.0, r: 7.0 },
+  { x: -21.5, z: -84.0, r: 7.0 },
+  { x: 21.5, z: -84.0, r: 7.0 },
+  { x: -16.0, z: -96.0, r: 7.0 },
+  { x: 16.0, z: -96.0, r: 7.0 },
+];
 
+let flowersMod = null;
+let treeShadowData = null;
+
+function populateSpeciesDriftSync(meadowInstance, key, sIdx, dummy, MEADOW_PROFILES) {
+  const imesh = meadowInstance.flowerMeshes[key];
+  if (imesh?.material?.uniforms?.uIsToroidal?.value > 0.5) return;
+  if (imesh.material?.uniforms) {
+    imesh.material.uniforms.uFadeStart.value = 158.0;
+    imesh.material.uniforms.uFadeEnd.value = 172.0;
+  }
+  if (key === 'crimsonRose' || imesh.userData?.lockedSacredRings) return;
+  const targetCount = MEADOW_PROFILES[activeProfile]?.counts?.[key] || imesh.count || 200;
+
+  let placed = 0;
+  let attempt = 0;
+  while (placed < targetCount && attempt < targetCount * 12) {
+    attempt++;
+    const cIdx = (placed + sIdx * 3) % WILDFLOWER_DRIFT_COLONIES.length;
+    const col = WILDFLOWER_DRIFT_COLONIES[cIdx];
+    const ang = hash(attempt * 7.13 + sIdx * 31.7) * Math.PI * 2;
+    const rad = Math.sqrt(hash(attempt * 11.3 + sIdx * 17.9)) * col.r;
+    const x = col.x + Math.cos(ang) * rad;
+    const z = col.z + Math.sin(ang) * rad;
+
+    if (z < -15.0 && z > -73.0 && Math.abs(x) < 35.0) continue;
+    const sw = sampleWorld(x, z);
+    if (sw.foliageMask < 0.5) continue;
+    if (key === 'toonShrub' && z > 110.0 && Math.abs(x) < 6.2) continue;
+
+    dummy.position.set(x, terrainHeightAt(x, z), z);
+    const rotY =
+      key === 'toonShrub'
+        ? 0.58 + (hash(attempt * 9.1 + sIdx) - 0.5) * 0.95
+        : hash(attempt * 9.1 + sIdx) * Math.PI * 2;
+    dummy.rotation.set(0, rotY, 0);
+    const sc =
+      key === 'toonShrub'
+        ? 1.06 + hash(attempt * 15.7) * 0.44
+        : 1.02 + hash(attempt * 17.3) * 0.46;
+    dummy.scale.set(sc, sc, sc);
+    dummy.updateMatrix();
+    imesh.setMatrixAt(placed, dummy.matrix);
+    placed++;
+  }
+  imesh.count = placed;
+  imesh.instanceMatrix.needsUpdate = true;
+  meadowInstance.instanceCounts[key] = placed;
+}
+
+function populateValleyWildflowerDrifts(meadowInstance) {
   const dummy = new THREE.Object3D();
   const keys = Object.keys(meadowInstance.flowerMeshes);
+  keys.forEach((key, sIdx) =>
+    populateSpeciesDriftSync(meadowInstance, key, sIdx, dummy, flowersMod.MEADOW_PROFILES)
+  );
+  meadowInstance.rebuildFlowerSectors?.();
+}
 
-  keys.forEach((key, sIdx) => {
+async function populateValleyWildflowerDriftsAsync(meadowInstance, slicer) {
+  const dummy = new THREE.Object3D();
+  const keys = Object.keys(meadowInstance.flowerMeshes);
+  for (let sIdx = 0; sIdx < keys.length; sIdx++) {
+    const key = keys[sIdx];
     const imesh = meadowInstance.flowerMeshes[key];
-    // Preserve toroidal wildflower carpets (uIsToroidal > 0.5) so their camera-anchored toroidal fade radii and matrices stay intact
-    if (imesh?.material?.uniforms?.uIsToroidal?.value > 0.5) {
-      return;
-    }
+    if (imesh?.material?.uniforms?.uIsToroidal?.value > 0.5) continue;
     if (imesh.material?.uniforms) {
       imesh.material.uniforms.uFadeStart.value = 158.0;
       imesh.material.uniforms.uFadeEnd.value = 172.0;
     }
-    // Preserve diegetic Crimson Rose rings around the 3 Sacred Inscription Stones
-    if (key === 'crimsonRose' || imesh.userData?.lockedSacredRings) {
-      return;
-    }
-    const targetCount = MEADOW_PROFILES[activeProfile]?.counts?.[key] || imesh.count || 200;
+    if (key === 'crimsonRose' || imesh.userData?.lockedSacredRings) continue;
+    const targetCount = flowersMod.MEADOW_PROFILES[activeProfile]?.counts?.[key] || imesh.count || 200;
 
     let placed = 0;
     let attempt = 0;
     while (placed < targetCount && attempt < targetCount * 12) {
       attempt++;
-      const cIdx = (placed + sIdx * 3) % colonies.length;
-      const col = colonies[cIdx];
+      const cIdx = (placed + sIdx * 3) % WILDFLOWER_DRIFT_COLONIES.length;
+      const col = WILDFLOWER_DRIFT_COLONIES[cIdx];
       const ang = hash(attempt * 7.13 + sIdx * 31.7) * Math.PI * 2;
       const rad = Math.sqrt(hash(attempt * 11.3 + sIdx * 17.9)) * col.r;
       const x = col.x + Math.cos(ang) * rad;
       const z = col.z + Math.sin(ang) * rad;
 
-      // Keep the entire North Shrine Grand Staircase hillside (z = -15..-73, |x| < 35)
-      // a clean, serene Studio Ghibli emerald lawn with zero sub-pixel flower confetti
-      if (z < -15.0 && z > -73.0 && Math.abs(x) < 35.0) continue;
-
-      const sw = sampleWorld(x, z);
-      if (sw.foliageMask < 0.5) continue;
-      // Keep tall Feathery Pampas Plumes (`toonShrub`) on the outer meadow flanks (|x| >= 6.2m in the Southern Lobby)
-      // so the immediate roadside border showcases Option 4's grass tussocks, clover, roses, and daisies!
-      if (key === 'toonShrub' && z > 110.0 && Math.abs(x) < 6.2) continue;
-
-      dummy.position.set(x, terrainHeightAt(x, z), z);
-      // Align Feathery Pampas Plumes (`toonShrub`) predominantly with the valley wind so plumes nod downwind together!
-      const rotY =
-        key === 'toonShrub'
-          ? 0.58 + (hash(attempt * 9.1 + sIdx) - 0.5) * 0.95
-          : hash(attempt * 9.1 + sIdx) * Math.PI * 2;
-      dummy.rotation.set(0, rotY, 0);
-      const sc =
-        key === 'toonShrub'
-          ? 1.06 + hash(attempt * 15.7) * 0.44
-          : 1.02 + hash(attempt * 17.3) * 0.46;
-      dummy.scale.set(sc, sc, sc);
-      dummy.updateMatrix();
-      imesh.setMatrixAt(placed, dummy.matrix);
-      placed++;
+      if (!(z < -15.0 && z > -73.0 && Math.abs(x) < 35.0)) {
+        const sw = sampleWorld(x, z);
+        if (sw.foliageMask >= 0.5 && !(key === 'toonShrub' && z > 110.0 && Math.abs(x) < 6.2)) {
+          dummy.position.set(x, terrainHeightAt(x, z), z);
+          const rotY =
+            key === 'toonShrub'
+              ? 0.58 + (hash(attempt * 9.1 + sIdx) - 0.5) * 0.95
+              : hash(attempt * 9.1 + sIdx) * Math.PI * 2;
+          dummy.rotation.set(0, rotY, 0);
+          const sc =
+            key === 'toonShrub'
+              ? 1.06 + hash(attempt * 15.7) * 0.44
+              : 1.02 + hash(attempt * 17.3) * 0.46;
+          dummy.scale.set(sc, sc, sc);
+          dummy.updateMatrix();
+          imesh.setMatrixAt(placed, dummy.matrix);
+          placed++;
+        }
+      }
+      if ((attempt & 127) === 127) await slicer.maybeYield();
     }
     imesh.count = placed;
     imesh.instanceMatrix.needsUpdate = true;
     meadowInstance.instanceCounts[key] = placed;
-  });
+    await slicer.maybeYield();
+  }
   meadowInstance.rebuildFlowerSectors?.();
 }
 
-let meadow = null;
-const treeShadowData = buildTreeShadowUniformArray();
-function buildMeadowForProfile(profileName) {
+buildMeadowForProfile = function buildMeadowForProfileImpl(profileName) {
+  if (!flowersMod || !terrainKit || !treeShadowData) return;
   if (meadow) {
     scene.remove(meadow.group);
     meadow.dispose();
   }
   const cfg = PROFILES[profileName] || PROFILES.desktop;
-  meadow = createToroidalMeadow({
+  meadow = flowersMod.createToroidalMeadow({
     profile: cfg.meadowProfile || 'desktop',
     worldMaskTexture: terrainKit.worldMaskTex,
     sampleHeight: terrainHeightAt,
@@ -791,7 +1222,7 @@ function buildMeadowForProfile(profileName) {
   });
   if (meadow.grassMesh) {
     if (profileName === 'tablet') {
-      meadow.grassMesh.geometry = buildGrassTuft({ profile: profileName });
+      meadow.grassMesh.geometry = flowersMod.buildGrassTuft({ profile: profileName });
     }
     if (cfg.maxGrassTufts) {
       meadow.grassMesh.count = Math.min(meadow.grassMesh.count, cfg.maxGrassTufts);
@@ -800,9 +1231,41 @@ function buildMeadowForProfile(profileName) {
   }
   populateValleyWildflowerDrifts(meadow);
   scene.add(meadow.group);
-}
+};
 
-buildMeadowForProfile(activeProfile);
+async function buildMeadowForProfileAsync(profileName, slicer) {
+  if (meadow) {
+    scene.remove(meadow.group);
+    meadow.dispose();
+  }
+  const cfg = PROFILES[profileName] || PROFILES.desktop;
+  const meadowOpts = {
+    profile: cfg.meadowProfile || 'desktop',
+    worldMaskTexture: terrainKit.worldMaskTex,
+    sampleHeight: terrainHeightAt,
+    worldExtent: INNER_EXTENT,
+    treeShadows: treeShadowData.treeShadowVecs,
+    treeCount: treeShadowData.treeCount,
+    yieldFrame: slicer.yieldFrame,
+    sliceBudgetMs: slicer.sliceBudgetMs,
+  };
+  meadow =
+    typeof flowersMod.createToroidalMeadowAsync === 'function'
+      ? await flowersMod.createToroidalMeadowAsync(meadowOpts)
+      : flowersMod.createToroidalMeadow(meadowOpts);
+  await slicer.maybeYield();
+  if (meadow.grassMesh) {
+    if (profileName === 'tablet') {
+      meadow.grassMesh.geometry = flowersMod.buildGrassTuft({ profile: profileName });
+    }
+    if (cfg.maxGrassTufts) {
+      meadow.grassMesh.count = Math.min(meadow.grassMesh.count, cfg.maxGrassTufts);
+      meadow.instanceCounts.grassTuft = meadow.grassMesh.count;
+    }
+  }
+  await populateValleyWildflowerDriftsAsync(meadow, slicer);
+  scene.add(meadow.group);
+}
 
 /* ------------------------------------------------------------------------- */
 /* 5. Collision Resolution & Whispering Mountain Mist Boundary Turnback      */
@@ -836,7 +1299,7 @@ function resolveCollisions(px, pz, radius) {
     }
   }
 
-  for (const c of terrainKit.colliders) {
+  for (const c of terrainKit?.colliders || []) {
     if (c.type === 'circle') {
       const dx = x - c.x;
       const dz = z - c.z;
@@ -1165,9 +1628,23 @@ function updateCoopPill(roomState) {
       ? `Co-Op Linked (${roomState.role})`
       : 'Wingman AI';
   }
-  if (coopRoomCodeEl && roomState.room) {
-    coopRoomCodeEl.textContent = roomState.room;
-  }
+    if (sculptedHud && typeof sculptedHud.setRoomState === 'function') {
+      sculptedHud.setRoomState({
+        roomCode: roomState.room || coopSystem?.coopClient?.getRoomCode?.() || 'LOVE',
+        roomPhrase:
+          roomState.roomPhrase ||
+          coopSystem?.coopClient?.getState?.()?.roomPhrase ||
+          appFlow?.getState?.()?.roomPhrase ||
+          roomState.room ||
+          'LOVE',
+        shareUrl: coopSystem?.coopClient?.getShareUrl?.() || '',
+        peerConnected: linked,
+        role: roomState.role || coopSystem?.player?.activeHeroId || 'Knight',
+      });
+    }
+    if (coopRoomCodeEl && roomState.room) {
+      coopRoomCodeEl.textContent = roomState.room;
+    }
 
   const players = Array.isArray(roomState.players) ? roomState.players : [];
   const localPlayer =
@@ -1310,11 +1787,6 @@ function playDivineVerdictVoice(judgment) {
   return playWideSurroundDivineVoice(judgment);
 }
 
-let sculptedHud = null;
-let appFlow = null;
-let communeClient = null;
-let devStageOverride = null;
-
 // Declare camState & camera vectors BEFORE createSculptedHud / createAppFlow
 // so applyOpeningFlowCameraAndPoses() never hits a TDZ ReferenceError on boot!
 const camState = {
@@ -1323,6 +1795,8 @@ const camState = {
   pitch: 0.10,
   dist: 8.6,
   baseFov: 50,
+  sensitivity: 'high',
+  orbitCooldown: 0,
   vistaPos: new THREE.Vector3(5.2, 3.8, 23.2),
   vistaTarget: new THREE.Vector3(-3.2, 5.8, -16.0),
 };
@@ -1339,6 +1813,34 @@ const _camImpactLook = new THREE.Vector3();
 const _camImpactFov = { value: 0 };
 const _vfxLookOffset = new THREE.Vector3();
 
+const STONE_ID_TO_LEGACY = Object.freeze({
+  site1_well: 'stone_plaza',
+  site1: 'stone_plaza',
+  stone_plaza: 'stone_plaza',
+  plaza: 'stone_plaza',
+  well: 'stone_plaza',
+  site2_platform: 'stone_grove',
+  site2: 'stone_grove',
+  stone_grove: 'stone_grove',
+  grove: 'stone_grove',
+  platform: 'stone_grove',
+  site3_wall: 'stone_pier',
+  site3: 'stone_pier',
+  stone_pier: 'stone_pier',
+  pier: 'stone_pier',
+  wall: 'stone_pier',
+  cottage_wall: 'stone_pier',
+});
+
+function normalizeLegacyStoneId(idOrObj) {
+  const raw =
+    typeof idOrObj === 'object' && idOrObj !== null
+      ? idOrObj.legacyId || idOrObj.id || idOrObj.siteId || idOrObj.siteKey
+      : idOrObj;
+  const key = String(raw || '').trim().toLowerCase();
+  return STONE_ID_TO_LEGACY[key] || 'stone_plaza';
+}
+
 const stoneGazeState = {
   activeStoneId: null,
   nearbyStone: null,
@@ -1351,9 +1853,9 @@ const stoneGazeState = {
   cameraLookDot: 0,
   inActiveMeleeDanger: false,
   stones: {
-    stone_plaza: { id: 'stone_plaza', gazeElapsed: 0, unlocked: false },
-    stone_pier: { id: 'stone_pier', gazeElapsed: 0, unlocked: false },
-    stone_grove: { id: 'stone_grove', gazeElapsed: 0, unlocked: false },
+    stone_plaza: { id: 'stone_plaza', canonicalId: 'site1_well', gazeElapsed: 0, unlocked: false },
+    stone_pier: { id: 'stone_pier', canonicalId: 'site3_wall', gazeElapsed: 0, unlocked: false },
+    stone_grove: { id: 'stone_grove', canonicalId: 'site2_platform', gazeElapsed: 0, unlocked: false },
   },
 };
 
@@ -1382,31 +1884,38 @@ export function isUiOverlayBlockingInput() {
 /* 6B. Pure 3D Inscribed Stone Geometry (SVG Borders + 3D Vector Font Poems) */
 /* ------------------------------------------------------------------------- */
 
-const SPOILER_SAFE_STONE_POEMS = Object.freeze({
-  stone_plaza: Object.freeze({
-    title: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_plaza.title,
-    lines: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_plaza.lines,
-    secondStanza: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_plaza.secondStanza,
-  }),
-  stone_grove: Object.freeze({
-    title: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_grove.title,
-    lines: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_grove.lines,
-    secondStanza: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_grove.secondStanza,
-  }),
-  stone_pier: Object.freeze({
-    name: "Hidden Lovers' Wall of the Mill Courtyard",
-    title: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_pier.title,
-    lines: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_pier.lines,
-    secondStanza: UNSPOILED_SACRED_POEM_BY_STONE_ID.stone_pier.secondStanza,
-  }),
-});
+let SPOILER_SAFE_STONE_POEMS = null;
+
+function getSpoilerSafeStonePoems() {
+  if (SPOILER_SAFE_STONE_POEMS) return SPOILER_SAFE_STONE_POEMS;
+  const src = UNSPOILED_SACRED_POEM_BY_STONE_ID || {};
+  SPOILER_SAFE_STONE_POEMS = Object.freeze({
+    stone_plaza: Object.freeze({
+      title: src.stone_plaza?.title || '',
+      lines: src.stone_plaza?.lines || [],
+      secondStanza: src.stone_plaza?.secondStanza || [],
+    }),
+    stone_grove: Object.freeze({
+      title: src.stone_grove?.title || '',
+      lines: src.stone_grove?.lines || [],
+      secondStanza: src.stone_grove?.secondStanza || [],
+    }),
+    stone_pier: Object.freeze({
+      name: "Hidden Lovers' Wall of the Mill Courtyard",
+      title: src.stone_pier?.title || '',
+      lines: src.stone_pier?.lines || [],
+      secondStanza: src.stone_pier?.secondStanza || [],
+    }),
+  });
+  return SPOILER_SAFE_STONE_POEMS;
+}
 
 /**
  * Builds a high-contrast, deeply chiseled 3D Inscription Plaque Mesh for each stone
  * (`stone_plaza`, `stone_grove`, `stone_pier`) offset +10mm along the surface normal
  * with polygonOffset so it is never occluded by the stone mesh at any camera distance.
  */
-function buildCrisp3DCarvedPoemMesh(stoneId, poemObj, maxAnisotropy = 8) {
+async function buildCrisp3DCarvedPoemMeshAsync(stoneId, poemObj, maxAnisotropy = 8, slicer = null) {
   if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
   canvas.width = 2048;
@@ -1438,6 +1947,7 @@ function buildCrisp3DCarvedPoemMesh(stoneId, poemObj, maxAnisotropy = 8) {
     // Deep chiseled V-groove dark sepia / gilded bronze
     ctx.fillStyle = isGrove ? '#291c0e' : '#1e1610';
     ctx.fillText(line, cx, y);
+    if (slicer) await slicer.maybeYield();
   }
 
   const tex = new THREE.CanvasTexture(canvas);
@@ -1458,24 +1968,24 @@ function buildCrisp3DCarvedPoemMesh(stoneId, poemObj, maxAnisotropy = 8) {
   let geo = null;
   let mesh = null;
   if (stoneId === 'stone_pier') {
-    // Centered inside the smooth recessed stone tablet on the Lovers' Wall (z = 0.183m -> 0.212m)
-    geo = new THREE.PlaneGeometry(1.96, 0.94);
+    // Centered inside the smooth recessed stone tablet on the Lovers' Wall (max z = 0.2069m -> +17mm @ 0.224m)
+    geo = new THREE.PlaneGeometry(1.88, 0.90);
     mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(0.0, 0.77, 0.212);
+    mesh.position.set(0.0, 0.77, 0.224);
   } else if (stoneId === 'stone_grove') {
-    // Centered atop the Whispering Grove horizontal floor medallion (y = 0.164m -> 0.176m)
-    geo = new THREE.PlaneGeometry(2.36, 1.56);
+    // Centered strictly inside the flat recessed Whispering Grove floor tablet (max y = 0.1604m -> +19.6mm @ 0.180m)
+    geo = new THREE.PlaneGeometry(2.04, 1.28);
     geo.rotateX(-Math.PI * 0.5);
     mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(0.0, 0.176, 0.02);
+    mesh.position.set(0.0, 0.180, 0.02);
   } else {
-    // Centered on the front (+Z) sandstone plaque of the Village Well (r = 1.18m -> 1.202m)
-    geo = new THREE.CylinderGeometry(1.202, 1.202, 0.46, 48, 1, true, -0.46, 0.92);
+    // Proud of the curved sandstone plaque of the Village Well (max r = 1.2197m -> +16.3mm @ r = 1.236m)
+    geo = new THREE.CylinderGeometry(1.236, 1.236, 0.44, 48, 1, true, -0.44, 0.88);
     mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(0.0, 0.485, 0.0);
+    mesh.position.set(0.0, 0.49, 0.0);
   }
   mesh.name = `MonumentCalligraphy_${stoneId}`;
-  mesh.renderOrder = 2;
+  mesh.renderOrder = 6;
   return mesh;
 }
 
@@ -1495,12 +2005,12 @@ function smoothstep(edge0, edge1, x) {
 
 const monumentShaderMats = [];
 
-function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
+function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY, GLTFLoaderCtor, slicer = null) {
   const rootGroup = new THREE.Group();
   rootGroup.name = 'sacredStoneCalligraphyDecalsGroup';
   targetScene.add(rootGroup);
 
-  const gltfLoader = new GLTFLoader();
+  const gltfLoader = new GLTFLoaderCtor();
   const decalEntries = {};
   const useExposedPreview = shouldMaskStoneSpoilers();
   const suffix = useExposedPreview ? 'exposed' : 'live';
@@ -1511,9 +2021,11 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
     stone_pier: `./assets/models/inscriptions/site3-wall-${suffix}.glb`,
   };
 
+  const loadJobs = [];
+
+  const spoilerPoems = getSpoilerSafeStonePoems();
   for (const st of INSCRIPTION_STONES) {
-    const fallbackVerse =
-      SPOILER_SAFE_STONE_POEMS[st.id] || SPOILER_SAFE_STONE_POEMS.stone_plaza;
+    const fallbackVerse = spoilerPoems[st.id] || spoilerPoems.stone_plaza;
 
     const holder = new THREE.Group();
     holder.name = `stoneCalligraphy3D_${st.id}`;
@@ -1638,14 +2150,14 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
       wellWaterMesh.position.set(0, 0.38, 0);
       wellGroup.add(wellWaterMesh);
     } else if (st.id === 'stone_grove') {
-      // Site 2: Mounted atop the Far East Whispering Grove Sanctuary Dais (114, sy, 32)
+      // Site 2: Mounted atop the Far East Whispering Grove Sanctuary Dais (142, sy, 44)
       const groveGroup = new THREE.Group();
       groveGroup.position.set(0, 0, 0);
       groveGroup.rotation.y = -(st.rotY || 0);
       holder.add(groveGroup);
       mountTargets.push(groveGroup);
     } else if (st.id === 'stone_pier') {
-      // Site 3: Mounted at the Southwest Lovers' Wall Sanctuary (-92.0, sy, 64.0, rotY = 0.45)
+      // Site 3: Mounted at the Southwest Lovers' Wall Sanctuary (-124.0, sy, 84.0, rotY = 0.45)
       const cottageWallGroup = new THREE.Group();
       const cwX = st.x;
       const cwZ = st.z;
@@ -1846,384 +2358,134 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
       return mat;
     };
 
-    const buildWeldedMonumentGeometry = (srcPos, srcNorm, srcCol, triIndices, cellSize) => {
-      if (!triIndices || triIndices.length === 0) return null;
-      if (cellSize <= 0) {
-        const remap = new Map();
-        const outPos = [];
-        const outNorm = [];
-        const outCol = [];
-        const outIdx = [];
-        let nextIdx = 0;
-        for (let k = 0; k < triIndices.length; k++) {
-          const vi = triIndices[k];
-          let ni = remap.get(vi);
-          if (ni === undefined) {
-            ni = nextIdx++;
-            remap.set(vi, ni);
-            const p3 = vi * 3;
-            const c4 = vi * 4;
-            outPos.push(srcPos[p3], srcPos[p3 + 1], srcPos[p3 + 2]);
-            outNorm.push(srcNorm[p3], srcNorm[p3 + 1], srcNorm[p3 + 2]);
-            outCol.push(srcCol[c4], srcCol[c4 + 1], srcCol[c4 + 2], srcCol[c4 + 3]);
-          }
-          outIdx.push(ni);
-        }
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(outPos, 3));
-        geo.setAttribute('normal', new THREE.Float32BufferAttribute(outNorm, 3));
-        geo.setAttribute('color', new THREE.Float32BufferAttribute(outCol, 4));
-        geo.setIndex(outIdx);
-        geo.computeBoundingSphere();
-        return geo;
-      }
-
-      const invCell = 1.0 / cellSize;
-      const clusterMap = new Map();
-      const vertToCluster = new Map();
-      const sumPos = [];
-      const sumNorm = [];
-      const sumCol = [];
-      const counts = [];
-      let clusterCount = 0;
-
-      for (let k = 0; k < triIndices.length; k++) {
-        const vi = triIndices[k];
-        let ci = vertToCluster.get(vi);
-        if (ci === undefined) {
-          const p3 = vi * 3;
-          const c4 = vi * 4;
-          const x = srcPos[p3];
-          const y = srcPos[p3 + 1];
-          const z = srcPos[p3 + 2];
-          const r = srcCol[c4];
-          const g = srcCol[c4 + 1];
-          const b = srcCol[c4 + 2];
-          const isMoss = g > r * 1.03 && g > b * 1.2 ? 1 : 0;
-          const gx = Math.round(x * invCell);
-          const gy = Math.round(y * invCell);
-          const gz = Math.round(z * invCell);
-          const key = `${gx},${gy},${gz},${isMoss}`;
-          ci = clusterMap.get(key);
-          if (ci === undefined) {
-            ci = clusterCount++;
-            clusterMap.set(key, ci);
-            sumPos.push(0, 0, 0);
-            sumNorm.push(0, 0, 0);
-            sumCol.push(0, 0, 0, 0);
-            counts.push(0);
-          }
-          vertToCluster.set(vi, ci);
-          const cp3 = ci * 3;
-          const cc4 = ci * 4;
-          sumPos[cp3] += x;
-          sumPos[cp3 + 1] += y;
-          sumPos[cp3 + 2] += z;
-          sumNorm[cp3] += srcNorm[p3];
-          sumNorm[cp3 + 1] += srcNorm[p3 + 1];
-          sumNorm[cp3 + 2] += srcNorm[p3 + 2];
-          sumCol[cc4] += r;
-          sumCol[cc4 + 1] += g;
-          sumCol[cc4 + 2] += b;
-          sumCol[cc4 + 3] += srcCol[c4 + 3];
-          counts[ci] += 1;
-        }
-      }
-
-      const outPos = new Float32Array(clusterCount * 3);
-      const outNorm = new Float32Array(clusterCount * 3);
-      const outCol = new Float32Array(clusterCount * 4);
-      for (let i = 0; i < clusterCount; i++) {
-        const inv = 1.0 / Math.max(1, counts[i]);
-        const p3 = i * 3;
-        const c4 = i * 4;
-        outPos[p3] = sumPos[p3] * inv;
-        outPos[p3 + 1] = sumPos[p3 + 1] * inv;
-        outPos[p3 + 2] = sumPos[p3 + 2] * inv;
-        const nx = sumNorm[p3];
-        const ny = sumNorm[p3 + 1];
-        const nz = sumNorm[p3 + 2];
-        const nLen = Math.hypot(nx, ny, nz) || 1.0;
-        outNorm[p3] = nx / nLen;
-        outNorm[p3 + 1] = ny / nLen;
-        outNorm[p3 + 2] = nz / nLen;
-        outCol[c4] = sumCol[c4] * inv;
-        outCol[c4 + 1] = sumCol[c4 + 1] * inv;
-        outCol[c4 + 2] = sumCol[c4 + 2] * inv;
-        outCol[c4 + 3] = sumCol[c4 + 3] * inv;
-      }
-
-      const outIdx = [];
-      const seenTris = new Set();
-      for (let k = 0; k < triIndices.length; k += 3) {
-        const a = vertToCluster.get(triIndices[k]);
-        const b = vertToCluster.get(triIndices[k + 1]);
-        const c = vertToCluster.get(triIndices[k + 2]);
-        if (a === b || b === c || c === a) continue;
-        const min = Math.min(a, b, c);
-        const max = Math.max(a, b, c);
-        const mid = a + b + c - min - max;
-        const tk = `${min},${mid},${max}`;
-        if (seenTris.has(tk)) continue;
-        seenTris.add(tk);
-        outIdx.push(a, b, c);
-      }
-
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
-      geo.setAttribute('normal', new THREE.BufferAttribute(outNorm, 3));
-      geo.setAttribute('color', new THREE.BufferAttribute(outCol, 4));
-      geo.setIndex(outIdx);
-      geo.computeBoundingSphere();
-      return geo;
-    };
-
-    const attachScene = (gltf) => {
+    const attachScene = async (gltf) => {
       if (!gltf?.scene) return;
       gltf.scene.updateMatrixWorld(true);
-      const rootInv = new THREE.Matrix4().copy(gltf.scene.matrixWorld).invert();
-      const relMat = new THREE.Matrix4();
-      const normMat = new THREE.Matrix3();
-      const tmpV = new THREE.Vector3();
-      const tmpN = new THREE.Vector3();
 
-      const mergedPos = [];
-      const mergedNorm = [];
-      const mergedCol = [];
-      const mergedIndices = [];
-      let vertOffset = 0;
+      const bakedLods = { lod_inspect: null, lod_near: null, lod_far: null };
+      const fallbackMeshes = [];
 
       gltf.scene.traverse((child) => {
         if (!child.isMesh || !child.geometry) return;
-        const geom = child.geometry;
-        const posAttr = geom.attributes.position;
-        if (!posAttr) return;
-        const normAttr = geom.attributes.normal;
-        const colAttr =
-          geom.attributes.color ||
-          geom.attributes._col_baked ||
-          geom.attributes.col_baked ||
-          geom.attributes._col_curvature ||
-          geom.attributes.col_curvature ||
-          null;
-
-        relMat.multiplyMatrices(rootInv, child.matrixWorld);
-        normMat.getNormalMatrix(relMat);
-
-        const vCount = posAttr.count;
-        for (let i = 0; i < vCount; i++) {
-          tmpV.fromBufferAttribute(posAttr, i).applyMatrix4(relMat);
-          mergedPos.push(tmpV.x, tmpV.y, tmpV.z);
-
-          if (normAttr) {
-            tmpN.fromBufferAttribute(normAttr, i).applyMatrix3(normMat).normalize();
-            mergedNorm.push(tmpN.x, tmpN.y, tmpN.z);
-          } else {
-            mergedNorm.push(0, 1, 0);
-          }
-
-          if (colAttr) {
-            const r = colAttr.getX(i);
-            const g = colAttr.getY(i);
-            const b = colAttr.getZ(i);
-            const a = colAttr.itemSize >= 4 ? colAttr.getW(i) : 1.0;
-            mergedCol.push(r, g, b, a);
-          } else {
-            mergedCol.push(0.68, 0.59, 0.45, 1.0);
-          }
-        }
-
-        if (geom.index) {
-          const idxArr = geom.index.array;
-          for (let i = 0; i < idxArr.length; i++) {
-            mergedIndices.push(vertOffset + idxArr[i]);
-          }
+        const nameLower = String(child.name || child.parent?.name || '').toLowerCase();
+        if (nameLower === 'lod_inspect' || nameLower.endsWith('_inspect')) {
+          bakedLods.lod_inspect = child.geometry;
+        } else if (nameLower === 'lod_near' || nameLower.endsWith('_near')) {
+          bakedLods.lod_near = child.geometry;
+        } else if (nameLower === 'lod_far' || nameLower.endsWith('_far')) {
+          bakedLods.lod_far = child.geometry;
         } else {
-          for (let i = 0; i < vCount; i++) {
-            mergedIndices.push(vertOffset + i);
-          }
+          fallbackMeshes.push(child.geometry);
         }
-        vertOffset += vCount;
       });
 
-      if (vertOffset === 0) return;
+      const inspectGeo = bakedLods.lod_inspect || fallbackMeshes[0] || bakedLods.lod_near || bakedLods.lod_far;
+      const nearGeo = bakedLods.lod_near || inspectGeo || bakedLods.lod_far;
+      const farGeo = bakedLods.lod_far || nearGeo || inspectGeo;
+      if (!inspectGeo && !nearGeo && !farGeo) return;
 
-      const isPoemVert = new Uint8Array(vertOffset);
-      for (let i = 0; i < vertOffset; i++) {
-        const c4 = i * 4;
-        const r = mergedCol[c4];
-        const g = mergedCol[c4 + 1];
-        const b = mergedCol[c4 + 2];
-        const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        const isPoemDark = lum < 0.085 && r >= g;
-        const isPoemLip = lum > 0.75;
-        if (isPoemDark || isPoemLip) {
-          isPoemVert[i] = 1;
+      for (const g of [inspectGeo, nearGeo, farGeo]) {
+        if (!g) continue;
+        if (!g.attributes.color) {
+          const altColor =
+            g.attributes._col_baked ||
+            g.attributes.col_baked ||
+            g.attributes._col_curvature ||
+            g.attributes.col_curvature ||
+            null;
+          if (altColor) {
+            g.setAttribute('color', altColor);
+          }
         }
+        if (!g.attributes.normal) {
+          g.computeVertexNormals();
+        }
+        if (!g.boundingSphere) {
+          g.computeBoundingSphere();
+        }
+        if (slicer) await slicer.maybeYield();
       }
 
-      const calligraphyIndices = [];
-      const stoneIndices = [];
-      const isGroveMedallion = st.id === 'stone_grove';
-      const isPlazaWell = st.id === 'stone_plaza';
-
-      for (let k = 0; k < mergedIndices.length; k += 3) {
-        const i0 = mergedIndices[k];
-        const i1 = mergedIndices[k + 1];
-        const i2 = mergedIndices[k + 2];
-        if (isPoemVert[i0] || isPoemVert[i1] || isPoemVert[i2]) {
-          calligraphyIndices.push(i0, i1, i2);
-          continue;
-        }
-        const y0 = mergedPos[i0 * 3 + 1];
-        const y1 = mergedPos[i1 * 3 + 1];
-        const y2 = mergedPos[i2 * 3 + 1];
-        const ny0 = mergedNorm[i0 * 3 + 1];
-        const ny1 = mergedNorm[i1 * 3 + 1];
-        const ny2 = mergedNorm[i2 * 3 + 1];
-        const cy = (y0 + y1 + y2) / 3.0;
-        const cny = (ny0 + ny1 + ny2) / 3.0;
-
-        // Cull buried bottom-cap & underground triangles
-        if (y0 < 0.02 && y1 < 0.02 && y2 < 0.02 && cny < -0.7) continue;
-        if (isGroveMedallion && (cy < -0.015 || cny < -0.35)) continue;
-        if (!isGroveMedallion && cy < 0.04 && cny < -0.65) continue;
-        if (isPlazaWell) {
-          const cx = (mergedPos[i0 * 3] + mergedPos[i1 * 3] + mergedPos[i2 * 3]) / 3.0;
-          const cz = (mergedPos[i0 * 3 + 2] + mergedPos[i1 * 3 + 2] + mergedPos[i2 * 3 + 2]) / 3.0;
-          if (Math.hypot(cx, cz) < 0.82 && cy < 0.34) continue;
-        }
-        stoneIndices.push(i0, i1, i2);
-      }
-
-      const farStoneGeo = buildWeldedMonumentGeometry(
-        mergedPos,
-        mergedNorm,
-        mergedCol,
-        stoneIndices,
-        0.075
-      );
-
-      const unifiedMat = createGhibliMonumentShaderMaterial(null, true);
-      const isHeadless =
-        Boolean(typeof window !== 'undefined' && window.__HEADLESS_TEST__) ||
-        Boolean(typeof navigator !== 'undefined' && navigator.webdriver);
-
+      const hasColorAttr = Boolean((inspectGeo || nearGeo || farGeo)?.attributes?.color);
+      const unifiedMat = createGhibliMonumentShaderMaterial(null, hasColorAttr);
       const maxAniso = renderer?.capabilities?.getMaxAnisotropy?.() || 8;
 
-      const mountAllLods = (nearStoneGeo, inspectStoneGeo) => {
-        for (const target of mountTargets) {
-          const inspectStoneMesh = new THREE.Mesh(inspectStoneGeo || nearStoneGeo || farStoneGeo, unifiedMat);
-          inspectStoneMesh.name = `UnifiedMonument_${st.id}_inspect`;
-          inspectStoneMesh.frustumCulled = true;
-          inspectStoneMesh.visible = false;
-          target.add(inspectStoneMesh);
+      for (const target of mountTargets) {
+        const inspectStoneMesh = new THREE.Mesh(inspectGeo, unifiedMat);
+        inspectStoneMesh.name = `UnifiedMonument_${st.id}_inspect`;
+        inspectStoneMesh.frustumCulled = true;
+        inspectStoneMesh.visible = false;
+        target.add(inspectStoneMesh);
 
-          const nearStoneMesh = new THREE.Mesh(nearStoneGeo || inspectStoneGeo || farStoneGeo, unifiedMat);
-          nearStoneMesh.name = `UnifiedMonument_${st.id}`;
-          nearStoneMesh.frustumCulled = true;
-          nearStoneMesh.visible = false;
-          target.add(nearStoneMesh);
+        const nearStoneMesh = new THREE.Mesh(nearGeo, unifiedMat);
+        nearStoneMesh.name = `UnifiedMonument_${st.id}`;
+        nearStoneMesh.frustumCulled = true;
+        nearStoneMesh.visible = false;
+        target.add(nearStoneMesh);
 
-          const farStoneMesh = new THREE.Mesh(farStoneGeo || nearStoneGeo, unifiedMat);
-          farStoneMesh.name = `UnifiedMonument_${st.id}_far`;
-          farStoneMesh.frustumCulled = true;
-          farStoneMesh.visible = true;
-          target.add(farStoneMesh);
+        const farStoneMesh = new THREE.Mesh(farGeo, unifiedMat);
+        farStoneMesh.name = `UnifiedMonument_${st.id}_far`;
+        farStoneMesh.frustumCulled = true;
+        farStoneMesh.visible = true;
+        target.add(farStoneMesh);
 
-          const calligraphyMesh = buildCrisp3DCarvedPoemMesh(st.id, fallbackVerse, maxAniso);
-          if (calligraphyMesh) {
-            target.add(calligraphyMesh);
-          }
-
-          entry.lodSets.push({
-            inspectStoneMesh,
-            nearStoneMesh,
-            farStoneMesh,
-            calligraphyMesh,
-          });
+        if (slicer) await slicer.maybeYield();
+        const calligraphyMesh = await buildCrisp3DCarvedPoemMeshAsync(
+          st.id,
+          fallbackVerse,
+          maxAniso,
+          slicer
+        );
+        if (calligraphyMesh) {
+          target.add(calligraphyMesh);
         }
-        updateMonumentLodForCamera(camera);
-      };
 
-      if (isHeadless) {
-        const nearStoneGeo = buildWeldedMonumentGeometry(mergedPos, mergedNorm, mergedCol, stoneIndices, 0.036);
-        const inspectStoneGeo = buildWeldedMonumentGeometry(mergedPos, mergedNorm, mergedCol, stoneIndices, 0);
-        mountAllLods(nearStoneGeo, inspectStoneGeo);
-      } else {
-        for (const target of mountTargets) {
-          const farStoneMesh = new THREE.Mesh(farStoneGeo, unifiedMat);
-          farStoneMesh.name = `UnifiedMonument_${st.id}_far`;
-          farStoneMesh.frustumCulled = true;
-          farStoneMesh.visible = true;
-          target.add(farStoneMesh);
-
-          const calligraphyMesh = buildCrisp3DCarvedPoemMesh(st.id, fallbackVerse, maxAniso);
-          if (calligraphyMesh) {
-            target.add(calligraphyMesh);
-          }
-
-          entry.lodSets.push({
-            target,
-            inspectStoneMesh: null,
-            nearStoneMesh: null,
-            farStoneMesh,
-            calligraphyMesh,
-          });
-        }
-        updateMonumentLodForCamera(camera);
-
-        setTimeout(() => {
-          const nearStoneGeo = buildWeldedMonumentGeometry(mergedPos, mergedNorm, mergedCol, stoneIndices, 0.036);
-          setTimeout(() => {
-            const inspectStoneGeo = buildWeldedMonumentGeometry(mergedPos, mergedNorm, mergedCol, stoneIndices, 0);
-            for (const set of entry.lodSets) {
-              const target = set.target;
-              if (!target) continue;
-              const inspectStoneMesh = new THREE.Mesh(inspectStoneGeo || nearStoneGeo || farStoneGeo, unifiedMat);
-              inspectStoneMesh.name = `UnifiedMonument_${st.id}_inspect`;
-              inspectStoneMesh.frustumCulled = true;
-              inspectStoneMesh.visible = false;
-              target.add(inspectStoneMesh);
-
-              const nearStoneMesh = new THREE.Mesh(nearStoneGeo || inspectStoneGeo || farStoneGeo, unifiedMat);
-              nearStoneMesh.name = `UnifiedMonument_${st.id}`;
-              nearStoneMesh.frustumCulled = true;
-              nearStoneMesh.visible = false;
-              target.add(nearStoneMesh);
-
-              set.inspectStoneMesh = inspectStoneMesh;
-              set.nearStoneMesh = nearStoneMesh;
-            }
-            updateMonumentLodForCamera(camera);
-          }, 48);
-        }, 48);
+        entry.lodSets.push({
+          target,
+          inspectStoneMesh,
+          nearStoneMesh,
+          farStoneMesh,
+          calligraphyMesh,
+        });
       }
+      updateMonumentLodForCamera(camera);
     };
 
-    gltfLoader.load(
-      url,
-      attachScene,
-      undefined,
-      () => {
+    const job = (async () => {
+      try {
+        const gltf = await gltfLoader.loadAsync(url);
+        if (slicer) await slicer.maybeYield();
+        await attachScene(gltf);
+      } catch {
         if (url !== fallbackUrl) {
-          gltfLoader.load(fallbackUrl, attachScene, undefined, () => {});
+          try {
+            const gltf2 = await gltfLoader.loadAsync(fallbackUrl);
+            if (slicer) await slicer.maybeYield();
+            await attachScene(gltf2);
+          } catch {
+            // ignore missing optional stone model
+          }
         }
       }
-    );
+    })();
+    loadJobs.push(job);
   }
 
   function updateMonumentLodForCamera(cam) {
     const cx = cam?.position?.x ?? 0;
     const cy = cam?.position?.y ?? 0;
     const cz = cam?.position?.z ?? 0;
+    const activeLegacyId = stoneGazeState.activeStoneId
+      ? normalizeLegacyStoneId(stoneGazeState.activeStoneId)
+      : null;
     for (const st of INSCRIPTION_STONES) {
       const entry = decalEntries[st.id];
       if (!entry || !entry.lodSets || entry.lodSets.length === 0) continue;
       const dist = Math.hypot(cx - entry.worldX, cy - entry.worldY, cz - entry.worldZ);
+      const matchesActive = activeLegacyId === entry.id;
       const isInspect =
-        (stoneGazeState.inspectActive && stoneGazeState.activeStoneId === entry.id) ||
-        (stoneGazeState.inspectBlend > 0.01 && stoneGazeState.activeStoneId === entry.id) ||
+        (stoneGazeState.inspectActive && matchesActive) ||
+        (stoneGazeState.inspectBlend > 0.01 && matchesActive) ||
         dist <= 9.5;
       const isNear = !isInspect && dist <= 22.0;
       const isFar = !isInspect && !isNear;
@@ -2241,375 +2503,442 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY) {
     }
   }
 
-  return { group: rootGroup, entries: decalEntries, updateLod: updateMonumentLodForCamera };
+  return {
+    group: rootGroup,
+    entries: decalEntries,
+    updateLod: updateMonumentLodForCamera,
+    readyPromise: Promise.allSettled(loadJobs),
+  };
 }
 
-const stoneDecals = createSacredStoneCalligraphyDecals(scene, terrainHeightAt);
-
 /* ------------------------------------------------------------------------- */
-/* 7. Stage 3–5 Co-Op Player System & Xiaomi Pad 7 Touch HUD                 */
+/* 7. Stage 3–5 Co-Op Player System, Shader Prewarm & Early AppFlow Curtain  */
 /* ------------------------------------------------------------------------- */
 
-const post = createWorldPost({
-  renderer,
-  scene,
-  camera,
-  width: window.innerWidth,
-  height: window.innerHeight,
-  enabled: true,
-  aaSamples: PROFILES[activeProfile].aaSamples,
-});
-let coopSystem = null;
-
-// Render the initial 3D valley & mount the pixelated dither title screen at 0ms BEFORE awaiting character GLBs
-// so there is never a separate pre-boot screen before the pixelated reveal!
-{
-  const initPose = getOpeningCameraPose(FLOW_STEPS.TITLE, walkableHeightAt);
-  camState.mode = 'vista';
-  camState.vistaPos.set(...initPose.pos);
-  camState.vistaTarget.set(...initPose.target);
-  camera.position.copy(camState.vistaPos);
-  camera.lookAt(camState.vistaTarget);
-  camera.fov = initPose.fov || 48;
-  camera.updateProjectionMatrix();
-  camera.updateMatrixWorld();
-  sky.update(0);
-  terrainKit.update(
-    0.016,
-    0,
-    sky.activeLightDir,
-    sky.state.daylight,
-    sky.state.fogColor,
-    sky.state.worldTint,
-    camera,
-    activeProfile
-  );
-  village.update(0.016);
-  meadow.update(0, camState.vistaTarget, camera);
-  post.render(0.016);
-}
-
-appFlow = createAppFlow({
-  container: document.getElementById('hud'),
-  onCreateWorld: ({ roomPhrase, role }) => {
-    if (!coopSystem) return;
-    if (role) {
-      coopSystem.coopClient.setPreferredRole(role);
-    }
-    coopSystem.coopClient.setRoomCode(roomPhrase);
-  },
-  onJoinWorld: ({ roomPhrase, role }) => {
-    if (!coopSystem) return;
-    if (role) {
-      coopSystem.coopClient.setPreferredRole(role);
-    }
-    coopSystem.coopClient.setRoomCode(roomPhrase);
-  },
-  onRoleSelect: (nextRole) => {
-    if (!coopSystem) return;
-    if (typeof coopSystem.coopClient.sendLobbyClaim !== 'function') {
-      coopSystem.coopClient.setPreferredRole(nextRole);
-    }
-  },
-  onLobbyClaim: (claim = {}) => {
-    if (!coopSystem) return;
-    if (typeof coopSystem.coopClient.sendLobbyClaim === 'function') {
-      coopSystem.coopClient.sendLobbyClaim(claim);
-    } else if (claim.role) {
-      coopSystem.coopClient.setPreferredRole(claim.role);
-    }
-  },
-  onToggleReady: (ready, flowState) => {
-    if (!coopSystem) return;
-    coopSystem.coopClient.sendLobbyClaim?.({
-      role: flowState?.localRole || coopSystem.player?.activeHeroId || 'Knight',
-      playerName: flowState?.playerName || '',
-      claimed: Boolean(ready),
-    });
-    coopSystem.coopClient.setReady?.(ready);
-  },
-  onStartGame: (payload = {}) => {
-    if (!coopSystem) return;
-    const isPeerConnected = Boolean(
-      payload?.peerConnected || coopSystem.coopClient?.getState?.()?.peerConnected
-    );
-    const chosenRole =
-      payload?.localRole || payload?.role || appFlow?.getState?.()?.localRole;
-    if (
-      chosenRole &&
-      coopSystem.player.activeHeroId !== chosenRole &&
-      !isPeerConnected
-    ) {
-      coopSystem.swapActiveHero();
-    }
-    const activeRole = coopSystem.player.activeHeroId || 'Knight';
-    const pName = String(
-      payload?.playerName || appFlow?.getState?.()?.playerName || ''
-    ).trim();
-    const partnerName = String(
-      payload?.partnerName || appFlow?.getState?.()?.partnerName || ''
-    ).trim();
-    const kName =
-      payload?.knightName ||
-      (activeRole === 'Knight' ? pName || 'Knight' : partnerName || 'Knight');
-    const mName =
-      payload?.mageName ||
-      (activeRole === 'Mage' ? pName || 'Mage' : partnerName || 'Mage');
-    sculptedHud?.setPlayerNames?.({
-      Knight: kName,
-      Mage: mName,
-      knight: kName,
-      mage: mName,
-      primaryName: pName || activeRole,
-      partnerName: partnerName || (activeRole === 'Knight' ? 'Mage' : 'Knight'),
-      playerName: pName || activeRole,
-      localRole: activeRole,
-      peerConnected: isPeerConnected,
-    });
-
-    const urlParams = new URLSearchParams(window.location?.search || '');
-    const hasExplicitUrlDev =
-      urlParams.get('dev') === '1' || urlParams.get('stage') === '3';
-    if (payload?.soloTest || hasExplicitUrlDev) {
-      if (devStageOverride === null) {
-        devStageOverride = 3;
+function mountOpeningAppFlowEarly() {
+  appFlow = createAppFlow({
+    container: document.getElementById('hud'),
+    onCreateWorld: ({ roomPhrase, role }) => {
+      if (!coopSystem) return;
+      coopSystem.combatSfx?.playUi?.('click');
+      if (role) {
+        coopSystem.coopClient.setPreferredRole(role);
       }
-    } else {
-      devStageOverride = null;
-    }
-
-    if (devStageOverride === null) {
-      coopSystem.setUnlockedStage?.(0);
-      coopSystem.campaignLoop?.setUnlockedStage?.(0, 0);
+      coopSystem.coopClient.setRoomCode(roomPhrase);
+      updateCoopPill({
+        ...coopSystem.coopClient.getState(),
+        roomPhrase,
+      });
+    },
+    onJoinWorld: ({ roomPhrase, role }) => {
+      if (!coopSystem) return;
+      coopSystem.combatSfx?.playUi?.('click');
+      if (role) {
+        coopSystem.coopClient.setPreferredRole(role);
+      }
+      coopSystem.coopClient.setRoomCode(roomPhrase);
+      updateCoopPill({
+        ...coopSystem.coopClient.getState(),
+        roomPhrase,
+      });
+    },
+    onRoleSelect: (nextRole) => {
+      if (!coopSystem) return;
+      coopSystem.combatSfx?.playUi?.('hero_swap');
+      if (typeof coopSystem.coopClient.sendLobbyClaim !== 'function') {
+        coopSystem.coopClient.setPreferredRole(nextRole);
+      }
+    },
+    onLobbyClaim: (claim = {}) => {
+      if (!coopSystem) return;
+      if (typeof coopSystem.coopClient.sendLobbyClaim === 'function') {
+        coopSystem.coopClient.sendLobbyClaim(claim);
+      } else if (claim.role) {
+        coopSystem.coopClient.setPreferredRole(claim.role);
+      }
+    },
+    onToggleReady: (ready, flowState) => {
+      if (!coopSystem) return;
+      coopSystem.combatSfx?.playUi?.('click');
+      coopSystem.coopClient.sendLobbyClaim?.({
+        role: flowState?.localRole || coopSystem.player?.activeHeroId || 'Knight',
+        playerName: flowState?.playerName || '',
+        claimed: Boolean(ready),
+      });
+      coopSystem.coopClient.setReady?.(ready);
+    },
+    onStartGame: (payload = {}) => {
+      if (!coopSystem) return;
+      coopSystem.combatSfx?.playUi?.('modal_open');
+      const isPeerConnected = Boolean(
+        payload?.peerConnected || coopSystem.coopClient?.getState?.()?.peerConnected
+      );
+      const chosenRole =
+        payload?.localRole || payload?.role || appFlow?.getState?.()?.localRole;
       if (
-        !payload?.fromRemoteExpeditionStart &&
-        !coopSystem.coopClient?.getState?.()?.expeditionStarted
+        chosenRole &&
+        coopSystem.player.activeHeroId !== chosenRole &&
+        !isPeerConnected
       ) {
-        coopSystem.coopClient.startExpedition({ resetProgression: true });
+        coopSystem.swapActiveHero();
       }
-      sculptedHud?.setProgressionState?.({
-        communeDiscovered: false,
-        iceUnlocked: false,
-        fireUnlocked: false,
-        ultimateUnlocked: false,
-        unlockedStage: 0,
-        stonesSolved: 0,
-        stonesSolvedMask: 0,
-        stone1Solved: false,
-        stone2Solved: false,
-        stone3Solved: false,
+      const activeRole = coopSystem.player.activeHeroId || 'Knight';
+      const pName = String(
+        payload?.playerName || appFlow?.getState?.()?.playerName || ''
+      ).trim();
+      const partnerName = String(
+        payload?.partnerName || appFlow?.getState?.()?.partnerName || ''
+      ).trim();
+      const kName =
+        payload?.knightName ||
+        (activeRole === 'Knight' ? pName || 'Knight' : partnerName || 'Knight');
+      const mName =
+        payload?.mageName ||
+        (activeRole === 'Mage' ? pName || 'Mage' : partnerName || 'Mage');
+      sculptedHud?.setPlayerNames?.({
+        Knight: kName,
+        Mage: mName,
+        knight: kName,
+        mage: mName,
+        primaryName: pName || activeRole,
+        partnerName: partnerName || (activeRole === 'Knight' ? 'Mage' : 'Knight'),
+        playerName: pName || activeRole,
+        localRole: activeRole,
+        peerConnected: isPeerConnected,
       });
-    } else {
-      const stage = devStageOverride;
-      // Unlock combat abilities for testing WITHOUT marking the 3 Sacred Stones as already solved (mask = 0)
-      // so the player can still play through all 3 stones and never triggers premature victory!
-      const updated = coopSystem.coopClient.progression.setUnlocks({
-        communeDiscovered: stage >= 1,
-        iceUnlocked: stage >= 1,
-        fireUnlocked: stage >= 2,
-        ultimateUnlocked: stage >= 3,
-        stone1Solved: false,
-        stone2Solved: false,
-        stone3Solved: false,
-        stonesSolvedMask: 0,
-      });
-      coopSystem.setUnlockedStage?.(stage);
-      coopSystem.campaignLoop?.setUnlockedStage?.(stage, 0);
-      if (stage >= 3) {
+
+      const urlParams = new URLSearchParams(window.location?.search || '');
+      const hasExplicitUrlDev =
+        urlParams.get('dev') === '1' || urlParams.get('stage') === '3';
+      if (payload?.soloTest || hasExplicitUrlDev) {
+        if (devStageOverride === null) {
+          devStageOverride = 3;
+        }
+      } else {
+        devStageOverride = null;
+      }
+
+      if (devStageOverride === null) {
+        coopSystem.setUnlockedStage?.(0);
+        coopSystem.campaignLoop?.setUnlockedStage?.(0, 0);
         if (coopSystem.campaignLoop?.combatHeroes?.Knight) {
-          coopSystem.campaignLoop.combatHeroes.Knight.qEnergy = 100;
-          coopSystem.campaignLoop.combatHeroes.Knight.qEnergyPct = 1.0;
+          coopSystem.campaignLoop.combatHeroes.Knight.qEnergy = 0;
+          coopSystem.campaignLoop.combatHeroes.Knight.qEnergyPct = 0;
         }
         if (coopSystem.campaignLoop?.combatHeroes?.Mage) {
-          coopSystem.campaignLoop.combatHeroes.Mage.qEnergy = 160;
-          coopSystem.campaignLoop.combatHeroes.Mage.qEnergyPct = 1.0;
+          coopSystem.campaignLoop.combatHeroes.Mage.qEnergy = 0;
+          coopSystem.campaignLoop.combatHeroes.Mage.qEnergyPct = 0;
         }
+        if (
+          !payload?.fromRemoteExpeditionStart &&
+          !coopSystem.coopClient?.getState?.()?.expeditionStarted
+        ) {
+          coopSystem.coopClient.startExpedition({ resetProgression: true });
+        }
+        sculptedHud?.setProgressionState?.({
+          communeDiscovered: false,
+          iceUnlocked: false,
+          fireUnlocked: false,
+          ultimateUnlocked: false,
+          unlockedStage: 0,
+          stonesSolved: 0,
+          stonesSolvedMask: 0,
+          stone1Solved: false,
+          stone2Solved: false,
+          stone3Solved: false,
+        });
+        updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
+      } else {
+        const stage = devStageOverride;
+        const updated = coopSystem.coopClient.progression.setUnlocks({
+          communeDiscovered: stage >= 1,
+          iceUnlocked: stage >= 1,
+          fireUnlocked: stage >= 2,
+          ultimateUnlocked: stage >= 3,
+          stone1Solved: false,
+          stone2Solved: false,
+          stone3Solved: false,
+          stonesSolvedMask: 0,
+        });
+        coopSystem.setUnlockedStage?.(stage);
+        coopSystem.campaignLoop?.setUnlockedStage?.(stage, 0);
+        if (stage >= 3) {
+          if (coopSystem.campaignLoop?.combatHeroes?.Knight) {
+            coopSystem.campaignLoop.combatHeroes.Knight.qEnergy = 100;
+            coopSystem.campaignLoop.combatHeroes.Knight.qEnergyPct = 1.0;
+          }
+          if (coopSystem.campaignLoop?.combatHeroes?.Mage) {
+            coopSystem.campaignLoop.combatHeroes.Mage.qEnergy = 160;
+            coopSystem.campaignLoop.combatHeroes.Mage.qEnergyPct = 1.0;
+          }
+        }
+        coopSystem.coopClient.startExpedition();
+        sculptedHud?.setProgressionState?.(updated);
+        updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
       }
-      coopSystem.coopClient.startExpedition();
-      sculptedHud?.setProgressionState?.(updated);
-      updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
-    }
-    coopSystem.teleportLeaderAndPartner(0.0, 124.0, Math.PI);
-    camState.mode = 'player';
-    camState.yaw = Math.PI;
-    camState.pitch = 0.14;
-    camState.dist = 8.4;
-    sculptedHud?.setVisible(true);
-    updateCamera();
-  },
-  onFlowStepChanged: (step) => {
-    if (coopSystem) {
-      applyOpeningFlowCameraAndPoses(step);
-    }
-  },
-});
-if (typeof window !== 'undefined') {
-  window.__APP_FLOW__ = appFlow;
+      coopSystem.teleportLeaderAndPartner(0.0, 124.0, Math.PI);
+      camState.mode = 'player';
+      camState.yaw = Math.PI;
+      camState.pitch = 0.14;
+      camState.dist = 8.4;
+      sculptedHud?.setVisible(true);
+      updateCoopPill(coopSystem.coopClient.getState());
+      updateCamera();
+    },
+    onFlowStepChanged: (step) => {
+      if (coopSystem) {
+        applyOpeningFlowCameraAndPoses(step, { renderNow: Boolean(window.__WORLD_VISUAL_READY__) });
+      }
+    },
+  });
+  if (typeof window !== 'undefined') {
+    window.__APP_FLOW__ = appFlow;
+  }
 }
 
-coopSystem = await createCoopPlayerSystem({
-  scene,
-  walkableHeightAt,
-  resolveCollisions,
-  arenaZone: ZONES.arena,
-  initialPos: { x: 2.8, z: 14.5, yaw: Math.PI + 0.15 },
-  onHeroSwapped: (newHeroId) => {
-    if (hudHeroName) {
-      hudHeroName.textContent = newHeroId;
-    }
-    if (knightBarRow) knightBarRow.classList.toggle('is-leader', newHeroId === 'Knight');
-    if (mageBarRow) mageBarRow.classList.toggle('is-leader', newHeroId === 'Mage');
-    sculptedHud?.setActiveRole(newHeroId);
-  },
-  onSkyTodChanged: (nextTod) => {
-    applyTimeOfDay(nextTod);
-  },
-  onHudStateChanged: (snapshot) => {
-    updateCombatHud(snapshot);
-  },
-  onBanner: (bannerObj) => {
-    showCombatBanner(bannerObj, 4200);
-  },
-  onCoopStateChanged: (roomState) => {
-    updateCoopPill(roomState);
-  },
-  onRemoteCommuneVerdict: async (judgment) => {
-    const vp = playDivineVerdictVoice(judgment);
-    if (vp?.played && !vp?.simulatedHeadless && vp?.finished) {
-      coopSystem?.setCommuneSuspense?.(true, { broadcast: false });
-      const quote = judgment?.divine_quote || judgment?.subtitle || '';
-      if (quote) {
-        showCombatBanner(
-          {
-            title: 'THE SOVEREIGN · GOD OF LOVE',
-            subtitle: quote,
-            kind:
-              String(judgment?.verdict || '').toLowerCase() === 'smite' ||
-              String(judgment?.prayerMode || '').toLowerCase() === 'smite'
-                ? 'warning'
-                : 'blessing',
-          },
-          8000
-        );
-      }
-      await vp.finished;
-    }
-    const updatedProg = coopSystem.coopClient.progression.applyVerdictProgression(judgment);
-    sculptedHud?.setProgressionState(updatedProg);
-  },
-});
+async function prewarmAllVfxAndSceneShadersAsync() {
+  if (!scene || !renderer || !camera) return;
 
-const player = coopSystem.player;
-
-function prewarmAllVfxAndSceneShaders({ sync = false } = {}) {
-  const isHeadless =
-    sync ||
-    Boolean(typeof window !== 'undefined' && window.__HEADLESS_TEST__) ||
-    Boolean(typeof navigator !== 'undefined' && navigator.webdriver);
-
-  if (isHeadless) {
-    const savedVis = [];
-    const savedCounts = [];
-    const savedCull = [];
-    scene.traverse((obj) => {
-      if (!obj.visible) {
-        savedVis.push(obj);
-        obj.visible = true;
-      }
-      if (obj.isInstancedMesh && obj.count === 0) {
-        const cap = obj.instanceMatrix?.count ?? 1;
-        if (cap > 0) {
-          savedCounts.push(obj);
-          obj.count = 1;
-        }
-      }
-      if (obj.isMesh && obj.frustumCulled) {
-        savedCull.push(obj);
-        obj.frustumCulled = false;
-      }
-    });
-    const prevTarget = renderer.getRenderTarget();
-    try {
-      if (post?.composer?.renderTarget1) {
-        renderer.setRenderTarget(post.composer.renderTarget1);
-      }
-      renderer.compile(scene, camera);
-    } catch {
-      // ignore prewarm errors on restricted WebGL contexts
-    } finally {
-      renderer.setRenderTarget(prevTarget);
-      for (let i = 0; i < savedCull.length; i++) savedCull[i].frustumCulled = true;
-      for (let i = 0; i < savedCounts.length; i++) savedCounts[i].count = 0;
-      for (let i = 0; i < savedVis.length; i++) savedVis[i].visible = false;
+  // Wait briefly if bakedShadowAO PNG hasn't swapped in yet so it warms in boot rather than mid-dissolve
+  const aoTex = terrainKit?.bakedShadowAOTex;
+  if (aoTex && aoTex.userData && !aoTex.userData.loaded && typeof document !== 'undefined') {
+    const aoWaitStart = Date.now();
+    while (!aoTex.userData.loaded && Date.now() - aoWaitStart < 450) {
+      await bootSlicer.yieldNow();
     }
-    return;
   }
 
-  // Time-sliced background shader prewarm (2 hidden meshes per idle frame) so the Title/Loading animation stays 60 FPS
-  const hiddenMeshes = [];
+  // 1. Decode any HTMLImageElement textures off the main thread, then upload each unique texture one per slice
+  const uniqueTextures = new Set();
+  const collectTex = (val) => {
+    if (val && val.isTexture) uniqueTextures.add(val);
+  };
   scene.traverse((obj) => {
-    if (obj.isMesh && (!obj.visible || (obj.isInstancedMesh && obj.count === 0))) {
-      hiddenMeshes.push(obj);
+    if (!obj.isMesh || !obj.material) return;
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (const mat of mats) {
+      if (!mat) continue;
+      collectTex(mat.map);
+      collectTex(mat.gradientMap);
+      collectTex(mat.alphaMap);
+      collectTex(mat.emissiveMap);
+      collectTex(mat.normalMap);
+      collectTex(mat.roughnessMap);
+      if (mat.uniforms) {
+        for (const u of Object.values(mat.uniforms)) {
+          collectTex(u?.value);
+        }
+      }
     }
   });
 
-  let idx = 0;
-  const stepPrewarm = () => {
-    if (idx >= hiddenMeshes.length) return;
-    const batchVis = [];
-    const batchCount = [];
-    const batchCull = [];
-    const end = Math.min(hiddenMeshes.length, idx + 2);
-    for (; idx < end; idx++) {
-      const m = hiddenMeshes[idx];
-      let cur = m;
-      while (cur && cur !== scene) {
-        if (!cur.visible) {
-          batchVis.push(cur);
-          cur.visible = true;
-        }
-        cur = cur.parent;
+  for (const tx of uniqueTextures) {
+    if (typeof HTMLImageElement !== 'undefined' && tx.image instanceof HTMLImageElement) {
+      try {
+        await tx.image.decode?.();
+      } catch {
+        // ignore decode error
       }
-      if (m.isInstancedMesh && m.count === 0 && (m.instanceMatrix?.count ?? 1) > 0) {
-        batchCount.push(m);
-        m.count = 1;
-      }
-      if (m.frustumCulled) {
-        batchCull.push(m);
-        m.frustumCulled = false;
-      }
+      await bootSlicer.yieldNow();
     }
+    try {
+      renderer.initTexture(tx);
+    } catch {
+      // ignore
+    }
+    await bootSlicer.yieldNow();
+  }
+
+  // 2. Compile every visible AND hidden/pooled mesh incrementally against composer renderTarget1
+  const allMeshes = [];
+  scene.traverse((obj) => {
+    if (obj.isMesh) allMeshes.push(obj);
+  });
+
+  for (let i = 0; i < allMeshes.length; i++) {
+    const m = allMeshes[i];
+    const toggledVis = [];
+    let cur = m;
+    while (cur && cur !== scene) {
+      if (!cur.visible) {
+        toggledVis.push(cur);
+        cur.visible = true;
+      }
+      cur = cur.parent;
+    }
+    const restoreCount = m.isInstancedMesh && m.count === 0 && (m.instanceMatrix?.count ?? 1) > 0;
+    if (restoreCount) m.count = 1;
+    const restoreCull = Boolean(m.frustumCulled);
+    if (restoreCull) m.frustumCulled = false;
+
     const prevTarget = renderer.getRenderTarget();
     try {
       if (post?.composer?.renderTarget1) {
         renderer.setRenderTarget(post.composer.renderTarget1);
       }
-      renderer.compile(scene, camera);
+      if (typeof renderer.compileAsync === 'function') {
+        await renderer.compileAsync(m, camera, scene);
+      } else {
+        renderer.compile(m, camera, scene);
+      }
+    } catch {
+      // ignore prewarm compile errors on restricted contexts
+    } finally {
+      renderer.setRenderTarget(prevTarget);
+      if (restoreCull) m.frustumCulled = true;
+      if (restoreCount) m.count = 0;
+      for (let v = 0; v < toggledVis.length; v++) toggledVis[v].visible = false;
+    }
+    await bootSlicer.maybeYield();
+  }
+
+  // 3. Compile post-processing final ToneGrade quad against default framebuffer
+  const gradeQuadMesh = post?.gradePass?.fsQuad?._mesh;
+  if (gradeQuadMesh) {
+    const prevTarget = renderer.getRenderTarget();
+    try {
+      if (post?.gradePass?.uniforms?.tDepth) {
+        const depthTex = post.composer?.readBuffer?.depthTexture || null;
+        post.gradePass.uniforms.tDepth.value = depthTex;
+        if (post.gradePass.uniforms.uAtmosphere) {
+          post.gradePass.uniforms.uAtmosphere.value = depthTex ? 1.0 : 0.0;
+        }
+      }
+      renderer.setRenderTarget(null);
+      if (typeof renderer.compileAsync === 'function') {
+        await renderer.compileAsync(gradeQuadMesh, camera);
+      } else {
+        renderer.compile(gradeQuadMesh, camera);
+      }
     } catch {
       // ignore
     } finally {
       renderer.setRenderTarget(prevTarget);
-      for (let i = 0; i < batchCull.length; i++) batchCull[i].frustumCulled = true;
-      for (let i = 0; i < batchCount.length; i++) batchCount[i].count = 0;
-      for (let i = 0; i < batchVis.length; i++) batchVis[i].visible = false;
     }
-    if (idx < hiddenMeshes.length) {
-      setTimeout(() => requestAnimationFrame(stepPrewarm), 32);
-    }
-  };
-  setTimeout(() => requestAnimationFrame(stepPrewarm), 180);
-}
+    await bootSlicer.maybeYield();
+  }
 
-prewarmAllVfxAndSceneShaders();
+  // 4. Warm WebGLProgram uniform/attribute reflection + link checks incrementally (1 program per slice)
+  //    so the very first post.render() does not pay all 30+ gl.getProgramInfoLog flushes synchronously!
+  const compiledPrograms = renderer.info?.programs || [];
+  for (let p = 0; p < compiledPrograms.length; p++) {
+    const prog = compiledPrograms[p];
+    if (!prog) continue;
+    try {
+      prog.getUniforms?.();
+      prog.getAttributes?.();
+    } catch {
+      // ignore
+    }
+    await bootSlicer.maybeYield();
+  }
+}
 
 /* ------------------------------------------------------------------------- */
 /* 7A. Wire 3D Floating Genshin Damage Numbers (`damage-numbers.js`)         */
 /* ------------------------------------------------------------------------- */
 
-const damageNumbers = createDamageNumbers({
-  container: document.getElementById('hud'),
-  camera,
-});
+function initDamageNumbersSystem(DamageNumbersModule) {
+  const createDamageNumbers =
+    DamageNumbersModule.createDamageNumbers ||
+    DamageNumbersModule.createDamageNumbersOverlay;
+  damageNumbers = createDamageNumbers({
+    container: document.getElementById('hud'),
+    camera,
+  });
+
+  if (coopSystem?.enemyManager) {
+    const origApplyHitToEnemy = coopSystem.enemyManager.applyHitToEnemy;
+    if (typeof origApplyHitToEnemy === 'function') {
+      coopSystem.enemyManager.applyHitToEnemy = function wrappedApplyHitToEnemy(
+        enemy,
+        hitSpec = {}
+      ) {
+        const res = origApplyHitToEnemy(enemy, hitSpec);
+        if (res) {
+          emitFloatingDamageForEnemyHit(enemy, res, hitSpec);
+        }
+        return res;
+      };
+    }
+
+    const origApplyAreaOrLineHit = coopSystem.enemyManager.applyAreaOrLineHit;
+    if (typeof origApplyAreaOrLineHit === 'function') {
+      coopSystem.enemyManager.applyAreaOrLineHit = function wrappedApplyAreaOrLineHit(
+        opts = {}
+      ) {
+        const hits = origApplyAreaOrLineHit(opts);
+        if (Array.isArray(hits)) {
+          for (const h of hits) {
+            if (h?.enemy && h?.result) {
+              emitFloatingDamageForEnemyHit(h.enemy, h.result, opts.hitSpec || {});
+            }
+          }
+        }
+        return hits;
+      };
+    }
+  }
+
+  coopSystem?.campaignLoop?.setOnFriendlyFireHit?.((targetHeroState, info = {}) => {
+    if (damageNumbers && targetHeroState && info.damageDealt > 0 && !stoneGazeState.inspectActive) {
+      damageNumbers.spawnDamageNumber({
+        amount: info.damageDealt,
+        element: info.element || 'fire',
+        source: info.source || 'friendly_fire',
+        isCrit: true,
+        label: 'ROASTED!',
+        mergeKey: `friendly_fire_${info.heroId || 'Knight'}_${Date.now()}`,
+        duration: 1.05,
+        worldPos: {
+          x: targetHeroState.x ?? 0,
+          y: targetHeroState.y ?? 0,
+          z: targetHeroState.z ?? 0,
+          heightOffset: 1.85,
+        },
+      });
+    }
+    sculptedHud?.triggerDamagePulse?.({
+      role: info.heroId || 'Knight',
+      damage: info.damageDealt || 15,
+      blocked: false,
+    });
+    if (coopSystem?.campaignLoop && coopSystem?.heroStates) {
+      updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
+    }
+  });
+
+  coopSystem?.campaignLoop?.setOnPlayerDamaged?.((targetHeroState, info = {}) => {
+    const dmg = Number(info.damageDealt || 0);
+    const absorbed = Number(info.absorbed || 0);
+    const blocked = Boolean(info.blockedByShield || (dmg === 0 && absorbed > 0));
+    if (damageNumbers && targetHeroState && (dmg > 0 || absorbed > 0) && !stoneGazeState.inspectActive) {
+      damageNumbers.spawnDamageNumber({
+        amount: dmg > 0 ? dmg : absorbed,
+        element: blocked ? 'player-blocked' : 'player-hit',
+        source: info.source || 'enemy_attack',
+        isCrit: false,
+        label: blocked ? 'BLOCKED' : '',
+        mergeKey: null,
+        duration: blocked ? 0.78 : 0.92,
+        worldPos: {
+          x: targetHeroState.x ?? 0,
+          y: targetHeroState.y ?? 0,
+          z: targetHeroState.z ?? 0,
+          heightOffset: 1.92,
+        },
+      });
+    }
+    sculptedHud?.triggerDamagePulse?.({
+      role: info.heroId || 'Knight',
+      damage: dmg > 0 ? dmg : absorbed,
+      blocked,
+    });
+    if (coopSystem?.campaignLoop && coopSystem?.heroStates) {
+      updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
+    }
+  });
+}
 
 function resolveHitDamageElement(hitSpec = {}, result = {}) {
   const inf = String(hitSpec.infusion || hitSpec.applyMark || '').toLowerCase();
@@ -2656,7 +2985,7 @@ const PEAK_DAMAGE_SOURCES = new Set([
 ]);
 
 function emitFloatingDamageForEnemyHit(enemy, result, hitSpec = {}) {
-  if (!damageNumbers || !enemy || !result) return;
+  if (!damageNumbers || !enemy || !result || stoneGazeState.inspectActive) return;
   const dmg = Number(result.damageDealt || 0);
   if (dmg <= 0) return;
 
@@ -2736,98 +3065,6 @@ function emitFloatingDamageForEnemyHit(enemy, result, hitSpec = {}) {
   });
 }
 
-if (coopSystem?.enemyManager) {
-  const origApplyHitToEnemy = coopSystem.enemyManager.applyHitToEnemy;
-  if (typeof origApplyHitToEnemy === 'function') {
-    coopSystem.enemyManager.applyHitToEnemy = function wrappedApplyHitToEnemy(
-      enemy,
-      hitSpec = {}
-    ) {
-      const res = origApplyHitToEnemy(enemy, hitSpec);
-      if (res) {
-        emitFloatingDamageForEnemyHit(enemy, res, hitSpec);
-      }
-      return res;
-    };
-  }
-
-  const origApplyAreaOrLineHit = coopSystem.enemyManager.applyAreaOrLineHit;
-  if (typeof origApplyAreaOrLineHit === 'function') {
-    coopSystem.enemyManager.applyAreaOrLineHit = function wrappedApplyAreaOrLineHit(
-      opts = {}
-    ) {
-      const hits = origApplyAreaOrLineHit(opts);
-      if (Array.isArray(hits)) {
-        for (const h of hits) {
-          if (h?.enemy && h?.result) {
-            emitFloatingDamageForEnemyHit(h.enemy, h.result, opts.hitSpec || {});
-          }
-        }
-      }
-      return hits;
-    };
-  }
-}
-
-coopSystem?.campaignLoop?.setOnFriendlyFireHit?.((targetHeroState, info = {}) => {
-  if (damageNumbers && targetHeroState && info.damageDealt > 0) {
-    damageNumbers.spawnDamageNumber({
-      amount: info.damageDealt,
-      element: info.element || 'fire',
-      source: info.source || 'friendly_fire',
-      isCrit: true,
-      label: 'ROASTED!',
-      mergeKey: `friendly_fire_${info.heroId || 'Knight'}_${Date.now()}`,
-      duration: 1.05,
-      worldPos: {
-        x: targetHeroState.x ?? 0,
-        y: targetHeroState.y ?? 0,
-        z: targetHeroState.z ?? 0,
-        heightOffset: 1.85,
-      },
-    });
-  }
-  sculptedHud?.triggerDamagePulse?.({
-    role: info.heroId || 'Knight',
-    damage: info.damageDealt || 15,
-    blocked: false,
-  });
-  if (coopSystem?.campaignLoop && coopSystem?.heroStates) {
-    updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
-  }
-});
-
-coopSystem?.campaignLoop?.setOnPlayerDamaged?.((targetHeroState, info = {}) => {
-  const dmg = Number(info.damageDealt || 0);
-  const absorbed = Number(info.absorbed || 0);
-  const blocked = Boolean(info.blockedByShield || (dmg === 0 && absorbed > 0));
-  if (damageNumbers && targetHeroState && (dmg > 0 || absorbed > 0)) {
-    damageNumbers.spawnDamageNumber({
-      amount: dmg > 0 ? dmg : absorbed,
-      element: blocked ? 'player-blocked' : 'player-hit',
-      source: info.source || 'enemy_attack',
-      isCrit: false,
-      label: blocked ? 'BLOCKED' : '',
-      mergeKey: null,
-      duration: blocked ? 0.78 : 0.92,
-      worldPos: {
-        x: targetHeroState.x ?? 0,
-        y: targetHeroState.y ?? 0,
-        z: targetHeroState.z ?? 0,
-        heightOffset: 1.92,
-      },
-    });
-  }
-  sculptedHud?.triggerDamagePulse?.({
-    role: info.heroId || 'Knight',
-    damage: dmg > 0 ? dmg : absorbed,
-    blocked,
-  });
-  if (coopSystem?.campaignLoop && coopSystem?.heroStates) {
-    updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
-  }
-});
-
 /* ------------------------------------------------------------------------- */
 /* 7B. Wave 3 30s Commune Client (with 3D Crimson Rose Ring Timer)           */
 /* ------------------------------------------------------------------------- */
@@ -2835,114 +3072,119 @@ coopSystem?.campaignLoop?.setOnPlayerDamaged?.((targetHeroState, info = {}) => {
 let selectedLobbyRole = 'Knight';
 let selectedMicDeviceId = '';
 
-communeClient = createCommuneClient({
-  scene,
-  getGroundHeight: walkableHeightAt,
-  coopClient: coopSystem.coopClient,
-  endpoint: '/api/commune',
-  getContextState: () => {
-    const speakerRole = coopSystem.player.activeHeroId || 'Knight';
-    const partnerRole = speakerRole === 'Knight' ? 'Mage' : 'Knight';
-    const snap = coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates);
-    const speakerHero = speakerRole === 'Knight' ? snap.knight : snap.mage;
-    const partnerHero = partnerRole === 'Knight' ? snap.knight : snap.mage;
-    const nearStone = coopSystem.getNearestInscriptionStone?.(6.2) || null;
-    const stoneContested = nearStone
-      ? Boolean(
-          coopSystem.campaignLoop?.isStoneContested?.(nearStone, coopSystem.heroStates)
-        )
-      : false;
-    const nearbyLivingCount =
-      coopSystem.campaignLoop?.getNearbyLivingEnemies?.(player, 18.0)?.length ??
-      (coopSystem.enemyManager?.activeEnemies?.length || 0);
-    const progState = coopSystem.coopClient.getProgressionState();
-    const resolvedCommuneMode =
-      snap.communeMode === 'divine_miracle' || (snap.miracleReady && !nearStone)
-        ? 'divine_miracle'
-        : 'normal';
-    const effectiveNearStoneId = !stoneContested && nearStone?.id ? nearStone.id : null;
-    return {
-      room: coopSystem.coopClient.getRoomCode(),
-      speakerRole,
-      partnerRole,
-      nearStoneId: effectiveNearStoneId,
-      communeMode: resolvedCommuneMode,
-      miracleReady: Boolean(snap.miracleReady),
-      stonesSolvedMask: snap.stonesSolvedMask ?? progState?.stonesSolvedMask ?? 0,
-      gameState: {
-        actId: snap.actId,
-        distance: coopSystem.getHeroDistance(),
-        speakerHp: speakerHero?.hp ?? 100,
-        speakerMaxHp: speakerHero?.maxHp ?? 100,
-        partnerHp: partnerHero?.hp ?? 100,
-        partnerMaxHp: partnerHero?.maxHp ?? 100,
-        partnerDowned: Boolean(partnerHero?.downed),
-        inCombat: nearbyLivingCount > 0,
-        nearbyEnemies: nearbyLivingCount,
+function initCommuneClientSystem(createCommuneClientFn) {
+  communeClient = createCommuneClientFn({
+    scene,
+    getGroundHeight: walkableHeightAt,
+    coopClient: coopSystem.coopClient,
+    endpoint: '/api/commune',
+    getContextState: () => {
+      const speakerRole = coopSystem.player.activeHeroId || 'Knight';
+      const partnerRole = speakerRole === 'Knight' ? 'Mage' : 'Knight';
+      const snap = coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates);
+      const speakerHero = speakerRole === 'Knight' ? snap.knight : snap.mage;
+      const partnerHero = partnerRole === 'Knight' ? snap.knight : snap.mage;
+      const nearStone = coopSystem.getNearestInscriptionStone?.(6.2) || null;
+      const stoneContested = nearStone
+        ? Boolean(
+            coopSystem.campaignLoop?.isStoneContested?.(nearStone, coopSystem.heroStates)
+          )
+        : false;
+      const nearbyLivingCount =
+        coopSystem.campaignLoop?.getNearbyLivingEnemies?.(player, 18.0)?.length ??
+        (coopSystem.enemyManager?.activeEnemies?.length || 0);
+      const progState = coopSystem.coopClient.getProgressionState();
+      const resolvedCommuneMode =
+        snap.communeMode === 'divine_miracle' || (snap.miracleReady && !nearStone)
+          ? 'divine_miracle'
+          : 'normal';
+      const effectiveNearStoneId = !stoneContested && nearStone?.id ? nearStone.id : null;
+      return {
+        room: coopSystem.coopClient.getRoomCode(),
+        speakerRole,
+        partnerRole,
         nearStoneId: effectiveNearStoneId,
-        nearestStoneSiteId: effectiveNearStoneId,
-        stoneContested,
         communeMode: resolvedCommuneMode,
         miracleReady: Boolean(snap.miracleReady),
-        modeAHealCd: snap.modeAHealCd || 0,
-        modeBMiracleCd: snap.modeBMiracleCd || 0,
-        stoneGuessCd: snap.stoneGuessCd || 0,
         stonesSolvedMask: snap.stonesSolvedMask ?? progState?.stonesSolvedMask ?? 0,
-      },
-      progressionState: progState,
-    };
-  },
-  onStateChange: (communeSnapshot) => {
-    const isListening = communeSnapshot.state === 'listening';
-    const isJudging = communeSnapshot.state === 'judging';
-    const isSpeaking = communeSnapshot.state === 'speaking';
-    communeRBtn?.classList.toggle('channeling', isListening || isSpeaking);
-    if (communeSubLbl) {
-      communeSubLbl.textContent = isListening
-        ? `Listening (${Math.ceil(communeSnapshot.remainingSeconds)}s)`
-        : isJudging
-          ? 'Judging...'
-          : isSpeaking
-            ? 'The Sovereign Speaks...'
-            : 'Tap [R]';
-    }
-    if (isSpeaking && communeSnapshot.judgment) {
-      coopSystem?.setCommuneSuspense?.(true);
-      const quote =
-        communeSnapshot.judgment.divine_quote ||
-        communeSnapshot.judgment.subtitle ||
-        '';
-      if (quote) {
-        showCombatBanner(
-          {
-            title: 'THE SOVEREIGN · GOD OF LOVE',
-            subtitle: quote,
-            kind:
-              String(communeSnapshot.judgment.verdict || '').toLowerCase() === 'smite' ||
-              String(communeSnapshot.judgment.prayerMode || '').toLowerCase() === 'smite'
-                ? 'warning'
-                : 'blessing',
-          },
-          8000
-        );
+        gameState: {
+          actId: snap.actId,
+          distance: coopSystem.getHeroDistance(),
+          speakerHp: speakerHero?.hp ?? 100,
+          speakerMaxHp: speakerHero?.maxHp ?? 100,
+          partnerHp: partnerHero?.hp ?? 100,
+          partnerMaxHp: partnerHero?.maxHp ?? 100,
+          partnerDowned: Boolean(partnerHero?.downed),
+          inCombat: nearbyLivingCount > 0,
+          nearbyEnemies: nearbyLivingCount,
+          nearStoneId: effectiveNearStoneId,
+          nearestStoneSiteId: effectiveNearStoneId,
+          stoneContested,
+          communeMode: resolvedCommuneMode,
+          miracleReady: Boolean(snap.miracleReady),
+          modeAHealCd: snap.modeAHealCd || 0,
+          modeBMiracleCd: snap.modeBMiracleCd || 0,
+          stoneGuessCd: snap.stoneGuessCd || 0,
+          stonesSolvedMask: snap.stonesSolvedMask ?? progState?.stonesSolvedMask ?? 0,
+        },
+        progressionState: progState,
+      };
+    },
+    onStateChange: (communeSnapshot) => {
+      const isListening = communeSnapshot.state === 'listening';
+      const isJudging = communeSnapshot.state === 'judging';
+      const isSpeaking = communeSnapshot.state === 'speaking';
+      communeRBtn?.classList.toggle('channeling', isListening || isSpeaking);
+      if (communeSubLbl) {
+        communeSubLbl.textContent = isListening
+          ? `Listening (${Math.ceil(communeSnapshot.remainingSeconds)}s)`
+          : isJudging
+            ? 'Judging...'
+            : isSpeaking
+              ? 'The Sovereign Speaks...'
+              : 'Tap [R]';
       }
-    }
-    sculptedHud?.setCommuneState({
-      listening: isListening,
-      elapsedSeconds: communeSnapshot.elapsed,
-      maxSeconds: communeSnapshot.maxDuration,
-    });
-  },
-  onVerdict: (judgment) => {
-    const speakerRole = coopSystem.player.activeHeroId || 'Knight';
-    const updatedProg = coopSystem.coopClient.progression.applyVerdictProgression(judgment);
-    sculptedHud?.setProgressionState(updatedProg);
-    coopSystem.applyCommuneVerdict(judgment, speakerRole);
-  },
-  onCancel: () => {
-    coopSystem.cancelCommuneChannel();
-  },
-});
+      if (isSpeaking && communeSnapshot.judgment) {
+        coopSystem?.setCommuneSuspense?.(true);
+        if (communeSnapshot.preClimax) {
+          coopSystem?.combatSfx?.playCommuneStart?.(coopSystem?.player?.activeHeroId || 'Knight');
+        }
+        const quote =
+          communeSnapshot.judgment.divine_quote ||
+          communeSnapshot.judgment.subtitle ||
+          '';
+        if (quote) {
+          showCombatBanner(
+            {
+              title: 'THE SOVEREIGN · GOD OF LOVE',
+              subtitle: quote,
+              kind:
+                String(communeSnapshot.judgment.verdict || '').toLowerCase() === 'smite' ||
+                String(communeSnapshot.judgment.prayerMode || '').toLowerCase() === 'smite'
+                  ? 'warning'
+                  : 'blessing',
+            },
+            8000
+          );
+        }
+      }
+      sculptedHud?.setCommuneState({
+        listening: isListening,
+        elapsedSeconds: communeSnapshot.elapsed,
+        maxSeconds: communeSnapshot.maxDuration,
+      });
+    },
+    onVerdict: (judgment) => {
+      const speakerRole = coopSystem.player.activeHeroId || 'Knight';
+      const updatedProg = coopSystem.coopClient.progression.applyVerdictProgression(judgment);
+      sculptedHud?.setProgressionState(updatedProg);
+      coopSystem.applyCommuneVerdict(judgment, speakerRole);
+    },
+    onCancel: () => {
+      coopSystem.cancelCommuneChannel();
+    },
+  });
+}
 
 async function openAltarSteleModal(explicitStone = null) {
   const stone =
@@ -3051,7 +3293,7 @@ async function finishCommuneHold() {
 const _lobbyProjVec = new THREE.Vector3();
 const _lobbyRaycaster = new THREE.Raycaster();
 const _lobbyPointerNdc = new THREE.Vector2();
-let eAimDragDistance = 9.5;
+let eAimDragDistance = 14.5;
 
 function projectWorldPointToScreen(wx, wy, wz) {
   const width = window.innerWidth || 1440;
@@ -3215,229 +3457,306 @@ function getLiveDodgeInputOptions(extraOpts = {}) {
   return { ...extraOpts, camYaw: camState.yaw };
 }
 
-sculptedHud = createSculptedHud({
-  container: document.getElementById('hud'),
-  initialProfile: activeProfile,
-  initialRole: coopSystem.player.activeHeroId || 'Knight',
-  onAction: (actionName, actionOpts = {}) => {
-    if (camState.mode === 'vista') {
-      camState.mode = 'player';
-      updateViewButtons();
-    }
-    if (actionName === 'attack') {
-      coopSystem.triggerAction('attack');
-    } else if (actionName === 'heavy' || actionName === 'block_start') {
-      if (coopSystem.player.activeHeroId === 'Knight') {
-        coopSystem.triggerAction('heavy');
+function initSculptedHudSystem(createSculptedHudFn) {
+  sculptedHud = createSculptedHudFn({
+    container: document.getElementById('hud'),
+    initialProfile: activeProfile,
+    initialRole: coopSystem.player.activeHeroId || 'Knight',
+    onAction: (actionName, actionOpts = {}) => {
+      if (camState.mode === 'vista') {
+        camState.mode = 'player';
+        updateViewButtons();
       }
-    } else if (actionName === 'block_end') {
-      coopSystem.actionAim?.releaseHeavy?.('Knight');
-    } else if (actionName === 'shatterlance_release') {
-      coopSystem.triggerAction('shatterlance_aim_release', {
-        distance: eAimDragDistance,
-        yaw: camState.yaw,
-        pitch: camState.pitch,
-      });
-    } else if (actionName === 'dash') {
-      coopSystem.triggerAction('dash', getLiveDodgeInputOptions(actionOpts));
-    } else if (actionName === 'jump') {
-      coopSystem.triggerAction('jump');
-    } else if (actionName === 'skill_e') {
-      coopSystem.triggerAction('skill');
-    } else if (actionName === 'ultimate') {
-      coopSystem.triggerAction('ultimate');
-    }
-  },
-  onAimStart: (payload = {}) => {
-    if (coopSystem.player.activeHeroId === 'Mage') {
-      const isShatter = payload?.spellId === 'shatterlance' || payload?.slot === 'Attack';
-      eAimDragDistance = isShatter ? 7.5 : 9.5;
-      coopSystem.startSkillAim({
-        spellId: isShatter ? 'shatterlance' : undefined,
-        yaw: camState.yaw,
-        pitch: camState.pitch,
-        distance: eAimDragDistance,
-      });
-    }
-  },
-  onAimMove: ({ clientY, dx = 0, dy = 0 } = {}) => {
-    if (coopSystem.player.activeHeroId === 'Mage') {
-      const minD = 0.8;
-      const maxD = 18.0;
-      if (typeof dx === 'number' && Math.abs(dx) > 0) {
-        camState.yaw -= dx * 0.0055;
-        coopSystem.heroStates.Mage.yaw = camState.yaw;
+      if (actionName === 'attack') {
+        coopSystem.triggerAction('attack');
+      } else if (actionName === 'heavy' || actionName === 'block_start') {
+        if (coopSystem.player.activeHeroId === 'Knight') {
+          coopSystem.triggerAction('heavy');
+        }
+      } else if (actionName === 'block_end') {
+        coopSystem.actionAim?.releaseHeavy?.('Knight');
+      } else if (actionName === 'shatterlance_release') {
+        coopSystem.triggerAction('shatterlance_aim_release', {
+          distance: eAimDragDistance,
+          yaw: camState.yaw,
+          pitch: camState.pitch,
+        });
+      } else if (actionName === 'dash') {
+        coopSystem.triggerAction('dash', getLiveDodgeInputOptions(actionOpts));
+      } else if (actionName === 'jump') {
+        coopSystem.triggerAction('jump');
+      } else if (actionName === 'skill_e') {
+        coopSystem.triggerAction('skill');
+      } else if (actionName === 'ultimate') {
+        coopSystem.triggerAction('ultimate');
       }
-      if (typeof dy === 'number' && Math.abs(dy) > 0) {
-        eAimDragDistance = clamp(eAimDragDistance - dy * 0.095, minD, maxD);
-        camState.pitch = clamp(camState.pitch + dy * 0.0032, 0.04, 1.15);
-      } else if (typeof clientY === 'number') {
-        const normY =
-          1.0 - clamp(clientY / Math.max(1, window.innerHeight || 900), 0, 1);
-        eAimDragDistance = clamp(minD + normY * (maxD - minD), minD, maxD);
+    },
+    onAimStart: (payload = {}) => {
+      if (coopSystem.player.activeHeroId === 'Mage') {
+        const isTouchSlotE = Boolean(
+          payload?.slot === 'E' && (payload?.source === 'touch' || payload?.touch)
+        );
+        const isShatter = payload?.spellId === 'shatterlance' || payload?.slot === 'Attack';
+        const activeSpell =
+          coopSystem.heroStates?.Mage?.selectedSpell ||
+          (coopSystem.heroStates?.Mage?.selectedElement === 'fire' ? 'cinder_fall' : 'frost_lance');
+        if (isTouchSlotE) {
+          coopSystem.startSkillAim({
+            source: 'touch',
+            spellId: activeSpell,
+            camYaw: camState.yaw,
+            camPitch: camState.pitch,
+            touch: payload.touch || { dx: 0, dy: 0, overButton: true, leftButton: false },
+          });
+          return;
+        }
+        eAimDragDistance = isShatter ? 14.5 : activeSpell === 'frost_lance' ? 14.5 : 9.5;
+        coopSystem.startSkillAim({
+          spellId: isShatter ? 'shatterlance' : activeSpell,
+          yaw: camState.yaw,
+          pitch: camState.pitch,
+          distance: eAimDragDistance,
+        });
       }
-      coopSystem.updateSkillAim({
-        distance: eAimDragDistance,
-        yaw: camState.yaw,
-        pitch: camState.pitch,
+    },
+    onAimMove: (payload = {}) => {
+      if (coopSystem.player.activeHeroId === 'Mage') {
+        const { clientY, dx = 0, dy = 0, slot, source, touch } = payload || {};
+        if (slot === 'E' && (source === 'touch' || touch)) {
+          coopSystem.updateSkillAim({
+            touch: touch || { dx, dy: -dy, overButton: false, leftButton: true },
+            camYaw: camState.yaw,
+            camPitch: camState.pitch,
+          });
+          return;
+        }
+        const minD = 0.8;
+        const maxD = 18.0;
+        const yawSens = source === 'touch' ? 0.0042 : 0.0055;
+        const pitchSens = source === 'touch' ? 0.0026 : 0.0032;
+        if (typeof dx === 'number' && Math.abs(dx) > 0) {
+          camState.yaw -= dx * yawSens;
+          coopSystem.heroStates.Mage.yaw = camState.yaw;
+        }
+        if (typeof dy === 'number' && Math.abs(dy) > 0) {
+          eAimDragDistance = clamp(eAimDragDistance - dy * 0.095, minD, maxD);
+          camState.pitch = clamp(camState.pitch + dy * pitchSens, 0.04, 1.15);
+        } else if (typeof clientY === 'number') {
+          const normY =
+            1.0 - clamp(clientY / Math.max(1, window.innerHeight || 900), 0, 1);
+          eAimDragDistance = clamp(minD + normY * (maxD - minD), minD, maxD);
+        }
+        coopSystem.updateSkillAim({
+          distance: eAimDragDistance,
+          yaw: camState.yaw,
+          pitch: camState.pitch,
+        });
+      }
+    },
+    onAimRelease: (payload = {}) => {
+      if (coopSystem.player.activeHeroId === 'Mage') {
+        const { slot, source, touch, dx = 0, dy = 0 } = payload || {};
+        if (slot === 'E' && (source === 'touch' || touch)) {
+          coopSystem.releaseSkillAim({
+            touch: touch || { dx, dy: -dy, overButton: false, leftButton: true },
+            camYaw: camState.yaw,
+            camPitch: camState.pitch,
+          });
+          return;
+        }
+        coopSystem.releaseSkillAim({
+          distance: eAimDragDistance,
+          yaw: camState.yaw,
+          pitch: camState.pitch,
+        });
+      }
+    },
+    onToggleElement: () => {
+      const res = coopSystem.toggleElement(coopSystem.player.activeHeroId);
+      if (res?.element) {
+        sculptedHud.setElement(res.element);
+      }
+    },
+    onCommuneToggle: (shouldListen) => {
+      if (shouldListen) {
+        startCommuneHold();
+      } else {
+        finishCommuneHold();
+      }
+    },
+    onReadStone: () => {
+      openAltarSteleModal();
+    },
+    onSwapHero: () => {
+      const isTwoPlayerConnected = Boolean(
+        appFlow?.getState?.()?.peerConnected ||
+          coopSystem?.coopClient?.getState?.()?.peerConnected
+      );
+      if (isTwoPlayerConnected) {
+        return false;
+      }
+      const before = coopSystem.player.activeHeroId;
+      coopSystem.swapActiveHero();
+      return coopSystem.player.activeHeroId !== before;
+    },
+    onDevUnlockNextStage: (nextStage) => {
+      // DEV_SOLO_TEST_REMOVE_FOR_PROD: Sync room progression state with Dev Stage button
+      devStageOverride = nextStage;
+      const mask = nextStage >= 3 ? 0b111 : nextStage === 2 ? 0b011 : nextStage === 1 ? 0b001 : 0;
+      const updated = coopSystem.coopClient.progression.setUnlocks({
+        communeDiscovered: nextStage >= 1,
+        iceUnlocked: nextStage >= 1,
+        fireUnlocked: nextStage >= 2,
+        ultimateUnlocked: nextStage >= 3,
+        stone1Solved: nextStage >= 1,
+        stone2Solved: nextStage >= 2,
+        stone3Solved: nextStage >= 3,
+        stonesSolvedMask: mask,
       });
-    }
-  },
-  onAimRelease: ({ touch } = {}) => {
-    if (coopSystem.player.activeHeroId === 'Mage') {
-      coopSystem.releaseSkillAim({
-        distance: eAimDragDistance,
-        yaw: camState.yaw,
-        pitch: camState.pitch,
-      });
-    }
-  },
-  onToggleElement: () => {
-    const res = coopSystem.toggleElement(coopSystem.player.activeHeroId);
-    if (res?.element) {
-      sculptedHud.setElement(res.element);
-    }
-  },
-  onCommuneToggle: (shouldListen) => {
-    if (shouldListen) {
-      startCommuneHold();
-    } else {
-      finishCommuneHold();
-    }
-  },
-  onReadStone: () => {
-    openAltarSteleModal();
-  },
-  onSwapHero: () => {
-    const isTwoPlayerConnected = Boolean(
-      appFlow?.getState?.()?.peerConnected ||
-        coopSystem?.coopClient?.getState?.()?.peerConnected
-    );
-    if (isTwoPlayerConnected) {
-      return false;
-    }
-    const before = coopSystem.player.activeHeroId;
-    coopSystem.swapActiveHero();
-    return coopSystem.player.activeHeroId !== before;
-  },
-  onDevUnlockNextStage: (nextStage) => {
-    // DEV_SOLO_TEST_REMOVE_FOR_PROD: Sync room progression state with Dev Stage button
-    devStageOverride = nextStage;
-    const mask = nextStage >= 3 ? 0b111 : nextStage === 2 ? 0b011 : nextStage === 1 ? 0b001 : 0;
-    const updated = coopSystem.coopClient.progression.setUnlocks({
-      communeDiscovered: nextStage >= 1,
-      iceUnlocked: nextStage >= 1,
-      fireUnlocked: nextStage >= 2,
-      ultimateUnlocked: nextStage >= 3,
-      stone1Solved: nextStage >= 1,
-      stone2Solved: nextStage >= 2,
-      stone3Solved: nextStage >= 3,
-      stonesSolvedMask: mask,
-    });
-    coopSystem.setUnlockedStage?.(nextStage);
-    coopSystem.campaignLoop?.setUnlockedStage?.(nextStage, mask);
-    sculptedHud?.setProgressionState(updated);
-    updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
-  },
-  onSelectTimeOfDay: (todChoice) => {
-    if (todChoice === 'auto') {
-      autoCycleTod = true;
-    } else {
-      autoCycleTod = false;
-      applyTimeOfDay(todChoice);
-    }
-  },
-  onSelectProfile: (profChoice) => {
-    setProfile(profChoice);
-  },
-  onCameraOrbit: (dx, dy) => {
-    applyCameraOrbitDelta(dx, dy);
-  },
-});
+      coopSystem.setUnlockedStage?.(nextStage);
+      coopSystem.campaignLoop?.setUnlockedStage?.(nextStage, mask);
+      sculptedHud?.setProgressionState(updated);
+      updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
+    },
+    onSelectTimeOfDay: (todChoice) => {
+      if (todChoice === 'auto') {
+        autoCycleTod = true;
+      } else {
+        autoCycleTod = false;
+        applyTimeOfDay(todChoice);
+      }
+    },
+    onSelectProfile: (profChoice) => {
+      setProfile(profChoice);
+    },
+    onCameraOrbit: (dx, dy, meta) => {
+      applyCameraOrbitDelta(dx, dy, meta);
+    },
+    onChangeCameraSensitivity: (preset) => {
+      if (preset === 'low' || preset === 'medium' || preset === 'high') {
+        camState.sensitivity = preset;
+      }
+    },
+    onCopyRoomInvite: async () => {
+      const shareUrl = coopSystem?.coopClient?.getShareUrl?.() || window.location.href;
+      try {
+        await navigator.clipboard?.writeText(shareUrl);
+      } catch {
+        // ignore clipboard fallback
+      }
+      coopSystem?.combatSfx?.playUi?.('click');
+      return shareUrl;
+    },
+    onEditRoomCode: () => {
+      const current = coopSystem?.coopClient?.getRoomCode?.() || 'LOVE';
+      const entered = window.prompt('Enter Co-Op Room Phrase or Code:', current);
+      if (entered) {
+        coopSystem.coopClient.setRoomCode(entered);
+        updateCoopPill(coopSystem.coopClient.getState());
+      }
+    },
+    onUiSfx: (kind) => {
+      coopSystem?.combatSfx?.playUi?.(kind);
+    },
+  });
 
-if (sculptedHud) {
-  const syncHeroElementState = (el) => {
-    if (el !== 'ice' && el !== 'fire') return;
-    const spell = el === 'fire' ? 'cinder_fall' : 'frost_lance';
-    if (coopSystem?.heroStates?.Knight) coopSystem.heroStates.Knight.selectedElement = el;
-    if (coopSystem?.heroStates?.Mage) {
-      coopSystem.heroStates.Mage.selectedElement = el;
-      coopSystem.heroStates.Mage.selectedSpell = spell;
-    }
-    if (coopSystem?.actionAim?.heroes?.Knight) {
-      coopSystem.actionAim.heroes.Knight.selectedElement = el;
-    }
-    if (coopSystem?.actionAim?.heroes?.Mage) {
-      coopSystem.actionAim.heroes.Mage.selectedElement = el;
-      coopSystem.actionAim.heroes.Mage.selectedSpell = spell;
-    }
-    if (coopSystem?.campaignLoop?.combatHeroes?.Knight) {
-      coopSystem.campaignLoop.combatHeroes.Knight.selectedElement = el;
-    }
-    if (coopSystem?.campaignLoop?.combatHeroes?.Mage) {
-      coopSystem.campaignLoop.combatHeroes.Mage.selectedElement = el;
-      coopSystem.campaignLoop.combatHeroes.Mage.selectedSpell = spell;
-    }
-    if (coopSystem?.coopClient?.progression?.state) {
-      coopSystem.coopClient.progression.state.activeElement = el;
-    }
-  };
-  const origSetElement = sculptedHud.setElement;
-  sculptedHud.setElement = (el) => {
-    syncHeroElementState(el);
-    return origSetElement(el);
-  };
-  const origSetProgressionState = sculptedHud.setProgressionState;
-  sculptedHud.setProgressionState = (patch = {}) => {
-    if (typeof patch?.unlockedStage === 'number') {
-      coopSystem?.setUnlockedStage?.(patch.unlockedStage);
-      coopSystem?.campaignLoop?.setUnlockedStage?.(patch.unlockedStage, patch.stonesSolvedMask);
-    }
-    if (patch?.activeElement === 'ice' || patch?.activeElement === 'fire') {
-      syncHeroElementState(patch.activeElement);
-    }
-    return origSetProgressionState(patch);
-  };
-}
+  if (sculptedHud) {
+    const syncHeroElementState = (el) => {
+      if (el !== 'ice' && el !== 'fire') return;
+      const spell = el === 'fire' ? 'cinder_fall' : 'frost_lance';
+      if (coopSystem?.heroStates?.Knight) coopSystem.heroStates.Knight.selectedElement = el;
+      if (coopSystem?.heroStates?.Mage) {
+        coopSystem.heroStates.Mage.selectedElement = el;
+        coopSystem.heroStates.Mage.selectedSpell = spell;
+      }
+      if (coopSystem?.actionAim?.heroes?.Knight) {
+        coopSystem.actionAim.heroes.Knight.selectedElement = el;
+      }
+      if (coopSystem?.actionAim?.heroes?.Mage) {
+        coopSystem.actionAim.heroes.Mage.selectedElement = el;
+        coopSystem.actionAim.heroes.Mage.selectedSpell = spell;
+      }
+      if (coopSystem?.campaignLoop?.combatHeroes?.Knight) {
+        coopSystem.campaignLoop.combatHeroes.Knight.selectedElement = el;
+      }
+      if (coopSystem?.campaignLoop?.combatHeroes?.Mage) {
+        coopSystem.campaignLoop.combatHeroes.Mage.selectedElement = el;
+        coopSystem.campaignLoop.combatHeroes.Mage.selectedSpell = spell;
+      }
+      if (coopSystem?.coopClient?.progression?.state) {
+        coopSystem.coopClient.progression.state.activeElement = el;
+      }
+    };
+    const origSetElement = sculptedHud.setElement;
+    sculptedHud.setElement = (el) => {
+      syncHeroElementState(el);
+      return origSetElement(el);
+    };
+    const origSetProgressionState = sculptedHud.setProgressionState;
+    sculptedHud.setProgressionState = (patch = {}) => {
+      if (typeof patch?.unlockedStage === 'number') {
+        coopSystem?.setUnlockedStage?.(patch.unlockedStage);
+        coopSystem?.campaignLoop?.setUnlockedStage?.(patch.unlockedStage, patch.stonesSolvedMask);
+      }
+      if (patch?.activeElement === 'ice' || patch?.activeElement === 'fire') {
+        syncHeroElementState(patch.activeElement);
+      }
+      return origSetProgressionState(patch);
+    };
+  }
 
-// Auto-unlock all Stage 3 abilities & full Q-energy when `?dev=1` or `?nolobby=1` is in the URL
-if (typeof window !== 'undefined') {
-  const bootParams = new URLSearchParams(window.location?.search || '');
-  if (bootParams.get('dev') === '1' || bootParams.get('nolobby') === '1' || bootParams.get('stage') === '3') {
-    devStageOverride = 3;
-    const mask = 0b111;
-    const updated = coopSystem.coopClient.progression.setUnlocks({
-      communeDiscovered: true,
-      iceUnlocked: true,
-      fireUnlocked: true,
-      ultimateUnlocked: true,
-      stone1Solved: true,
-      stone2Solved: true,
-      stone3Solved: true,
-      stonesSolvedMask: mask,
-    });
-    coopSystem.setUnlockedStage?.(3);
-    coopSystem.campaignLoop?.setUnlockedStage?.(3, mask);
-    if (coopSystem.campaignLoop?.combatHeroes?.Knight) {
-      coopSystem.campaignLoop.combatHeroes.Knight.qEnergy = 100;
-      coopSystem.campaignLoop.combatHeroes.Knight.qEnergyPct = 1.0;
+  // Auto-unlock Stage 3 test abilities when `?dev=1`, `?nolobby=1`, or `?stage=3` is in URL
+  if (typeof window !== 'undefined') {
+    const bootParams = new URLSearchParams(window.location?.search || '');
+    if (bootParams.get('dev') === '1' || bootParams.get('nolobby') === '1' || bootParams.get('stage') === '3') {
+      devStageOverride = 3;
+      const preSolved = bootParams.get('solved') === '1';
+      const mask = preSolved ? 0b111 : 0;
+      const updated = coopSystem.coopClient.progression.setUnlocks({
+        communeDiscovered: true,
+        iceUnlocked: true,
+        fireUnlocked: true,
+        ultimateUnlocked: true,
+        stone1Solved: preSolved,
+        stone2Solved: preSolved,
+        stone3Solved: preSolved,
+        stonesSolvedMask: mask,
+      });
+      coopSystem.setUnlockedStage?.(3);
+      coopSystem.campaignLoop?.setUnlockedStage?.(3, mask);
+      if (coopSystem.campaignLoop?.combatHeroes?.Knight) {
+        coopSystem.campaignLoop.combatHeroes.Knight.qEnergy = 100;
+        coopSystem.campaignLoop.combatHeroes.Knight.qEnergyPct = 1.0;
+      }
+      if (coopSystem.campaignLoop?.combatHeroes?.Mage) {
+        coopSystem.campaignLoop.combatHeroes.Mage.qEnergy = 160;
+        coopSystem.campaignLoop.combatHeroes.Mage.qEnergyPct = 1.0;
+      }
+      sculptedHud?.setProgressionState(updated);
     }
-    if (coopSystem.campaignLoop?.combatHeroes?.Mage) {
-      coopSystem.campaignLoop.combatHeroes.Mage.qEnergy = 160;
-      coopSystem.campaignLoop.combatHeroes.Mage.qEnergyPct = 1.0;
-    }
-    sculptedHud?.setProgressionState(updated);
   }
 }
 
-function applyOpeningFlowCameraAndPoses(step) {
+function applyOpeningFlowCameraAndPoses(step, { renderNow = false } = {}) {
   if (step === FLOW_STEPS.IN_GAME) {
     camState.mode = 'player';
     sculptedHud?.setVisible(true);
+    updateCoopPill(coopSystem?.coopClient?.getState?.());
     updateCamera();
     return;
   }
   sculptedHud?.setVisible(false);
+  coopSystem?.clearHeroHitFlashes?.();
+  if (coopSystem?.heroStates) {
+    for (const hSt of [coopSystem.heroStates.Knight, coopSystem.heroStates.Mage]) {
+      if (!hSt) continue;
+      hSt.hitFlashTimer = -1;
+      hSt.hitKnockbackX = 0;
+      hSt.hitKnockbackZ = 0;
+      hSt.actionState = null;
+      hSt.actionTimer = 0;
+    }
+  }
   const pose = getOpeningCameraPose(step, walkableHeightAt);
   camState.mode = 'vista';
   camState.vistaPos.set(...pose.pos);
@@ -3510,156 +3829,161 @@ function applyOpeningFlowCameraAndPoses(step) {
     });
   }
   updateCamera();
+  if (renderNow && step !== FLOW_STEPS.IN_GAME && renderer && post) {
+    post.render(0);
+  }
   if (step === FLOW_STEPS.FLOWER_LOBBY) {
     updateFlowerLobbyHeroProjections();
   }
 }
 
-if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/world/sw.js').catch(() => {});
-}
+function initTouchHudAndButtons(createTouchHudFn) {
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/world/sw.js').catch(() => {});
+  }
 
-const touchHud = createTouchHud({
-  hudRoot: document.getElementById('hud'),
-  onCameraOrbit: (dx, dy) => {
-    if (camState.mode === 'player') {
-      camState.yaw -= dx * 0.0055;
-      camState.pitch = clamp(camState.pitch + dy * 0.0045, 0.04, 1.15);
-    } else {
-      const offset = camState.vistaPos.clone().sub(camState.vistaTarget);
-      const sph = new THREE.Spherical().setFromVector3(offset);
-      sph.theta -= dx * 0.0055;
-      sph.phi = clamp(sph.phi - dy * 0.0045, 0.08, Math.PI * 0.47);
-      offset.setFromSpherical(sph);
-      camState.vistaPos.copy(camState.vistaTarget).add(offset);
-    }
-  },
-  onAction: (actionType) => {
-    if (camState.mode === 'vista') {
-      camState.mode = 'player';
-      updateViewButtons();
-    }
-    coopSystem.triggerAction(actionType);
-  },
-  onCommuneStart: () => {
-    startCommuneHold();
-  },
-  onCommuneEnd: () => {
-    finishCommuneHold();
-  },
-});
-
-if (communeRBtn) {
-  communeRBtn.addEventListener('pointerdown', (e) => {
-    e.stopPropagation();
-    try {
-      communeRBtn.setPointerCapture(e.pointerId);
-    } catch {
-      // ignore
-    }
-    startCommuneHold();
+  touchHud = createTouchHudFn({
+    hudRoot: document.getElementById('hud'),
+    onCameraOrbit: (dx, dy, meta) => {
+      applyCameraOrbitDelta(dx, dy, { inputType: 'touch', ...(meta || {}) });
+    },
+    onAction: (actionType) => {
+      if (!coopSystem) return;
+      if (camState.mode === 'vista') {
+        camState.mode = 'player';
+        updateViewButtons();
+      }
+      coopSystem.triggerAction(actionType);
+    },
+    onCommuneStart: () => {
+      startCommuneHold();
+    },
+    onCommuneEnd: () => {
+      finishCommuneHold();
+    },
   });
-  const endCommuneBtn = (e) => {
-    e.stopPropagation();
-    finishCommuneHold();
-  };
-  communeRBtn.addEventListener('pointerup', endCommuneBtn);
-  communeRBtn.addEventListener('pointercancel', endCommuneBtn);
-}
 
-if (hudSwapHeroBtn) {
-  hudSwapHeroBtn.addEventListener('click', () => {
-    const isTwoPlayerConnected = Boolean(
-      appFlow?.getState?.()?.peerConnected ||
-        coopSystem?.coopClient?.getState?.()?.peerConnected
-    );
-    if (!isTwoPlayerConnected) {
-      coopSystem.swapActiveHero();
-    }
-  });
-}
-
-// Wire 4-Spell Deck Buttons (`1..4`) & `Q` Couples Ultimate Button
-document.querySelectorAll('.spell-slot-btn').forEach((btn) => {
-  const slot = Number(btn.dataset.spellSlot);
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (camState.mode === 'vista') {
-      camState.mode = 'player';
-      updateViewButtons();
-    }
-    coopSystem.triggerSpell(slot);
-  });
-});
-
-if (ultQBtn) {
-  ultQBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (camState.mode === 'vista') {
-      camState.mode = 'player';
-      updateViewButtons();
-    }
-    coopSystem.triggerAction('ultimate');
-  });
-}
-
-// Wire Co-Op Room Code Edit & Share Link Buttons
-if (coopRoomBtn) {
-  coopRoomBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const current = coopSystem.coopClient.getRoomCode();
-    const entered = window.prompt('Enter 4-letter Co-Op Room Code:', current);
-    if (entered) {
-      const norm = coopSystem.coopClient.setRoomCode(entered);
-      if (coopRoomCodeEl) coopRoomCodeEl.textContent = norm;
-    }
-  });
-}
-
-if (coopShareBtn) {
-  coopShareBtn.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const shareUrl = coopSystem.coopClient.getShareUrl();
-    try {
-      await navigator.clipboard?.writeText(shareUrl);
-    } catch {
-      // ignore clipboard fallback
-    }
-    const prev = coopShareBtn.textContent;
-    coopShareBtn.textContent = 'Copied!';
-    setTimeout(() => {
-      coopShareBtn.textContent = prev;
-    }, 1500);
-  });
-}
-
-if (replayExpeditionBtn) {
-  replayExpeditionBtn.addEventListener('click', () => {
-    coopSystem.campaignLoop.resetCampaign();
-    coopSystem.setUnlockedStage?.(0);
-    coopSystem.campaignLoop?.setUnlockedStage?.(0, 0);
-    coopSystem.coopClient?.startExpedition?.({ resetProgression: true });
-    sculptedHud?.setProgressionState?.({
-      communeDiscovered: false,
-      iceUnlocked: false,
-      fireUnlocked: false,
-      ultimateUnlocked: false,
-      unlockedStage: 0,
-      stonesSolved: 0,
-      stonesSolvedMask: 0,
-      stone1Solved: false,
-      stone2Solved: false,
-      stone3Solved: false,
+  if (communeRBtn) {
+    communeRBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      try {
+        communeRBtn.setPointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+      startCommuneHold();
     });
-    coopSystem.teleportLeaderAndPartner(0.0, 124.0, Math.PI);
-    if (victoryModal) victoryModal.classList.remove('visible');
-    updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
-  });
-}
+    const endCommuneBtn = (e) => {
+      e.stopPropagation();
+      finishCommuneHold();
+    };
+    communeRBtn.addEventListener('pointerup', endCommuneBtn);
+    communeRBtn.addEventListener('pointercancel', endCommuneBtn);
+  }
 
-touchHud.setProfileMode(activeProfile);
-updateCombatHud(coopSystem.campaignLoop.getStateSnapshot());
-updateCoopPill(coopSystem.coopClient.getState());
+  if (hudSwapHeroBtn) {
+    hudSwapHeroBtn.addEventListener('click', () => {
+      const isTwoPlayerConnected = Boolean(
+        appFlow?.getState?.()?.peerConnected ||
+          coopSystem?.coopClient?.getState?.()?.peerConnected
+      );
+      if (!isTwoPlayerConnected) {
+        coopSystem?.swapActiveHero?.();
+      }
+    });
+  }
+
+  // Wire 4-Spell Deck Buttons (`1..4`) & `Q` Couples Ultimate Button
+  document.querySelectorAll('.spell-slot-btn').forEach((btn) => {
+    const slot = Number(btn.dataset.spellSlot);
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!coopSystem) return;
+      if (camState.mode === 'vista') {
+        camState.mode = 'player';
+        updateViewButtons();
+      }
+      coopSystem.triggerSpell(slot);
+    });
+  });
+
+  if (ultQBtn) {
+    ultQBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!coopSystem) return;
+      if (camState.mode === 'vista') {
+        camState.mode = 'player';
+        updateViewButtons();
+      }
+      coopSystem.triggerAction('ultimate');
+    });
+  }
+
+  // Wire Co-Op Room Code Edit & Share Link Buttons
+  if (coopRoomBtn) {
+    coopRoomBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!coopSystem?.coopClient) return;
+      const current = coopSystem.coopClient.getRoomCode();
+      const entered = window.prompt('Enter 4-letter Co-Op Room Code:', current);
+      if (entered) {
+        const norm = coopSystem.coopClient.setRoomCode(entered);
+        if (coopRoomCodeEl) coopRoomCodeEl.textContent = norm;
+        updateCoopPill(coopSystem.coopClient.getState());
+      }
+    });
+  }
+
+  if (coopShareBtn) {
+    coopShareBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!coopSystem?.coopClient) return;
+      const shareUrl = coopSystem.coopClient.getShareUrl();
+      try {
+        await navigator.clipboard?.writeText(shareUrl);
+      } catch {
+        // ignore clipboard fallback
+      }
+      const prev = coopShareBtn.textContent;
+      coopShareBtn.textContent = 'Copied!';
+      setTimeout(() => {
+        coopShareBtn.textContent = prev;
+      }, 1500);
+    });
+  }
+
+  if (replayExpeditionBtn) {
+    replayExpeditionBtn.addEventListener('click', () => {
+      if (!coopSystem) return;
+      coopSystem.campaignLoop.resetCampaign();
+      coopSystem.setUnlockedStage?.(0);
+      coopSystem.campaignLoop?.setUnlockedStage?.(0, 0);
+      coopSystem.coopClient?.startExpedition?.({ resetProgression: true });
+      sculptedHud?.setProgressionState?.({
+        communeDiscovered: false,
+        iceUnlocked: false,
+        fireUnlocked: false,
+        ultimateUnlocked: false,
+        unlockedStage: 0,
+        stonesSolved: 0,
+        stonesSolvedMask: 0,
+        stone1Solved: false,
+        stone2Solved: false,
+        stone3Solved: false,
+      });
+      coopSystem.teleportLeaderAndPartner(0.0, 124.0, Math.PI);
+      if (victoryModal) victoryModal.classList.remove('visible');
+      updateCombatHud(coopSystem.campaignLoop.getStateSnapshot(coopSystem.heroStates));
+    });
+  }
+
+  if (coopSystem?.coopClient) {
+    updateCoopPill(coopSystem.coopClient.getState());
+  }
+  touchHud.setProfileMode(activeProfile);
+  updateCombatHud(coopSystem.campaignLoop.getStateSnapshot());
+  updateCoopPill(coopSystem.coopClient.getState());
+}
 
 /* ------------------------------------------------------------------------- */
 /* 8. Post-Processing Pipeline (4x MSAA + Bloom + Time-of-Day Grade)         */
@@ -3704,6 +4028,7 @@ function syncEnvironmentPolarity() {
 }
 
 export function applyTimeOfDay(modeOrT) {
+  if (!sky || !post || !terrainKit || !housesKit) return null;
   const skyState = sky.setTimeOfDay(modeOrT);
   currentTodT = skyState.t;
 
@@ -4347,7 +4672,8 @@ function updateCamera() {
   stoneDecals?.updateLod?.(camera);
 }
 
-export function setView(id) {
+export function setView(id, { skipRender = false } = {}) {
+  if (!coopSystem || !sky || !post) return;
   const v = VIEWS[id] || VIEWS.plaza;
   activeViewId = v.id;
   activeGameplayShotSpec = null;
@@ -4379,9 +4705,13 @@ export function setView(id) {
   syncCharacterGroundShadows();
   updateMeadowFocus(windElapsed);
   sky.update(windElapsed);
-  post.render(0.016);
-  updateViewButtons();
-  refreshTelemetryReadout();
+  if (!skipRender) {
+    post.render(0.016);
+    updateViewButtons();
+    refreshTelemetryReadout();
+  } else {
+    updateViewButtons();
+  }
 }
 
 export function setShot(shotId) {
@@ -4532,8 +4862,14 @@ export function setProfile(profileName) {
   if (!PROFILES[profileName]) return;
   activeProfile = profileName;
   const cfg = PROFILES[activeProfile];
-  renderer.setPixelRatio(cfg.dpr);
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  if (renderer) {
+    renderer.setPixelRatio(cfg.dpr);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+  if (!renderer || !post || !terrainKit || !village || !meadow || !coopSystem) {
+    syncProfileButtons();
+    return;
+  }
   post.setQuality?.({ aaSamples: cfg.aaSamples });
   post.setSize(window.innerWidth, window.innerHeight);
   syncStaticSceneProfile(activeProfile);
@@ -4607,6 +4943,19 @@ function syncProfileButtons() {
   for (const btn of document.querySelectorAll('[data-profile]')) {
     btn.classList.toggle('active', btn.dataset.profile === activeProfile);
   }
+  if (typeof document !== 'undefined' && document.body) {
+    document.body.classList.toggle('profile-tablet', activeProfile === 'tablet');
+    document.body.classList.toggle('profile-desktop', activeProfile !== 'tablet');
+  }
+  if (typeof stoneWorldReadBtn !== 'undefined' && stoneWorldReadBtn) {
+    const isTabletPrompt = activeProfile === 'tablet';
+    stoneWorldReadBtn.classList.toggle('is-touch-prompt', isTabletPrompt);
+    const label = isTabletPrompt ? 'Read' : 'G';
+    if (stoneWorldReadBtn.textContent !== label) {
+      stoneWorldReadBtn.textContent = label;
+    }
+    stoneWorldReadBtn.setAttribute('aria-label', label);
+  }
 }
 
 function updateViewButtons() {
@@ -4660,7 +5009,7 @@ function firePendingLmbHoldUpgrade() {
   }
   if (pointerDragging && !coopSystem?.campaignLoop?.isControlLocked?.()) {
     if (coopSystem.player.activeHeroId === 'Mage') {
-      eAimDragDistance = 7.5;
+      eAimDragDistance = 14.5;
       coopSystem.triggerAction('shatterlance_aim_start', {
         yaw: camState.yaw,
         pitch: camState.pitch,
@@ -4681,15 +5030,47 @@ function firePendingLmbHoldUpgrade() {
   }
 }
 
-function applyCameraOrbitDelta(dx, dy) {
+const ORBIT_SENSITIVITY_MULT = Object.freeze({
+  low: 0.62,
+  medium: 0.85,
+  high: 1.18,
+});
+
+function applyCameraOrbitDelta(dx, dy, meta = {}) {
+  const numDx = Number(dx);
+  const numDy = Number(dy);
+  if (!Number.isFinite(numDx) || !Number.isFinite(numDy)) return;
+
+  const isTouch =
+    meta?.inputType === 'touch' || (activeProfile === 'tablet' && meta?.inputType !== 'mouse');
+  camState.orbitCooldown = 0.75;
+
+  let dYaw = 0;
+  let dPitch = 0;
+  if (isTouch) {
+    const vw = clamp(Number(meta?.viewportWidth || window.innerWidth || 1180), 560, 2200);
+    const vh = clamp(Number(meta?.viewportHeight || window.innerHeight || 787), 360, 1400);
+    const dtMs = clamp(Number(meta?.dtMs || 16), 6, 120);
+    const sensKey = meta?.sensitivity || camState.sensitivity || 'high';
+    const sensMult = ORBIT_SENSITIVITY_MULT[sensKey] ?? ORBIT_SENSITIVITY_MULT.high;
+    const instSpeed = Math.hypot(numDx, numDy) / dtMs;
+    const accel = 1.0 + 1.05 * smoothstep(0.22, 1.45, instSpeed);
+    const pitchAccel = 0.85 + 0.35 * smoothstep(0.22, 1.45, instSpeed);
+    dYaw = (numDx / vw) * (4.15 * sensMult * accel);
+    dPitch = (numDy / vh) * (2.15 * sensMult * pitchAccel);
+  } else {
+    dYaw = numDx * 0.0048;
+    dPitch = numDy * 0.0042;
+  }
+
   if (camState.mode === 'player') {
-    camState.yaw -= dx * 0.0048;
-    camState.pitch = clamp(camState.pitch + dy * 0.0042, 0.04, 1.15);
+    camState.yaw -= dYaw;
+    camState.pitch = clamp(camState.pitch + dPitch, 0.04, 1.15);
   } else {
     const offset = camState.vistaPos.clone().sub(camState.vistaTarget);
     const sph = new THREE.Spherical().setFromVector3(offset);
-    sph.theta -= dx * 0.0052;
-    sph.phi = clamp(sph.phi - dy * 0.0042, 0.08, Math.PI * 0.47);
+    sph.theta -= dYaw;
+    sph.phi = clamp(sph.phi - dPitch, 0.08, Math.PI * 0.47);
     offset.setFromSpherical(sph);
     camState.vistaPos.copy(camState.vistaTarget).add(offset);
   }
@@ -4701,6 +5082,8 @@ window.addEventListener('keydown', (e) => {
     debugDevPill?.classList.toggle('visible');
     return;
   }
+
+  if (!coopSystem || !player) return;
 
   if (e.key === 'F4') {
     const isDevMode =
@@ -4863,11 +5246,17 @@ window.addEventListener('keydown', (e) => {
     activeGameplayShotSpec = null;
     if (camState.mode === 'vista') camState.mode = 'player';
     if (coopSystem.player.activeHeroId === 'Mage') {
-      eAimDragDistance = 9.5;
+      const activeMageSpell =
+        coopSystem.heroStates?.Mage?.selectedSpell ||
+        (coopSystem.heroStates?.Mage?.selectedElement === 'fire'
+          ? 'cinder_fall'
+          : 'frost_lance');
+      eAimDragDistance = activeMageSpell === 'frost_lance' ? 14.5 : 14.5;
       coopSystem.startSkillAim({
-        yaw: camState.yaw,
-        pitch: camState.pitch,
-        distance: eAimDragDistance,
+        source: 'desktop',
+        spellId: activeMageSpell,
+        camYaw: camState.yaw,
+        camPitch: camState.pitch,
       });
     } else {
       coopSystem.triggerAction('skill');
@@ -4938,6 +5327,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   const k = e.key.toLowerCase();
   keys.delete(k);
+  if (!coopSystem || !player) return;
   const dirTap = DOUBLE_TAP_DIRECTIONS[k];
   if (dirTap) {
     if (isUiOverlayBlockingInput() || stoneGazeState.inspectActive) {
@@ -4965,11 +5355,18 @@ window.addEventListener('keyup', (e) => {
     coopSystem.player.activeHeroId === 'Mage' &&
     coopSystem.actionAim?.aimState?.active
   ) {
-    coopSystem.releaseSkillAim({
-      distance: eAimDragDistance,
-      yaw: camState.yaw,
-      pitch: camState.pitch,
-    });
+    if (coopSystem.actionAim.aimState.spellId === 'shatterlance') {
+      coopSystem.releaseSkillAim({
+        distance: eAimDragDistance,
+        yaw: camState.yaw,
+        pitch: camState.pitch,
+      });
+    } else {
+      coopSystem.releaseSkillAim({
+        camYaw: camState.yaw,
+        camPitch: camState.pitch,
+      });
+    }
   }
 });
 
@@ -4980,6 +5377,7 @@ canvas.addEventListener('mousedown', (e) => {
     }
     return;
   }
+  if (!coopSystem || !player) return;
   if (isUiOverlayBlockingInput()) return;
   if (coopSystem?.campaignLoop?.isControlLocked?.()) return;
   if (e.button === 2) {
@@ -4989,6 +5387,7 @@ canvas.addEventListener('mousedown', (e) => {
       camState.mode = 'player';
       updateViewButtons();
     }
+    pointerDragging = false;
     lmbHoldPending = false;
     if (lmbHoldTimer) {
       clearTimeout(lmbHoldTimer);
@@ -5020,8 +5419,13 @@ canvas.addEventListener('mousedown', (e) => {
   }
 
   // Zero-lag 0ms LMB attack + Hold (140ms Mage Shatterlance Aim / 280ms Knight Shield Block)
-  coopSystem.triggerAction('attack');
+  const atkRes = coopSystem.triggerAction('attack');
   if (lmbHoldTimer) clearTimeout(lmbHoldTimer);
+  if (atkRes?.shieldBash) {
+    lmbHoldPending = false;
+    lmbHoldSimElapsed = 0;
+    return;
+  }
   lmbHoldPending = true;
   lmbHoldSimElapsed = 0;
   const holdDelay = coopSystem.player.activeHeroId === 'Mage' ? 140 : 280;
@@ -5042,6 +5446,7 @@ window.addEventListener('mouseup', () => {
     clearTimeout(lmbHoldTimer);
     lmbHoldTimer = null;
   }
+  if (!coopSystem || !player) return;
   if (
     coopSystem?.player?.activeHeroId === 'Knight' &&
     coopSystem?.heroStates?.Knight?.shieldBlocking
@@ -5070,12 +5475,14 @@ window.addEventListener('blur', () => {
     clearTimeout(lmbHoldTimer);
     lmbHoldTimer = null;
   }
+  if (!coopSystem) return;
   if (coopSystem?.heroStates?.Knight?.shieldBlocking) {
     coopSystem.triggerAction('release_heavy');
   }
 });
 
 window.addEventListener('mousemove', (e) => {
+  if (!coopSystem || !player) return;
   const isMageAiming =
     coopSystem?.player?.activeHeroId === 'Mage' &&
     Boolean(coopSystem.actionAim?.aimState?.active);
@@ -5090,24 +5497,38 @@ window.addEventListener('mousemove', (e) => {
     const my = e.movementY || rawDy || 0;
     applyCameraOrbitDelta(mx, my);
     if (isMageAiming) {
-      eAimDragDistance = clamp(eAimDragDistance - my * 0.085, 0.8, 18.0);
-      coopSystem.updateSkillAim({
-        distance: eAimDragDistance,
-        yaw: camState.yaw,
-        pitch: camState.pitch,
-      });
+      if (coopSystem.actionAim?.aimState?.spellId === 'shatterlance') {
+        eAimDragDistance = clamp(eAimDragDistance - my * 0.085, 0.8, 18.0);
+        coopSystem.updateSkillAim({
+          distance: eAimDragDistance,
+          yaw: camState.yaw,
+          pitch: camState.pitch,
+        });
+      } else {
+        coopSystem.updateSkillAim({
+          camYaw: camState.yaw,
+          camPitch: camState.pitch,
+        });
+      }
     }
     return;
   }
   if (!pointerDragging && !isMageAiming) return;
   applyCameraOrbitDelta(rawDx, rawDy);
   if (isMageAiming) {
-    eAimDragDistance = clamp(eAimDragDistance - rawDy * 0.085, 0.8, 18.0);
-    coopSystem.updateSkillAim({
-      distance: eAimDragDistance,
-      yaw: camState.yaw,
-      pitch: camState.pitch,
-    });
+    if (coopSystem.actionAim?.aimState?.spellId === 'shatterlance') {
+      eAimDragDistance = clamp(eAimDragDistance - rawDy * 0.085, 0.8, 18.0);
+      coopSystem.updateSkillAim({
+        distance: eAimDragDistance,
+        yaw: camState.yaw,
+        pitch: camState.pitch,
+      });
+    } else {
+      coopSystem.updateSkillAim({
+        camYaw: camState.yaw,
+        camPitch: camState.pitch,
+      });
+    }
   }
 });
 
@@ -5136,8 +5557,8 @@ function syncViewportDimensions() {
   }
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setSize(w, h);
-  post.setSize(w, h);
+  renderer?.setSize?.(w, h);
+  post?.setSize?.(w, h);
   if (appFlow && appFlow.getStep?.() === FLOW_STEPS.FLOWER_LOBBY) {
     updateFlowerLobbyHeroProjections();
   }
@@ -5157,12 +5578,6 @@ if (typeof window !== 'undefined' && window.visualViewport) {
 /* ------------------------------------------------------------------------- */
 
 let evaluateMaliG68Frame = null;
-try {
-  const maliMod = await import('./perf/mali-g68-emulator.js');
-  evaluateMaliG68Frame = maliMod.evaluateMaliG68Frame || maliMod.default || null;
-} catch {
-  evaluateMaliG68Frame = null;
-}
 
 const clock = new THREE.Clock();
 let frames = 0;
@@ -5255,13 +5670,8 @@ function refreshTelemetryReadout(drawsOverride = null) {
   statsEl.textContent = `${measuredFps} FPS · ${sceneDraws} draws`;
 }
 
-applyTimeOfDay('day');
-if (appFlow && appFlow.getStep() !== FLOW_STEPS.IN_GAME) {
-  applyOpeningFlowCameraAndPoses(appFlow.getStep());
-} else {
-  setView('plaza');
-}
-syncProfileButtons();
+let stoneWorldReadBtn = null;
+let stoneInspectExitOverlay = null;
 
 export function setCameraOrbit(yaw, pitch = 0.14, dist = 7.8) {
   camState.mode = 'player';
@@ -5270,9 +5680,6 @@ export function setCameraOrbit(yaw, pitch = 0.14, dist = 7.8) {
   if (typeof dist === 'number') camState.dist = clamp(dist, 3.5, 24.0);
   updateCamera();
 }
-
-let stoneWorldReadBtn = null;
-let stoneInspectExitOverlay = null;
 
 function initStoneInspectionUi() {
   if (typeof document === 'undefined' || stoneWorldReadBtn) return;
@@ -5303,7 +5710,18 @@ function initStoneInspectionUi() {
       font-weight: 700;
       cursor: pointer;
       user-select: none;
+      -webkit-tap-highlight-color: transparent;
       transition: opacity 0.16s ease, transform 0.16s ease;
+    }
+    body.profile-tablet #stone-world-read-btn,
+    #stone-world-read-btn.is-touch-prompt {
+      width: auto;
+      min-width: 78px;
+      height: 44px;
+      padding: 0 16px;
+      border-radius: 999px;
+      font-size: 16px;
+      letter-spacing: 0.02em;
     }
     #stone-world-read-btn.is-visible {
       opacity: 1;
@@ -5324,10 +5742,31 @@ function initStoneInspectionUi() {
       opacity: 0;
       pointer-events: none;
       cursor: pointer;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: max(22px, env(safe-area-inset-bottom, 22px));
+      transition: opacity 0.18s ease;
     }
     #stone-inspect-exit-overlay.is-active {
       opacity: 1;
       pointer-events: auto;
+    }
+    .stone-inspect-exit-pill {
+      display: none;
+      padding: 8px 18px;
+      border-radius: 999px;
+      background: rgba(252, 249, 242, 0.90);
+      border: 1.5px solid #c8b79a;
+      box-shadow: 0 6px 20px rgba(24, 20, 14, 0.22);
+      color: #2f261d;
+      font-family: "Plus Jakarta Sans", "Outfit", system-ui, sans-serif;
+      font-size: 0.84rem;
+      font-weight: 700;
+      pointer-events: none;
+    }
+    body.profile-tablet .stone-inspect-exit-pill {
+      display: inline-flex;
     }
   `;
   document.head.appendChild(style);
@@ -5335,8 +5774,9 @@ function initStoneInspectionUi() {
   stoneWorldReadBtn = document.createElement('button');
   stoneWorldReadBtn.id = 'stone-world-read-btn';
   stoneWorldReadBtn.type = 'button';
-  stoneWorldReadBtn.setAttribute('aria-label', 'G');
-  stoneWorldReadBtn.textContent = 'G';
+  const initLabel = activeProfile === 'tablet' ? 'Read' : 'G';
+  stoneWorldReadBtn.setAttribute('aria-label', initLabel);
+  stoneWorldReadBtn.textContent = initLabel;
   stoneWorldReadBtn.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
   });
@@ -5350,14 +5790,14 @@ function initStoneInspectionUi() {
 
   stoneInspectExitOverlay = document.createElement('div');
   stoneInspectExitOverlay.id = 'stone-inspect-exit-overlay';
+  stoneInspectExitOverlay.innerHTML = '<span class="stone-inspect-exit-pill">Tap anywhere to return</span>';
   stoneInspectExitOverlay.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
     exitStoneInspection();
   });
   document.body.appendChild(stoneInspectExitOverlay);
+  syncProfileButtons();
 }
-
-initStoneInspectionUi();
 
 export function enterStoneInspection(stone = null) {
   const targetStone =
@@ -5365,6 +5805,7 @@ export function enterStoneInspection(stone = null) {
   if (!targetStone) return null;
 
   if (coopSystem?.campaignLoop?.isStoneContested?.(targetStone, coopSystem?.heroStates)) {
+    coopSystem?.combatSfx?.playUi?.('locked');
     showCombatBanner(
       {
         title: 'SACRED STONE SEALED BY GUARDIANS',
@@ -5375,6 +5816,7 @@ export function enterStoneInspection(stone = null) {
     );
     return null;
   }
+  coopSystem?.combatSfx?.playStoneInspect?.();
 
   try {
     if (typeof document !== 'undefined' && document.pointerLockElement) {
@@ -5384,28 +5826,28 @@ export function enterStoneInspection(stone = null) {
     // ignore
   }
 
+  const canonicalLegacyId = normalizeLegacyStoneId(targetStone);
   const siteKey =
-    targetStone.siteKey ||
-    (targetStone.id === 'stone_grove'
+    canonicalLegacyId === 'stone_grove'
       ? 'grove'
-      : targetStone.id === 'stone_pier'
+      : canonicalLegacyId === 'stone_pier'
         ? 'cottage_wall'
-        : 'well');
+        : 'well';
 
   if (siteKey === 'well') {
     stoneGazeState.inspectPos.set(0.0, 0.50, 2.76);
-    stoneGazeState.inspectTarget.set(0.0, 0.485, 1.20);
+    stoneGazeState.inspectTarget.set(0.0, 0.49, 1.24);
     stoneGazeState.inspectFov = 38;
   } else if (siteKey === 'grove') {
-    const gx = targetStone.position?.x ?? 114.0;
-    const gz = targetStone.position?.z ?? 32.0;
+    const gx = targetStone.position?.x ?? 142.0;
+    const gz = targetStone.position?.z ?? 44.0;
     const sy = terrainHeightAt(gx, gz);
     stoneGazeState.inspectPos.set(gx, sy + 2.85, gz + 0.18);
-    stoneGazeState.inspectTarget.set(gx, sy + 0.176, gz + 0.02);
+    stoneGazeState.inspectTarget.set(gx, sy + 0.180, gz + 0.02);
     stoneGazeState.inspectFov = 40;
   } else {
-    const wx = targetStone.position?.x ?? -92.0;
-    const wz = targetStone.position?.z ?? 64.0;
+    const wx = targetStone.position?.x ?? -124.0;
+    const wz = targetStone.position?.z ?? 84.0;
     const wy = terrainHeightAt(wx, wz);
     const rotY = targetStone.rotY ?? 0.45;
     const nx = Math.sin(rotY);
@@ -5416,7 +5858,30 @@ export function enterStoneInspection(stone = null) {
   }
 
   stoneGazeState.inspectActive = true;
-  stoneGazeState.activeStoneId = targetStone.id;
+  stoneGazeState.activeStoneId = canonicalLegacyId;
+  coopSystem?.campaignLoop?.setStoneInspecting?.(true);
+  damageNumbers?.clear?.();
+  if (typeof document !== 'undefined') {
+    document
+      .querySelectorAll('#amarante-damage-numbers-layer .am-dmg-pop')
+      .forEach((el) => el.remove());
+  }
+  const inspectStoneX =
+    targetStone.position?.x ??
+    (siteKey === 'grove' ? 142.0 : siteKey === 'cottage_wall' ? -124.0 : 0.0);
+  const inspectStoneZ =
+    targetStone.position?.z ??
+    (siteKey === 'grove' ? 44.0 : siteKey === 'cottage_wall' ? 84.0 : 0.0);
+  const activeEnemies = coopSystem?.enemyManager?.activeEnemies || [];
+  for (let i = 0; i < activeEnemies.length; i++) {
+    const e = activeEnemies[i];
+    if (!e || !e.dead) continue;
+    if (Math.hypot((e.x ?? 0) - inspectStoneX, (e.z ?? 0) - inspectStoneZ) <= 10.0) {
+      if (e.char?.group) e.char.group.visible = false;
+      e.deathTimer = Math.min(e.deathTimer ?? 0, 0.01);
+    }
+  }
+  coopSystem?.combatSfx?.setAmbienceState?.('stone');
   stoneDecals?.updateLod?.(camera);
   keys.clear();
   sculptedHud?.resetJoystick?.();
@@ -5427,14 +5892,19 @@ export function enterStoneInspection(stone = null) {
   }
 
   if (stoneInspectExitOverlay) {
+    const pill = stoneInspectExitOverlay.querySelector('.stone-inspect-exit-pill');
+    if (pill) {
+      pill.textContent =
+        activeProfile === 'tablet' ? 'Tap anywhere to return' : 'Click anywhere or press Esc to return';
+    }
     stoneInspectExitOverlay.classList.add('is-active');
   }
 
-  const readInfo = coopSystem.coopClient.sendStoneRead(targetStone.id);
+  const readInfo = coopSystem.coopClient.sendStoneRead(targetStone.id || canonicalLegacyId);
   sculptedHud?.setProgressionState(readInfo.state);
-  if (stoneGazeState.stones[targetStone.id]) {
-    stoneGazeState.stones[targetStone.id].gazeElapsed = 3.0;
-    stoneGazeState.stones[targetStone.id].unlocked = true;
+  if (stoneGazeState.stones[canonicalLegacyId]) {
+    stoneGazeState.stones[canonicalLegacyId].gazeElapsed = 3.0;
+    stoneGazeState.stones[canonicalLegacyId].unlocked = true;
   }
 
   return targetStone;
@@ -5443,6 +5913,9 @@ export function enterStoneInspection(stone = null) {
 export function exitStoneInspection() {
   if (!stoneGazeState.inspectActive) return;
   stoneGazeState.inspectActive = false;
+  coopSystem?.campaignLoop?.setStoneInspecting?.(false);
+  coopSystem?.combatSfx?.playUi?.('modal_close');
+  coopSystem?.combatSfx?.setAmbienceState?.('valley');
   stoneDecals?.updateLod?.(camera);
   if (stoneInspectExitOverlay) {
     stoneInspectExitOverlay.classList.remove('is-active');
@@ -5518,10 +5991,13 @@ function updateSacredStoneGaze(dt) {
       const clampedY = clamp(proj.yPct, 22, 74);
       stoneWorldReadBtn.style.left = `${clampedX.toFixed(1)}%`;
       stoneWorldReadBtn.style.top = `${clampedY.toFixed(1)}%`;
-      const keyBadge = stoneWorldReadBtn.querySelector('.stone-btn-key');
-      if (keyBadge) {
-        keyBadge.textContent = activeProfile === 'tablet' ? 'Tap' : 'G';
+      const isTabletPrompt = activeProfile === 'tablet';
+      stoneWorldReadBtn.classList.toggle('is-touch-prompt', isTabletPrompt);
+      const label = isTabletPrompt ? 'Read' : 'G';
+      if (stoneWorldReadBtn.textContent !== label) {
+        stoneWorldReadBtn.textContent = label;
       }
+      stoneWorldReadBtn.setAttribute('aria-label', label);
       stoneWorldReadBtn.classList.add('is-visible');
     } else {
       stoneWorldReadBtn.classList.remove('is-visible');
@@ -5536,6 +6012,18 @@ function updateSacredStoneGaze(dt) {
 function animate() {
   requestAnimationFrame(animate);
   const rawDt = clock.getDelta();
+  const veilEl =
+    typeof document !== 'undefined' ? document.getElementById('af-pixel-veil') : null;
+  if (
+    veilEl &&
+    !veilEl.classList.contains('is-resolved') &&
+    (!appFlow || appFlow.getStep?.() === FLOW_STEPS.TITLE) &&
+    !activeGameplayShotSpec &&
+    typeof window.__FIXED_DT__ !== 'number' &&
+    !window.__SKIP_BOOT_SPLASH__
+  ) {
+    return;
+  }
   const timeScale =
     typeof window.__TIME_SCALE__ === 'number' && window.__TIME_SCALE__ > 0
       ? window.__TIME_SCALE__
@@ -5569,10 +6057,16 @@ function animate() {
     const activeJoy =
       sculptedHud?.joyState?.magnitude > 0.05 ? sculptedHud.joyState : touchHud.joyState;
     const isOrbiting = Boolean(sculptedHud?.isOrbitDragging || touchHud.isOrbitDragging);
+    if (isOrbiting) {
+      camState.orbitCooldown = 0.75;
+    } else if ((camState.orbitCooldown || 0) > 0) {
+      camState.orbitCooldown = Math.max(0, camState.orbitCooldown - dt);
+    }
 
     if (
       activeJoy.magnitude > 0.12 &&
       !isOrbiting &&
+      (camState.orbitCooldown || 0) <= 0 &&
       !coopSystem?.campaignLoop?.isControlLocked?.()
     ) {
       camState.yaw += shortestAngleDiff(player.yaw, camState.yaw) * Math.min(1, 1.6 * dt);
@@ -5587,12 +6081,29 @@ function animate() {
     });
 
     updateSacredStoneGaze(dt);
+    if (
+      !stoneGazeState.inspectActive &&
+      !coopSystem?.campaignLoop?.communeChannelActive &&
+      !coopSystem?.campaignLoop?.verdictSequence?.active
+    ) {
+      const isPaused = Boolean(sculptedHud?.isPauseModalOpen?.());
+      if (isPaused) {
+        coopSystem?.combatSfx?.setAmbienceState?.('pause');
+      } else {
+        const nearbyEnemies =
+          coopSystem?.campaignLoop?.getNearbyLivingEnemies?.(player, 24.0)?.length || 0;
+        coopSystem?.combatSfx?.setAmbienceState?.(nearbyEnemies > 0 ? 'combat' : 'valley');
+      }
+    }
   } else {
     stoneGazeState.activeStoneId = null;
     stoneGazeState.shoulderBlend = 0;
     if (appFlow && appFlow.getStep() === FLOW_STEPS.FLOWER_LOBBY) {
+      coopSystem?.combatSfx?.setAmbienceState?.('lobby');
       coopSystem.knight?.update(dt);
       coopSystem.mage?.update(dt);
+    } else if (appFlow && appFlow.getStep() === FLOW_STEPS.TITLE) {
+      coopSystem?.combatSfx?.setAmbienceState?.('title');
     } else if (
       coopSystem?.vfxKit &&
       !coopSystem.enemyManager?.frozenShotId &&
@@ -5696,59 +6207,428 @@ function animate() {
   }
 }
 
-animate();
+function prewarmGpuProcessOffMainThread() {
+  if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined' || typeof Blob === 'undefined') {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    let done = false;
+    let worker = null;
+    let blobUrl = null;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      try {
+        worker?.terminate();
+      } catch {
+        // ignore
+      }
+      try {
+        if (blobUrl) URL.revokeObjectURL(blobUrl);
+      } catch {
+        // ignore
+      }
+      resolve();
+    };
+    const timer = setTimeout(finish, 900);
+    try {
+      const code =
+        'self.onmessage=()=>{try{const oc=new OffscreenCanvas(1,1);oc.getContext("webgl2")||oc.getContext("webgl");}catch(e){}self.postMessage(1);};';
+      blobUrl = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+      worker = new Worker(blobUrl);
+      worker.onmessage = () => {
+        clearTimeout(timer);
+        finish();
+      };
+      worker.onerror = () => {
+        clearTimeout(timer);
+        finish();
+      };
+      worker.postMessage(1);
+    } catch {
+      clearTimeout(timer);
+      finish();
+    }
+  });
+}
 
-window.__WORLD_READY__ = true;
-window.__WORLD__ = {
-  ready: true,
-  scene,
-  camera,
-  renderer,
-  sky,
-  post,
-  terrainKit,
-  housesKit,
-  village,
-  meadow,
-  coopSystem,
-  vfxKit: coopSystem.vfxKit,
-  frostLance: coopSystem.frostLance,
-  enemyManager: coopSystem.enemyManager,
-  campaignLoop: coopSystem.campaignLoop,
-  coopClient: coopSystem.coopClient,
-  progression: coopSystem.coopClient.progression,
-  communeClient,
-  sculptedHud,
-  appFlow,
-  get devStageOverride() {
-    return devStageOverride;
-  },
-  touchHud,
-  damageNumbers,
-  stoneGazeState,
-  stoneDecals,
-  isUiOverlayBlockingInput,
-  tryRaycastFlowerLobbyHero,
-  player,
-  camState,
-  VIEWS,
-  WORLD_SHOTS,
-  STAGE5_GAMEPLAY_SHOTS,
-  openAltarSteleModal,
-  closeAltarSteleModal,
-  enterStoneInspection,
-  exitStoneInspection,
-  startCommuneHold,
-  finishCommuneHold,
-  setView,
-  setCameraOrbit,
-  setShot,
-  setGameplayShot,
-  setVerdictSkyPreview,
-  setTimeOfDay: applyTimeOfDay,
-  setProfile,
-  toggleHud,
-  measurePerformance,
-  getStats: getSceneStats,
-  getMaliG68Report,
-};
+async function bootWorldAsync() {
+  bootSlicer.reset();
+  await bootSlicer.yieldNow();
+
+  // 0A. Lazy-load Geography, Verdict Sky & Combat Balance data slices without synchronous module-eval spikes
+  const geoMod = await import('../assets/terrain/geography.js');
+  PLAY_BOUNDARY_RADIUS = geoMod.PLAY_BOUNDARY_RADIUS;
+  INNER_EXTENT = geoMod.INNER_EXTENT;
+  ZONES = geoMod.ZONES;
+  BUILDINGS = geoMod.BUILDINGS;
+  INSCRIPTION_STONES = geoMod.INSCRIPTION_STONES;
+  walkableHeightAt = geoMod.walkableHeightAt;
+  terrainHeightAt = geoMod.terrainHeightAt;
+  sampleWorld = geoMod.sampleWorld;
+  await bootSlicer.yieldNow();
+
+  const verdictSkyMod = await import('./verdict-sky-choreo.js');
+  evalVerdictSky = verdictSkyMod.evalVerdictSky;
+  evalChannelSky = verdictSkyMod.evalChannelSky;
+  evalChannelReleaseSky = verdictSkyMod.evalChannelReleaseSky;
+  evalSmiteSky = verdictSkyMod.evalSmiteSky;
+  evalBlessingSky = verdictSkyMod.evalBlessingSky;
+  idleVerdictSky = verdictSkyMod.idleVerdictSky;
+  VERDICT_SKY_TAILS = verdictSkyMod.VERDICT_SKY_TAILS;
+  verdictSkyClock.out = idleVerdictSky();
+  await bootSlicer.yieldNow();
+
+  const combatBalMod = await import('./combat/combat-balance.js');
+  SPELL_BY_SLOT = combatBalMod.SPELL_BY_SLOT;
+  await bootSlicer.yieldNow();
+
+  // 0B. WebGLRenderer (deferred out of static module evaluation so #haru-boot-splash animates uninterrupted)
+  renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: true,
+    powerPreference: 'high-performance',
+  });
+  renderer.setPixelRatio(PROFILES[activeProfile].dpr);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // Keep linear HDR into EffectComposer; post.js performs the single unified filmic view transform
+  renderer.toneMapping = THREE.NoToneMapping;
+  renderer.toneMappingExposure = 1.0;
+  renderer.shadowMap.enabled = false;
+  await bootSlicer.yieldNow();
+
+  // 1. Time-of-Day Sky (Stylized Sun, Moon, Stars & Cumulus Clouds)
+  const skyMod = await import('./sky-tod.js');
+  await bootSlicer.yieldNow();
+  sky = await skyMod.createTimeOfDaySkyAsync({
+    quality: 'high',
+    camera,
+    yieldFrame: bootSlicer.yieldFrame,
+    sliceBudgetMs: bootSlicer.sliceBudgetMs,
+  });
+  scene.add(sky.group);
+  await bootSlicer.yieldNow();
+
+  // 2. Terrain, Water, Landmarks & Botanical Trees
+  const terrainMod = await import('../assets/terrain/index.js');
+  await bootSlicer.yieldNow();
+  treeShadowData = terrainMod.buildTreeShadowUniformArray();
+  await bootSlicer.yieldNow();
+  terrainKit = await terrainMod.createTerrainAndLandmarksAsync(renderer, {
+    includeBuildings: false,
+    includeHorizonClouds: false,
+    yieldFrame: bootSlicer.yieldFrame,
+    sliceBudgetMs: bootSlicer.sliceBudgetMs,
+  });
+  scene.add(terrainKit.group);
+  terrainKit.landmarksGroup?.traverse?.((obj) => {
+    if (obj.isMesh && obj.name.endsWith('-emissive') && obj.material) {
+      landmarkEmissiveMats.push(obj.material);
+    }
+  });
+  await bootSlicer.yieldNow();
+
+  // 3. Tudor Village Houses Kit (5 Detailed Buildings + Colliders)
+  const housesMod = await import('../assets/houses/index.js');
+  await bootSlicer.yieldNow();
+  setHouseCutoutPlayerPos = housesMod.setHouseCutoutPlayerPos || (() => {});
+  housesKit =
+    typeof housesMod.createHousesKitAsync === 'function'
+      ? await housesMod.createHousesKitAsync(renderer, {
+          yieldFrame: bootSlicer.yieldFrame,
+          sliceBudgetMs: bootSlicer.sliceBudgetMs,
+        })
+      : housesMod.createHousesKit(renderer);
+  await bootSlicer.yieldNow();
+  village = await housesKit.buildAllVillageBuildingsAsync(BUILDINGS, {
+    yieldFrame: bootSlicer.yieldFrame,
+    sliceBudgetMs: bootSlicer.sliceBudgetMs,
+  });
+  scene.add(village.group);
+  for (const c of village.colliders) {
+    terrainKit.colliders.push({
+      ...c,
+      hx: c.hx ?? c.halfW,
+      hz: c.hz ?? c.halfD,
+    });
+  }
+  await bootSlicer.yieldNow();
+
+  // 3B. Lossless geometry indexing + profile mesh/LOD binding
+  await syncStaticSceneProfileAsync(activeProfile, bootSlicer);
+  await bootSlicer.yieldNow();
+
+  // 4. Toroidal Gouache Meadow & Wildflower Drifts
+  flowersMod = await import('../assets/flowers/index.js');
+  await bootSlicer.yieldNow();
+  await buildMeadowForProfileAsync(activeProfile, bootSlicer);
+  await bootSlicer.yieldNow();
+
+  // 5. Kick off Monument Sacred Stone GLB downloads + 3D Calligraphy Plaque draws
+  const gltfMod = await import('three/addons/loaders/GLTFLoader.js');
+  await bootSlicer.yieldNow();
+  stoneDecals = createSacredStoneCalligraphyDecals(
+    scene,
+    terrainHeightAt,
+    gltfMod.GLTFLoader,
+    bootSlicer
+  );
+  await bootSlicer.yieldNow();
+
+  // 6. HDR Post-Processing Composer
+  const postMod = await import('./post.js');
+  await bootSlicer.yieldNow();
+  post = postMod.createWorldPost({
+    renderer,
+    scene,
+    camera,
+    width: window.innerWidth,
+    height: window.innerHeight,
+    enabled: true,
+    aaSamples: PROFILES[activeProfile].aaSamples,
+  });
+  await bootSlicer.yieldNow();
+
+  // 7. Co-Op Heroes (Knight + Mage), Weapons, VFX & Campaign Loop
+  const pcMod = await import('./player-controller.js');
+  await bootSlicer.yieldNow();
+  STAGE5_GAMEPLAY_SHOTS = pcMod.STAGE5_GAMEPLAY_SHOTS;
+  coopSystem = await pcMod.createCoopPlayerSystem({
+    scene,
+    walkableHeightAt,
+    resolveCollisions,
+    arenaZone: ZONES.arena,
+    initialPos: { x: 2.8, z: 14.5, yaw: Math.PI + 0.15 },
+    initialProfile: activeProfile,
+    onHeroSwapped: (newHeroId) => {
+      if (hudHeroName) {
+        hudHeroName.textContent = newHeroId;
+      }
+      if (knightBarRow) knightBarRow.classList.toggle('is-leader', newHeroId === 'Knight');
+      if (mageBarRow) mageBarRow.classList.toggle('is-leader', newHeroId === 'Mage');
+      sculptedHud?.setActiveRole(newHeroId);
+    },
+    onSkyTodChanged: (nextTod) => {
+      applyTimeOfDay(nextTod);
+    },
+    onHudStateChanged: (snapshot) => {
+      updateCombatHud(snapshot);
+    },
+    onBanner: (bannerObj) => {
+      showCombatBanner(bannerObj, 4200);
+    },
+    onCoopStateChanged: (roomState) => {
+      updateCoopPill(roomState);
+    },
+    onRemoteCommuneVerdict: async (judgment) => {
+      const vp = playDivineVerdictVoice(judgment);
+      if (vp?.played && !vp?.simulatedHeadless && vp?.finished) {
+        coopSystem?.setCommuneSuspense?.(true, { broadcast: false });
+        const quote = judgment?.divine_quote || judgment?.subtitle || '';
+        if (quote) {
+          showCombatBanner(
+            {
+              title: 'THE SOVEREIGN · GOD OF LOVE',
+              subtitle: quote,
+              kind:
+                String(judgment?.verdict || '').toLowerCase() === 'smite' ||
+                String(judgment?.prayerMode || '').toLowerCase() === 'smite'
+                  ? 'warning'
+                  : 'blessing',
+            },
+            8000
+          );
+        }
+        await vp.finished;
+      }
+      const updatedProg = coopSystem.coopClient.progression.applyVerdictProgression(judgment);
+      sculptedHud?.setProgressionState(updatedProg);
+    },
+    yieldFrame: bootSlicer.yieldFrame,
+    sliceBudgetMs: bootSlicer.sliceBudgetMs,
+  });
+  player = coopSystem.player;
+  await bootSlicer.yieldNow();
+
+  // 8. Wire Damage Numbers, Commune Client, Sculpted HUD, Touch HUD & Mali Emulator
+  const dmgMod = await import('./ui/damage-numbers.js');
+  await bootSlicer.yieldNow();
+  initDamageNumbersSystem(dmgMod);
+  await bootSlicer.yieldNow();
+
+  const communeMod = await import('./combat/commune-client.js');
+  await bootSlicer.yieldNow();
+  playWideSurroundDivineVoice = communeMod.playWideSurroundDivineVoice || (() => null);
+  initCommuneClientSystem(communeMod.createCommuneClient);
+  await bootSlicer.yieldNow();
+
+  const sculptedHudMod = await import('./ui/sculpted-hud.js');
+  await bootSlicer.yieldNow();
+  initSculptedHudSystem(sculptedHudMod.createSculptedHud);
+  await bootSlicer.yieldNow();
+
+  const touchHudMod = await import('./touch-hud.js');
+  await bootSlicer.yieldNow();
+  initTouchHudAndButtons(touchHudMod.createTouchHud);
+  await bootSlicer.yieldNow();
+
+  try {
+    const maliMod = await import('./perf/mali-g68-emulator.js');
+    evaluateMaliG68Frame = maliMod.evaluateMaliG68Frame || maliMod.default || null;
+  } catch {
+    evaluateMaliG68Frame = null;
+  }
+  await bootSlicer.yieldNow();
+
+  initStoneInspectionUi();
+  await bootSlicer.yieldNow();
+
+  // 9. Wait for Sacred Stone monument GLBs before prewarming & Frame 0 render
+  await stoneDecals.readyPromise;
+  await bootSlicer.yieldNow();
+
+  applyTimeOfDay('day');
+  if (appFlow && appFlow.getStep() !== FLOW_STEPS.IN_GAME) {
+    applyOpeningFlowCameraAndPoses(appFlow.getStep());
+  } else {
+    setView('plaza', { skipRender: true });
+  }
+  syncProfileButtons();
+  await bootSlicer.yieldNow();
+
+  // 10. Prewarm textures + visible & pooled shader programs incrementally
+  await prewarmAllVfxAndSceneShadersAsync();
+  await bootSlicer.yieldNow();
+
+  // Render initial Frame 0 cleanly before marking visual ready for veil dissolve
+  syncPrayerEclipseAndMonochrome(0);
+  updateCamera();
+  syncCharacterGroundShadows();
+  await bootSlicer.yieldNow();
+
+  terrainKit.update(
+    0.016,
+    windElapsed,
+    sky.activeLightDir,
+    sky.state.daylight,
+    sky.state.fogColor,
+    sky.state.worldTint,
+    camera,
+    activeProfile
+  );
+  village.update(0.016);
+  await bootSlicer.yieldNow();
+
+  updateMeadowFocus(windElapsed);
+  sky.update(windElapsed);
+  await bootSlicer.yieldNow();
+
+  renderer.info.autoReset = false;
+  renderer.info.reset();
+  post.render(0.016);
+  const f0PostDraws = post.bloomPass?.enabled ? 11 : 1;
+  const f0Draws = Math.max(1, renderer.info.render.calls - f0PostDraws);
+  const f0Tris = Math.max(0, renderer.info.render.triangles - f0PostDraws * 2);
+  lastSampledSceneDraws = f0Draws;
+  lastSampledSceneTris = f0Tris;
+  renderer.info.autoReset = true;
+  refreshTelemetryReadout(f0Draws);
+
+  if (typeof window !== 'undefined') {
+    window.__WORLD_VISUAL_READY__ = true;
+  }
+  await bootSlicer.yieldNow();
+
+  clock.start();
+  requestAnimationFrame(animate);
+
+  if (typeof window !== 'undefined') {
+    window.__WORLD_READY__ = true;
+    window.__WORLD__ = {
+      ready: true,
+      scene,
+      camera,
+      renderer,
+      sky,
+      post,
+      terrainKit,
+      housesKit,
+      village,
+      meadow,
+      coopSystem,
+      vfxKit: coopSystem.vfxKit,
+      frostLance: coopSystem.frostLance,
+      enemyManager: coopSystem.enemyManager,
+      campaignLoop: coopSystem.campaignLoop,
+      coopClient: coopSystem.coopClient,
+      progression: coopSystem.coopClient.progression,
+      communeClient,
+      sculptedHud,
+      appFlow,
+      get activeProfile() {
+        return activeProfile;
+      },
+      get devStageOverride() {
+        return devStageOverride;
+      },
+      touchHud,
+      damageNumbers,
+      stoneGazeState,
+      stoneDecals,
+      isUiOverlayBlockingInput,
+      tryRaycastFlowerLobbyHero,
+      player,
+      camState,
+      VIEWS,
+      WORLD_SHOTS,
+      STAGE5_GAMEPLAY_SHOTS,
+      openAltarSteleModal,
+      closeAltarSteleModal,
+      enterStoneInspection,
+      exitStoneInspection,
+      startCommuneHold,
+      finishCommuneHold,
+      setView,
+      setCameraOrbit,
+      setShot,
+      setGameplayShot,
+      setVerdictSkyPreview,
+      setTimeOfDay: applyTimeOfDay,
+      setProfile,
+      toggleHud,
+      measurePerformance,
+      getStats: getSceneStats,
+      getMaliG68Report,
+    };
+  }
+}
+
+async function startMainBootAsync() {
+  bootSlicer.reset();
+  const gpuWarmupPromise = prewarmGpuProcessOffMainThread();
+  if (typeof window !== 'undefined') {
+    window.__GPU_WARMUP_PROMISE__ = gpuWarmupPromise;
+  }
+  await bootSlicer.yieldNow();
+
+  if (!UNSPOILED_SACRED_POEM_BY_STONE_ID) {
+    const poemsMod = await import('./ui/sacred-poems-unspoiled.js');
+    UNSPOILED_SACRED_POEM_BY_STONE_ID = poemsMod.UNSPOILED_SACRED_POEM_BY_STONE_ID;
+    await bootSlicer.yieldNow();
+  }
+
+  const appFlowMod = await import('./ui/app-flow.js');
+  createAppFlow = appFlowMod.createAppFlow;
+  FLOW_STEPS = appFlowMod.FLOW_STEPS;
+  getOpeningCameraPose = appFlowMod.getOpeningCameraPose;
+  await bootSlicer.yieldNow();
+
+  mountOpeningAppFlowEarly();
+  await bootSlicer.yieldNow();
+
+  await gpuWarmupPromise;
+  await bootWorldAsync();
+}
+
+await startMainBootAsync();

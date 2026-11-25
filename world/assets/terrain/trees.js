@@ -1,10 +1,15 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   TREES,
   terrainHeightAt,
   clamp,
 } from './geography.js';
+import {
+  createTimeSlicer,
+  runSync,
+  runAsync,
+  mergeGeometriesGen,
+} from './terrain-water.js';
 
 /**
  * Amarante 3D Sculpted Wisteria, Sakura & Oak Trees (`world/assets/terrain/trees.js`)
@@ -603,7 +608,7 @@ class TreeGeometryBuilder {
   }
 }
 
-export function buildSingleTreeGeometry(t, treeIdx = 0, opts = {}) {
+export function* buildSingleTreeGeometryGen(t, treeIdx = 0, opts = {}) {
   const includeCanopyInMesh = opts.includeCanopyInMesh !== false;
   const puffEntriesOut = opts.puffEntriesOut || null;
 
@@ -682,6 +687,7 @@ export function buildSingleTreeGeometry(t, treeIdx = 0, opts = {}) {
       isLowerShelf,
     });
   }
+  yield;
 
   // 3 Upper Umbrella Crown Shelves
   const topShelves = [
@@ -778,6 +784,7 @@ export function buildSingleTreeGeometry(t, treeIdx = 0, opts = {}) {
         });
       }
     }
+    if (lIdx % 3 === 2) yield;
   }
 
   // 4. 3D Shingled-Petal Wisteria & Sakura Blossom Cascades along outer bough rims
@@ -829,10 +836,15 @@ export function buildSingleTreeGeometry(t, treeIdx = 0, opts = {}) {
           });
         }
       }
+      if (lIdx % 2 === 1) yield;
     }
   }
 
   return builder.toGeometry();
+}
+
+export function buildSingleTreeGeometry(t, treeIdx = 0, opts = {}) {
+  return runSync(buildSingleTreeGeometryGen(t, treeIdx, opts));
 }
 
 export function buildWisteriaTree(t, treeIdx = 0) {
@@ -854,7 +866,7 @@ function getTreeSectorIndex(t) {
 
 const INTERLEAVED_LOBE_ORDER = [8, 0, 3, 7, 1, 4, 6, 2, 5];
 
-export function buildBotanicalTrees(opts = {}) {
+function* buildBotanicalTreesGen(opts = {}) {
   const colliders = opts.colliders || [];
   const root = new THREE.Group();
   root.name = 'botanical-trees';
@@ -863,7 +875,8 @@ export function buildBotanicalTrees(opts = {}) {
   const treeCanopyRecords = [];
   let totalMaxPuffs = 0;
 
-  TREES.forEach((t, treeIdx) => {
+  for (let treeIdx = 0; treeIdx < TREES.length; treeIdx++) {
+    const t = TREES[treeIdx];
     const kind = t.kind || 'oak';
     const isWisteria = kind === 'wisteria';
     const isSakura = kind === 'sakura';
@@ -872,7 +885,7 @@ export function buildBotanicalTrees(opts = {}) {
 
     const puffEntries = [];
     // Sector meshes get trunks, boughs, and 3D hanging racemes; InstancedMesh gets the 3D sculpted leaflet puffs
-    const treeGeo = buildSingleTreeGeometry(t, treeIdx, {
+    const treeGeo = yield* buildSingleTreeGeometryGen(t, treeIdx, {
       includeCanopyInMesh: false,
       puffEntriesOut: puffEntries,
     });
@@ -931,7 +944,8 @@ export function buildBotanicalTrees(opts = {}) {
         r: (isWisteria || isSakura ? 0.75 : 0.62) * (t.scale || 1.0),
       });
     }
-  });
+    yield;
+  }
 
   const atlasTex = getSharedGouacheFoliageAtlas();
 
@@ -998,10 +1012,6 @@ export function buildBotanicalTrees(opts = {}) {
         vNormal = normalize(mat3(modelMatrix) * normal);
         vec4 mv = viewMatrix * wp;
         vViewDist = -mv.z;
-        if (vViewDist < 2.2) {
-          gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-          return;
-        }
         gl_Position = projectionMatrix * mv;
       }
     `,
@@ -1073,7 +1083,7 @@ export function buildBotanicalTrees(opts = {}) {
   for (let s = 0; s < sectorTreeGeometries.length; s++) {
     const sectorGeos = sectorTreeGeometries[s];
     if (!sectorGeos.length) continue;
-    const sectorGeo = mergeGeometries(sectorGeos, false);
+    const sectorGeo = yield* mergeGeometriesGen(sectorGeos);
     sectorGeo.computeBoundingSphere();
     sectorGeo.computeBoundingBox();
     const sectorMesh = new THREE.Mesh(sectorGeo, treesMat);
@@ -1083,10 +1093,12 @@ export function buildBotanicalTrees(opts = {}) {
     sectorMesh.receiveShadow = true;
     root.add(sectorMesh);
     sectorMeshes.push(sectorMesh);
+    yield;
   }
 
   // Global 2026-10-18_dense-31M 3D Sculpted Leaflet & Crown-Blossom Puff InstancedMesh (1 Draw Call, FrontSide, Early-Z + FPK)
   const puffGeo = getShared3DCanopyPuffGeometry().clone();
+  yield;
   const puffMetaAttr = new THREE.InstancedBufferAttribute(new Float32Array(totalMaxPuffs * 4), 4);
   puffGeo.setAttribute('aPuffMeta', puffMetaAttr);
 
@@ -1116,6 +1128,15 @@ export function buildBotanicalTrees(opts = {}) {
       varying float vViewDist;
 
       void main() {
+        // Cull close canopy puffs strictly per-instance center before applying vertex offsets so every
+        // triangle of a nearby puff hides uniformly with zero partial-triangle shards across the screen.
+        vec4 instCenterWp = modelMatrix * vec4(instanceMatrix[3].xyz, 1.0);
+        float instViewDist = -(viewMatrix * instCenterWp).z;
+        if (instViewDist < 1.35) {
+          gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+          return;
+        }
+
         vUv = uv;
         vColor = color;
         vCrownCenter = aPuffMeta.xyz;
@@ -1138,10 +1159,6 @@ export function buildBotanicalTrees(opts = {}) {
         vNormal = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
         vec4 mv = viewMatrix * wp;
         vViewDist = -mv.z;
-        if (vViewDist < 2.2) {
-          gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-          return;
-        }
         gl_Position = projectionMatrix * mv;
       }
     `,
@@ -1227,10 +1244,12 @@ export function buildBotanicalTrees(opts = {}) {
 
   // Populate initial full canopy buffer
   let initOffset = 0;
-  for (const rec of treeCanopyRecords) {
+  for (let ri = 0; ri < treeCanopyRecords.length; ri++) {
+    const rec = treeCanopyRecords[ri];
     puffInstMesh.instanceMatrix.array.set(rec.matData, initOffset * 16);
     puffMetaAttr.array.set(rec.metaData, initOffset * 4);
     initOffset += rec.n;
+    if (ri > 0 && ri % 18 === 0) yield;
   }
   puffInstMesh.count = initOffset;
   puffInstMesh.instanceMatrix.needsUpdate = true;
@@ -1436,4 +1455,12 @@ export function buildBotanicalTrees(opts = {}) {
       }
     },
   };
+}
+
+export function buildBotanicalTrees(opts = {}) {
+  return runSync(buildBotanicalTreesGen(opts));
+}
+
+export async function buildBotanicalTreesAsync(opts = {}) {
+  return runAsync(buildBotanicalTreesGen(opts), createTimeSlicer(opts));
 }

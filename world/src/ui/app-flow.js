@@ -167,62 +167,63 @@ const SVG_OPEN_AIR_DIVIDER = `
 </svg>
 `;
 
-/**
- * Precomputes a 480x270 2D multi-octave organic noise + fine IGN grain threshold map
- * for the ultra-smooth pitch-black noise dissolve (zero horizontal stripes or window blinds).
- */
-const DISSOLVE_W = 480;
-const DISSOLVE_H = 270;
-let dissolveThresholdMap = null;
+const DISSOLVE_W = 240;
+const DISSOLVE_H = 135;
 
-function hash2D(ix, iy) {
-  const n = Math.sin(ix * 127.1 + iy * 311.7) * 43758.5453123;
-  return n - Math.floor(n);
+const DISSOLVE_VERT_SRC = `
+attribute vec2 aPos;
+varying vec2 vUv;
+void main() {
+  vUv = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}
+`;
+
+const DISSOLVE_FRAG_SRC = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+uniform float uSweep;
+varying vec2 vUv;
+
+float hash2D(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
 }
 
-function valueNoise2D(x, y) {
-  const ix = Math.floor(x);
-  const iy = Math.floor(y);
-  const fx = x - ix;
-  const fy = y - iy;
-  const ux = fx * fx * (3.0 - 2.0 * fx);
-  const uy = fy * fy * (3.0 - 2.0 * fy);
-  const a = hash2D(ix, iy);
-  const b = hash2D(ix + 1, iy);
-  const c = hash2D(ix, iy + 1);
-  const d = hash2D(ix + 1, iy + 1);
-  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+float valueNoise2D(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = hash2D(i);
+  float b = hash2D(i + vec2(1.0, 0.0));
+  float c = hash2D(i + vec2(0.0, 1.0));
+  float d = hash2D(i + vec2(1.0, 1.0));
+  return a + (b - a) * u.x + (c - a) * u.y + (a - b - c + d) * u.x * u.y;
 }
 
-function getDissolveThresholdMap() {
-  if (dissolveThresholdMap) return dissolveThresholdMap;
-  dissolveThresholdMap = new Float32Array(DISSOLVE_W * DISSOLVE_H);
-  let idx = 0;
-  for (let y = 0; y < DISSOLVE_H; y++) {
-    const v = y / DISSOLVE_H;
-    for (let x = 0; x < DISSOLVE_W; x++) {
-      const u = x / DISSOLVE_W;
-      // 5-octave continuous isotropic organic noise (zero periodic grid or screen-door dots)
-      const n1 = valueNoise2D(u * 3.6 + 1.3, v * 2.4 + 2.1);
-      const n2 = valueNoise2D(u * 7.5 - 4.2, v * 5.0 + 5.7);
-      const n3 = valueNoise2D(u * 15.5 + 7.1, v * 10.4 - 3.4);
-      const n4 = valueNoise2D(u * 31.0 - 2.8, v * 21.0 + 8.3);
-      const n5 = valueNoise2D(u * 62.0 + 5.4, v * 42.0 - 6.1);
-      const cloud = n1 * 0.42 + n2 * 0.26 + n3 * 0.16 + n4 * 0.10 + n5 * 0.06;
-
-      // Gentle radial bloom outward from the upper-sky Amarante & Sun-Clock lockup
-      const du = (u - 0.45) * 1.05;
-      const dv = (v - 0.24) * 1.20;
-      const radial = Math.min(1, Math.hypot(du, dv));
-
-      dissolveThresholdMap[idx++] = Math.min(
-        1,
-        Math.max(0, cloud * 0.72 + radial * 0.28)
-      );
-    }
+void main() {
+  if (uSweep <= -0.5) {
+    gl_FragColor = vec4(0.0196, 0.0196, 0.0275, 1.0);
+    return;
   }
-  return dissolveThresholdMap;
+  vec2 uv = vec2(vUv.x, 1.0 - vUv.y);
+  float n1 = valueNoise2D(uv * vec2(3.6, 2.4) + vec2(1.3, 2.1));
+  float n2 = valueNoise2D(uv * vec2(7.5, 5.0) + vec2(-4.2, 5.7));
+  float n3 = valueNoise2D(uv * vec2(15.5, 10.4) + vec2(7.1, -3.4));
+  float n4 = valueNoise2D(uv * vec2(31.0, 21.0) + vec2(-2.8, 8.3));
+  float n5 = valueNoise2D(uv * vec2(62.0, 42.0) + vec2(5.4, -6.1));
+  float cloud = n1 * 0.42 + n2 * 0.26 + n3 * 0.16 + n4 * 0.10 + n5 * 0.06;
+  vec2 dUv = vec2((uv.x - 0.45) * 1.05, (uv.y - 0.24) * 1.20);
+  float radial = clamp(length(dUv), 0.0, 1.0);
+  float th = clamp(cloud * 0.72 + radial * 0.28, 0.0, 1.0);
+  float d = (uSweep - th) / 0.38;
+  float s = smoothstep(0.0, 1.0, d);
+  float a = 1.0 - s;
+  gl_FragColor = vec4(vec3(0.0196, 0.0196, 0.0275) * a, a);
 }
+`;
 
 /**
  * Generates the 100% Pure Vector SVG Fixed Celestial Sun-Clock (facing in-game 08:10 time),
@@ -560,7 +561,6 @@ function buildPureSvgCelestialTitleLockup() {
           stroke-linecap="round"
           stroke-dasharray="615.8"
           stroke-dashoffset="615.8"
-          filter="url(#afGoldGlow)"
         />
 
         <!-- 5 Sculpted Golden Lotus-Bud Crowns -->
@@ -569,7 +569,7 @@ function buildPureSvgCelestialTitleLockup() {
 
       <!-- 2. TRUE VECTOR 'AMARANTE' GLYPHS (3 Professional Reveal Options, Zero Yellow Dot) -->
       <g id="af-svg-wordmark-mover">
-        <g id="af-svg-wordmark" filter="url(#afWordShadow)">
+        <g id="af-svg-wordmark">
           ${glyphGroupsSvg}
           <line
             id="af-opt3-gold-thread"
@@ -619,7 +619,7 @@ function buildPureSvgCelestialTitleLockup() {
       </g>
 
       <!-- 4. VECTOR SAKURA BLOSSOM BRANCHES (Stems draw via stroke-dashoffset, then blossoms bloom) -->
-      <g id="af-svg-sakura-branches" filter="url(#afWordShadow)">
+      <g id="af-svg-sakura-branches">
         <!-- Branch A: Wrapping left stem of 'A' -->
         <path
           class="af-svg-branch-stem"
@@ -1063,6 +1063,9 @@ const APP_FLOW_CSS = `
     height: 100%;
     display: block;
     overflow: visible;
+  }
+
+  .af-pure-celestial-svg.is-settled {
     filter: drop-shadow(0 4px 16px rgba(15, 23, 42, 0.16));
   }
 
@@ -1071,11 +1074,8 @@ const APP_FLOW_CSS = `
     transform-origin: 0px 0px;
   }
 
-  #af-svg-wordmark-mover,
-  .af-svg-crown,
-  .af-svg-blossom,
-  .af-svg-numeral {
-    will-change: transform, opacity;
+  #af-svg-wordmark-mover {
+    will-change: transform;
   }
 
   /* Drifting Sakura Petals across the Amarante Branch */
@@ -2038,9 +2038,6 @@ export function createAppFlow({
     legacyLobby.style.display = 'none';
   }
   const bootSplash = document.getElementById('haru-boot-splash');
-  if (bootSplash) {
-    bootSplash.remove();
-  }
 
   const urlParams =
     typeof window !== 'undefined'
@@ -2305,6 +2302,9 @@ export function createAppFlow({
     </section>
   `;
 
+  if (bootSplash) {
+    bootSplash.remove();
+  }
   const mountTarget = container || document.getElementById('hud') || document.body;
   mountTarget.appendChild(root);
 
@@ -2315,6 +2315,7 @@ export function createAppFlow({
   const curtainBrushStrokeEls = Array.from(root.querySelectorAll('.af-curtain-brush-stroke'));
   const curtainBristleEls = Array.from(root.querySelectorAll('.af-curtain-brush-bristle'));
   const titleSceneEl = root.querySelector('.af-scene-title');
+  const pureCelestialSvgEl = root.querySelector('.af-pure-celestial-svg');
   const svgRingOuterEl = root.querySelector('#af-svg-ring-outer');
   const svgRingInnerEl = root.querySelector('#af-svg-ring-inner');
   const svgRingWhisperEl = root.querySelector('#af-svg-ring-whisper');
@@ -2325,6 +2326,7 @@ export function createAppFlow({
   const svgNumeralEls = Array.from(root.querySelectorAll('.af-svg-numeral'));
   const svgCrownEls = Array.from(root.querySelectorAll('.af-svg-crown'));
   const svgWordmarkMoverEl = root.querySelector('#af-svg-wordmark-mover');
+  const svgWordmarkEl = root.querySelector('#af-svg-wordmark');
   const svgGlyphEls = Array.from(root.querySelectorAll('.af-svg-glyph'));
   const svgContourEls = Array.from(root.querySelectorAll('.af-glyph-contour'));
   const svgFillEls = Array.from(root.querySelectorAll('.af-glyph-fill'));
@@ -2335,6 +2337,7 @@ export function createAppFlow({
   const svgSwashDiamondEl = root.querySelector('#af-svg-swash-diamond');
   const svgStemEls = Array.from(root.querySelectorAll('.af-svg-branch-stem'));
   const svgBlossomEls = Array.from(root.querySelectorAll('.af-svg-blossom'));
+  const svgSakuraBranchesEl = root.querySelector('#af-svg-sakura-branches');
   const branchPetalEls = Array.from(root.querySelectorAll('.af-branch-petal'));
   const sunClockArcEl = root.querySelector('#af-sunclock-progress-arc');
   const enterBtn = root.querySelector('#app-flow-enter-btn');
@@ -2395,6 +2398,9 @@ export function createAppFlow({
    * Syncs the Fixed Sun-Clock hands to the exact in-game time (defaulting to 08:10 Morning:
    * Hour hand at 245 deg [VIII], Minute hand at 60 deg [II]). Never spins continuously.
    */
+  let lastClockHourDeg = '';
+  let lastClockMinDeg = '';
+
   function syncFixedClockHandsToGameTime() {
     let hours24 = 8 + 10 / 60; // 08:10 default in TOD_PRESETS.day
     const worldTod = typeof window !== 'undefined' ? window.__WORLD__?.skyState?.tod : undefined;
@@ -2403,245 +2409,475 @@ export function createAppFlow({
     }
     const hours12 = hours24 % 12;
     const mins = (hours24 - Math.floor(hours24)) * 60;
-    const hourDeg = hours12 * 30;
-    const minDeg = mins * 6;
-    if (svgHourHandEl) {
-      svgHourHandEl.setAttribute('transform', `rotate(${hourDeg.toFixed(1)})`);
+    const hourDeg = (hours12 * 30).toFixed(1);
+    const minDeg = (mins * 6).toFixed(1);
+    if (svgHourHandEl && hourDeg !== lastClockHourDeg) {
+      lastClockHourDeg = hourDeg;
+      svgHourHandEl.setAttribute('transform', `rotate(${hourDeg})`);
     }
-    if (svgMinuteHandEl) {
-      svgMinuteHandEl.setAttribute('transform', `rotate(${minDeg.toFixed(1)})`);
+    if (svgMinuteHandEl && minDeg !== lastClockMinDeg) {
+      lastClockMinDeg = minDeg;
+      svgMinuteHandEl.setAttribute('transform', `rotate(${minDeg})`);
     }
   }
 
-  let noiseCtx = null;
-  let noiseImgData = null;
-  let noiseU32 = null;
+  let dissolveGl = null;
+  let dissolveProg = null;
+  let dissolveSweepLoc = null;
+  let dissolveVbo = null;
+  let dissolvePosLoc = -1;
+  let dissolveInitFailed = false;
+  let dissolveOpaqueDrawn = false;
+  let dissolveClearedDrawn = false;
+  let lastDissolveSweep = null;
 
-  /**
-   * Renders the pitch-black (#050507) screen and its smooth organic 2D noise dissolve
-   * directly on `#af-pixel-veil-canvas` (zero horizontal stripes or window blinds).
-   * - For `t <= 0.58`: 100% solid pitch black (`alpha = 255`).
-   * - For `t` in `0.58..0.94`: organic multi-octave noise + fine IGN grain dissolves smoothly to `0`.
-   */
-  function renderBlackNoiseDissolveCanvas(t) {
-    if (!pixelCanvas) return;
+  let dissolvePrewarmScheduled = false;
+  function prewarmDissolveWebGLAsync() {
+    if (dissolvePrewarmScheduled || dissolveGl || dissolveInitFailed || !pixelCanvas) return;
+    dissolvePrewarmScheduled = true;
+    const schedule = (fn, ms = 16) =>
+      typeof setTimeout === 'function' ? setTimeout(fn, ms) : fn();
+    const waitWarm =
+      typeof window !== 'undefined' && window.__GPU_WARMUP_PROMISE__
+        ? window.__GPU_WARMUP_PROMISE__
+        : Promise.resolve();
+    waitWarm.then(() => {
+      schedule(() => {
+        if (dissolveGl || dissolveInitFailed || !pixelCanvas) return;
+        if (pixelCanvas.width !== DISSOLVE_W || pixelCanvas.height !== DISSOLVE_H) {
+          pixelCanvas.width = DISSOLVE_W;
+          pixelCanvas.height = DISSOLVE_H;
+        }
+        const opts = {
+          alpha: true,
+          premultipliedAlpha: true,
+          antialias: false,
+          depth: false,
+          stencil: false,
+          preserveDrawingBuffer: true,
+          powerPreference: 'low-power',
+        };
+        const gl =
+          pixelCanvas.getContext('webgl2', opts) || pixelCanvas.getContext('webgl', opts);
+        if (!gl) {
+          dissolveInitFailed = true;
+          return;
+        }
+        dissolveGl = gl;
+        schedule(() => {
+          if (dissolveProg || dissolveInitFailed || !dissolveGl) return;
+          const compileShader = (type, src) => {
+            const sh = gl.createShader(type);
+            gl.shaderSource(sh, src);
+            gl.compileShader(sh);
+            if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+              gl.deleteShader(sh);
+              return null;
+            }
+            return sh;
+          };
+          const vs = compileShader(gl.VERTEX_SHADER, DISSOLVE_VERT_SRC);
+          const fs = compileShader(gl.FRAGMENT_SHADER, DISSOLVE_FRAG_SRC);
+          if (!vs || !fs) {
+            dissolveInitFailed = true;
+            return;
+          }
+          const prog = gl.createProgram();
+          gl.attachShader(prog, vs);
+          gl.attachShader(prog, fs);
+          gl.linkProgram(prog);
+          if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+            gl.deleteProgram(prog);
+            dissolveInitFailed = true;
+            return;
+          }
+          const vbo = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+          gl.bufferData(
+            gl.ARRAY_BUFFER,
+            new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+            gl.STATIC_DRAW
+          );
+          const aLoc = gl.getAttribLocation(prog, 'aPos');
+          gl.enableVertexAttribArray(aLoc);
+          gl.vertexAttribPointer(aLoc, 2, gl.FLOAT, false, 0, 0);
+          gl.useProgram(prog);
+          gl.viewport(0, 0, DISSOLVE_W, DISSOLVE_H);
+          gl.disable(gl.DEPTH_TEST);
+          gl.disable(gl.BLEND);
+          dissolveProg = prog;
+          dissolveSweepLoc = gl.getUniformLocation(prog, 'uSweep');
+          dissolveVbo = vbo;
+          dissolvePosLoc = aLoc;
+          gl.uniform1f(dissolveSweepLoc, -1.0);
+          gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+          dissolveOpaqueDrawn = true;
+          lastDissolveSweep = -1.0;
+        }, 24);
+      }, 60);
+    });
+  }
+
+  function ensureDissolveWebGL() {
+    if (dissolveInitFailed) return false;
+    if (dissolveGl && dissolveProg) return true;
+    if (!pixelCanvas) return false;
     if (pixelCanvas.width !== DISSOLVE_W || pixelCanvas.height !== DISSOLVE_H) {
       pixelCanvas.width = DISSOLVE_W;
       pixelCanvas.height = DISSOLVE_H;
-      noiseCtx = pixelCanvas.getContext('2d');
-      noiseImgData = noiseCtx ? noiseCtx.createImageData(DISSOLVE_W, DISSOLVE_H) : null;
-      noiseU32 = noiseImgData ? new Uint32Array(noiseImgData.data.buffer) : null;
     }
-    if (!noiseCtx || !noiseImgData || !noiseU32) return;
-
-    if (t <= 0.58) {
-      noiseU32.fill(0xff070505);
-      noiseCtx.putImageData(noiseImgData, 0, 0);
-      return;
+    const opts = {
+      alpha: true,
+      premultipliedAlpha: true,
+      antialias: false,
+      depth: false,
+      stencil: false,
+      preserveDrawingBuffer: true,
+      powerPreference: 'low-power',
+    };
+    const gl =
+      dissolveGl ||
+      pixelCanvas.getContext('webgl2', opts) ||
+      pixelCanvas.getContext('webgl', opts);
+    if (!gl) {
+      dissolveInitFailed = true;
+      return false;
     }
-    if (t >= 0.96) {
-      noiseU32.fill(0x00000000);
-      noiseCtx.putImageData(noiseImgData, 0, 0);
-      return;
-    }
-
-    const thMap = getDissolveThresholdMap();
-    const uDissolve = easeInOutCubic((t - 0.58) / 0.36);
-    const band = 0.38;
-    const sweep = uDissolve * (1.0 + band);
-    const invBand = 1.0 / band;
-    const len = thMap.length;
-
-    for (let i = 0; i < len; i++) {
-      const th = thMap[i];
-      const d = (sweep - th) * invBand;
-      if (d <= 0) {
-        noiseU32[i] = 0xff070505;
-      } else if (d >= 1) {
-        noiseU32[i] = 0x00000000;
-      } else {
-        const s = d * d * (3.0 - 2.0 * d);
-        const a = ((1.0 - s) * 255) | 0;
-        noiseU32[i] = (a << 24) | 0x00070505;
+    const compileShader = (type, src) => {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+        gl.deleteShader(sh);
+        return null;
       }
+      return sh;
+    };
+    const vs = compileShader(gl.VERTEX_SHADER, DISSOLVE_VERT_SRC);
+    const fs = compileShader(gl.FRAGMENT_SHADER, DISSOLVE_FRAG_SRC);
+    if (!vs || !fs) {
+      dissolveInitFailed = true;
+      return false;
     }
-    noiseCtx.putImageData(noiseImgData, 0, 0);
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      gl.deleteProgram(prog);
+      dissolveInitFailed = true;
+      return false;
+    }
+    const vbo = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+      gl.STATIC_DRAW
+    );
+    const aLoc = gl.getAttribLocation(prog, 'aPos');
+    gl.enableVertexAttribArray(aLoc);
+    gl.vertexAttribPointer(aLoc, 2, gl.FLOAT, false, 0, 0);
+    gl.useProgram(prog);
+    gl.viewport(0, 0, DISSOLVE_W, DISSOLVE_H);
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.BLEND);
+
+    dissolveGl = gl;
+    dissolveProg = prog;
+    dissolveSweepLoc = gl.getUniformLocation(prog, 'uSweep');
+    dissolveVbo = vbo;
+    dissolvePosLoc = aLoc;
+    return true;
   }
 
   /**
-   * Conducts the 4-Step Pitch-Black -> Brush-Written Amarante -> Glide Up -> Surrounding Flowers -> Smooth Noise Dissolve:
-   * - Step 1 (0.02..0.34): 100% Pitch-Black Screen; 9 true anatomical brush strokes write 'Amarante' letter-by-letter
-   * - Step 2 (0.34..0.50): Still on Pitch-Black Screen, 'Amarante' glides smoothly upward into its final sky position
-   * - Step 3 (0.48..0.74): Surrounding Fixed Sun-Clock (at 08:10), Golden Swash & Sakura Flowers bloom around 'Amarante'
-   * - Step 4 (0.58..0.94): Smooth 2D organic noise dissolve clears the pitch-black screen to reveal the live 3D valley,
-   *                        followed by the larger Glassy Hairline 'Begin Journey' pill rising at 0.90..1.00
+   * GPU fragment-shader pitch-black (#050507) screen and smooth 5-octave organic noise dissolve
+   * directly on `#af-pixel-veil-canvas` (`0` CPU pixel loops, `0` putImageData calls).
+   */
+  function renderBlackNoiseDissolveCanvas(t) {
+    if (!pixelCanvas) return;
+    if (t <= 0.45 && !(dissolveGl && dissolveProg)) {
+      prewarmDissolveWebGLAsync();
+      if (pixelVeil && pixelVeil.style.background !== 'rgb(5, 5, 7)' && pixelVeil.style.background !== '#050507') {
+        pixelVeil.style.background = '#050507';
+      }
+      return;
+    }
+    if (!ensureDissolveWebGL()) {
+      // Minimal GPU-composited opacity fallback if WebGL is unavailable
+      if (pixelVeil) {
+        const op = t <= 0.58 ? 1 : t >= 0.96 ? 0 : 1 - easeInOutCubic((t - 0.58) / 0.36);
+        pixelVeil.style.background = op > 0.001 ? `rgba(5,5,7,${op.toFixed(3)})` : 'transparent';
+      }
+      return;
+    }
+    if (pixelVeil && pixelVeil.style.background !== 'transparent') {
+      pixelVeil.style.background = 'transparent';
+    }
+    const gl = dissolveGl;
+    if (t <= 0.58) {
+      if (dissolveOpaqueDrawn) return;
+      gl.useProgram(dissolveProg);
+      gl.uniform1f(dissolveSweepLoc, -1.0);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      dissolveOpaqueDrawn = true;
+      dissolveClearedDrawn = false;
+      lastDissolveSweep = -1.0;
+      return;
+    }
+    if (t >= 0.96) {
+      if (dissolveClearedDrawn) return;
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      dissolveClearedDrawn = true;
+      dissolveOpaqueDrawn = false;
+      lastDissolveSweep = 2.0;
+      return;
+    }
+
+    const uDissolve = easeInOutCubic((t - 0.58) / 0.36);
+    const sweep = uDissolve * 1.38;
+    if (lastDissolveSweep !== null && Math.abs(sweep - lastDissolveSweep) < 1e-4) {
+      return;
+    }
+    dissolveOpaqueDrawn = false;
+    dissolveClearedDrawn = false;
+    lastDissolveSweep = sweep;
+    gl.useProgram(dissolveProg);
+    gl.uniform1f(dissolveSweepLoc, sweep);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  const TOTAL_INTRO_DURATION_MS = 5600;
+  let lastWordmarkPhase = -1;
+  let lastBloomStateKey = '';
+  let lastRenderedVeilT = -1;
+  let lastRenderedVeilOpt = -1;
+  let lastVeilOpacityStr = '';
+  let lastEnterReadyState = null;
+  let lastTitleLoadingActive = null;
+
+  /**
+   * Conducts the 4-Step Pitch-Black -> Brush-Written Amarante -> Glide Up -> Surrounding Flowers -> Smooth GPU Noise Dissolve:
+   * - Step 1 (0.007..0.425): 100% Pitch-Black Screen; 8 calligraphic strokes write 'Amarante' (~2.25s unhurried)
+   * - Step 2 (0.420..0.560): Still on Pitch-Black Screen, 'Amarante' glides smoothly upward into its final sky position
+   * - Step 3 (0.480..0.780): Surrounding Fixed Sun-Clock (at 08:10), Golden Swash & Sakura Flowers bloom around 'Amarante'
+   * - Step 4 (0.580..0.940): Smooth WebGL 2D organic noise dissolve clears the pitch-black screen to reveal the live 3D valley,
+   *                          followed by the Glassy Hairline 'Begin Journey' pill rising at 0.90..1.00
    */
   function updateSunClockAndParchmentAtProgress(t) {
     syncFixedClockHandsToGameTime();
     renderBlackNoiseDissolveCanvas(t);
 
-    // 1. Step 1: 3 Professional Vector Reveal Options for 'Amarante' on Pitch-Black Screen (0.02..0.34, Zero Yellow Dot)
+    // 1. Step 1: 3 Professional Vector Reveal Options for 'Amarante' on Pitch-Black Screen (Zero Yellow Dot)
     const opt = state.onboardingOption || 1;
     const numG = svgGlyphEls.length || 8;
+    const contourDurNorm = 820 / TOTAL_INTRO_DURATION_MS;
+    const fillDelayNorm = 280 / TOTAL_INTRO_DURATION_MS;
+    const fillDurNorm = 520 / TOTAL_INTRO_DURATION_MS;
 
-    for (let i = 0; i < numG; i++) {
-      const gEl = svgGlyphEls[i];
-      const contourEl = svgContourEls[i];
-      const fillEl = svgFillEls[i];
-      const ductusEl = svgDuctusEls[i];
+    const wordmarkSettled = t >= 0.56 && lastWordmarkPhase === opt;
+    if (!wordmarkSettled) {
+      for (let i = 0; i < numG; i++) {
+        const gEl = svgGlyphEls[i];
+        const contourEl = svgContourEls[i];
+        const fillEl = svgFillEls[i];
+        const ductusEl = svgDuctusEls[i];
 
-      if (opt === 1) {
-        // Option 1: True Liquid-Gold Vector Contour Draw -> Warm Ivory Ink Fill
-        const startG = 0.02 + i * 0.026;
-        const pContour = easeOutCubic((t - startG) / 0.11);
-        const pFill = easeInOutCubic((t - (startG + 0.045)) / 0.085);
-        gEl?.setAttribute('transform', 'translate(0, 0)');
-        if (ductusEl) ductusEl.setAttribute('opacity', '0');
-        if (contourEl) {
-          if (pContour <= 0.001) {
-            contourEl.setAttribute('opacity', '0');
-            contourEl.setAttribute('stroke-dashoffset', '105');
-          } else {
-            const cOp = pFill >= 0.99 ? 0 : 1 - pFill * 0.65;
-            contourEl.setAttribute('opacity', cOp.toFixed(3));
-            contourEl.setAttribute('stroke-dashoffset', ((1 - pContour) * 100).toFixed(2));
+        if (opt === 1) {
+          // Option 1: Exact compositor-matched Liquid-Gold Vector Contour Draw -> Warm Ivory Ink Fill
+          const startG = (i * 240) / TOTAL_INTRO_DURATION_MS;
+          const pContour = easeOutCubic((t - startG) / contourDurNorm);
+          const pFill = easeInOutCubic((t - (startG + fillDelayNorm)) / fillDurNorm);
+          gEl?.setAttribute('transform', 'translate(0, 0)');
+          if (ductusEl) ductusEl.setAttribute('opacity', '0');
+          if (contourEl) {
+            if (pContour <= 0.001) {
+              contourEl.setAttribute('opacity', '0');
+              contourEl.setAttribute('stroke-dashoffset', '105');
+            } else {
+              const cOp = pFill >= 0.99 ? 0 : 1 - pFill * 0.65;
+              contourEl.setAttribute('opacity', cOp.toFixed(3));
+              contourEl.setAttribute('stroke-dashoffset', ((1 - pContour) * 100).toFixed(2));
+            }
+          }
+          if (fillEl) {
+            fillEl.setAttribute('opacity', pFill.toFixed(3));
+          }
+        } else if (opt === 2) {
+          const startG = (i * 240) / TOTAL_INTRO_DURATION_MS;
+          const pDuctus = easeInOutCubic((t - startG) / 0.11);
+          gEl?.setAttribute('transform', 'translate(0, 0)');
+          if (contourEl) contourEl.setAttribute('opacity', '0');
+          if (fillEl) fillEl.setAttribute('opacity', '0');
+          if (ductusEl) {
+            if (pDuctus <= 0.001) {
+              ductusEl.setAttribute('opacity', '0');
+              ductusEl.setAttribute('stroke-dashoffset', '105');
+            } else {
+              ductusEl.setAttribute('opacity', '1');
+              ductusEl.setAttribute('stroke-dashoffset', ((1 - pDuctus) * 100).toFixed(2));
+            }
+          }
+        } else {
+          const startG = (40 + i * 210) / TOTAL_INTRO_DURATION_MS;
+          const pFocus = easeOutCubic((t - startG) / 0.15);
+          const dx = (1 - pFocus) * (i - 3.5) * 9.0;
+          const dy = (1 - pFocus) * 16.0;
+          gEl?.setAttribute('transform', `translate(${dx.toFixed(2)}, ${dy.toFixed(2)})`);
+          if (ductusEl) ductusEl.setAttribute('opacity', '0');
+          if (fillEl) fillEl.setAttribute('opacity', pFocus.toFixed(3));
+          if (contourEl) {
+            const rimOp = pFocus > 0.01 && pFocus < 0.99 ? Math.sin(pFocus * Math.PI) * 0.85 : 0;
+            contourEl.setAttribute('opacity', rimOp.toFixed(3));
+            contourEl.setAttribute('stroke-dashoffset', '0');
           }
         }
-        if (fillEl) {
-          fillEl.setAttribute('opacity', pFill.toFixed(3));
+      }
+
+      if (opt3GoldThreadEl) {
+        if (opt === 3 && t >= 0.03 && t <= 0.46) {
+          const pThread = easeOutCubic((t - 0.03) / 0.28);
+          const fadeOut = t > 0.34 ? Math.max(0, 1 - (t - 0.34) / 0.12) : 1;
+          opt3GoldThreadEl.setAttribute('opacity', (fadeOut * 0.85).toFixed(3));
+          opt3GoldThreadEl.setAttribute('stroke-dashoffset', ((1 - pThread) * 100).toFixed(2));
+        } else {
+          opt3GoldThreadEl.setAttribute('opacity', '0');
         }
-      } else if (opt === 2) {
-        // Option 2: Clip-Isolated Calligraphic Ribbon Ductus (True Per-Glyph Brush Stroke, Zero Bleed)
-        const startG = 0.02 + i * 0.032;
-        const pDuctus = easeInOutCubic((t - startG) / 0.072);
-        gEl?.setAttribute('transform', 'translate(0, 0)');
-        if (contourEl) contourEl.setAttribute('opacity', '0');
-        if (fillEl) fillEl.setAttribute('opacity', '0');
-        if (ductusEl) {
-          if (pDuctus <= 0.001) {
-            ductusEl.setAttribute('opacity', '0');
-            ductusEl.setAttribute('stroke-dashoffset', '105');
-          } else {
-            ductusEl.setAttribute('opacity', '1');
-            ductusEl.setAttribute('stroke-dashoffset', ((1 - pDuctus) * 100).toFixed(2));
-          }
-        }
-      } else {
-        // Option 3: Cinema Staggered Kerning & Golden Rim Bloom
-        const startG = 0.02 + i * 0.027;
-        const pFocus = easeOutCubic((t - startG) / 0.12);
-        const dx = (1 - pFocus) * (i - 3.5) * 9.0;
-        const dy = (1 - pFocus) * 16.0;
-        gEl?.setAttribute('transform', `translate(${dx.toFixed(2)}, ${dy.toFixed(2)})`);
-        if (ductusEl) ductusEl.setAttribute('opacity', '0');
-        if (fillEl) fillEl.setAttribute('opacity', pFocus.toFixed(3));
-        if (contourEl) {
-          const rimOp = pFocus > 0.01 && pFocus < 0.99 ? Math.sin(pFocus * Math.PI) * 0.85 : 0;
-          contourEl.setAttribute('opacity', rimOp.toFixed(3));
-          contourEl.setAttribute('stroke-dashoffset', '0');
-        }
+      }
+
+      // 2. Step 2: 'Amarante' glides smoothly upward from the center of the pitch-black screen (0.42..0.56)
+      if (svgWordmarkMoverEl) {
+        const pGlide = easeInOutCubic((t - 0.42) / 0.14);
+        const tx = (1 - pGlide) * -24;
+        const ty = (1 - pGlide) * 191;
+        const sc = 1.0 + (1 - pGlide) * 0.08;
+        svgWordmarkMoverEl.setAttribute(
+          'transform',
+          `translate(${tx.toFixed(2)}, ${ty.toFixed(2)}) scale(${sc.toFixed(4)})`
+        );
+      }
+      lastWordmarkPhase = t >= 0.56 ? opt : -1;
+    }
+
+    // 3. Step 3: Surrounding Fixed Sun-Clock, Golden Swash & Sakura Flowers bloom smoothly (0.42..0.54)
+    //    so zero SVG DOM attribute thrash happens during the GPU dissolve window (0.55..0.98).
+    const bloomKey = t < 0.42 ? 'pre' : t >= 0.54 ? 'done' : t.toFixed(3);
+    if (bloomKey !== lastBloomStateKey) {
+      lastBloomStateKey = bloomKey;
+      const bt = t >= 0.54 ? 1.0 : (t - 0.42) / 0.12;
+      const pRingOuter = easeOutCubic(bt / 0.65);
+      const pRingInner = easeOutCubic((bt - 0.08) / 0.65);
+      if (svgRingOuterEl) {
+        svgRingOuterEl.setAttribute('opacity', pRingOuter > 0.001 ? '1' : '0');
+        svgRingOuterEl.setAttribute('stroke-dashoffset', ((1 - pRingOuter) * 100).toFixed(2));
+      }
+      if (svgRingInnerEl) {
+        svgRingInnerEl.setAttribute('opacity', pRingInner > 0.001 ? '1' : '0');
+        svgRingInnerEl.setAttribute('stroke-dashoffset', ((1 - pRingInner) * 100).toFixed(2));
+      }
+      if (svgRingWhisperEl) {
+        svgRingWhisperEl.setAttribute('opacity', (pRingOuter * 0.58).toFixed(3));
+      }
+      if (svgDialOrbitEl) {
+        svgDialOrbitEl.style.opacity = easeOutCubic((bt - 0.05) / 0.55).toFixed(3);
+      }
+      if (svgHandOrbitEl) {
+        svgHandOrbitEl.style.opacity = easeOutCubic((bt - 0.12) / 0.55).toFixed(3);
+      }
+      if (sunClockArcEl) {
+        const pArc = easeOutCubic((bt - 0.05) / 0.85);
+        sunClockArcEl.setAttribute('opacity', pArc > 0.001 ? '1' : '0');
+        const dashOffset = SUN_ARC_CIRCUMFERENCE * (1.0 - pArc);
+        sunClockArcEl.setAttribute('stroke-dashoffset', dashOffset.toFixed(1));
+      }
+
+      for (let i = 0; i < svgNumeralEls.length; i++) {
+        const startT = 0.05 + i * 0.035;
+        const pn = easeOutCubic((bt - startT) / 0.45);
+        svgNumeralEls[i].style.opacity = pn.toFixed(3);
+      }
+
+      for (let i = 0; i < svgCrownEls.length; i++) {
+        const startT = 0.16 + i * 0.08;
+        const pc = easeOutBackSoft((bt - startT) / 0.52);
+        const pcOp = easeOutCubic((bt - startT) / 0.42);
+        const baseScale = Number(svgCrownEls[i].dataset.baseScale || 1);
+        svgCrownEls[i].style.opacity = pcOp.toFixed(3);
+        svgCrownEls[i].setAttribute('transform', `scale(${(baseScale * pc).toFixed(4)})`);
+      }
+
+      const pDiamond = easeOutBackSoft((bt - 0.10) / 0.48);
+      if (svgSwashDiamondEl) {
+        svgSwashDiamondEl.setAttribute('transform', `translate(496, 308) scale(${pDiamond.toFixed(4)})`);
+      }
+      const pSwashWing = easeOutCubic((bt - 0.16) / 0.62);
+      const swashOffset = ((1 - pSwashWing) * 100).toFixed(2);
+      if (svgSwashLeftEl) {
+        svgSwashLeftEl.setAttribute('opacity', pSwashWing > 0.001 ? '1' : '0');
+        svgSwashLeftEl.setAttribute('stroke-dashoffset', swashOffset);
+      }
+      if (svgSwashRightEl) {
+        svgSwashRightEl.setAttribute('opacity', pSwashWing > 0.001 ? '1' : '0');
+        svgSwashRightEl.setAttribute('stroke-dashoffset', swashOffset);
+      }
+
+      const STEM_STARTS = [0.10, 0.16, 0.28, 0.22];
+      for (let i = 0; i < svgStemEls.length; i++) {
+        const ps = easeOutCubic((bt - STEM_STARTS[i]) / 0.62);
+        svgStemEls[i].setAttribute('opacity', ps > 0.001 ? '1' : '0');
+        svgStemEls[i].setAttribute('stroke-dashoffset', ((1 - ps) * 100).toFixed(2));
+      }
+
+      for (let i = 0; i < svgBlossomEls.length; i++) {
+        const startT = 0.18 + i * 0.032;
+        const pb = easeOutBackSoft((bt - startT) / 0.44);
+        const pbOp = easeOutCubic((bt - startT) / 0.34);
+        const baseScale = Number(svgBlossomEls[i].dataset.baseScale || 1);
+        svgBlossomEls[i].style.opacity = pbOp.toFixed(3);
+        svgBlossomEls[i].setAttribute('transform', `scale(${(baseScale * pb).toFixed(4)})`);
       }
     }
 
-    if (opt3GoldThreadEl) {
-      if (opt === 3 && t >= 0.03 && t <= 0.42) {
-        const pThread = easeOutCubic((t - 0.03) / 0.24);
-        const fadeOut = t > 0.30 ? Math.max(0, 1 - (t - 0.30) / 0.12) : 1;
-        opt3GoldThreadEl.setAttribute('opacity', (fadeOut * 0.85).toFixed(3));
-        opt3GoldThreadEl.setAttribute('stroke-dashoffset', ((1 - pThread) * 100).toFixed(2));
-      } else {
-        opt3GoldThreadEl.setAttribute('opacity', '0');
+    // Hide drifting CSS petals and heavy SVG drop-shadow filters until resolvePixelVeil (t >= 0.999)
+    const settled = t >= 0.999;
+    const petalsDisp = settled ? 'block' : 'none';
+    for (let i = 0; i < branchPetalEls.length; i++) {
+      if (branchPetalEls[i].style.display !== petalsDisp) {
+        branchPetalEls[i].style.display = petalsDisp;
       }
     }
 
-    // 2. Step 2: 'Amarante' glides smoothly upward from the dead center of the pitch-black screen (0.34..0.50)
-    if (svgWordmarkMoverEl) {
-      const pGlide = easeInOutCubic((t - 0.34) / 0.16);
-      const tx = (1 - pGlide) * -24;
-      const ty = (1 - pGlide) * 191;
-      const sc = 1.0 + (1 - pGlide) * 0.08;
-      svgWordmarkMoverEl.setAttribute(
-        'transform',
-        `translate(${tx.toFixed(2)}, ${ty.toFixed(2)}) scale(${sc.toFixed(4)})`
-      );
+    if (pureCelestialSvgEl) {
+      pureCelestialSvgEl.classList.toggle('is-settled', settled);
     }
-
-    // 3. Step 3: Surrounding Fixed Sun-Clock, Golden Swash & Sakura Flowers bloom around 'Amarante' (0.48..0.76)
-    const pRingOuter = easeOutCubic((t - 0.48) / 0.18);
-    const pRingInner = easeOutCubic((t - 0.50) / 0.18);
-    if (svgRingOuterEl) {
-      svgRingOuterEl.setAttribute('opacity', pRingOuter > 0.001 ? '1' : '0');
-      svgRingOuterEl.setAttribute('stroke-dashoffset', ((1 - pRingOuter) * 100).toFixed(2));
+    if (svgWordmarkEl) {
+      if (settled) {
+        if (svgWordmarkEl.getAttribute('filter') !== 'url(#afWordShadow)') {
+          svgWordmarkEl.setAttribute('filter', 'url(#afWordShadow)');
+        }
+      } else if (svgWordmarkEl.hasAttribute('filter')) {
+        svgWordmarkEl.removeAttribute('filter');
+      }
     }
-    if (svgRingInnerEl) {
-      svgRingInnerEl.setAttribute('opacity', pRingInner > 0.001 ? '1' : '0');
-      svgRingInnerEl.setAttribute('stroke-dashoffset', ((1 - pRingInner) * 100).toFixed(2));
-    }
-    if (svgRingWhisperEl) {
-      svgRingWhisperEl.setAttribute('opacity', (pRingOuter * 0.58).toFixed(3));
-    }
-    if (svgDialOrbitEl) {
-      svgDialOrbitEl.style.opacity = easeOutCubic((t - 0.49) / 0.16).toFixed(3);
-    }
-    if (svgHandOrbitEl) {
-      svgHandOrbitEl.style.opacity = easeOutCubic((t - 0.51) / 0.16).toFixed(3);
+    if (svgSakuraBranchesEl) {
+      if (settled) {
+        if (svgSakuraBranchesEl.getAttribute('filter') !== 'url(#afWordShadow)') {
+          svgSakuraBranchesEl.setAttribute('filter', 'url(#afWordShadow)');
+        }
+      } else if (svgSakuraBranchesEl.hasAttribute('filter')) {
+        svgSakuraBranchesEl.removeAttribute('filter');
+      }
     }
     if (sunClockArcEl) {
-      const pArc = easeOutCubic((t - 0.49) / 0.24);
-      sunClockArcEl.setAttribute('opacity', pArc > 0.001 ? '1' : '0');
-      const dashOffset = SUN_ARC_CIRCUMFERENCE * (1.0 - pArc);
-      sunClockArcEl.setAttribute('stroke-dashoffset', dashOffset.toFixed(1));
-    }
-
-    for (let i = 0; i < svgNumeralEls.length; i++) {
-      const startT = 0.49 + i * 0.010;
-      const pn = easeOutCubic((t - startT) / 0.12);
-      svgNumeralEls[i].style.opacity = pn.toFixed(3);
-    }
-
-    for (let i = 0; i < svgCrownEls.length; i++) {
-      const startT = 0.52 + i * 0.026;
-      const pc = easeOutBackSoft((t - startT) / 0.15);
-      const pcOp = easeOutCubic((t - startT) / 0.12);
-      const baseScale = Number(svgCrownEls[i].dataset.baseScale || 1);
-      svgCrownEls[i].style.opacity = pcOp.toFixed(3);
-      svgCrownEls[i].setAttribute('transform', `scale(${(baseScale * pc).toFixed(4)})`);
-    }
-
-    const pDiamond = easeOutBackSoft((t - 0.50) / 0.14);
-    if (svgSwashDiamondEl) {
-      svgSwashDiamondEl.setAttribute('transform', `translate(496, 308) scale(${pDiamond.toFixed(4)})`);
-    }
-    const pSwashWing = easeOutCubic((t - 0.52) / 0.18);
-    const swashOffset = ((1 - pSwashWing) * 100).toFixed(2);
-    if (svgSwashLeftEl) {
-      svgSwashLeftEl.setAttribute('opacity', pSwashWing > 0.001 ? '1' : '0');
-      svgSwashLeftEl.setAttribute('stroke-dashoffset', swashOffset);
-    }
-    if (svgSwashRightEl) {
-      svgSwashRightEl.setAttribute('opacity', pSwashWing > 0.001 ? '1' : '0');
-      svgSwashRightEl.setAttribute('stroke-dashoffset', swashOffset);
-    }
-
-    const STEM_STARTS = [0.50, 0.52, 0.56, 0.54];
-    for (let i = 0; i < svgStemEls.length; i++) {
-      const ps = easeOutCubic((t - STEM_STARTS[i]) / 0.18);
-      svgStemEls[i].setAttribute('opacity', ps > 0.001 ? '1' : '0');
-      svgStemEls[i].setAttribute('stroke-dashoffset', ((1 - ps) * 100).toFixed(2));
-    }
-
-    for (let i = 0; i < svgBlossomEls.length; i++) {
-      const startT = 0.53 + i * 0.011;
-      const pb = easeOutBackSoft((t - startT) / 0.14);
-      const pbOp = easeOutCubic((t - startT) / 0.10);
-      const baseScale = Number(svgBlossomEls[i].dataset.baseScale || 1);
-      svgBlossomEls[i].style.opacity = pbOp.toFixed(3);
-      svgBlossomEls[i].setAttribute('transform', `scale(${(baseScale * pb).toFixed(4)})`);
-    }
-
-    // Hide drifting CSS petals completely until the valley has dissolved in
-    for (let i = 0; i < branchPetalEls.length; i++) {
-      branchPetalEls[i].style.display = t > 0.80 ? 'block' : 'none';
+      if (settled) {
+        if (sunClockArcEl.getAttribute('filter') !== 'url(#afGoldGlow)') {
+          sunClockArcEl.setAttribute('filter', 'url(#afGoldGlow)');
+        }
+      } else if (sunClockArcEl.hasAttribute('filter')) {
+        sunClockArcEl.removeAttribute('filter');
+      }
     }
 
     // 4. Step 4: Larger Glassy Hairline 'Begin Journey' Pill appears ONLY when ready (0.90..1.00)
@@ -2650,8 +2886,10 @@ export function createAppFlow({
         enterBtn.style.opacity = '1';
         enterBtn.style.transform = '';
       } else if (t < 0.90) {
-        enterBtn.style.opacity = '0';
-        enterBtn.style.transform = 'translateX(-50%) translateY(18px)';
+        if (enterBtn.style.opacity !== '0') {
+          enterBtn.style.opacity = '0';
+          enterBtn.style.transform = 'translateX(-50%) translateY(18px)';
+        }
       } else {
         const pPill = easeOutCubic((t - 0.90) / 0.10);
         const py = (1 - pPill) * 18;
@@ -2666,15 +2904,29 @@ export function createAppFlow({
       cancelAnimationFrame(mosaicRafId);
       mosaicRafId = null;
     }
+    lastWordmarkPhase = -1;
+    lastBloomStateKey = '';
+    lastRenderedVeilT = -1;
+    lastRenderedVeilOpt = -1;
+    lastVeilOpacityStr = '';
+    lastEnterReadyState = null;
+    lastTitleLoadingActive = null;
+    dissolveOpaqueDrawn = false;
+    dissolveClearedDrawn = false;
+    lastDissolveSweep = null;
   }
 
   function resolvePixelVeil() {
     stopMosaicLoop();
     state.lastDitherProgress = 1;
+    lastRenderedVeilT = 1;
+    lastRenderedVeilOpt = state.onboardingOption || 1;
     updateSunClockAndParchmentAtProgress(1);
     titleSceneEl?.classList.remove('is-loading-active');
+    lastTitleLoadingActive = false;
     pixelVeil?.classList.add('is-resolved');
     pixelVeil?.style.setProperty('opacity', '0');
+    lastVeilOpacityStr = '0';
     if (prepLabelEl) {
       prepLabelEl.textContent = 'Begin Journey';
     }
@@ -2682,6 +2934,7 @@ export function createAppFlow({
       enterBtn.disabled = false;
       enterBtn.classList.remove('is-loading');
       enterBtn.classList.add('is-ready');
+      lastEnterReadyState = true;
     }
   }
 
@@ -2691,6 +2944,16 @@ export function createAppFlow({
   function renderDitherVeilAtProgress(rawT) {
     if (!pixelVeil) return;
     const t = Math.min(1, Math.max(0, Number(rawT) || 0));
+    const opt = state.onboardingOption || 1;
+    if (
+      t < 0.999 &&
+      Math.abs(t - lastRenderedVeilT) < 1e-4 &&
+      opt === lastRenderedVeilOpt
+    ) {
+      return;
+    }
+    lastRenderedVeilT = t;
+    lastRenderedVeilOpt = opt;
     state.lastDitherProgress = t;
 
     if (t >= 0.999) {
@@ -2698,19 +2961,30 @@ export function createAppFlow({
       return;
     }
 
-    titleSceneEl?.classList.add('is-loading-active');
-    pixelVeil.classList.remove('is-resolved');
+    if (lastTitleLoadingActive !== true) {
+      lastTitleLoadingActive = true;
+      titleSceneEl?.classList.add('is-loading-active');
+      pixelVeil.classList.remove('is-resolved');
+    }
     const veilOpacity = t < 0.84 ? 1.0 : Math.max(0, 1.0 - (t - 0.84) / 0.16);
-    pixelVeil.style.setProperty('opacity', veilOpacity.toFixed(3));
+    const veilOpStr = veilOpacity.toFixed(3);
+    if (veilOpStr !== lastVeilOpacityStr) {
+      lastVeilOpacityStr = veilOpStr;
+      pixelVeil.style.setProperty('opacity', veilOpStr);
+    }
 
     if (enterBtn) {
-      enterBtn.disabled = false;
-      if (t >= 0.92) {
-        enterBtn.classList.remove('is-loading');
-        enterBtn.classList.add('is-ready');
-      } else {
-        enterBtn.classList.add('is-loading');
-        enterBtn.classList.remove('is-ready');
+      const nextReady = t >= 0.92;
+      if (lastEnterReadyState !== nextReady) {
+        lastEnterReadyState = nextReady;
+        enterBtn.disabled = false;
+        if (nextReady) {
+          enterBtn.classList.remove('is-loading');
+          enterBtn.classList.add('is-ready');
+        } else {
+          enterBtn.classList.add('is-loading');
+          enterBtn.classList.remove('is-ready');
+        }
       }
     }
 
@@ -2720,7 +2994,7 @@ export function createAppFlow({
   /**
    * Triggers the 60FPS Plain-Black Paintbrush Writing -> Glide Up -> Paintbrush Scene Reveal.
    */
-  function triggerPixelVeilMaterialization(immediate = false) {
+  function triggerPixelVeilMaterialization(immediate = false, startTimeOverride = null) {
     if (!pixelVeil) return;
     stopMosaicLoop();
 
@@ -2739,14 +3013,55 @@ export function createAppFlow({
       enterBtn.classList.remove('is-ready');
     }
 
-    renderDitherVeilAtProgress(0.0);
-
-    const startTime =
+    const nowPerf =
       typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const durationMs = 3400;
+    const rawStartTime =
+      typeof startTimeOverride === 'number' && Number.isFinite(startTimeOverride)
+        ? Math.min(nowPerf, startTimeOverride)
+        : nowPerf;
+    const durationMs = TOTAL_INTRO_DURATION_MS;
+    let effectiveStartTime = rawStartTime;
+    let worldHoldAccumMs = 0;
+    let monoNow = nowPerf;
 
-    const stepMosaic = (now) => {
-      const t = Math.min(1, Math.max(0, (now - startTime) / durationMs));
+    const initialWorldReady =
+      typeof window === 'undefined' || window.__WORLD_VISUAL_READY__ !== false;
+    let initT = Math.min(1, Math.max(0, (nowPerf - effectiveStartTime) / durationMs));
+    // Never skip past the calligraphic write phase if module import started late
+    if (typeof startTimeOverride === 'number' && initT > 0.30) {
+      initT = 0.30;
+      effectiveStartTime = nowPerf - initT * durationMs;
+    }
+    if (!initialWorldReady && initT > 0.56) {
+      worldHoldAccumMs += (initT - 0.56) * durationMs;
+      initT = 0.56;
+    }
+    let maxSeenT = initT;
+    renderDitherVeilAtProgress(initT);
+
+    const stepMosaic = (rawNow) => {
+      const worldReadyForDissolve =
+        typeof window === 'undefined' || window.__WORLD_VISUAL_READY__ !== false;
+      const now =
+        typeof rawNow === 'number' && Number.isFinite(rawNow)
+          ? Math.max(monoNow, rawNow)
+          : monoNow;
+      const dtMs = Math.max(0, now - monoNow);
+      monoNow = now;
+
+      const rawT = (now - effectiveStartTime - worldHoldAccumMs) / durationMs;
+      if (!worldReadyForDissolve && rawT > 0.56) {
+        worldHoldAccumMs += dtMs;
+      }
+
+      let t = Math.min(
+        1,
+        Math.max(maxSeenT, (now - effectiveStartTime - worldHoldAccumMs) / durationMs)
+      );
+      if (!worldReadyForDissolve && t > 0.56) {
+        t = 0.56;
+      }
+      maxSeenT = t;
       renderDitherVeilAtProgress(t);
 
       if (t < 1) {
@@ -2960,7 +3275,7 @@ export function createAppFlow({
     errorBanner.classList.toggle('is-visible', Boolean(state.error));
   }
 
-  function setStep(nextStep, { silent = false, loadingDurationMs = 450 } = {}) {
+  function setStep(nextStep, { silent = false, loadingDurationMs = 450, startTimeOverride = null } = {}) {
     if (loadingTimer) {
       clearTimeout(loadingTimer);
       loadingTimer = null;
@@ -2977,7 +3292,7 @@ export function createAppFlow({
     });
 
     if (nextStep === FLOW_STEPS.TITLE) {
-      triggerPixelVeilMaterialization();
+      triggerPixelVeilMaterialization(false, startTimeOverride);
     } else {
       resolvePixelVeil();
     }
@@ -3220,7 +3535,7 @@ export function createAppFlow({
     if (isSoloMode || bothSeatsReady) {
       setStep(FLOW_STEPS.IN_GAME);
       if (typeof onStartGame === 'function') {
-        onStartGame({ ...state, soloTest: Boolean(forceSoloStart || isSoloMode) });
+        onStartGame({ ...state, soloTest: Boolean(forceSoloStart) });
       }
     }
   }
@@ -3424,7 +3739,11 @@ export function createAppFlow({
   } else if (skip) {
     setStep(FLOW_STEPS.IN_GAME, { silent: true });
   } else {
-    setStep(FLOW_STEPS.TITLE);
+    const bootT0 =
+      typeof window !== 'undefined' && typeof window.__BOOT_STROKE_T0__ === 'number'
+        ? window.__BOOT_STROKE_T0__
+        : null;
+    setStep(FLOW_STEPS.TITLE, { startTimeOverride: bootT0 });
   }
 
   const api = {

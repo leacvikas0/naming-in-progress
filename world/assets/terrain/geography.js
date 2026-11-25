@@ -140,6 +140,24 @@ export const PATROL_CLEARINGS = [
     r: 10.5,
     outerR: 15.5,
   },
+  {
+    id: 'clearing_east_trail',
+    name: 'East Grove Trail Ambush Clearing',
+    x: 96.0,
+    z: 30.0,
+    y: 0.45,
+    r: 9.0,
+    outerR: 13.5,
+  },
+  {
+    id: 'clearing_sw_trail',
+    name: "Southwest Lovers' Trail Ambush Clearing",
+    x: -78.0,
+    z: 56.0,
+    y: 0.55,
+    r: 9.0,
+    outerR: 13.5,
+  },
 ];
 
 export const INSCRIPTION_STONES = [
@@ -154,17 +172,17 @@ export const INSCRIPTION_STONES = [
   {
     id: 'stone_pier',
     name: 'Southwest Cliffside Lovers Wall Sacred Inscription Stone',
-    x: -92.0,
-    z: 64.0,
-    y: 0.65,
+    x: -124.0,
+    z: 84.0,
+    y: 0.72,
     rotY: 0.45,
   },
   {
     id: 'stone_grove',
     name: 'Far East Wisteria Grove Sacred Inscription Stone',
-    x: 114.0,
-    z: 32.0,
-    y: 0.42,
+    x: 142.0,
+    z: 44.0,
+    y: 0.52,
     rotY: -0.38,
   },
 ];
@@ -431,7 +449,8 @@ export const ROADS = [
       [44.0, 12.0],
       [68.0, 24.0],
       [92.0, 29.0],
-      [114.0, 32.0],
+      [118.0, 36.5],
+      [142.0, 44.0],
     ],
   },
   {
@@ -444,7 +463,8 @@ export const ROADS = [
       [-34.0, 22.0],
       [-52.0, 38.0],
       [-72.0, 52.0],
-      [-92.0, 64.0],
+      [-98.0, 68.0],
+      [-124.0, 84.0],
     ],
   },
   {
@@ -603,11 +623,11 @@ export const TREES = [
   { kind: 'sakura',   variant: 1, x: 50.5,  z: -31.0, scale: 1.02 },
   { kind: 'oak',      variant: 2, x: 38.5,  z: -33.0, scale: 0.90 },
 
-  // Grove 8: Sacred Wisteria Grove around Stone 2 (114.0, 32.0) (4 trees)
-  { id: 'wisteria_grove_n', kind: 'wisteria', variant: 0, x: 103.5, z: 20.0,  scale: 1.28, label: 'Sacred Grove North Wisteria' },
-  { id: 'wisteria_grove_e', kind: 'wisteria', variant: 1, x: 126.5, z: 32.5,  scale: 1.36, label: 'Sacred Grove East Wisteria' },
-  { id: 'wisteria_grove_s', kind: 'wisteria', variant: 2, x: 125.0, z: 45.5,  scale: 1.28, label: 'Sacred Grove South Wisteria' },
-  { kind: 'sakura',   variant: 0, x: 101.0, z: 42.5,  scale: 1.12 },
+  // Grove 8: Sacred Wisteria Grove around Stone 2 (142.0, 44.0) (4 trees)
+  { id: 'wisteria_grove_n', kind: 'wisteria', variant: 0, x: 131.5, z: 32.0,  scale: 1.28, label: 'Sacred Grove North Wisteria' },
+  { id: 'wisteria_grove_e', kind: 'wisteria', variant: 1, x: 154.5, z: 44.5,  scale: 1.36, label: 'Sacred Grove East Wisteria' },
+  { id: 'wisteria_grove_s', kind: 'wisteria', variant: 2, x: 152.5, z: 57.5,  scale: 1.28, label: 'Sacred Grove South Wisteria' },
+  { kind: 'sakura',   variant: 0, x: 129.0, z: 54.5,  scale: 1.12 },
 
   // Grove 9: South-West Hamlet Approach Woodland Grove (4 trees)
   { kind: 'oak',      variant: 0, x: -26.0, z: 31.0,  scale: 1.24 },
@@ -665,10 +685,10 @@ export const TREES = [
   { kind: 'sakura',   variant: 0, x: -46.0, z: 108.0, scale: 1.18 },
   { kind: 'oak',      variant: 2, x: 46.0,  z: 106.0, scale: 1.20 },
 
-  // Grove 18: Southwest Lovers' Wall Sanctuary Grove around (-92.0, 64.0) (3 trees)
-  { id: 'wisteria_pier_s',   kind: 'wisteria', variant: 0, x: -82.0, z: 74.5,  scale: 1.28, label: 'Lovers Wall East Wisteria' },
-  { kind: 'sakura',   variant: 1, x: -103.5, z: 56.0, scale: 1.18 },
-  { kind: 'wisteria', variant: 2, x: -102.0, z: 73.5, scale: 1.26 },
+  // Grove 18: Southwest Lovers' Wall Sanctuary Grove around (-124.0, 84.0) (3 trees)
+  { id: 'wisteria_pier_s',   kind: 'wisteria', variant: 0, x: -114.0, z: 94.5, scale: 1.28, label: 'Lovers Wall East Wisteria' },
+  { kind: 'sakura',   variant: 1, x: -135.5, z: 76.0, scale: 1.18 },
+  { kind: 'wisteria', variant: 2, x: -134.0, z: 93.5, scale: 1.26 },
 ];
 
 // 52 Multi-Faceted Chiseled Limestone Boulders (moss-topped, warm limestone sides, slate base AO)
@@ -867,21 +887,21 @@ export function terrainHeightAt(x, z) {
     h = lerp(h, ZONES.arena.y, wArena);
   }
 
-  // Far East Sacred Wisteria Grove Sanctuary Terrace at (114.0, 32.0, y = 0.42)
-  if (x > 90.0 && x < 138.0 && z > 8.0 && z < 56.0) {
-    const dGroveStone = Math.hypot(x - 114.0, z - 32.0);
+  // Far East Sacred Wisteria Grove Sanctuary Terrace at (142.0, 44.0, y = 0.52)
+  if (x > 116.0 && x < 168.0 && z > 18.0 && z < 70.0) {
+    const dGroveStone = Math.hypot(x - 142.0, z - 44.0);
     const wGroveStone = 1.0 - smoothstep(12.5, 22.0, dGroveStone);
     if (wGroveStone > 0) {
-      h = lerp(h, 0.42, wGroveStone);
+      h = lerp(h, 0.52, wGroveStone);
     }
   }
 
-  // Southwest Hidden Lovers' Wall Sanctuary Terrace at (-92.0, 64.0, y = 0.65)
-  if (x > -116.0 && x < -68.0 && z > 40.0 && z < 88.0) {
-    const dWallStone = Math.hypot(x - (-92.0), z - 64.0);
+  // Southwest Hidden Lovers' Wall Sanctuary Terrace at (-124.0, 84.0, y = 0.72)
+  if (x > -150.0 && x < -98.0 && z > 58.0 && z < 110.0) {
+    const dWallStone = Math.hypot(x - (-124.0), z - 84.0);
     const wWallStone = 1.0 - smoothstep(12.5, 22.0, dWallStone);
     if (wWallStone > 0) {
-      h = lerp(h, 0.65, wWallStone);
+      h = lerp(h, 0.72, wWallStone);
     }
   }
 
@@ -1143,8 +1163,8 @@ export function sampleWorld(x, z) {
       }
     }
 
-    // Southwest Lovers' Wall Courtyard Apron at (-92.0, 64.0)
-    const dLoversWall = Math.hypot(x - (-92.0), z - 64.0);
+    // Southwest Lovers' Wall Courtyard Apron at (-124.0, 84.0)
+    const dLoversWall = Math.hypot(x - (-124.0), z - 84.0);
     if (dLoversWall < 4.5) {
       roadFoliageClear = true;
       cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(3.0, 4.5, dLoversWall));
@@ -1244,23 +1264,21 @@ export function sampleWorld(x, z) {
  * - `B`: Foliage exclusion mask (`0.0` on buildings/roads/plaza/arena/shrine/water, `1.0` on open meadow)
  * - `A`: Contact ambient occlusion (`0.0..1.0`)
  */
-export function createWorldMaskTexture(size = 512) {
-  const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+function initWorldMaskBuffer(size = 512) {
   const data = new Uint8Array(size * size * 4);
-  const span = INNER_EXTENT * 2; // 340m (-170..+170)
-  const mp = ZONES.millpond;
-  const wf = LANDMARKS.waterfall;
-
-  // Fill baseline open meadow (R=0, G=0, B=255, A=255) using 32-bit Uint32Array view (< 0.3ms!)
   const u32 = new Uint32Array(data.buffer);
   u32.fill(0xffff0000);
+  return data;
+}
 
-  const izMin = Math.max(0, Math.floor(((-166 / span) + 0.5) * size));
-  const izMax = Math.min(size - 1, Math.ceil(((166 / span) + 0.5) * size));
+function processWorldMaskRowRange(data, size, izStart, izEnd) {
+  const span = INNER_EXTENT * 2;
+  const mp = ZONES.millpond;
+  const wf = LANDMARKS.waterfall;
   const ixMin = Math.max(0, Math.floor(((-166 / span) + 0.5) * size));
   const ixMax = Math.min(size - 1, Math.ceil(((166 / span) + 0.5) * size));
 
-  for (let iz = izMin; iz <= izMax; iz++) {
+  for (let iz = izStart; iz <= izEnd; iz++) {
     const wz = ((iz + 0.5) / size - 0.5) * span;
     const inPondZ = wz > -32.0 && wz < 44.0;
     const inBldgZ = wz > -26.0 && wz < 24.0;
@@ -1268,10 +1286,12 @@ export function createWorldMaskTexture(size = 512) {
     const inShrineZ = wz < -68.0 && wz > -106.0;
     const inStairZ = wz <= -13.0 && wz >= -73.5;
     const inRingZ = Math.abs(wz) < 14.5;
-    const inClearZ = wz > 36.0 && wz < 102.0;
+    const inClearZ = wz > 14.0 && wz < 102.0;
 
-    // Filter active road segments for this Z row once per row!
+    // Filter active road segments for this Z row and track exact X range!
     const activeSegs = [];
+    let segMinX = Infinity;
+    let segMaxX = -Infinity;
     for (let r = 0; r < PRECOMPUTED_ROADS.length; r++) {
       const pr = PRECOMPUTED_ROADS[r];
       if (wz < pr.minZ || wz > pr.maxZ) continue;
@@ -1281,6 +1301,8 @@ export function createWorldMaskTexture(size = 512) {
         const s = pr.segs[i];
         if (wz >= s.minZ && wz <= s.maxZ) {
           activeSegs.push({ s, hw, isCobble });
+          if (s.minX < segMinX) segMinX = s.minX;
+          if (s.maxX > segMaxX) segMaxX = s.maxX;
         }
       }
     }
@@ -1292,11 +1314,11 @@ export function createWorldMaskTexture(size = 512) {
       const inBldgX = inBldgZ && wx > -53.0 && wx < 26.0;
       const inArenaX = inArenaZ && wx > 45.0 && wx < 91.0;
       const inShrineX = inShrineZ && Math.abs(wx) < 17.5;
-      const inRoadX = activeSegs.length > 0 && wx > -102.0 && wx < 124.0;
-      const inClearX = inClearZ && wx > -26.0 && wx < 28.0;
+      const inRoadX = activeSegs.length > 0 && wx >= segMinX && wx <= segMaxX;
+      const inClearX = inClearZ && wx > -96.0 && wx < 114.0;
       const inGroveDais =
-        (wz > 26.0 && wz < 38.0 && wx > 108.0 && wx < 120.0) ||
-        (wz > 58.0 && wz < 70.0 && wx > -98.0 && wx < -86.0);
+        (wz > 38.0 && wz < 50.0 && wx > 136.0 && wx < 148.0) ||
+        (wz > 78.0 && wz < 90.0 && wx > -130.0 && wx < -118.0);
 
       if (
         !inPondX &&
@@ -1334,7 +1356,6 @@ export function createWorldMaskTexture(size = 512) {
         }
       }
 
-      // Continuous paved Hamlet Well Plaza & Commons Ring (r = 0..12.8m) — zero grass moat!
       if (inRingZ && Math.abs(wx) < 14.5) {
         const rOrig = Math.hypot(wx, wz);
         if (rOrig < 13.8) roadFoliageClear = true;
@@ -1343,22 +1364,24 @@ export function createWorldMaskTexture(size = 512) {
         }
       }
 
-      for (let i = 0; i < activeSegs.length; i++) {
-        const { s, hw, isCobble } = activeSegs[i];
-        if (wx < s.minX || wx > s.maxX) continue;
-        const t = clamp(((wx - s.ax) * s.dx + (wz - s.az) * s.dz) * s.invLen2, 0, 1);
-        const ddx = wx - (s.ax + s.dx * t);
-        const ddz = wz - (s.az + s.dz * t);
-        const dSq = ddx * ddx + ddz * ddz;
-        if (dSq < (hw + 1.35) * (hw + 1.35)) {
-          roadFoliageClear = true;
-          if (dSq < (hw + 0.45) * (hw + 0.45)) {
-            const d = Math.sqrt(dSq);
-            const w = smoothstep(hw + 0.35, hw - 0.25, d);
-            if (isCobble) {
-              cobbleWeight = Math.max(cobbleWeight, w);
-            } else {
-              dirtWeight = Math.max(dirtWeight, w);
+      if (inRoadX) {
+        for (let i = 0; i < activeSegs.length; i++) {
+          const { s, hw, isCobble } = activeSegs[i];
+          if (wx < s.minX || wx > s.maxX) continue;
+          const t = clamp(((wx - s.ax) * s.dx + (wz - s.az) * s.dz) * s.invLen2, 0, 1);
+          const ddx = wx - (s.ax + s.dx * t);
+          const ddz = wz - (s.az + s.dz * t);
+          const dSq = ddx * ddx + ddz * ddz;
+          if (dSq < (hw + 1.35) * (hw + 1.35)) {
+            roadFoliageClear = true;
+            if (dSq < (hw + 0.45) * (hw + 0.45)) {
+              const d = Math.sqrt(dSq);
+              const w = smoothstep(hw + 0.35, hw - 0.25, d);
+              if (isCobble) {
+                cobbleWeight = Math.max(cobbleWeight, w);
+              } else {
+                dirtWeight = Math.max(dirtWeight, w);
+              }
             }
           }
         }
@@ -1367,6 +1390,7 @@ export function createWorldMaskTexture(size = 512) {
       if (inClearX) {
         for (let i = 0; i < PATROL_CLEARINGS.length; i++) {
           const pc = PATROL_CLEARINGS[i];
+          if (Math.abs(wx - pc.x) > 7.0 || Math.abs(wz - pc.z) > 7.0) continue;
           const dPc = Math.hypot(wx - pc.x, wz - pc.z);
           if (dPc < 6.8) {
             dirtWeight = Math.max(dirtWeight, (1.0 - smoothstep(4.2, 6.8, dPc)) * 0.85);
@@ -1421,18 +1445,19 @@ export function createWorldMaskTexture(size = 512) {
         }
       }
 
-      // Far East Grove Medallion Dais (114, 32) & Southwest Lovers' Wall (-92, 64) foliage exclusion
-      const dGroveDais = Math.hypot(wx - 114.0, wz - 32.0);
-      if (dGroveDais < 4.55) {
-        roadFoliageClear = true;
-        if (dGroveDais < 4.25) {
-          cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(3.75, 4.25, dGroveDais));
+      if (inGroveDais) {
+        const dGroveDais = Math.hypot(wx - 142.0, wz - 44.0);
+        if (dGroveDais < 4.55) {
+          roadFoliageClear = true;
+          if (dGroveDais < 4.25) {
+            cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(3.75, 4.25, dGroveDais));
+          }
         }
-      }
-      const dCottageWall = Math.hypot(wx - (-92.0), wz - 64.0);
-      if (dCottageWall < 4.5) {
-        roadFoliageClear = true;
-        cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(3.0, 4.5, dCottageWall));
+        const dCottageWall = Math.hypot(wx - (-124.0), wz - 84.0);
+        if (dCottageWall < 4.5) {
+          roadFoliageClear = true;
+          cobbleWeight = Math.max(cobbleWeight, 1.0 - smoothstep(3.0, 4.5, dCottageWall));
+        }
       }
 
       let foliageMask = 1.0;
@@ -1460,9 +1485,10 @@ export function createWorldMaskTexture(size = 512) {
       data[idx + 3] = Math.round(ao * 255);
     }
   }
+}
 
-  // Stamp rich ground-contact AO + directional (+X, +Z) anime sun-shadow pools under Boulders, Dry-Stone Walls, Fences & Sacred Stones (< 0.5ms)
-  // Matches `getAnimeShadowDir(uSunDir)` in terrain-water.js & meadow.js (`normalize(vec2(0.58, 0.72))` -> `(+0.63, +0.78)`)!
+function* finalizeWorldMaskTextureGen(data, size, t0) {
+  const span = INNER_EXTENT * 2;
   const stampCircleAO = (cx, cz, rCore, rOuter, minAoByte = 32) => {
     const shdX = cx + 0.78 * rCore;
     const shdZ = cz + 0.92 * rCore;
@@ -1507,7 +1533,6 @@ export function createWorldMaskTexture(size = 512) {
       const wz = ((iz + 0.5) / size - 0.5) * span;
       for (let ix = ix0; ix <= ix1; ix++) {
         const wx = ((ix + 0.5) / size - 0.5) * span;
-        // Shift sample along anime shadow direction (+X, +Z) so walls & fences cast a crisp directional ground shadow
         const sx = wx - 0.58;
         const sz = wz - 0.68;
         const t = clamp(((sx - x0) * dx + (sz - z0) * dz) * invLen2, 0, 1);
@@ -1529,18 +1554,25 @@ export function createWorldMaskTexture(size = 512) {
     const b = BOULDERS[i];
     const r = Math.max(b.rx || 1.2, b.rz || 1.2);
     stampCircleAO(b.x, b.z, r * 0.92, r * 2.15, 28);
+    if ((i & 1) === 1) yield;
   }
+  yield;
   for (let i = 0; i < DRY_STONE_WALLS.length; i++) {
     const w = DRY_STONE_WALLS[i];
     stampSegmentAO(w.x0, w.z0, w.x1, w.z1, (w.thickness || 0.52) * 0.85, 1.55, 36);
+    if ((i & 1) === 1) yield;
   }
+  yield;
   for (let i = 0; i < ROADSIDE_FENCES.length; i++) {
     const fn = ROADSIDE_FENCES[i];
     stampSegmentAO(fn.x0, fn.z0, fn.x1, fn.z1, 0.32, 1.15, 64);
+    if ((i & 1) === 1) yield;
   }
+  yield;
   for (let i = 0; i < INSCRIPTION_STONES.length; i++) {
     const st = INSCRIPTION_STONES[i];
     stampCircleAO(st.x, st.z, 1.15, 2.55, 96);
+    yield;
   }
 
   const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
@@ -1555,4 +1587,62 @@ export function createWorldMaskTexture(size = 512) {
   tex.userData.buildTimeMs = Number((t1 - t0).toFixed(2));
   tex.userData.worldExtent = INNER_EXTENT;
   return tex;
+}
+
+function finalizeWorldMaskTexture(data, size, t0) {
+  const gen = finalizeWorldMaskTextureGen(data, size, t0);
+  let step = gen.next();
+  while (!step.done) step = gen.next();
+  return step.value;
+}
+
+export function createWorldMaskTexture(size = 512) {
+  const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const data = initWorldMaskBuffer(size);
+  const span = INNER_EXTENT * 2;
+  const izMin = Math.max(0, Math.floor(((-166 / span) + 0.5) * size));
+  const izMax = Math.min(size - 1, Math.ceil(((166 / span) + 0.5) * size));
+  processWorldMaskRowRange(data, size, izMin, izMax);
+  return finalizeWorldMaskTexture(data, size, t0);
+}
+
+export async function createWorldMaskTextureAsync(size = 512, yieldFn = null, opts = {}) {
+  const slicerOpts =
+    typeof yieldFn === 'object' && yieldFn !== null ? yieldFn : { yieldFrame: yieldFn, ...(opts || {}) };
+  const yieldFrame =
+    typeof slicerOpts.yieldFrame === 'function'
+      ? slicerOpts.yieldFrame
+      : typeof yieldFn === 'function'
+        ? yieldFn
+        : () => new Promise((r) => setTimeout(r, 0));
+  const sliceBudgetMs = Number(slicerOpts.sliceBudgetMs) > 0 ? Number(slicerOpts.sliceBudgetMs) : 2.6;
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+  const t0 = now();
+  const data = initWorldMaskBuffer(size);
+  const span = INNER_EXTENT * 2;
+  const izMin = Math.max(0, Math.floor(((-166 / span) + 0.5) * size));
+  const izMax = Math.min(size - 1, Math.ceil(((166 / span) + 0.5) * size));
+  const STEP = 4;
+  let sliceStart = now();
+  for (let iz = izMin; iz <= izMax; iz += STEP) {
+    processWorldMaskRowRange(data, size, iz, Math.min(izMax, iz + STEP - 1));
+    if (now() - sliceStart >= sliceBudgetMs) {
+      await yieldFrame();
+      sliceStart = now();
+    }
+  }
+  await yieldFrame();
+  sliceStart = now();
+
+  const finGen = finalizeWorldMaskTextureGen(data, size, t0);
+  let step = finGen.next();
+  while (!step.done) {
+    if (now() - sliceStart >= sliceBudgetMs) {
+      await yieldFrame();
+      sliceStart = now();
+    }
+    step = finGen.next();
+  }
+  return step.value;
 }

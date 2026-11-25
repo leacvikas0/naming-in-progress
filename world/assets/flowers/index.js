@@ -7,23 +7,28 @@ import {
   buildLupine,
   buildCosmos,
   buildCrimsonRose,
+  buildCrimsonRoseAsync,
   buildToonShrub,
   createSpeciesGeometries,
+  createSpeciesGeometriesAsync,
 } from './species.js';
 import {
   MEADOW_PROFILES,
   SACRED_ROSE_ANCHORS,
   defaultSampleHeight,
   createDefaultWorldMaskTexture,
+  createDefaultWorldMaskTextureAsync,
   createGouacheMaterial,
   createToroidalMeadow,
+  createToroidalMeadowAsync,
   createMeadowDriftDemo,
+  createMeadowDriftDemoAsync,
 } from './meadow.js';
 
 export const createFlowerSpeciesGeometries = createSpeciesGeometries;
+export const createFlowerSpeciesGeometriesAsync = createSpeciesGeometriesAsync;
 
-export function createBotanicalPack() {
-  const geometries = createSpeciesGeometries();
+function assembleBotanicalPack(geometries) {
   const sharedUniforms = {
     uTime: { value: 0 },
     uPlayerPos: { value: new THREE.Vector3(0, 0, 0) },
@@ -76,6 +81,15 @@ export function createBotanicalPack() {
   };
 }
 
+export function createBotanicalPack(opts = {}) {
+  return assembleBotanicalPack(createSpeciesGeometries(opts));
+}
+
+export async function createBotanicalPackAsync(opts = {}) {
+  const geometries = await createSpeciesGeometriesAsync(opts);
+  return assembleBotanicalPack(geometries);
+}
+
 export {
   SPECIES_SPECS,
   buildGrassTuft,
@@ -84,13 +98,18 @@ export {
   buildLupine,
   buildCosmos,
   buildCrimsonRose,
+  buildCrimsonRoseAsync,
   buildToonShrub,
   createSpeciesGeometries,
+  createSpeciesGeometriesAsync,
   MEADOW_PROFILES,
   SACRED_ROSE_ANCHORS,
   defaultSampleHeight,
   createDefaultWorldMaskTexture,
+  createDefaultWorldMaskTextureAsync,
   createGouacheMaterial,
   createToroidalMeadow,
+  createToroidalMeadowAsync,
   createMeadowDriftDemo,
+  createMeadowDriftDemoAsync,
 };

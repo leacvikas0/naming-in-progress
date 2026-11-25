@@ -546,59 +546,33 @@ const SKY_FRAG = /* glsl */ `
 /* Billowing Flat-Bottomed Anime Cumulus Clouds (10-Cloud Ring, 1 Draw Call) */
 /* ------------------------------------------------------------------------- */
 
-export function buildCumulusGeometry(rand, { size = 44, detail = 1, puffs = 9, phase = 0 } = {}) {
-  const puffGeos = [];
-  const mainCount = Math.max(7, Math.round(puffs * 0.70));
-  const topCount = Math.max(3, puffs - mainCount);
+function defaultYieldSlice() {
+  return new Promise((resolve) => {
+    if (typeof setTimeout === 'function') setTimeout(resolve, 0);
+    else Promise.resolve().then(resolve);
+  });
+}
 
-  const addPuff = (x, y, z, r, sy, yaw) => {
-    const geo = new THREE.IcosahedronGeometry(1, detail);
-    const matrix = new THREE.Matrix4().compose(
-      new THREE.Vector3(x, y, z),
-      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw),
-      new THREE.Vector3(r, r * sy, r)
-    );
-    geo.applyMatrix4(matrix);
+function buildCumulusPuffGeo(x, y, z, r, sy, yaw, detail) {
+  const geo = new THREE.IcosahedronGeometry(1, detail);
+  const matrix = new THREE.Matrix4().compose(
+    new THREE.Vector3(x, y, z),
+    new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw),
+    new THREE.Vector3(r, r * sy, r)
+  );
+  geo.applyMatrix4(matrix);
 
-    // Flatten the underside into the shared cloud base plane (y = 0)
-    const pos = geo.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      if (pos.getY(i) < 0) pos.setY(i, 0);
-    }
-    geo.computeVertexNormals();
-    geo.deleteAttribute('uv');
-    puffGeos.push(geo);
-  };
-
-  for (let i = 0; i < mainCount; i++) {
-    const t = mainCount === 1 ? 0.5 : i / (mainCount - 1);
-    const dome = Math.sin(Math.PI * (0.06 + 0.88 * t));
-    const r = size * (0.10 + 0.085 * dome) * (0.85 + rand() * 0.30);
-    const x = (t - 0.5) * size * 0.70 + (rand() - 0.5) * size * 0.07;
-    const z = (rand() - 0.5) * size * 0.26;
-    const y = r * (0.45 + rand() * 0.18);
-    addPuff(x, y, z, r, 0.66 + rand() * 0.14, rand() * Math.PI * 2);
+  // Flatten the underside into the shared cloud base plane (y = 0)
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    if (pos.getY(i) < 0) pos.setY(i, 0);
   }
+  geo.computeVertexNormals();
+  geo.deleteAttribute('uv');
+  return geo;
+}
 
-  // Flat base slab
-  for (let i = 0; i < 3; i++) {
-    const t = (i + 0.5) / 3;
-    const r = size * (0.16 + rand() * 0.05);
-    const x = (t - 0.5) * size * 0.55 + (rand() - 0.5) * size * 0.08;
-    const z = (rand() - 0.5) * size * 0.20;
-    addPuff(x, r * 0.20, z, r, 0.30 + rand() * 0.08, rand() * Math.PI * 2);
-  }
-
-  // Billowing cauliflower crown puffs
-  for (let i = 0; i < topCount; i++) {
-    const t = (i + 0.5) / topCount;
-    const r = size * (0.075 + rand() * 0.050);
-    const x = (t - 0.5) * size * 0.58 + (rand() - 0.5) * size * 0.07;
-    const z = (rand() - 0.5) * size * 0.20;
-    const y = size * (0.135 + 0.040 * Math.sin(Math.PI * t)) + r * 0.45;
-    addPuff(x, y, z, r, 0.80, rand() * Math.PI * 2);
-  }
-
+function finalizeCumulusGeometry(puffGeos, phase) {
   const merged = mergeGeometries(puffGeos, false);
   for (const g of puffGeos) g.dispose();
   if (!merged) return null;
@@ -624,6 +598,67 @@ export function buildCumulusGeometry(rand, { size = 44, detail = 1, puffs = 9, p
   merged.setAttribute('aCloudMeta', new THREE.BufferAttribute(cloudMeta, 3));
   merged.computeBoundingSphere();
   return merged;
+}
+
+function planCumulusPuffs(rand, { size = 44, detail = 1, puffs = 9, phase = 0 } = {}) {
+  const mainCount = Math.max(7, Math.round(puffs * 0.70));
+  const topCount = Math.max(3, puffs - mainCount);
+  const ops = [];
+
+  for (let i = 0; i < mainCount; i++) {
+    const t = mainCount === 1 ? 0.5 : i / (mainCount - 1);
+    const dome = Math.sin(Math.PI * (0.06 + 0.88 * t));
+    const r = size * (0.10 + 0.085 * dome) * (0.85 + rand() * 0.30);
+    const x = (t - 0.5) * size * 0.70 + (rand() - 0.5) * size * 0.07;
+    const z = (rand() - 0.5) * size * 0.26;
+    const y = r * (0.45 + rand() * 0.18);
+    ops.push([x, y, z, r, 0.66 + rand() * 0.14, rand() * Math.PI * 2, detail]);
+  }
+
+  // Flat base slab
+  for (let i = 0; i < 3; i++) {
+    const t = (i + 0.5) / 3;
+    const r = size * (0.16 + rand() * 0.05);
+    const x = (t - 0.5) * size * 0.55 + (rand() - 0.5) * size * 0.08;
+    const z = (rand() - 0.5) * size * 0.20;
+    ops.push([x, r * 0.20, z, r, 0.30 + rand() * 0.08, rand() * Math.PI * 2, detail]);
+  }
+
+  // Billowing cauliflower crown puffs
+  for (let i = 0; i < topCount; i++) {
+    const t = (i + 0.5) / topCount;
+    const r = size * (0.075 + rand() * 0.050);
+    const x = (t - 0.5) * size * 0.58 + (rand() - 0.5) * size * 0.07;
+    const z = (rand() - 0.5) * size * 0.20;
+    const y = size * (0.135 + 0.040 * Math.sin(Math.PI * t)) + r * 0.45;
+    ops.push([x, y, z, r, 0.80, rand() * Math.PI * 2, detail]);
+  }
+
+  return { ops, phase };
+}
+
+export function buildCumulusGeometry(rand, opts = {}) {
+  const { ops, phase } = planCumulusPuffs(rand, opts);
+  const puffGeos = [];
+  for (let i = 0; i < ops.length; i++) {
+    const [x, y, z, r, sy, yaw, detail] = ops[i];
+    puffGeos.push(buildCumulusPuffGeo(x, y, z, r, sy, yaw, detail));
+  }
+  return finalizeCumulusGeometry(puffGeos, phase);
+}
+
+async function buildCumulusGeometryAsync(rand, opts = {}, yieldIfNeeded = null) {
+  const { ops, phase } = planCumulusPuffs(rand, opts);
+  const puffGeos = [];
+  for (let i = 0; i < ops.length; i++) {
+    const [x, y, z, r, sy, yaw, detail] = ops[i];
+    puffGeos.push(buildCumulusPuffGeo(x, y, z, r, sy, yaw, detail));
+    if (yieldIfNeeded && i + 1 < ops.length) {
+      await yieldIfNeeded();
+    }
+  }
+  if (yieldIfNeeded) await yieldIfNeeded();
+  return finalizeCumulusGeometry(puffGeos, phase);
 }
 
 const CLOUD_VERT = /* glsl */ `
@@ -1015,7 +1050,49 @@ const TOD_KEYS = [
   keyLightVec: new THREE.Vector3(...(k.keyLightPos || [-0.48, 0.68, 0.55])).normalize(),
 }));
 
-export function createTimeOfDaySky({
+export function createTimeOfDaySky(opts = {}) {
+  const ctx = createSkyBuilderContext(opts);
+  ctx.buildDome();
+  ctx.buildAllCloudsSync();
+  ctx.buildSunbeams();
+  ctx.buildMistCushions();
+  ctx.buildLivingAirAndWind();
+  return ctx.finalize();
+}
+
+export async function createTimeOfDaySkyAsync({
+  quality = 'high',
+  seed = 20261029,
+  camera = null,
+  yieldFrame = null,
+  sliceBudgetMs = 3.5,
+} = {}) {
+  const yieldFn = typeof yieldFrame === 'function' ? yieldFrame : defaultYieldSlice;
+  const budget = Math.max(1.0, Number(sliceBudgetMs) || 3.5);
+  let sliceStart = Date.now();
+  const yieldIfNeeded = async (force = false) => {
+    if (force || Date.now() - sliceStart >= budget) {
+      await yieldFn();
+      sliceStart = Date.now();
+    }
+  };
+
+  const ctx = createSkyBuilderContext({ quality, seed, camera });
+  await yieldIfNeeded();
+  ctx.buildDome();
+  await yieldIfNeeded();
+  await ctx.buildAllCloudsAsync(yieldIfNeeded);
+  await yieldIfNeeded();
+  ctx.buildSunbeams();
+  await yieldIfNeeded();
+  ctx.buildMistCushions();
+  await yieldIfNeeded();
+  ctx.buildLivingAirAndWind();
+  await yieldIfNeeded();
+  return ctx.finalize();
+}
+
+function createSkyBuilderContext({
   quality = 'high',
   seed = 20261029,
   camera = null,
@@ -1095,14 +1172,17 @@ export function createTimeOfDaySky({
     toneMapped: false,
   });
 
-  const dome = new THREE.Mesh(
-    new THREE.SphereGeometry(520, low ? 32 : 48, low ? 20 : 32),
-    skyMat
-  );
-  dome.name = 'todSkyDome';
-  dome.renderOrder = -1000;
-  dome.frustumCulled = false;
-  group.add(dome);
+  let dome = null;
+  function buildDome() {
+    dome = new THREE.Mesh(
+      new THREE.SphereGeometry(520, low ? 32 : 48, low ? 20 : 32),
+      skyMat
+    );
+    dome.name = 'todSkyDome';
+    dome.renderOrder = -1000;
+    dome.frustumCulled = false;
+    group.add(dome);
+  }
 
   // 2. Ring of 10 Billowing Flat-Bottomed Anime Cumulus Clouds (r = 165..255m, y = 34..58m)
   // Batched into a single draw call while preserving individual vertical bob and ring drift!
@@ -1146,39 +1226,68 @@ export function createTimeOfDaySky({
     -2.82, // WNW (framing Waterfall & Mill)
   ];
 
-  const cloudGeos = [];
   const cloudCount = 10;
-  for (let i = 0; i < cloudCount; i++) {
+  let cloudMesh = null;
+
+  function nextCloudParams(i) {
     const az = cloudAzimuths[i];
     const radius = 172 + (i % 3) * 28 + rand() * 14; // 172m .. 242m (within 165..255m)
     const baseY = 35 + (i % 3) * 6 + rand() * 5;     // 35m .. 52m (within 34..58m)
     const size = 36 + (i % 2) * 10 + rand() * 10;
     const puffs = low ? 7 : 9 + (i % 3);
+    return { az, radius, baseY, size, detail: low ? 0 : 1, puffs, phase: i * 1.37 };
+  }
 
-    const geo = buildCumulusGeometry(rand, {
-      size,
-      detail: low ? 0 : 1,
-      puffs,
-      phase: i * 1.37,
-    });
-    if (!geo) continue;
-
+  function applyCloudTransform(geo, p) {
+    if (!geo) return null;
     const mat4 = new THREE.Matrix4().compose(
-      new THREE.Vector3(Math.cos(az) * radius, baseY, Math.sin(az) * radius),
-      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -az + Math.PI * 0.5),
+      new THREE.Vector3(Math.cos(p.az) * p.radius, p.baseY, Math.sin(p.az) * p.radius),
+      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -p.az + Math.PI * 0.5),
       new THREE.Vector3(1, 1, 1)
     );
     geo.applyMatrix4(mat4);
-    cloudGeos.push(geo);
+    return geo;
   }
 
-  const mergedCloudsGeo = mergeGeometries(cloudGeos, false);
-  for (const g of cloudGeos) g.dispose();
+  function buildAllCloudsSync() {
+    const cloudGeos = [];
+    for (let i = 0; i < cloudCount; i++) {
+      const p = nextCloudParams(i);
+      const geo = buildCumulusGeometry(rand, {
+        size: p.size,
+        detail: p.detail,
+        puffs: p.puffs,
+        phase: p.phase,
+      });
+      if (applyCloudTransform(geo, p)) cloudGeos.push(geo);
+    }
+    const mergedCloudsGeo = mergeGeometries(cloudGeos, false);
+    for (const g of cloudGeos) g.dispose();
+    cloudMesh = new THREE.Mesh(mergedCloudsGeo, cloudMat);
+    cloudMesh.name = 'todCumulusRing';
+    cloudMesh.frustumCulled = false;
+    group.add(cloudMesh);
+  }
 
-  const cloudMesh = new THREE.Mesh(mergedCloudsGeo, cloudMat);
-  cloudMesh.name = 'todCumulusRing';
-  cloudMesh.frustumCulled = false;
-  group.add(cloudMesh);
+  async function buildAllCloudsAsync(yieldIfNeeded) {
+    const cloudGeos = [];
+    for (let i = 0; i < cloudCount; i++) {
+      const p = nextCloudParams(i);
+      const geo = await buildCumulusGeometryAsync(
+        rand,
+        { size: p.size, detail: p.detail, puffs: p.puffs, phase: p.phase },
+        yieldIfNeeded
+      );
+      if (applyCloudTransform(geo, p)) cloudGeos.push(geo);
+      if (yieldIfNeeded) await yieldIfNeeded();
+    }
+    const mergedCloudsGeo = mergeGeometries(cloudGeos, false);
+    for (const g of cloudGeos) g.dispose();
+    cloudMesh = new THREE.Mesh(mergedCloudsGeo, cloudMat);
+    cloudMesh.name = 'todCumulusRing';
+    cloudMesh.frustumCulled = false;
+    group.add(cloudMesh);
+  }
 
   // -------------------------------------------------------------------------
   // 3. 360° 3D Under-Canopy Slanted Sunbeam Shafts (Strictly Below Tree Crowns, 1 Draw Call)
@@ -1188,6 +1297,8 @@ export function createTimeOfDaySky({
     uBeamColor: { value: linearColor(0xffe898) },
     uStrength: { value: 1.0 },
   };
+
+  function buildSunbeams() {
 
   // Every shaft is tucked strictly under the tree canopy (y = groundY + 2.6m, len = 5.4m)
   // so beams slant from the lower branches (y ~ 5.0m) to the grass/flowers (y ~ 0.2m) and NEVER poke into the sky!
@@ -1272,11 +1383,12 @@ export function createTimeOfDaySky({
     `,
   });
 
-  const sunbeamMesh = new THREE.Mesh(mergedBeamsGeo, sunbeamMat);
-  sunbeamMesh.name = 'todCanopySunbeams';
-  sunbeamMesh.frustumCulled = false;
-  sunbeamMesh.visible = false;
-  group.add(sunbeamMesh);
+    const sunbeamMesh = new THREE.Mesh(mergedBeamsGeo, sunbeamMat);
+    sunbeamMesh.name = 'todCanopySunbeams';
+    sunbeamMesh.frustumCulled = false;
+    sunbeamMesh.visible = false;
+    group.add(sunbeamMesh);
+  }
 
   // -------------------------------------------------------------------------
   // 4. Option 2 + Option 4 Layered 3D Valley & Foothill Mist Cushions (1 Draw Call)
@@ -1288,6 +1400,8 @@ export function createTimeOfDaySky({
     uSunDir: { value: sunDir.clone() },
     uMistOpacity: { value: 1.0 },
   };
+
+  function buildMistCushions() {
 
   const mistRings = [
     { x: 0,   y: 1.8, z: 0,   r: 68,  h: 4.8, segs: 44, layer: 0.30 },
@@ -1378,10 +1492,11 @@ export function createTimeOfDaySky({
     `,
   });
 
-  const mistCushionMesh = new THREE.Mesh(mergedMistGeo, mistCushionMat);
-  mistCushionMesh.name = 'todValleyMistCushions';
-  mistCushionMesh.frustumCulled = false;
-  group.add(mistCushionMesh);
+    const mistCushionMesh = new THREE.Mesh(mergedMistGeo, mistCushionMat);
+    mistCushionMesh.name = 'todValleyMistCushions';
+    mistCushionMesh.frustumCulled = false;
+    group.add(mistCushionMesh);
+  }
 
   // -------------------------------------------------------------------------
   // 5. True 360° Toroidal 3D Ground-Skimming Petals & Calligraphic 3D Wind Swirls
@@ -1394,6 +1509,8 @@ export function createTimeOfDaySky({
     uWindTint: { value: new THREE.Color(0.92, 0.98, 1.06) },
     uEclipsePetalWeight: { value: 0.0 },
   };
+
+  function buildLivingAirAndWind() {
 
   // 5A. 360° Toroidal 3D Ground-Skimming Cupped Blossom Petals & Spirit Motes (460 instances, 1 draw call)
   const petalGeo = new THREE.PlaneGeometry(0.24, 0.16, 2, 2);
@@ -1668,11 +1785,12 @@ export function createTimeOfDaySky({
     `,
   });
 
-  const windRibbonMesh = new THREE.Mesh(instRibbonGeo, windRibbonMat);
-  windRibbonMesh.name = 'todWindRibbons3D';
-  windRibbonMesh.frustumCulled = false;
-  windRibbonMesh.visible = false;
-  group.add(windRibbonMesh);
+    const windRibbonMesh = new THREE.Mesh(instRibbonGeo, windRibbonMat);
+    windRibbonMesh.name = 'todWindRibbons3D';
+    windRibbonMesh.frustumCulled = false;
+    windRibbonMesh.visible = false;
+    group.add(windRibbonMesh);
+  }
 
   // Current interpolated state exposed for world materials sync
   const state = {
@@ -1998,25 +2116,37 @@ export function createTimeOfDaySky({
     }
   }
 
-  setTimeOfDay('day');
+  function finalize() {
+    setTimeOfDay('day');
+
+    return {
+      group,
+      dome,
+      cloudMesh,
+      sun,
+      fill,
+      hemi,
+      ambient,
+      sunDir,
+      moonDir,
+      activeLightDir,
+      state,
+      setTimeOfDay,
+      setEclipseState,
+      setVerdictSky,
+      getWindTimeScale,
+      update,
+    };
+  }
 
   return {
-    group,
-    dome,
-    cloudMesh,
-    sun,
-    fill,
-    hemi,
-    ambient,
-    sunDir,
-    moonDir,
-    activeLightDir,
-    state,
-    setTimeOfDay,
-    setEclipseState,
-    setVerdictSky,
-    getWindTimeScale,
-    update,
+    buildDome,
+    buildAllCloudsSync,
+    buildAllCloudsAsync,
+    buildSunbeams,
+    buildMistCushions,
+    buildLivingAirAndWind,
+    finalize,
   };
 }
 

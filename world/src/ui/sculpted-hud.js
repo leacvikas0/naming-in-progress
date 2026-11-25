@@ -212,6 +212,7 @@ const SCULPTED_HUD_CSS = `
     position: fixed;
     inset: 0;
     pointer-events: none;
+    touch-action: none;
     z-index: 26;
     font-family: var(--hud-font-sans);
     color: var(--hud-ink);
@@ -305,6 +306,7 @@ const SCULPTED_HUD_CSS = `
   }
 
   .sh-open-ring:focus-visible,
+  #sculpted-room-badge:focus-visible,
   .sh-choice-pill:focus-visible,
   .sh-modal-close-btn:focus-visible {
     outline: 2px solid var(--hud-accent);
@@ -522,15 +524,84 @@ const SCULPTED_HUD_CSS = `
     fill: none;
   }
 
+  #sculpted-room-badge {
+    position: absolute;
+    top: max(20px, env(safe-area-inset-top, 0px));
+    right: calc(max(18px, env(safe-area-inset-right, 0px)) + 56px);
+    height: 36px;
+    padding: 0 13px;
+    border-radius: 999px;
+    background: var(--hud-ring-fill);
+    border: 1.5px solid var(--hud-ring-border);
+    box-shadow: 0 4px 14px var(--hud-shadow);
+    color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--hud-font-sans);
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    pointer-events: auto;
+    touch-action: manipulation;
+    z-index: 28;
+    max-width: 280px;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 120ms ease-out, border-color 150ms ease-out, background-color 150ms ease-out;
+  }
+
+  #sculpted-hud-root.profile-tablet #sculpted-room-badge {
+    right: calc(max(18px, env(safe-area-inset-right, 0px)) + 112px);
+  }
+
+  #sculpted-hud-root.profile-desktop #sculpted-room-badge {
+    right: calc(max(18px, env(safe-area-inset-right, 0px)) + 56px);
+  }
+
+  @media (hover: hover) {
+    #sculpted-room-badge:hover {
+      border-color: #ffffff;
+      background-color: rgba(45, 52, 64, 0.38);
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    #sculpted-room-badge:active {
+      transform: scale(0.96);
+    }
+  }
+
+  .sh-room-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.28);
+    transition: background-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  #sculpted-room-badge.is-linked .sh-room-dot {
+    background: #10b981;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.75);
+  }
+
+  .sh-room-badge-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
   /* ----------------------------------------------------------------------- */
-  /* 4. Genshin-Style Dynamic Left Hand Floating Thumbstick (44vw x 68vh)    */
+  /* 4. Genshin-Style Dynamic Left Hand Floating Thumbstick (Zero Overlap)   */
   /* ----------------------------------------------------------------------- */
   #sculpted-joystick-zone {
     position: absolute;
     left: 0;
     bottom: 0;
-    width: 44vw;
-    height: 68vh;
+    width: min(30vw, 330px);
+    height: min(50vh, 410px);
     pointer-events: auto;
     touch-action: none;
     z-index: 27;
@@ -583,7 +654,7 @@ const SCULPTED_HUD_CSS = `
     pointer-events: none;
   }
 
-  /* Open Screen Camera Orbit + Fast-Swipe Dodge Backing Layer (Tablet/Touch) */
+  /* Open Screen Pure 0ms Camera Orbit Layer (Tablet/Touch) */
   #sculpted-orbit-zone {
     position: absolute;
     left: 0;
@@ -601,14 +672,15 @@ const SCULPTED_HUD_CSS = `
     display: block;
   }
 
-  /* Center-Screen Character Swipe-to-Dodge Zone (fast swipe = directional dodge, slow drag = orbit) */
+  /* Compact Middle-Screen Hero Swipe-to-Dodge Zone (crisp flick = dodge, drag/slow = orbit) */
   #sculpted-center-dodge-zone {
     position: absolute;
-    left: 34vw;
-    top: 18vh;
-    width: 32vw;
-    height: 60vh;
-    border-radius: 28px;
+    left: 50%;
+    top: 53%;
+    transform: translate(-50%, -50%);
+    width: clamp(128px, 13.5vw, 168px);
+    height: clamp(160px, 24vh, 210px);
+    border-radius: 999px;
     pointer-events: auto;
     touch-action: none;
     z-index: 26;
@@ -915,11 +987,33 @@ const SCULPTED_HUD_CSS = `
       height: 38px;
     }
 
+    #sculpted-room-badge,
+    #sculpted-hud-root.profile-desktop #sculpted-room-badge {
+      top: max(12px, env(safe-area-inset-top, 12px));
+      right: calc(max(12px, env(safe-area-inset-right, 12px)) + 48px);
+      height: 34px;
+      padding: 0 10px;
+      font-size: 0.72rem;
+      max-width: min(46vw, 310px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #sculpted-hud-root.profile-tablet #sculpted-room-badge {
+      right: calc(max(12px, env(safe-area-inset-right, 12px)) + 92px);
+      max-width: min(46vw, 310px);
+    }
+
+    .sh-modal-tablet {
+      padding: 16px 18px;
+      gap: 10px;
+    }
+
     #sculpted-joystick-zone {
       left: 0;
       bottom: 0;
-      width: 44vw;
-      height: 70vh;
+      width: min(32vw, 280px);
+      height: min(52vh, 280px);
     }
 
     .sh-joy-ring {
@@ -937,10 +1031,6 @@ const SCULPTED_HUD_CSS = `
     .sh-joy-puck {
       width: 44px;
       height: 44px;
-    }
-
-    #sculpted-hud-root.profile-tablet .sh-keycap-badge {
-      display: none;
     }
 
     #sculpted-hud-root.profile-tablet #sculpted-attack-btn {
@@ -1012,6 +1102,16 @@ const SCULPTED_HUD_CSS = `
       top: 28vh;
       height: 32px;
       padding: 3px 6px;
+    }
+  }
+
+  @media (max-width: 560px) {
+    #sculpted-room-badge,
+    #sculpted-hud-root.profile-tablet #sculpted-room-badge,
+    #sculpted-hud-root.profile-desktop #sculpted-room-badge {
+      top: calc(max(10px, env(safe-area-inset-top, 10px)) + 46px);
+      right: max(12px, env(safe-area-inset-right, 12px));
+      max-width: min(62vw, 260px);
     }
   }
 
@@ -1117,6 +1217,10 @@ const SCULPTED_HUD_CSS = `
     z-index: 2;
   }
 
+  #sculpted-hud-root.profile-tablet .sh-keycap-badge {
+    display: none !important;
+  }
+
   .sh-slot-cd-badge {
     position: absolute;
     inset: 0;
@@ -1150,6 +1254,11 @@ const SCULPTED_HUD_CSS = `
     box-shadow:
       0 0 0 2px #facc15,
       0 4px 16px rgba(250, 204, 21, 0.45);
+  }
+
+  #sculpted-slot-e.is-aim-cancel {
+    border-color: #fb7185;
+    box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.72);
   }
 
   /* Blazing Ready Pulse on [Q] when Kill-Energy Gauge reaches 100% */
@@ -1322,6 +1431,10 @@ const SCULPTED_HUD_CSS = `
   .sh-modal-tablet {
     position: relative;
     width: min(440px, 90vw);
+    max-height: calc(100dvh - 28px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(154, 107, 22, 0.35) transparent;
     padding: 24px 26px;
     border-radius: 20px;
     border: 1.5px solid #dcd0bc;
@@ -1335,6 +1448,84 @@ const SCULPTED_HUD_CSS = `
     align-items: center;
     gap: 14px;
     text-align: center;
+  }
+
+  .sh-modal-tablet::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .sh-modal-tablet::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .sh-modal-tablet::-webkit-scrollbar-thumb {
+    background: rgba(154, 107, 22, 0.35);
+    border-radius: 999px;
+  }
+
+  .sh-pause-room-card {
+    width: 100%;
+    padding: 11px 14px;
+    border-radius: 14px;
+    border: 1.25px solid #d6c7ae;
+    background: #f6f0e3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+  }
+
+  .sh-pause-room-phrase {
+    font-family: var(--hud-font-sans);
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: #1f1c18;
+    line-height: 1.25;
+    word-break: break-word;
+  }
+
+  .sh-pause-room-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 0.76rem;
+    color: #5c5346;
+  }
+
+  .sh-pause-room-code {
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: rgba(31, 28, 24, 0.07);
+    border: 1px solid rgba(180, 158, 124, 0.45);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #3a3228;
+  }
+
+  .sh-pause-room-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 600;
+    color: #5c5346;
+  }
+
+  .sh-pause-room-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #a89984;
+  }
+
+  .sh-pause-room-status-dot.is-linked {
+    background: #10b981;
+  }
+
+  .sh-pause-room-status.is-linked {
+    color: #047857;
   }
 
   .sh-modal-title {
@@ -1464,6 +1655,10 @@ export function createSculptedHud({
   onSwapHero = null,
   onCameraOrbit = null,
   onDevUnlockNextStage = null,
+  onUiSfx = null,
+  onCopyRoomInvite = null,
+  onEditRoomCode = null,
+  onChangeCameraSensitivity = null,
 } = {}) {
   let styleEl = document.getElementById('sculpted-hud-styles');
   if (!styleEl) {
@@ -1482,6 +1677,10 @@ export function createSculptedHud({
   const state = {
     activeRole: initialRole === 'Mage' ? 'Mage' : 'Knight',
     peerConnected: false,
+    roomCode: 'LOVE',
+    roomPhrase: 'LOVE',
+    shareUrl: '',
+    cameraSensitivity: 'high',
     activeElement: 'ice', // 'ice' | 'fire' queued element
     activeSwordBuffElement: null, // decoupled active Knight sword buff ('ice' | 'fire' | null)
     communeDiscovered: false,
@@ -1575,7 +1774,18 @@ export function createSculptedHud({
       </div>
     </div>
 
-    <!-- 3. TOP-RIGHT: Minimal Translucent Fullscreen & Pause Rings -->
+    <!-- 3. TOP-RIGHT: Co-Op Room Badge + Minimal Translucent Fullscreen & Pause Rings -->
+    <button
+      type="button"
+      id="sculpted-room-badge"
+      data-room-badge="true"
+      aria-label="Co-Op Room LOVE, click to copy invite link"
+      title="Room: LOVE - Copy Invite"
+    >
+      <span class="sh-room-dot" id="sculpted-room-dot" aria-hidden="true"></span>
+      <span class="sh-room-badge-text" id="sculpted-room-badge-text">Room: LOVE</span>
+    </button>
+
     <button
       type="button"
       class="sh-open-ring"
@@ -1762,6 +1972,33 @@ export function createSculptedHud({
           </div>
         </div>
 
+        <div style="width: 100%;">
+          <div class="sh-stat-lbl" style="margin-bottom: 8px;">Camera Sensitivity</div>
+          <div class="sh-pill-group" id="sculpted-cam-sens-group">
+            <button type="button" class="sh-choice-pill" data-camera-sens="low" aria-pressed="false">Gentle</button>
+            <button type="button" class="sh-choice-pill" data-camera-sens="medium" aria-pressed="false">Balanced</button>
+            <button type="button" class="sh-choice-pill is-selected" data-camera-sens="high" aria-pressed="true">Crisp</button>
+          </div>
+        </div>
+
+        <div style="width: 100%;">
+          <div class="sh-stat-lbl" style="margin-bottom: 8px;">Co-Op Room</div>
+          <div class="sh-pause-room-card" id="sculpted-pause-room-card">
+            <div class="sh-pause-room-phrase" id="sculpted-pause-room-phrase">LOVE</div>
+            <div class="sh-pause-room-meta">
+              <span class="sh-pause-room-code" id="sculpted-pause-room-code">LOVE</span>
+              <span class="sh-pause-room-status" id="sculpted-pause-room-status">
+                <span class="sh-pause-room-status-dot" id="sculpted-pause-room-status-dot" aria-hidden="true"></span>
+                <span id="sculpted-pause-room-status-text">Wingman AI</span>
+              </span>
+            </div>
+            <div class="sh-pill-group">
+              <button type="button" class="sh-choice-pill" id="sculpted-pause-copy-room-btn" data-copy-room="true">Copy Invite Link</button>
+              <button type="button" class="sh-choice-pill" id="sculpted-pause-edit-room-btn">Change</button>
+            </div>
+          </div>
+        </div>
+
         <div class="sh-pill-group" style="margin-top: 4px;">
           <button type="button" class="sh-choice-pill" id="sculpted-pause-swap-btn">
             Swap Hero
@@ -1807,6 +2044,8 @@ export function createSculptedHud({
   const vitalityHpFill = root.querySelector('#sculpted-vitality-hp-fill');
   const vitalityShieldFill = root.querySelector('#sculpted-vitality-shield-fill');
 
+  const roomBadgeEl = root.querySelector('#sculpted-room-badge');
+  const roomBadgeTextEl = root.querySelector('#sculpted-room-badge-text');
   const pauseBtn = root.querySelector('#sculpted-pause-btn');
   const joyZone = root.querySelector('#sculpted-joystick-zone');
   const joyRing = root.querySelector('#sh-joy-ring');
@@ -1834,6 +2073,13 @@ export function createSculptedHud({
   const jumpBtn = root.querySelector('#sculpted-jump-btn');
 
   const pauseModal = root.querySelector('#sculpted-pause-modal');
+  const pauseRoomPhraseEl = root.querySelector('#sculpted-pause-room-phrase');
+  const pauseRoomCodeEl = root.querySelector('#sculpted-pause-room-code');
+  const pauseRoomStatusEl = root.querySelector('#sculpted-pause-room-status');
+  const pauseRoomStatusDotEl = root.querySelector('#sculpted-pause-room-status-dot');
+  const pauseRoomStatusTextEl = root.querySelector('#sculpted-pause-room-status-text');
+  const pauseCopyRoomBtn = root.querySelector('#sculpted-pause-copy-room-btn');
+  const pauseEditRoomBtn = root.querySelector('#sculpted-pause-edit-room-btn');
   const pauseSwapBtn = root.querySelector('#sculpted-pause-swap-btn');
   const pauseDevStageBtn = root.querySelector('#sculpted-pause-dev-stage-btn');
   const pauseResumeBtn = root.querySelector('#sculpted-pause-resume-btn');
@@ -2095,10 +2341,69 @@ export function createSculptedHud({
       state.peerConnected = names.peerConnected;
     }
     renderRoleAndPartyBars();
+    renderRoomState();
+  }
+
+  let badgeCopiedTimer = null;
+  let pauseCopyBtnTimer = null;
+
+  function renderRoomState() {
+    const displayPhrase = state.roomPhrase || state.roomCode || 'LOVE';
+    const canonicalCode = state.roomCode || displayPhrase;
+    const linked = Boolean(state.peerConnected);
+    if (roomBadgeEl) {
+      roomBadgeEl.classList.toggle('is-linked', linked);
+      roomBadgeEl.title = `Room: ${displayPhrase} (${canonicalCode}) - Copy Invite`;
+      roomBadgeEl.setAttribute(
+        'aria-label',
+        `Co-Op Room ${displayPhrase}, click to copy invite link`
+      );
+    }
+    if (roomBadgeTextEl && !badgeCopiedTimer) {
+      roomBadgeTextEl.textContent = `Room: ${displayPhrase}`;
+    }
+    if (pauseRoomPhraseEl) {
+      pauseRoomPhraseEl.textContent = displayPhrase;
+    }
+    if (pauseRoomCodeEl) {
+      pauseRoomCodeEl.textContent = canonicalCode;
+    }
+    if (pauseRoomStatusEl) {
+      pauseRoomStatusEl.classList.toggle('is-linked', linked);
+    }
+    if (pauseRoomStatusDotEl) {
+      pauseRoomStatusDotEl.classList.toggle('is-linked', linked);
+    }
+    if (pauseRoomStatusTextEl) {
+      pauseRoomStatusTextEl.textContent = linked ? 'Co-Op Linked' : 'Wingman AI';
+    }
+  }
+
+  function setRoomState(patch = {}) {
+    if (!patch || typeof patch !== 'object') return;
+    const code = patch.roomCode || patch.room;
+    if (typeof code === 'string' && code.trim()) {
+      state.roomCode = code.trim();
+    }
+    if (typeof patch.roomPhrase === 'string' && patch.roomPhrase.trim()) {
+      state.roomPhrase = patch.roomPhrase.trim();
+    } else if (typeof code === 'string' && code.trim()) {
+      state.roomPhrase = code.trim();
+    }
+    if (typeof patch.shareUrl === 'string' && patch.shareUrl.trim()) {
+      state.shareUrl = patch.shareUrl.trim();
+    }
+    if (typeof patch.peerConnected === 'boolean') {
+      state.peerConnected = patch.peerConnected;
+    } else if (typeof patch.connected === 'boolean') {
+      state.peerConnected = patch.connected;
+    }
+    renderRoomState();
   }
 
   function setPeerConnected(connected) {
     state.peerConnected = Boolean(connected);
+    renderRoomState();
   }
 
   function setProgressionState(patch = {}) {
@@ -2201,15 +2506,18 @@ export function createSculptedHud({
     }
     pauseModal?.classList.add('is-open');
     pauseResumeBtn?.focus();
+    if (typeof onUiSfx === 'function') onUiSfx('modal_open');
   }
 
   function closePauseModal() {
+    const wasOpen = Boolean(pauseModal?.classList.contains('is-open'));
     pauseModal?.classList.remove('is-open');
     if (lastFocusedBeforePause && typeof lastFocusedBeforePause.focus === 'function') {
       lastFocusedBeforePause.focus();
     } else {
       pauseBtn?.focus();
     }
+    if (wasOpen && typeof onUiSfx === 'function') onUiSfx('modal_close');
   }
 
   /* ----------------------------------------------------------------------- */
@@ -2229,6 +2537,12 @@ export function createSculptedHud({
 
   const MAX_JOY_RADIUS = 52;
   const SPRINT_THRESHOLD = 0.78;
+  const winCleanupFns = [];
+  const trackWinListener = (evt, fn, opts) => {
+    if (typeof window === 'undefined' || typeof fn !== 'function') return;
+    window.addEventListener(evt, fn, opts);
+    winCleanupFns.push(() => window.removeEventListener(evt, fn, opts));
+  };
 
   function updateJoystickFromPoint(clientX, clientY) {
     const dx = clientX - joyState.originX;
@@ -2317,8 +2631,17 @@ export function createSculptedHud({
   }
 
   if (joyZone && joyRing) {
+    let joyLastAt = 0;
     joyZone.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
+      if (e.pointerType !== 'mouse' && typeof e.preventDefault === 'function') {
+        e.preventDefault();
+      }
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (joyState.active && now - joyLastAt > 1500) {
+        resetJoystick();
+      }
+      if (joyState.active) return;
       tryEnterMobileFullscreen();
       try {
         joyZone.setPointerCapture(e.pointerId);
@@ -2327,18 +2650,20 @@ export function createSculptedHud({
       }
       joyState.active = true;
       joyState.pointerId = e.pointerId;
+      joyLastAt = now;
       const ringRect = joyRing.getBoundingClientRect();
       const ringCx = ringRect.left + ringRect.width * 0.5;
       const ringCy = ringRect.top + ringRect.height * 0.5;
       const distFromRestingCenter = Math.hypot(e.clientX - ringCx, e.clientY - ringCy);
 
       // Genshin Dynamic Floating Joystick: if thumb lands outside the inner resting ring (> 42px),
-      // teleport the joystick ring center directly under the user's thumb!
+      // teleport the joystick ring center directly under the user's thumb (never crossing middle hero dodge zone)!
       if (distFromRestingCenter > 42 && e.clientX > 0 && e.clientY > 0) {
         const vw = window.innerWidth || 844;
         const vh = window.innerHeight || 390;
-        const clampedX = clamp(e.clientX, 64, vw * 0.42);
-        const clampedY = clamp(e.clientY, vh * 0.32, vh - 64);
+        const maxLeftX = Math.max(88, Math.min(vw * 0.28, vw * 0.5 - 125));
+        const clampedX = clamp(e.clientX, 64, maxLeftX);
+        const clampedY = clamp(e.clientY, vh * 0.46, vh - 64);
         joyState.originX = clampedX;
         joyState.originY = clampedY;
         joyRing.classList.add('is-floating');
@@ -2353,15 +2678,19 @@ export function createSculptedHud({
     joyZone.addEventListener('pointermove', (e) => {
       if (!joyState.active || e.pointerId !== joyState.pointerId) return;
       e.stopPropagation();
+      joyLastAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
       updateJoystickFromPoint(e.clientX, e.clientY);
     });
 
     const endJoy = (e) => {
-      if (!joyState.active || e.pointerId !== joyState.pointerId) return;
+      if (!joyState.active || (e && typeof e.pointerId === 'number' && e.pointerId !== joyState.pointerId)) return;
       resetJoystick();
     };
     joyZone.addEventListener('pointerup', endJoy);
     joyZone.addEventListener('pointercancel', endJoy);
+    joyZone.addEventListener('lostpointercapture', endJoy);
+    trackWinListener('pointerup', endJoy, { passive: true });
+    trackWinListener('pointercancel', endJoy, { passive: true });
   }
 
   const centerDodgeZone = root.querySelector('#sculpted-center-dodge-zone');
@@ -2389,12 +2718,98 @@ export function createSculptedHud({
     }, 280);
   }
 
-  // Open-Screen 360° Swipe-to-Dodge + Slow-Drag Camera Orbit Gesture Arbiter
-  // Works on BOTH #sculpted-center-dodge-zone (around character) AND #sculpted-orbit-zone (anywhere on open screen).
+  // Open-Screen 0ms Pure Camera Orbit (#sculpted-orbit-zone) +
+  // Compact Middle-Screen Swipe-to-Dodge / Slow-Drag Orbit (#sculpted-center-dodge-zone)
   let activeOrbitCount = 0;
 
+  function buildOrbitMeta(dtMs, pointerType) {
+    return {
+      dtMs,
+      viewportWidth: (typeof window !== 'undefined' && window.innerWidth) || 1180,
+      viewportHeight: (typeof window !== 'undefined' && window.innerHeight) || 787,
+      inputType: pointerType || 'touch',
+      sensitivity: state.cameraSensitivity,
+    };
+  }
+
+  function bindPureOrbitZone(zoneEl) {
+    if (!zoneEl) return () => {};
+    let ptrId = null;
+    let lastX = 0;
+    let lastY = 0;
+    let lastAt = 0;
+    let isOrbiting = false;
+
+    const endOrbit = (e) => {
+      if (ptrId === null) return;
+      if (e && typeof e.pointerId === 'number' && e.pointerId !== ptrId) return;
+      if (isOrbiting) {
+        isOrbiting = false;
+        activeOrbitCount = Math.max(0, activeOrbitCount - 1);
+      }
+      ptrId = null;
+    };
+
+    const onWinOrbitEnd = (e) => endOrbit(e);
+    trackWinListener('pointerup', onWinOrbitEnd, { passive: true });
+    trackWinListener('pointercancel', onWinOrbitEnd, { passive: true });
+
+    zoneEl.addEventListener('pointerdown', (e) => {
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      // Recover cleanly if a previous touch ended outside WebView without a cancel/up event
+      if (ptrId !== null) {
+        if (now - lastAt > 1500) {
+          endOrbit();
+        } else {
+          return;
+        }
+      }
+      if (e.pointerType !== 'mouse' && typeof e.preventDefault === 'function') {
+        e.preventDefault();
+      }
+      ptrId = e.pointerId;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      lastAt = now;
+      isOrbiting = false;
+      try {
+        zoneEl.setPointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+    });
+
+    zoneEl.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== ptrId) return;
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const stepDx = e.clientX - lastX;
+      const stepDy = e.clientY - lastY;
+      const stepDist = Math.hypot(stepDx, stepDy);
+      if (!isOrbiting) {
+        if (stepDist < 0.5) return;
+        isOrbiting = true;
+        activeOrbitCount++;
+      } else if (stepDist < 0.01) {
+        lastAt = now;
+        return;
+      }
+      const dtMs = Math.max(1, now - lastAt);
+      if (typeof onCameraOrbit === 'function') {
+        onCameraOrbit(stepDx, stepDy, buildOrbitMeta(dtMs, e.pointerType));
+      }
+      lastX = e.clientX;
+      lastY = e.clientY;
+      lastAt = now;
+    });
+
+    zoneEl.addEventListener('pointerup', endOrbit);
+    zoneEl.addEventListener('pointercancel', endOrbit);
+    zoneEl.addEventListener('lostpointercapture', endOrbit);
+    return endOrbit;
+  }
+
   function bindSwipeAndOrbitZone(zoneEl, { isCenterZone = false } = {}) {
-    if (!zoneEl) return;
+    if (!zoneEl) return () => {};
     let ptrId = null;
     let startX = 0;
     let startY = 0;
@@ -2403,6 +2818,7 @@ export function createSculptedHud({
     let startAt = 0;
     let lastAt = 0;
     let peakInstVel = 0;
+    let isOrbiting = false;
     let gestureMode = 'idle'; // 'idle' | 'undecided' | 'dodge' | 'orbit'
 
     const fireSwipeDodge = (dx, dy) => {
@@ -2418,24 +2834,27 @@ export function createSculptedHud({
     };
 
     const setOrbitFlag = (on) => {
-      if (on && gestureMode !== 'orbit') {
+      if (on && !isOrbiting) {
+        isOrbiting = true;
         activeOrbitCount++;
-      } else if (!on && gestureMode === 'orbit') {
+      } else if (!on && isOrbiting) {
+        isOrbiting = false;
         activeOrbitCount = Math.max(0, activeOrbitCount - 1);
       }
     };
 
-    const moveMinDist = isCenterZone ? 22 : 30;
-    const moveMaxMs = isCenterZone ? 225 : 205;
-    const moveMinAvgVel = isCenterZone ? 0.32 : 0.46;
-    const moveMinInstVel = isCenterZone ? 0.44 : 0.62;
-    const upMinDist = isCenterZone ? 18 : 26;
-    const upMaxMs = isCenterZone ? 245 : 225;
-    const upMinAvgVel = isCenterZone ? 0.22 : 0.30;
-
     zoneEl.addEventListener('pointerdown', (e) => {
-      if (ptrId !== null) return;
       const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (ptrId !== null) {
+        if (now - lastAt > 1500) {
+          endGesture(null, false);
+        } else {
+          return;
+        }
+      }
+      if (e.pointerType !== 'mouse' && typeof e.preventDefault === 'function') {
+        e.preventDefault();
+      }
       ptrId = e.pointerId;
       startX = e.clientX;
       startY = e.clientY;
@@ -2444,6 +2863,7 @@ export function createSculptedHud({
       startAt = now;
       lastAt = now;
       peakInstVel = 0;
+      isOrbiting = false;
       gestureMode = 'undecided';
       if (isCenterZone) {
         centerDodgeZone?.classList.add('is-touching');
@@ -2472,26 +2892,28 @@ export function createSculptedHud({
 
       if (gestureMode === 'orbit') {
         if (typeof onCameraOrbit === 'function') {
-          onCameraOrbit(stepDx, stepDy);
+          onCameraOrbit(stepDx, stepDy, buildOrbitMeta(stepDt, e.pointerType));
         }
       } else if (gestureMode === 'undecided') {
+        // Crisp deliberate quick flick in center hero zone -> directional dodge
         if (
-          elapsedMs <= moveMaxMs &&
-          dist >= moveMinDist &&
-          (avgVel >= moveMinAvgVel || peakInstVel >= moveMinInstVel)
+          elapsedMs <= 165 &&
+          dist >= 24 &&
+          (avgVel >= 0.55 || peakInstVel >= 0.72)
         ) {
           gestureMode = 'dodge';
           if (isCenterZone) centerDodgeZone?.classList.remove('is-touching');
           fireSwipeDodge(totalDx, totalDy);
         } else if (
-          elapsedMs > moveMaxMs ||
-          (elapsedMs >= 95 && dist >= 14 && avgVel < 0.30 && peakInstVel < 0.38)
+          // Never stall medium/slow pans: hand over to 1:1 orbit rapidly (<= 55ms on steady drags or >= 165ms)
+          elapsedMs > 165 ||
+          (elapsedMs >= 55 && dist >= 10 && avgVel < 0.48 && peakInstVel < 0.62)
         ) {
           setOrbitFlag(true);
           gestureMode = 'orbit';
           if (isCenterZone) centerDodgeZone?.classList.remove('is-touching');
           if (typeof onCameraOrbit === 'function') {
-            onCameraOrbit(totalDx, totalDy);
+            onCameraOrbit(totalDx, totalDy, buildOrbitMeta(elapsedMs, e.pointerType));
           }
         }
       }
@@ -2502,17 +2924,20 @@ export function createSculptedHud({
     });
 
     const endGesture = (e, allowUpFlick) => {
-      if (e.pointerId !== ptrId) return;
+      if (ptrId === null) return;
+      if (e && typeof e.pointerId === 'number' && e.pointerId !== ptrId) return;
       if (allowUpFlick && gestureMode === 'undecided') {
         const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
         const elapsedMs = Math.max(1, now - startAt);
-        const totalDx = (e.clientX ?? lastX) - startX;
-        const totalDy = (e.clientY ?? lastY) - startY;
+        const totalDx = (e?.clientX ?? lastX) - startX;
+        const totalDy = (e?.clientY ?? lastY) - startY;
         const dist = Math.hypot(totalDx, totalDy);
         const avgVel = dist / elapsedMs;
-        if (dist >= upMinDist && elapsedMs <= upMaxMs && avgVel >= upMinAvgVel) {
+        if (dist >= 24 && elapsedMs <= 165 && (avgVel >= 0.55 || peakInstVel >= 0.72)) {
           gestureMode = 'dodge';
           fireSwipeDodge(totalDx, totalDy);
+        } else if (dist >= 4 && typeof onCameraOrbit === 'function') {
+          onCameraOrbit(totalDx, totalDy, buildOrbitMeta(elapsedMs, e?.pointerType));
         }
       }
       setOrbitFlag(false);
@@ -2523,18 +2948,26 @@ export function createSculptedHud({
       }
     };
 
+    const onWinCenterEnd = (e) => endGesture(e, true);
+    const onWinCenterCancel = (e) => endGesture(e, false);
+    trackWinListener('pointerup', onWinCenterEnd, { passive: true });
+    trackWinListener('pointercancel', onWinCenterCancel, { passive: true });
+
     zoneEl.addEventListener('pointerup', (e) => endGesture(e, true));
     zoneEl.addEventListener('pointercancel', (e) => endGesture(e, false));
+    zoneEl.addEventListener('lostpointercapture', (e) => endGesture(e, false));
+    return (e) => endGesture(e, false);
   }
 
-  bindSwipeAndOrbitZone(centerDodgeZone, { isCenterZone: true });
-  bindSwipeAndOrbitZone(orbitZone, { isCenterZone: false });
+  const endCenterDodgeOrOrbit = bindSwipeAndOrbitZone(centerDodgeZone, { isCenterZone: true });
+  const endPureOrbit = bindPureOrbitZone(orbitZone);
 
   // Primary Attack Ring: Tap (< 180ms Mage / < 280ms Knight) = 'attack',
   // Hold = Knight 'block_start' / Mage 'heavy' + Hold-Drag-Release Shatterlance aiming (0.8..18.0m)
   let attackHoldTimer = null;
   let attackHeldTriggered = false;
   let attackPointerId = null;
+  let attackPointerType = 'touch';
   let attackOriginX = 0;
   let attackOriginY = 0;
   let attackLastX = 0;
@@ -2550,6 +2983,7 @@ export function createSculptedHud({
         // ignore
       }
       attackPointerId = e.pointerId;
+      attackPointerType = e.pointerType || 'touch';
       attackOriginX = e.clientX;
       attackOriginY = e.clientY;
       attackLastX = e.clientX;
@@ -2574,6 +3008,7 @@ export function createSculptedHud({
             spellId: 'shatterlance',
             role: 'Mage',
             element: 'ice',
+            source: attackPointerType,
             clientX: attackLastX,
             clientY: attackLastY,
             dx: 0,
@@ -2595,6 +3030,7 @@ export function createSculptedHud({
           spellId: 'shatterlance',
           role: 'Mage',
           element: 'ice',
+          source: e.pointerType || attackPointerType || 'touch',
           clientX: e.clientX,
           clientY: e.clientY,
           dx,
@@ -2604,6 +3040,8 @@ export function createSculptedHud({
     });
 
     const releaseAttack = (e) => {
+      if (attackPointerId === null) return;
+      if (e && typeof e.pointerId === 'number' && e.pointerId !== attackPointerId) return;
       if (attackHoldTimer) {
         clearTimeout(attackHoldTimer);
         attackHoldTimer = null;
@@ -2620,6 +3058,7 @@ export function createSculptedHud({
               spellId: 'shatterlance',
               role: 'Mage',
               element: 'ice',
+              source: e?.pointerType || attackPointerType || 'touch',
               clientX: e?.clientX ?? attackLastX,
               clientY: e?.clientY ?? attackLastY,
               dx: (e?.clientX ?? attackLastX) - attackOriginX,
@@ -2633,6 +3072,7 @@ export function createSculptedHud({
     };
     attackBtn.addEventListener('pointerup', releaseAttack);
     attackBtn.addEventListener('pointercancel', releaseAttack);
+    attackBtn.addEventListener('lostpointercapture', releaseAttack);
   }
 
   // Real-Use-Case Fix #3: Dashing while holding [E] cancels aim cleanly without consuming cooldown
@@ -2640,11 +3080,15 @@ export function createSculptedHud({
   let ePointerId = null;
   let eOriginX = 0;
   let eOriginY = 0;
+  let eBtnRadius = 38;
+  let eLeftButton = false;
 
   function cancelSlotEAim() {
+    slotE?.classList.remove('is-aim-cancel');
     if (!eAimActive) return;
     eAimActive = false;
     ePointerId = null;
+    eLeftButton = false;
   }
 
   if (dashBtn) {
@@ -2692,15 +3136,13 @@ export function createSculptedHud({
     });
 
     const releaseDashBtn = (e) => {
-      if (e.pointerId !== dashPtrId) return;
+      if (e && typeof e.pointerId === 'number' && e.pointerId !== dashPtrId) return;
       dashPtrId = null;
       dashSwiped = false;
     };
     dashBtn.addEventListener('pointerup', releaseDashBtn);
-    dashBtn.addEventListener('pointercancel', () => {
-      dashPtrId = null;
-      dashSwiped = false;
-    });
+    dashBtn.addEventListener('pointercancel', releaseDashBtn);
+    dashBtn.addEventListener('lostpointercapture', releaseDashBtn);
     dashBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       // Support synthetic .click() in tests when pointerdown/up wasn't used
@@ -2714,6 +3156,10 @@ export function createSculptedHud({
   }
 
   if (jumpBtn) {
+    jumpBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      tryEnterMobileFullscreen();
+    });
     jumpBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (typeof onAction === 'function') {
@@ -2727,7 +3173,10 @@ export function createSculptedHud({
     slotE.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       const anyEl = state.iceUnlocked || state.fireUnlocked || state.unlockedStage >= 1;
-      if (!anyEl) return;
+      if (!anyEl) {
+        if (typeof onUiSfx === 'function') onUiSfx('locked');
+        return;
+      }
       try {
         slotE.setPointerCapture(e.pointerId);
       } catch {
@@ -2736,34 +3185,38 @@ export function createSculptedHud({
       const rect = slotE.getBoundingClientRect();
       eOriginX = rect.left + rect.width * 0.5;
       eOriginY = rect.top + rect.height * 0.5;
+      eBtnRadius = Math.max((rect.width || 64) * 0.55, 38);
+      eLeftButton = false;
       ePointerId = e.pointerId;
       eAimActive = true;
+      slotE.classList.remove('is-aim-cancel');
+
+      const startPayload = {
+        slot: 'E',
+        source: 'touch',
+        role: state.activeRole,
+        element: state.activeElement,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        dx: 0,
+        dy: 0,
+        touch: {
+          dx: 0,
+          dy: 0,
+          overButton: true,
+          leftButton: false,
+        },
+      };
 
       if (state.activeRole === 'Knight') {
         if (typeof onAction === 'function') {
           onAction('skill_e', { role: 'Knight', element: state.activeElement });
         }
         if (typeof onAimStart === 'function') {
-          onAimStart({
-            slot: 'E',
-            role: 'Knight',
-            element: state.activeElement,
-            clientX: e.clientX,
-            clientY: e.clientY,
-            dx: 0,
-            dy: 0,
-          });
+          onAimStart(startPayload);
         }
       } else if (typeof onAimStart === 'function') {
-        onAimStart({
-          slot: 'E',
-          role: 'Mage',
-          element: state.activeElement,
-          clientX: e.clientX,
-          clientY: e.clientY,
-          dx: 0,
-          dy: 0,
-        });
+        onAimStart(startPayload);
       }
     });
 
@@ -2771,44 +3224,104 @@ export function createSculptedHud({
       if (!eAimActive || e.pointerId !== ePointerId) return;
       e.stopPropagation();
       const dx = e.clientX - eOriginX;
-      const dy = e.clientY - eOriginY;
+      const rawDy = e.clientY - eOriginY;
+      const dist = Math.hypot(dx, rawDy);
+      if (dist > eBtnRadius) {
+        eLeftButton = true;
+      }
+      const overButton = dist <= eBtnRadius;
+      slotE.classList.toggle(
+        'is-aim-cancel',
+        Boolean(eAimActive && state.activeRole === 'Mage' && overButton && eLeftButton)
+      );
       if (typeof onAimMove === 'function') {
         onAimMove({
           slot: 'E',
+          source: 'touch',
           role: state.activeRole,
           element: state.activeElement,
           clientX: e.clientX,
           clientY: e.clientY,
           dx,
-          dy,
+          dy: rawDy,
+          touch: {
+            dx,
+            dy: -rawDy,
+            overButton,
+            leftButton: eLeftButton,
+          },
         });
       }
     });
 
     const releaseSlotE = (e) => {
       if (!eAimActive) return;
-      const dx = (e?.clientX ?? eOriginX) - eOriginX;
-      const dy = (e?.clientY ?? eOriginY) - eOriginY;
+      if (e && typeof e.pointerId === 'number' && e.pointerId !== ePointerId) return;
+      const clientX = e?.clientX ?? eOriginX;
+      const clientY = e?.clientY ?? eOriginY;
+      const dx = clientX - eOriginX;
+      const rawDy = clientY - eOriginY;
+      const overButton = Math.hypot(dx, rawDy) <= eBtnRadius;
+      const leftBtnSnapshot = eLeftButton;
       eAimActive = false;
       ePointerId = null;
+      eLeftButton = false;
+      slotE.classList.remove('is-aim-cancel');
       if (state.activeRole === 'Mage') {
         if (typeof onAimRelease === 'function') {
           onAimRelease({
             slot: 'E',
+            source: 'touch',
             role: 'Mage',
             element: state.activeElement,
-            clientX: e?.clientX ?? eOriginX,
-            clientY: e?.clientY ?? eOriginY,
+            clientX,
+            clientY,
             dx,
-            dy,
+            dy: rawDy,
+            touch: {
+              dx,
+              dy: -rawDy,
+              overButton,
+              leftButton: leftBtnSnapshot,
+            },
           });
         } else if (typeof onAction === 'function') {
           onAction('skill_e', { role: 'Mage', element: state.activeElement });
         }
       }
     };
+
+    const cancelSlotEPointer = (e) => {
+      if (!eAimActive) return;
+      if (e && typeof e.pointerId === 'number' && e.pointerId !== ePointerId) return;
+      eAimActive = false;
+      ePointerId = null;
+      eLeftButton = false;
+      slotE.classList.remove('is-aim-cancel');
+      if (state.activeRole === 'Mage' && typeof onAimRelease === 'function') {
+        onAimRelease({
+          slot: 'E',
+          source: 'touch',
+          role: 'Mage',
+          element: state.activeElement,
+          cancelled: true,
+          clientX: eOriginX,
+          clientY: eOriginY,
+          dx: 0,
+          dy: 0,
+          touch: {
+            dx: 0,
+            dy: 0,
+            overButton: true,
+            leftButton: true,
+          },
+        });
+      }
+    };
+
     slotE.addEventListener('pointerup', releaseSlotE);
-    slotE.addEventListener('pointercancel', cancelSlotEAim);
+    slotE.addEventListener('pointercancel', cancelSlotEPointer);
+    slotE.addEventListener('lostpointercapture', cancelSlotEPointer);
   }
 
   let tabSwitchRevealTimer = null;
@@ -2826,6 +3339,9 @@ export function createSculptedHud({
 
   // [Tab] Element Toggle Ring (visible only when BOTH Ice & Fire are solved)
   if (slotTab) {
+    slotTab.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+    });
     slotTab.addEventListener('click', (e) => {
       e.stopPropagation();
       const bothEl =
@@ -2843,9 +3359,16 @@ export function createSculptedHud({
 
   // [Q] Personal Ultimate Ring
   if (slotQ) {
+    slotQ.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      tryEnterMobileFullscreen();
+    });
     slotQ.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (!state.ultimateUnlocked && state.unlockedStage < 3) return;
+      if (!state.ultimateUnlocked && state.unlockedStage < 3) {
+        if (typeof onUiSfx === 'function') onUiSfx('locked');
+        return;
+      }
       if (typeof onAction === 'function') {
         onAction('ultimate', { role: state.activeRole, element: state.activeElement });
       }
@@ -2854,6 +3377,10 @@ export function createSculptedHud({
 
   // Commune [R] Ring (toggles listening start / stop-and-send)
   if (communeBtn) {
+    communeBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      tryEnterMobileFullscreen();
+    });
     communeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const anyEl = state.iceUnlocked || state.fireUnlocked || state.unlockedStage >= 1;
@@ -2881,14 +3408,116 @@ export function createSculptedHud({
   }
 
   if (partnerRowEl) {
+    partnerRowEl.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+    });
     partnerRowEl.addEventListener('click', (e) => {
       e.stopPropagation();
       triggerHeroSwap();
     });
   }
 
+  async function copyInviteWithFeedback(targetEl, copiedText, onRestore, which) {
+    if (typeof onUiSfx === 'function') onUiSfx('click');
+    const fallbackUrl =
+      state.shareUrl ||
+      (typeof window !== 'undefined' && window.location?.href ? window.location.href : '');
+    let handled = false;
+    if (typeof onCopyRoomInvite === 'function') {
+      try {
+        const res = await onCopyRoomInvite({
+          roomCode: state.roomCode,
+          roomPhrase: state.roomPhrase,
+          shareUrl: fallbackUrl,
+        });
+        if (res === true || (res && res.copied)) {
+          handled = true;
+        } else if (typeof res === 'string' && res.trim()) {
+          state.shareUrl = res.trim();
+        }
+      } catch {
+        // fall through to clipboard fallback
+      }
+    }
+    const urlToCopy = state.shareUrl || fallbackUrl;
+    if (
+      !handled &&
+      urlToCopy &&
+      typeof navigator !== 'undefined' &&
+      navigator.clipboard &&
+      typeof navigator.clipboard.writeText === 'function'
+    ) {
+      try {
+        await navigator.clipboard.writeText(urlToCopy);
+      } catch {
+        // ignore clipboard permission errors
+      }
+    }
+    if (targetEl) {
+      targetEl.textContent = copiedText;
+    }
+    if (which === 'badge') {
+      if (badgeCopiedTimer) clearTimeout(badgeCopiedTimer);
+      badgeCopiedTimer = setTimeout(onRestore, 1400);
+    } else if (which === 'pause') {
+      if (pauseCopyBtnTimer) clearTimeout(pauseCopyBtnTimer);
+      pauseCopyBtnTimer = setTimeout(onRestore, 1400);
+    }
+  }
+
+  if (roomBadgeEl) {
+    roomBadgeEl.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+    });
+    roomBadgeEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      copyInviteWithFeedback(
+        roomBadgeTextEl,
+        'Copied Invite',
+        () => {
+          badgeCopiedTimer = null;
+          renderRoomState();
+        },
+        'badge'
+      );
+    });
+  }
+
+  if (pauseCopyRoomBtn) {
+    pauseCopyRoomBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      copyInviteWithFeedback(
+        pauseCopyRoomBtn,
+        'Copied!',
+        () => {
+          pauseCopyBtnTimer = null;
+          if (pauseCopyRoomBtn) {
+            pauseCopyRoomBtn.textContent = 'Copy Invite Link';
+          }
+        },
+        'pause'
+      );
+    });
+  }
+
+  if (pauseEditRoomBtn) {
+    pauseEditRoomBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (typeof onUiSfx === 'function') onUiSfx('click');
+      if (typeof onEditRoomCode === 'function') {
+        onEditRoomCode({
+          roomCode: state.roomCode,
+          roomPhrase: state.roomPhrase,
+        });
+      }
+    });
+  }
+
   // Pause Popover Controls
   if (pauseBtn) {
+    pauseBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+    });
     pauseBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (pauseModal?.classList.contains('is-open')) {
@@ -2896,6 +3525,12 @@ export function createSculptedHud({
       } else {
         openPauseModal();
       }
+    });
+  }
+
+  if (fullscreenBtn) {
+    fullscreenBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
     });
   }
 
@@ -2935,6 +3570,7 @@ export function createSculptedHud({
   root.querySelectorAll('[data-tod-choice]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (typeof onUiSfx === 'function') onUiSfx('click');
       const tod = btn.dataset.todChoice || 'day';
       setTimeOfDaySelection(tod);
       if (typeof onSelectTimeOfDay === 'function') {
@@ -2946,6 +3582,7 @@ export function createSculptedHud({
   root.querySelectorAll('[data-profile-choice]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (typeof onUiSfx === 'function') onUiSfx('click');
       const prof = btn.dataset.profileChoice || 'desktop';
       setProfileMode(prof);
       if (typeof onSelectProfile === 'function') {
@@ -2953,6 +3590,27 @@ export function createSculptedHud({
       }
     });
   });
+
+  root.querySelectorAll('[data-camera-sens]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (typeof onUiSfx === 'function') onUiSfx('click');
+      const preset = btn.dataset.cameraSens || 'high';
+      setCameraSensitivity(preset);
+    });
+  });
+
+  root
+    .querySelectorAll(
+      '#sculpted-room-badge, #sculpted-pause-btn, #sculpted-fullscreen-btn, #sculpted-slot-e, #sculpted-slot-q, #sculpted-slot-tab, #sculpted-commune-btn, .sh-choice-pill, .sh-modal-close-btn'
+    )
+    .forEach((el) => {
+      el.addEventListener('pointerenter', (e) => {
+        if (e.pointerType === 'mouse' && typeof onUiSfx === 'function') {
+          onUiSfx('hover');
+        }
+      });
+    });
 
   pauseModal?.addEventListener('click', (e) => {
     if (e.target === pauseModal) {
@@ -2966,13 +3624,77 @@ export function createSculptedHud({
     }
   }
 
+  function onGlobalWindowBlur() {
+    endPureOrbit();
+    endCenterDodgeOrOrbit(null);
+    if (joyState.active) {
+      resetJoystick();
+    }
+    if (eAimActive) {
+      cancelSlotEAim();
+    }
+    if (attackHoldTimer) {
+      clearTimeout(attackHoldTimer);
+      attackHoldTimer = null;
+    }
+    if (attackPointerId !== null || attackHeldTriggered) {
+      attackPointerId = null;
+      if (attackHeldTriggered) {
+        attackHeldTriggered = false;
+        if (state.activeRole === 'Knight' && typeof onAction === 'function') {
+          onAction('block_end', { role: state.activeRole });
+        } else if (state.activeRole === 'Mage' && typeof onAimRelease === 'function') {
+          onAimRelease({
+            slot: 'Attack',
+            spellId: 'shatterlance',
+            role: 'Mage',
+            element: 'ice',
+            source: attackPointerType || 'touch',
+            cancelled: true,
+            clientX: attackLastX,
+            clientY: attackLastY,
+            dx: attackLastX - attackOriginX,
+            dy: attackLastY - attackOriginY,
+          });
+        }
+      }
+    }
+  }
+
   if (typeof window !== 'undefined') {
     window.addEventListener('keydown', onGlobalKeyDown);
+    window.addEventListener('blur', onGlobalWindowBlur);
   }
 
   /* ----------------------------------------------------------------------- */
   /* State Setters for Main Game Loop                                        */
   /* ----------------------------------------------------------------------- */
+
+  let notifyingCameraSensitivity = false;
+
+  function setCameraSensitivity(preset, { notify = true } = {}) {
+    const normalized =
+      preset === 'low' || preset === 'medium' || preset === 'high' ? preset : 'high';
+    state.cameraSensitivity = normalized;
+    root.querySelectorAll('[data-camera-sens]').forEach((btn) => {
+      const selected = btn.dataset.cameraSens === state.cameraSensitivity;
+      btn.classList.toggle('is-selected', selected);
+      btn.setAttribute('aria-pressed', String(selected));
+    });
+    if (notify && !notifyingCameraSensitivity && typeof onChangeCameraSensitivity === 'function') {
+      notifyingCameraSensitivity = true;
+      try {
+        onChangeCameraSensitivity(state.cameraSensitivity);
+      } finally {
+        notifyingCameraSensitivity = false;
+      }
+    }
+    return state.cameraSensitivity;
+  }
+
+  function getCameraSensitivity() {
+    return state.cameraSensitivity;
+  }
 
   function setProfileMode(profileName) {
     state.profile = profileName === 'tablet' ? 'tablet' : 'desktop';
@@ -3182,9 +3904,11 @@ export function createSculptedHud({
 
   // Initial render (Starts Bare: Stage 0, communeDiscovered = false)
   setProfileMode(state.profile);
+  setCameraSensitivity(state.cameraSensitivity, { notify: false });
   syncEnvironmentPolarity();
   renderRoleAndPartyBars();
   renderProgressionAndSlots();
+  renderRoomState();
 
   return {
     root,
@@ -3204,6 +3928,9 @@ export function createSculptedHud({
     }),
     setPlayerNames,
     setPeerConnected,
+    setRoomState,
+    setCameraSensitivity,
+    getCameraSensitivity,
     setEnvironmentPolarity,
     setProgressionState,
     setCommuneState,
@@ -3235,7 +3962,23 @@ export function createSculptedHud({
     destroy() {
       if (typeof window !== 'undefined') {
         window.removeEventListener('keydown', onGlobalKeyDown);
+        window.removeEventListener('blur', onGlobalWindowBlur);
       }
+      while (winCleanupFns.length > 0) {
+        try {
+          winCleanupFns.pop()();
+        } catch {
+          // ignore
+        }
+      }
+      if (badgeCopiedTimer) clearTimeout(badgeCopiedTimer);
+      if (pauseCopyBtnTimer) clearTimeout(pauseCopyBtnTimer);
+      if (tabSwitchRevealTimer) clearTimeout(tabSwitchRevealTimer);
+      if (dodgeRippleTimer) clearTimeout(dodgeRippleTimer);
+      if (vignetteTimer) clearTimeout(vignetteTimer);
+      if (primaryShakeTimer) clearTimeout(primaryShakeTimer);
+      if (partnerShakeTimer) clearTimeout(partnerShakeTimer);
+      if (attackHoldTimer) clearTimeout(attackHoldTimer);
       if (typeof document !== 'undefined' && document.body) {
         document.body.classList.remove('sculpted-hud-mounted');
       }

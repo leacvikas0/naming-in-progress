@@ -119,7 +119,7 @@ function woodKnot(ctx, x, y, r) {
   ctx.restore();
 }
 
-function paintRoof() {
+function* paintRoofGen() {
   const W = 768;
   const H = 512;
   const cols = 8;
@@ -129,6 +129,7 @@ function paintRoof() {
   const { canvas, ctx } = makeCanvas(W, H);
   ctx.fillStyle = '#7a2a17';
   ctx.fillRect(0, 0, W, H);
+  yield;
 
   for (let row = rows - 1; row >= -1; row--) {
     const rowY = row * th + th * 0.5;
@@ -188,16 +189,18 @@ function paintRoof() {
       ctx.lineWidth = 1.1;
       ctx.stroke();
     }
+    yield;
   }
   return canvas;
 }
 
-function paintStucco() {
+function* paintStuccoGen() {
   const S = 512;
   const { canvas, ctx } = makeCanvas(S, S);
   const rnd = makeRng(0x57ac01);
   ctx.fillStyle = '#f3e6cb';
   ctx.fillRect(0, 0, S, S);
+  yield;
 
   const mottle = [
     [232, 212, 178],
@@ -212,6 +215,7 @@ function paintStucco() {
     const rgb = mottle[i % mottle.length];
     const alpha = 0.065 + rnd() * 0.045;
     wrapDraw(S, S, x, y, r, (px, py) => softBlob(ctx, px, py, r, rgb, alpha));
+    if (i % 7 === 6) yield;
   }
 
   for (let i = 0; i < 34; i++) {
@@ -236,6 +240,7 @@ function paintStucco() {
       ctx.stroke();
       ctx.restore();
     });
+    if (i % 8 === 7) yield;
   }
 
   for (let i = 0; i < 6; i++) {
@@ -247,12 +252,13 @@ function paintStucco() {
   return canvas;
 }
 
-function paintAshlar({ size, cols, rows, mortar, tints, bevelHi, bevelLo }) {
+function* paintAshlarGen({ size, cols, rows, mortar, tints, bevelHi, bevelLo }) {
   const { canvas, ctx } = makeCanvas(size, size);
   ctx.fillStyle = mortar;
   ctx.fillRect(0, 0, size, size);
   const bw = size / cols;
   const bh = size / rows;
+  yield;
 
   for (let row = -1; row <= rows; row++) {
     const offset = (((row % 2) + 2) % 2) * bw * 0.5;
@@ -289,12 +295,13 @@ function paintAshlar({ size, cols, rows, mortar, tints, bevelHi, bevelLo }) {
       ctx.lineTo(x + 3, y + h - 1.8);
       ctx.stroke();
     }
+    yield;
   }
   return canvas;
 }
 
-function paintStone() {
-  return paintAshlar({
+function paintStoneGen() {
+  return paintAshlarGen({
     size: 512,
     cols: 5,
     rows: 8,
@@ -312,8 +319,8 @@ function paintStone() {
   });
 }
 
-function paintStoneLight() {
-  return paintAshlar({
+function paintStoneLightGen() {
+  return paintAshlarGen({
     size: 512,
     cols: 5,
     rows: 8,
@@ -331,12 +338,13 @@ function paintStoneLight() {
   });
 }
 
-function paintWood() {
+function* paintWoodGen() {
   const S = 512;
   const { canvas, ctx } = makeCanvas(S, S);
   const rnd = makeRng(0x8f31);
   ctx.fillStyle = '#9d6636';
   ctx.fillRect(0, 0, S, S);
+  yield;
 
   for (let i = 0; i < 8; i++) {
     const y = rnd() * S;
@@ -351,6 +359,7 @@ function paintWood() {
       ctx.fillRect(0, py - r, S, r * 2);
     });
   }
+  yield;
 
   for (let i = 0; i < 110; i++) {
     const strong = i % 5 === 0;
@@ -375,6 +384,7 @@ function paintWood() {
       ctx.lineCap = 'round';
       ctx.stroke();
     }
+    if (i % 18 === 17) yield;
   }
 
   for (let i = 0; i < 2; i++) {
@@ -386,7 +396,7 @@ function paintWood() {
   return canvas;
 }
 
-function paintDoorWood() {
+function* paintDoorWoodGen() {
   const W = 512;
   const H = 1024;
   const planks = 6;
@@ -395,6 +405,7 @@ function paintDoorWood() {
   const rnd = makeRng(0x2d19);
   ctx.fillStyle = '#4a2610';
   ctx.fillRect(0, 0, W, H);
+  yield;
 
   for (let p = 0; p < planks; p++) {
     const key = hash2(p + 5, 3);
@@ -437,6 +448,7 @@ function paintDoorWood() {
     ctx.fillRect(x + 2.5, 0, 1.4, H);
     ctx.fillStyle = 'rgba(60, 30, 12, 0.14)';
     ctx.fillRect(x + 2.5, 0, 3, H);
+    yield;
   }
 
   for (let i = 0; i < 2; i++) {
@@ -498,10 +510,9 @@ function paintGlass() {
   return canvas;
 }
 
-export function createTextures(renderer) {
+function makeTexFactory(renderer) {
   const anisotropy = renderer?.capabilities?.getMaxAnisotropy?.() ?? 1;
-
-  const toTexture = (canvas) => {
+  return (canvas) => {
     const texture = canvas?.isHeadlessMock
       ? new THREE.DataTexture(new Uint8Array(16).fill(255), 2, 2, THREE.RGBAFormat)
       : new THREE.CanvasTexture(canvas);
@@ -516,14 +527,49 @@ export function createTextures(renderer) {
     texture.needsUpdate = true;
     return texture;
   };
+}
 
-  return {
-    roof: toTexture(paintRoof()),
-    stucco: toTexture(paintStucco()),
-    stone: toTexture(paintStone()),
-    stoneLight: toTexture(paintStoneLight()),
-    wood: toTexture(paintWood()),
-    doorWood: toTexture(paintDoorWood()),
-    glass: toTexture(paintGlass()),
-  };
+function* createTexturesGen(renderer) {
+  const toTexture = makeTexFactory(renderer);
+  const roof = toTexture(yield* paintRoofGen());
+  yield;
+  const stucco = toTexture(yield* paintStuccoGen());
+  yield;
+  const stone = toTexture(yield* paintStoneGen());
+  yield;
+  const stoneLight = toTexture(yield* paintStoneLightGen());
+  yield;
+  const wood = toTexture(yield* paintWoodGen());
+  yield;
+  const doorWood = toTexture(yield* paintDoorWoodGen());
+  yield;
+  const glass = toTexture(paintGlass());
+  return { roof, stucco, stone, stoneLight, wood, doorWood, glass };
+}
+
+export function createTextures(renderer) {
+  const gen = createTexturesGen(renderer);
+  let step = gen.next();
+  while (!step.done) step = gen.next();
+  return step.value;
+}
+
+export async function createTexturesAsync(renderer, opts = {}) {
+  const yieldFrame =
+    typeof opts.yieldFrame === 'function'
+      ? opts.yieldFrame
+      : () => new Promise((r) => setTimeout(r, 0));
+  const sliceBudgetMs = Number(opts.sliceBudgetMs) > 0 ? Number(opts.sliceBudgetMs) : 2.6;
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  let sliceStart = now();
+  const gen = createTexturesGen(renderer);
+  let step = gen.next();
+  while (!step.done) {
+    if (now() - sliceStart >= sliceBudgetMs) {
+      await yieldFrame();
+      sliceStart = now();
+    }
+    step = gen.next();
+  }
+  return step.value;
 }

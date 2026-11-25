@@ -496,12 +496,29 @@ export function createCombatActionAimController({
     lockTargetId: null,
   };
 
+  const MAGE_FOURTH_NOVA_SPEC = Object.freeze({
+    index: 3,
+    clip: 'mage_attack3',
+    nativeClip: 'Ranged_Magic_Raise',
+    startTime: 0,
+    baseTimeScale: 1.15,
+    timeScale: 1.15,
+    duration: 0.72,
+    contactFrac: 0.42,
+    releaseTime: 0.30,
+    fade: 0.06,
+    stepDist: 0,
+    hopVy: 0,
+    cameraImpulse: 0,
+  });
+
   function startComboSwingInternal(heroId, isChainedFromBuffer = false) {
     const h = heroes[heroId] || heroes.Knight;
     const specs = heroId === 'Mage' ? MAGE_COMBO_SPECS : KNIGHT_COMBO_SPECS;
+    const cycleLen = heroId === 'Mage' ? 4 : specs.length;
 
     if (isChainedFromBuffer || h.comboResetTimer > 0) {
-      h.comboIndex = (h.comboIndex + 1) % specs.length;
+      h.comboIndex = (h.comboIndex + 1) % cycleLen;
     } else {
       h.comboIndex = 0;
     }
@@ -511,7 +528,10 @@ export function createCombatActionAimController({
       h.mashTimeScale = clamp(h.mashTimeScale, MASH_TIMESCALE_MIN, MASH_TIMESCALE_MAX);
     }
 
-    const baseSpec = specs[h.comboIndex] || specs[0];
+    const baseSpec =
+      heroId === 'Mage' && h.comboIndex === 3
+        ? MAGE_FOURTH_NOVA_SPEC
+        : specs[h.comboIndex] || specs[0];
     const effectiveTimeScale = clamp(
       baseSpec.baseTimeScale * h.mashTimeScale,
       MASH_TIMESCALE_MIN,
@@ -850,23 +870,33 @@ export function createCombatActionAimController({
     isInitialShow = false,
   } = {}) {
     const chosenSpell = spellId || heroes.Mage.selectedSpell || 'frost_lance';
+    const isFrost = chosenSpell === 'frost_lance';
     const isShatter = chosenSpell === 'shatterlance';
     const hasCustomDist =
-      Number.isFinite(Number(distance)) || aimState.customDistance !== null;
-    const minDist =
-      isShatter || hasCustomDist ? SHATTERLANCE_MIN_DISTANCE : CINDER_FALL_MIN_DISTANCE;
-    const maxDist =
-      isShatter || hasCustomDist ? SHATTERLANCE_MAX_DISTANCE : CINDER_FALL_MAX_DISTANCE;
+      !isFrost && (Number.isFinite(Number(distance)) || aimState.customDistance !== null);
+    const minDist = isFrost
+      ? FROST_LANCE_AIM_LENGTH
+      : isShatter || hasCustomDist
+        ? SHATTERLANCE_MIN_DISTANCE
+        : CINDER_FALL_MIN_DISTANCE;
+    const maxDist = isFrost
+      ? FROST_LANCE_AIM_LENGTH
+      : isShatter || hasCustomDist
+        ? SHATTERLANCE_MAX_DISTANCE
+        : CINDER_FALL_MAX_DISTANCE;
 
     if (Number.isFinite(Number(distance))) {
-      aimState.customDistance = clamp(Number(distance), minDist, maxDist);
+      aimState.customDistance = isFrost
+        ? FROST_LANCE_AIM_LENGTH
+        : clamp(Number(distance), minDist, maxDist);
     }
     if (Number.isFinite(Number(pitch))) {
       aimState.lastPitch = Number(pitch);
     }
 
-    const effectiveDistance =
-      distance !== undefined
+    const effectiveDistance = isFrost
+      ? FROST_LANCE_AIM_LENGTH
+      : distance !== undefined
         ? distance
         : aimState.customDistance !== null
           ? aimState.customDistance
@@ -877,8 +907,8 @@ export function createCombatActionAimController({
       yaw,
       pitch,
       distance: effectiveDistance,
-      spellId: effectiveDistance !== undefined ? 'shatterlance' : chosenSpell,
-      fixedDistance: null,
+      spellId: chosenSpell,
+      fixedDistance: isFrost ? FROST_LANCE_AIM_LENGTH : null,
       minDistance: minDist,
       maxDistance: maxDist,
       touchTarget,

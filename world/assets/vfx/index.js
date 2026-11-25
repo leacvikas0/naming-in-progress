@@ -13,7 +13,12 @@
 // ============================================================================
 
 import * as THREE from 'three';
-import { createNoiseAtlas, getSharedNoiseAtlas } from './noise-atlas.js';
+import {
+  createNoiseAtlas,
+  createNoiseAtlasAsync,
+  getSharedNoiseAtlas,
+  getSharedNoiseAtlasAsync,
+} from './noise-atlas.js';
 import {
   FrostLanceSystem,
   createFrostLanceSystem,
@@ -77,7 +82,9 @@ import {
 
 export {
   createNoiseAtlas,
+  createNoiseAtlasAsync,
   getSharedNoiseAtlas,
+  getSharedNoiseAtlasAsync,
   FrostLanceSystem,
   createFrostLanceSystem,
   createGlacierCrystalGeometry,
@@ -122,71 +129,18 @@ export {
   ULTIMATE_PALETTES,
 };
 
-/**
- * Convenience factory for the complete Stage 4 VFX, Mage Bolts, Sword Breathing, Aim Arrow & Artorious Kit.
- */
-export function createVfxKit({
-  scene,
-  getGroundHeight = () => 0,
-  frostLanceConfig = {},
-  shatterlanceConfig = {},
-  cinderFallConfig = {},
-  stormLanceConfig = {},
-  mageBoltConfig = {},
-  artoriousConfig = {},
-  aimArrowConfig = {},
-  onApexImpact = null,
-} = {}) {
-  const noiseAtlas = getSharedNoiseAtlas();
-
-  const frostLance = createFrostLanceSystem({
-    scene,
-    getGroundHeight,
-    config: frostLanceConfig,
-    onApexImpact,
-  });
-  const shatterlance = createShatterlanceSystem({
-    scene,
-    getGroundHeight,
-    config: shatterlanceConfig,
-    onApexImpact,
-  });
-  const cinderFall = createCinderFallSystem({
-    scene,
-    getGroundHeight,
-    config: cinderFallConfig,
-    onApexImpact,
-  });
-  const stormLance = createStormLanceSystem({
-    scene,
-    getGroundHeight,
-    config: stormLanceConfig,
-    onApexImpact,
-  });
-  const swordVfx = createSwordVfxSystem({
-    scene,
-    getGroundHeight,
-  });
-  const mageBolt = createMageBoltSystem({
-    scene,
-    getGroundHeight,
-    config: mageBoltConfig,
-  });
-  const artoriousVfx = createArtoriousVfxSystem({
-    scene,
-    getGroundHeight,
-    config: artoriousConfig,
-  });
-  const aimArrow = createAimArrowSystem({
-    scene,
-    getGroundHeight,
-    config: aimArrowConfig,
-  });
-  const ultimateVfx = createUltimateVfxSystem({
-    scene,
-    getGroundHeight,
-  });
-
+function assembleVfxKit({
+  noiseAtlas,
+  frostLance,
+  shatterlance,
+  cinderFall,
+  stormLance,
+  swordVfx,
+  mageBolt,
+  artoriousVfx,
+  aimArrow,
+  ultimateVfx,
+}) {
   const allSystems = [
     frostLance,
     shatterlance,
@@ -282,4 +236,181 @@ export function createVfxKit({
       for (const sys of allSystems) sys.dispose();
     },
   };
+}
+
+/**
+ * Convenience factory for the complete Stage 4 VFX, Mage Bolts, Sword Breathing, Aim Arrow & Artorious Kit.
+ */
+export function createVfxKit({
+  scene,
+  getGroundHeight = () => 0,
+  frostLanceConfig = {},
+  shatterlanceConfig = {},
+  cinderFallConfig = {},
+  stormLanceConfig = {},
+  mageBoltConfig = {},
+  artoriousConfig = {},
+  aimArrowConfig = {},
+  onApexImpact = null,
+} = {}) {
+  const noiseAtlas = getSharedNoiseAtlas();
+
+  const frostLance = createFrostLanceSystem({
+    scene,
+    getGroundHeight,
+    config: frostLanceConfig,
+    onApexImpact,
+  });
+  const shatterlance = createShatterlanceSystem({
+    scene,
+    getGroundHeight,
+    config: shatterlanceConfig,
+    onApexImpact,
+  });
+  const cinderFall = createCinderFallSystem({
+    scene,
+    getGroundHeight,
+    config: cinderFallConfig,
+    onApexImpact,
+  });
+  const stormLance = createStormLanceSystem({
+    scene,
+    getGroundHeight,
+    config: stormLanceConfig,
+    onApexImpact,
+  });
+  const swordVfx = createSwordVfxSystem({
+    scene,
+    getGroundHeight,
+  });
+  const mageBolt = createMageBoltSystem({
+    scene,
+    getGroundHeight,
+    config: mageBoltConfig,
+  });
+  const artoriousVfx = createArtoriousVfxSystem({
+    scene,
+    getGroundHeight,
+    config: artoriousConfig,
+  });
+  const aimArrow = createAimArrowSystem({
+    scene,
+    getGroundHeight,
+    config: aimArrowConfig,
+  });
+  const ultimateVfx = createUltimateVfxSystem({
+    scene,
+    getGroundHeight,
+  });
+
+  return assembleVfxKit({
+    noiseAtlas,
+    frostLance,
+    shatterlance,
+    cinderFall,
+    stormLance,
+    swordVfx,
+    mageBolt,
+    artoriousVfx,
+    aimArrow,
+    ultimateVfx,
+  });
+}
+
+export async function createVfxKitAsync({
+  scene,
+  getGroundHeight = () => 0,
+  frostLanceConfig = {},
+  shatterlanceConfig = {},
+  cinderFallConfig = {},
+  stormLanceConfig = {},
+  mageBoltConfig = {},
+  artoriousConfig = {},
+  aimArrowConfig = {},
+  onApexImpact = null,
+  yieldFrame = null,
+  sliceBudgetMs = 4.0,
+} = {}) {
+  const yieldFn = typeof yieldFrame === 'function' ? yieldFrame : () => new Promise((r) => setTimeout(r, 0));
+  const budget = Number(sliceBudgetMs) > 0 ? Number(sliceBudgetMs) : 4.0;
+  let sliceStart = Date.now();
+  const maybeYield = async () => {
+    if (Date.now() - sliceStart >= budget) {
+      await yieldFn();
+      sliceStart = Date.now();
+    }
+  };
+
+  const noiseAtlas = await getSharedNoiseAtlasAsync({ yieldFrame: yieldFn, sliceBudgetMs: budget });
+  await maybeYield();
+
+  const frostLance = createFrostLanceSystem({
+    scene,
+    getGroundHeight,
+    config: frostLanceConfig,
+    onApexImpact,
+  });
+  await maybeYield();
+  const shatterlance = createShatterlanceSystem({
+    scene,
+    getGroundHeight,
+    config: shatterlanceConfig,
+    onApexImpact,
+  });
+  await maybeYield();
+  const cinderFall = createCinderFallSystem({
+    scene,
+    getGroundHeight,
+    config: cinderFallConfig,
+    onApexImpact,
+  });
+  await maybeYield();
+  const stormLance = createStormLanceSystem({
+    scene,
+    getGroundHeight,
+    config: stormLanceConfig,
+    onApexImpact,
+  });
+  await maybeYield();
+  const swordVfx = createSwordVfxSystem({
+    scene,
+    getGroundHeight,
+  });
+  await maybeYield();
+  const mageBolt = createMageBoltSystem({
+    scene,
+    getGroundHeight,
+    config: mageBoltConfig,
+  });
+  await maybeYield();
+  const artoriousVfx = createArtoriousVfxSystem({
+    scene,
+    getGroundHeight,
+    config: artoriousConfig,
+  });
+  await maybeYield();
+  const aimArrow = createAimArrowSystem({
+    scene,
+    getGroundHeight,
+    config: aimArrowConfig,
+  });
+  await maybeYield();
+  const ultimateVfx = createUltimateVfxSystem({
+    scene,
+    getGroundHeight,
+  });
+  await maybeYield();
+
+  return assembleVfxKit({
+    noiseAtlas,
+    frostLance,
+    shatterlance,
+    cinderFall,
+    stormLance,
+    swordVfx,
+    mageBolt,
+    artoriousVfx,
+    aimArrow,
+    ultimateVfx,
+  });
 }

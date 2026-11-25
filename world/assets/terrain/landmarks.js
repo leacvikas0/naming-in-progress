@@ -18,7 +18,10 @@ import {
 import {
   PALETTE,
   makeToonGradient,
-  batchVertexColorGroup,
+  batchVertexColorGroupGen,
+  createTimeSlicer,
+  runSync,
+  runAsync,
 } from './terrain-water.js';
 
 /**
@@ -204,7 +207,7 @@ function buildWellPlaza(colliders) {
 /* 2. WOODEN PIER, FLUSH STONE ABUTMENT & MOORED BOAT (`MAP-02` clean)        */
 /* -------------------------------------------------------------------------- */
 
-function buildWoodenPier() {
+function* buildWoodenPierGen() {
   const group = new THREE.Group();
   group.name = 'woodenPier';
   const pier = LANDMARKS.pier;
@@ -273,6 +276,7 @@ function buildWoodenPier() {
     );
     edgeBeam.position.set(cx, pier.y + 0.14, pier.z + sz);
   }
+  yield;
 
   for (let x = pier.xEnd + 0.8; x <= shoreX - 1.2; x += 3.1) {
     for (const sz of [-pier.width * 0.44, pier.width * 0.44]) {
@@ -345,7 +349,7 @@ function buildWoodenPier() {
 /* 3. EAST WISTERIA COMBAT RING 24-SEGMENT SPLIT-RAIL FENCE                   */
 /* -------------------------------------------------------------------------- */
 
-function buildArenaFence(colliders) {
+function* buildArenaFenceGen(colliders) {
   const group = new THREE.Group();
   group.name = 'arenaFence';
 
@@ -394,6 +398,7 @@ function buildArenaFence(colliders) {
       lantern.position.set(fx, fy + postH + 0.34, fz);
     }
   }
+  yield;
 
   for (let i = 0; i < posts.length - 1; i++) {
     const p0 = posts[i];
@@ -437,7 +442,7 @@ function buildArenaFence(colliders) {
 /* 4. NORTHERN SHRINE OVERLOOK, 56-STEP STAIRCASE & ROMANESQUE ARCH (`MAP-03`)*/
 /* -------------------------------------------------------------------------- */
 
-function buildShrineOverlook(colliders) {
+function* buildShrineOverlookGen(colliders) {
   const group = new THREE.Group();
   group.name = 'shrineOverlook';
 
@@ -484,6 +489,7 @@ function buildShrineOverlook(colliders) {
       { outline: false }
     );
     runnerCrimson.position.set(0.0, stepTopY - stepH * 0.5 + 0.025, sz);
+    if (i % 14 === 13) yield;
   }
 
   // Grand Stepped Stone Wing Balustrades (sx = +/- 6.15m) + Base, Mid-Terrace & Summit Lantern Pillars
@@ -566,6 +572,7 @@ function buildShrineOverlook(colliders) {
     );
     topLamp.position.set(sx, yEnd + 0.98, zEnd - 0.15);
   }
+  yield;
 
   const shX = ZONES.shrine.x;
   const shZ = ZONES.shrine.z;
@@ -737,6 +744,7 @@ function buildShrineOverlook(colliders) {
     );
     planterSoil.position.set(t.x, ty + 0.29, t.z);
   }
+  yield;
 
   return group;
 }
@@ -860,11 +868,12 @@ function buildChiseledBoulderGeometry({ rx = 1.4, ry = 1.0, rz = 1.2, rotY = 0, 
   return baseGeo;
 }
 
-function buildLimestoneBoulders(colliders) {
+function* buildLimestoneBouldersGen(colliders) {
   const group = new THREE.Group();
   group.name = 'limestoneBoulders';
 
-  BOULDERS.forEach((b, idx) => {
+  for (let idx = 0; idx < BOULDERS.length; idx++) {
+    const b = BOULDERS[idx];
     const by = terrainHeightAt(b.x, b.z);
     const geo = buildChiseledBoulderGeometry({
       rx: b.rx,
@@ -908,7 +917,8 @@ function buildLimestoneBoulders(colliders) {
         tag: 'boulder',
       });
     }
-  });
+    yield;
+  }
 
   return group;
 }
@@ -957,11 +967,12 @@ function buildChiseledWallBlockGeo(w, h, d, seed, isCapstone = false) {
   return geo;
 }
 
-function buildDryStoneWalls(colliders) {
+function* buildDryStoneWallsGen(colliders) {
   const group = new THREE.Group();
   group.name = 'dryStoneWalls';
 
-  DRY_STONE_WALLS.forEach((w, wIdx) => {
+  for (let wIdx = 0; wIdx < DRY_STONE_WALLS.length; wIdx++) {
+    const w = DRY_STONE_WALLS[wIdx];
     const dx = w.x1 - w.x0;
     const dz = w.z1 - w.z0;
     const totalLen = Math.hypot(dx, dz);
@@ -1008,6 +1019,7 @@ function buildDryStoneWalls(colliders) {
       });
       capMesh.position.set(bx, by + baseH * 0.84 + capH * 0.45, bz);
       capMesh.rotation.y = yaw + ((i % 3) - 1) * 0.03;
+      if (i % 4 === 3) yield;
     }
 
     if (colliders) {
@@ -1021,16 +1033,18 @@ function buildDryStoneWalls(colliders) {
         tag: 'dry_stone_wall',
       });
     }
-  });
+    yield;
+  }
 
   return group;
 }
 
-function buildRoadsideSplitRailFences(colliders) {
+function* buildRoadsideSplitRailFencesGen(colliders) {
   const group = new THREE.Group();
   group.name = 'roadsideSplitRailFences';
 
-  ROADSIDE_FENCES.forEach((f) => {
+  for (let fIdx = 0; fIdx < ROADSIDE_FENCES.length; fIdx++) {
+    const f = ROADSIDE_FENCES[fIdx];
     const spans = f.spans || 3;
     const posts = [];
     for (let i = 0; i <= spans; i++) {
@@ -1099,7 +1113,8 @@ function buildRoadsideSplitRailFences(colliders) {
         });
       }
     }
-  });
+    yield;
+  }
 
   return group;
 }
@@ -1179,7 +1194,7 @@ function buildSacredInscriptionStones(colliders) {
  * while leaving the Wooden Pier deck (`x = -52.0..-33.0, z = 6.7..10.3`) and the `(-42, 18)`
  * Sacred Stone shallow causeway/sandbar completely open and walkable!
  */
-function buildDeepWaterColliderRing(colliders) {
+function* buildDeepWaterColliderRingGen(colliders) {
   if (!colliders) return;
 
   const mp = ZONES.millpond;
@@ -1219,9 +1234,15 @@ function buildDeepWaterColliderRing(colliders) {
       cx >= pier.xEnd - 2.2 &&
       cx <= pier.xStart + 3.5 &&
       Math.abs(cz - pier.z) <= pier.width * 0.55 + colliderRadius + 0.25;
-    if (inPierDeck) continue;
+    if (inPierDeck) {
+      if (i % 14 === 13) yield;
+      continue;
+    }
 
-    if (terrainHeightAt(cx, cz) >= wadingLimitY + 0.04) continue;
+    if (terrainHeightAt(cx, cz) >= wadingLimitY + 0.04) {
+      if (i % 14 === 13) yield;
+      continue;
+    }
 
     colliders.push({
       type: 'circle',
@@ -1230,6 +1251,7 @@ function buildDeepWaterColliderRing(colliders) {
       r: colliderRadius,
       tag: 'deep_water',
     });
+    if (i % 14 === 13) yield;
   }
 
   // Add over-water pier edge guardrail colliders so players on the pier cannot step off into deep water,
@@ -1362,7 +1384,7 @@ function addWindowUnit(group, x, y, z, rotY = 0, w = 1.12, h = 1.38) {
   group.add(holder);
 }
 
-function buildTudorHouse(b, colliders) {
+function* buildTudorHouseGen(b, colliders) {
   const group = new THREE.Group();
   group.name = `building-${b.id}`;
   group.position.set(b.x, b.y, b.z);
@@ -1454,6 +1476,7 @@ function buildTudorHouse(b, colliders) {
     { outline: false }
   );
   ridgeBeam.position.set(0, 0.55 + b.wallH + b.roofH, 0);
+  yield;
 
   if (b.crossGable) {
     const cgW = b.w * 0.46;
@@ -1558,6 +1581,7 @@ function buildTudorHouse(b, colliders) {
     );
     fluePot.position.set(chX, topY + 0.34, chZ);
   }
+  yield;
 
   const doorFrontZ = b.d * 0.5;
   if (b.awning === 'front_porch') {
@@ -1693,6 +1717,7 @@ function buildTudorHouse(b, colliders) {
     hood.rotation.y = Math.PI * 0.5;
     hood.position.set(0, 3.05, doorFrontZ + 0.45);
   }
+  yield;
 
   const doorArch = addPart(
     group,
@@ -1739,6 +1764,7 @@ function buildTudorHouse(b, colliders) {
       addWindowUnit(group, sx, 4.15, -fZ, Math.PI, 1.0, 1.2);
     }
   }
+  yield;
 
   for (const side of [-1, 1]) {
     if (side === -1 && (b.awning === 'side_greenhouse' || b.hasWaterwheel)) continue;
@@ -1812,7 +1838,7 @@ function buildTudorHouse(b, colliders) {
   return group;
 }
 
-function buildRotatingWaterwheel(millB, gradientMap) {
+function* buildRotatingWaterwheelGen(millB, gradientMap) {
   const wheelWorld = new THREE.Group();
   wheelWorld.name = 'waterwheel-world';
   wheelWorld.position.set(millB.x, millB.y, millB.z);
@@ -1848,8 +1874,9 @@ function buildRotatingWaterwheel(millB, gradientMap) {
       spoke.rotation.x = ang;
     }
   }
+  yield;
 
-  const batchedWheel = batchVertexColorGroup(rawWheel, {
+  const batchedWheel = yield* batchVertexColorGroupGen(rawWheel, {
     gradientMap,
     outlineThickness: 0.018,
     stripBottom: false,
@@ -1863,7 +1890,7 @@ function buildRotatingWaterwheel(millB, gradientMap) {
   };
 }
 
-export function buildLandmarks(opts = {}) {
+function* buildLandmarksGen(opts = {}) {
   const gradientMap = makeToonGradient();
   const root = new THREE.Group();
   root.name = 'landmarks';
@@ -1873,26 +1900,35 @@ export function buildLandmarks(opts = {}) {
   staticRaw.name = 'static-landmarks';
 
   staticRaw.add(buildWellPlaza(colliders));
-  staticRaw.add(buildWoodenPier());
-  staticRaw.add(buildArenaFence(colliders));
-  staticRaw.add(buildShrineOverlook(colliders));
-  staticRaw.add(buildLimestoneBoulders(colliders));
-  staticRaw.add(buildDryStoneWalls(colliders));
-  staticRaw.add(buildRoadsideSplitRailFences(colliders));
+  yield;
+  staticRaw.add(yield* buildWoodenPierGen());
+  yield;
+  staticRaw.add(yield* buildArenaFenceGen(colliders));
+  yield;
+  staticRaw.add(yield* buildShrineOverlookGen(colliders));
+  yield;
+  staticRaw.add(yield* buildLimestoneBouldersGen(colliders));
+  yield;
+  staticRaw.add(yield* buildDryStoneWallsGen(colliders));
+  yield;
+  staticRaw.add(yield* buildRoadsideSplitRailFencesGen(colliders));
+  yield;
   staticRaw.add(buildSacredInscriptionStones(colliders));
   staticRaw.add(buildBoundaryMarkers());
 
   // Register shoreline ankle-wading & deep-water boundary collider ring
-  buildDeepWaterColliderRing(colliders);
+  yield* buildDeepWaterColliderRingGen(colliders);
+  yield;
 
   if (opts.includeBuildings !== false) {
     for (const b of BUILDINGS) {
-      staticRaw.add(buildTudorHouse(b, colliders));
+      staticRaw.add(yield* buildTudorHouseGen(b, colliders));
+      yield;
     }
   }
 
   // Merge all static landmark masonry/timber/boulders/walls/fences into 2 draw calls (toon + emissive)
-  const batchedStatic = batchVertexColorGroup(staticRaw, {
+  const batchedStatic = yield* batchVertexColorGroupGen(staticRaw, {
     gradientMap,
     flatShading: false,
     outlineThickness: 0.02,
@@ -1905,7 +1941,7 @@ export function buildLandmarks(opts = {}) {
   let waterwheel = null;
   if (opts.includeBuildings !== false) {
     const millB = BUILDINGS.find((b) => b.id === 'watermill');
-    waterwheel = buildRotatingWaterwheel(millB, gradientMap);
+    waterwheel = yield* buildRotatingWaterwheelGen(millB, gradientMap);
     root.add(waterwheel.group);
   }
 
@@ -1917,4 +1953,12 @@ export function buildLandmarks(opts = {}) {
       if (waterwheel) waterwheel.wheelRotor.rotation.x -= dt * 1.35;
     },
   };
+}
+
+export function buildLandmarks(opts = {}) {
+  return runSync(buildLandmarksGen(opts));
+}
+
+export async function buildLandmarksAsync(opts = {}) {
+  return runAsync(buildLandmarksGen(opts), createTimeSlicer(opts));
 }

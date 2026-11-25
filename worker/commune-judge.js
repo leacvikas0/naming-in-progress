@@ -14,8 +14,8 @@
 //    love, mortality, frost, embers, thorns, and the bond between the couple.
 // 3. Out-of-Order Per-Stone Bitmask Progression (`stonesSolvedMask` 0b000..0b111):
 //    - Stone 1 (`site1_well`, `(0, 0)`) is the root prerequisite (True Name).
-//    - Once `stone1Solved` is true, Stone 2 (`site2_platform`, `(114, 32)`) and Stone 3
-//      (`site3_wall`, `(-92, 64)`) can be solved in ANY order (`1 -> 2 -> 3` or `1 -> 3 -> 2`),
+//    - Once `stone1Solved` is true, Stone 2 (`site2_platform`, `(142, 44)`) and Stone 3
+//      (`site3_wall`, `(-124, 84)`) can be solved in ANY order (`1 -> 2 -> 3` or `1 -> 3 -> 2`),
 //      where `awakenedStage = stonesSolvedCount` so Fire is never skipped.
 // 4. 7-Row Proportional `% Max HP` (`hpDeltaPct`) Verdict Matrix & Combat Heal
 //    Disambiguation (`prayerMode`: `'awakening' | 'field_heal' | 'divine_miracle' | 'penalty' | 'retry' | 'smite' | 'pat'`).
@@ -249,7 +249,7 @@ const DEVOTION_PATTERNS = [
   /\b(love|beloved|heart|cherish|adore|protect|save|heal|grace|bless|light|darling|dear|sweet|precious|forever|together|partner|wife|husband|soul|devotion|care|warmth|smile|delightful|grateful|union|honoured|honored|tender|fondness)\b/i,
 ];
 
-// Specific poetic symbols & vulnerability clues for Stone 2 (`site2_platform` — Whispering Grove (114, 32))
+// Specific poetic symbols & vulnerability clues for Stone 2 (`site2_platform` — Whispering Grove (142, 44))
 const STONE2_SPECIFIC_KEYWORDS = [
   'ember',
   'embers',
@@ -320,7 +320,7 @@ const STONE2_SPECIFIC_KEYWORDS = [
   'warmth',
 ];
 
-// Specific poetic symbols & steadfast oath clues for Stone 3 (`site3_wall` — Hidden Lovers' Wall (-92, 64))
+// Specific poetic symbols & steadfast oath clues for Stone 3 (`site3_wall` — Hidden Lovers' Wall (-124, 84))
 const STONE3_SPECIFIC_KEYWORDS = [
   'oath',
   'outlives time',
@@ -1388,8 +1388,8 @@ Listen directly to the raw microphone audio recording for the human voice's acou
 
 PER-STONE BITMASK PROGRESSION STATE & PUZZLE CLUES:
 - stone1Solved (Village Well (0, 0)): ${prog.stone1Solved} — Clues the Sovereign's True Name + warm praise of partner.
-- stone2Solved (Whispering Grove Platform (114, 32)): ${prog.stone2Solved} — Clues "the red spark in the ash / ember / flame" + confessing a specific quirk, flaw, or stubborn clash they love in their partner. If the mortal confesses a real quirk/flaw they adore in their partner (or names the spark/ember) at Stone 2, set puzzleMatch = "exact" and solvedStoneId = "site2_platform"!
-- stone3Solved (Hidden Lovers' Wall (-92, 64)): ${prog.stone3Solved} — Clues "the oath that outlives time / thunder and rime" + swearing their partner never walks alone. If the mortal swears a steadfast oath to stand by their partner through thunder/rime/storm at Stone 3, set puzzleMatch = "exact" and solvedStoneId = "site3_wall"!
+- stone2Solved (Whispering Grove Platform (142, 44)): ${prog.stone2Solved} — Clues "the red spark in the ash / ember / flame" + confessing a specific quirk, flaw, or stubborn clash they love in their partner. If the mortal confesses a real quirk/flaw they adore in their partner (or names the spark/ember) at Stone 2, set puzzleMatch = "exact" and solvedStoneId = "site2_platform"!
+- stone3Solved (Hidden Lovers' Wall (-124, 84)): ${prog.stone3Solved} — Clues "the oath that outlives time / thunder and rime" + swearing their partner never walks alone. If the mortal swears a steadfast oath to stand by their partner through thunder/rime/storm at Stone 3, set puzzleMatch = "exact" and solvedStoneId = "site3_wall"!
 - stonesSolvedMask: ${prog.stonesSolvedMask} (unlockedStage = ${prog.unlockedStage})
 - Once stone1Solved is true, Stone 2 and Stone 3 can be solved in ANY order (do not require stone2Solved before stone3Solved).
 - If the mortal speaks the right stone clue in a "flat_monotone" voice, STILL unlock the stage (awakening), set hpDeltaPct = -0.20, and roast their lifeless delivery in divine_quote!

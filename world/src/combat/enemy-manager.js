@@ -253,9 +253,19 @@ export async function createEnemyManager({
   onBossAegisChanged = null,
   onBossPhaseThreshold = null,
   onPlayerHit = null,
+  yieldFrame = null,
+  sliceBudgetMs = 3.2,
 } = {}) {
-  const charKit = kit || createCharactersKit();
-  await charKit.loadAnimationPacks();
+  const yieldSlice =
+    typeof window !== 'undefined' && typeof setTimeout === 'function'
+      ? typeof yieldFrame === 'function'
+        ? yieldFrame
+        : () => new Promise((r) => setTimeout(r, 0))
+      : async () => {};
+
+  const charKit = kit || createCharactersKit({ yieldFrame, sliceBudgetMs });
+  await charKit.loadAnimationPacks('medium', { yieldFrame, sliceBudgetMs });
+  await yieldSlice();
 
   let currentProfile = profile === 'tablet' ? 'tablet' : 'desktop';
   const applyOutlineProfile = (charInst, prof = currentProfile) => {
@@ -321,28 +331,41 @@ export async function createEnemyManager({
       cellOverrides: BOSS_SOVEREIGN_CELL_OVERRIDES,
     },
   ];
+  const urlSearch =
+    typeof window !== 'undefined' ? new URLSearchParams(window.location?.search || '') : null;
   const isImmediatePoolMode =
     typeof window === 'undefined' ||
     Boolean(window.__HEADLESS_TEST__) ||
-    Boolean(typeof navigator !== 'undefined' && navigator.webdriver) ||
-    new URLSearchParams(window.location?.search || '').has('shot');
+    Boolean(urlSearch?.has('shot') || urlSearch?.get('nolobby') === '1');
 
   const poolByCharId = {};
   const poolByRole = {};
   let allPoolSlots = [];
 
-  const getCharCreateOpts = (spec) => ({
+  const getCharCreateOpts = (spec, extra = {}) => ({
     initialClip: 'idle',
     targetHeight: spec.targetHeight ?? spec.height,
     outlineThickness:
       currentProfile === 'tablet' ? 0.0 : (spec.outlineThickness ?? spec.outline ?? 0.022),
     cellOverrides: spec.cellOverrides,
+    yieldFrame,
+    sliceBudgetMs,
+    ...extra,
   });
 
   if (isImmediatePoolMode) {
-    const createdChars = await Promise.all(
-      creationSpecs.map((spec) => charKit.createCharacter(spec.charId, getCharCreateOpts(spec)))
-    );
+    let createdChars;
+    if (typeof window === 'undefined') {
+      createdChars = await Promise.all(
+        creationSpecs.map((spec) => charKit.createCharacter(spec.charId, getCharCreateOpts(spec, { sync: true })))
+      );
+    } else {
+      createdChars = [];
+      for (const spec of creationSpecs) {
+        createdChars.push(await charKit.createCharacter(spec.charId, getCharCreateOpts(spec)));
+        await yieldSlice();
+      }
+    }
 
     allPoolSlots = createdChars.map((charInst, slotIndex) => {
       const spec = creationSpecs[slotIndex];
@@ -371,12 +394,18 @@ export async function createEnemyManager({
     });
   } else {
     // Fast-Boot Progressive Streaming Mode:
-    // 1. Create primary Warrior (slot 0) & Mage (slot 4) immediately so the player can enter the game right away.
-    // 2. Continuously stream & build all remaining 17 enemy & boss rigs in the background (1 rig per frame) without ever stopping!
-    const [primaryWarrior, primaryMage] = await Promise.all([
-      charKit.createCharacter(creationSpecs[0].charId, getCharCreateOpts(creationSpecs[0])),
-      charKit.createCharacter(creationSpecs[4].charId, getCharCreateOpts(creationSpecs[4])),
-    ]);
+    // 1. Create primary Warrior (slot 0) & Mage (slot 4) cleanly across async slices so UI stays 60fps.
+    // 2. Continuously stream & build all remaining 17 enemy & boss rigs in the background after opening veil dissolve.
+    const primaryWarrior = await charKit.createCharacter(
+      creationSpecs[0].charId,
+      getCharCreateOpts(creationSpecs[0])
+    );
+    await yieldSlice();
+    const primaryMage = await charKit.createCharacter(
+      creationSpecs[4].charId,
+      getCharCreateOpts(creationSpecs[4])
+    );
+    await yieldSlice();
 
     const makeStandInChar = (fallbackChar, spec) => {
       const dummyGroup = new THREE.Group();
@@ -437,14 +466,26 @@ export async function createEnemyManager({
       return slot;
     });
 
-    // Non-stop background hydration queue (never waits for player proximity; streams continuously until 100% resident)
+    // Non-stop background hydration queue AFTER opening veil dissolve finishes (never stalls title reveal)
     (async () => {
+      while (
+        typeof window !== 'undefined' &&
+        (window.__WORLD_VISUAL_READY__ === false ||
+          (window.__APP_FLOW__ &&
+            window.__APP_FLOW__.getStep?.() === 'title' &&
+            (window.__APP_FLOW__.getState?.()?.lastDitherProgress ?? 0) < 0.98))
+      ) {
+        await new Promise((r) => setTimeout(r, 120));
+      }
       for (let i = 0; i < creationSpecs.length; i++) {
         if (i === 0 || i === 4) continue;
         const spec = creationSpecs[i];
         try {
-          await new Promise((r) => setTimeout(r, 16));
-          const realChar = await charKit.createCharacter(spec.charId, getCharCreateOpts(spec));
+          await new Promise((r) => setTimeout(r, 48));
+          const realChar = await charKit.createCharacter(
+            spec.charId,
+            getCharCreateOpts(spec, { sliceBudgetMs: Math.min(2.5, sliceBudgetMs) })
+          );
           enableCharacterFrustumCulling(realChar, spec.isBossSlot ? 4.8 : 3.4);
           applyOutlineProfile(realChar, currentProfile);
           const slot = allPoolSlots[i];
@@ -983,6 +1024,9 @@ export async function createEnemyManager({
     slot.busy = true;
     slot.enemy = enemy;
     activeEnemies.push(enemy);
+    if (!spawnSpec.dormant) {
+      onEnemySpawnHandler?.(enemy);
+    }
     return enemy;
   }
 
@@ -1017,6 +1061,17 @@ export async function createEnemyManager({
   let groveTreeVanquished = false;
 
   function clearAllEnemies() {
+    for (let i = 0; i < activeEnemies.length; i++) {
+      const e = activeEnemies[i];
+      if (!e) continue;
+      cancelAttack(e);
+      e.active = false;
+    }
+    for (let i = 0; i < decals.length; i++) {
+      releaseDecal(decals[i]);
+    }
+    windupLog.length = 0;
+    contactLog.length = 0;
     spawnQueue = [];
     activeEnemies = [];
     activeProjectiles = [];
@@ -1202,12 +1257,14 @@ export async function createEnemyManager({
 
   function markEnemyDeadAndNotify(e, result = {}) {
     if (e.deathTimer > 0) return;
+    cancelAttack(e);
     e.dead = true;
     if (e.slot) e.slot.alive = false;
     e.hasAttackToken = false;
     e.aiState = 'dead';
     e.windupTimer = 0;
     e.telegraphProgress = 0;
+    onEnemyDeathHandler?.(e, { intoPile: false, result });
 
     if (e.archetype === 'demon_tree' || e.archetype === 'grove_necromancer') {
       groveTreeVanquished = true;
@@ -1518,6 +1575,9 @@ export async function createEnemyManager({
     direction = null,
     range = 4.0,
     width = 2.6,
+    widthNear = null,
+    widthFar = null,
+    widthCurve = 1.0,
     radius = 0,
     coneHalfAngle = (85 * Math.PI) / 180,
     maxHeightDiff = 3.2,
@@ -1554,7 +1614,11 @@ export async function createEnemyManager({
         const nz = direction.z / dirLen;
         const along = dx * nx + dz * nz;
         const perp = Math.abs(dx * -nz + dz * nx);
-        if (along >= -0.8 && along <= range + e.radius && perp <= width * 0.5 + e.radius) {
+        const w0 = widthNear !== null && widthNear !== undefined ? widthNear : width;
+        const w1 = widthFar !== null && widthFar !== undefined ? widthFar : width;
+        const tAlong = Math.min(1, Math.max(0, along / Math.max(0.01, range)));
+        const effWidth = w0 + (w1 - w0) * Math.pow(tAlong, widthCurve);
+        if (along >= -0.8 && along <= range + e.radius && perp <= effWidth * 0.5 + e.radius) {
           candidates.push({ enemy: e, dist: Math.max(0, along) });
         }
       } else {
@@ -1633,6 +1697,9 @@ export async function createEnemyManager({
   const knightBlock = { active: false, startAt: -99 };
   let onParryHandler = null;
   let onWindupHandler = null;
+  let onEnemyInterruptedHandler = null;
+  let onEnemyDeathHandler = null;
+  let onEnemySpawnHandler = null;
   const decals = [];
   for (let i = 0; i < 4; i++) {
     const mesh = createPetalCrackDecal();
@@ -1663,16 +1730,21 @@ export async function createEnemyManager({
   }
 
   function cancelAttack(e) {
+    const hadAttack = Boolean(e?.attack || e?.windupTimer > 0);
     if (e.attack?.decal) releaseDecal(e.attack.decal);
     if (e.attack) unscheduleContacts(contactLog, e.instanceId);
     e.leapLift = 0;
     e.attack = null;
     e.windupTimer = 0;
     e.telegraphProgress = 0;
+    if (hadAttack) {
+      onEnemyInterruptedHandler?.(e, 'attack_cancelled');
+    }
   }
 
   function enterStagger(e, secs, clip = 'Hit_A') {
     cancelAttack(e);
+    onEnemyInterruptedHandler?.(e, 'stagger');
     e.aiState = 'stagger';
     e.stateTimer = secs;
     e.attackAnimTimer = 0;
@@ -1688,6 +1760,7 @@ export async function createEnemyManager({
     e.aiState = 'awakening';
     e.stateTimer = clipSeconds(e.char, clip) / 1.25;
     e.cooldownTimer = Math.max(e.cooldownTimer, 0.6);
+    onEnemySpawnHandler?.(e);
     // One sleeper waking rouses its neighbours so the ambush springs together.
     for (let i = 0; i < activeEnemies.length; i++) {
       const o = activeEnemies[i];
@@ -1708,6 +1781,7 @@ export async function createEnemyManager({
     e.mark = null;
     e.burnTimer = 0;
     safePlay(e.char, 'Skeletons_Death', { loop: false, fade: 0.08, force: true }, 'downed');
+    onEnemyDeathHandler?.(e, { intoPile: true });
   }
 
   function finishPile(e, hitSpec = {}) {
@@ -1719,6 +1793,7 @@ export async function createEnemyManager({
     e.aiState = 'dead';
     // Frozen piles linger a moment as ice-locked bones; Cinder Fall / detonations scatter them.
     e.deathTimer = e.pileFrozen ? 1.2 : 0.45;
+    onEnemyDeathHandler?.(e, { intoPile: false, finishedPile: true, hitSpec });
     if (onEnemyKilled && !e.xpAwarded) {
       e.xpAwarded = true;
       onEnemyKilled(e, { killed: true, source: hitSpec.source, finishedPile: true });
@@ -3310,6 +3385,15 @@ export async function createEnemyManager({
     },
     setOnWindup(fn) {
       onWindupHandler = typeof fn === 'function' ? fn : null;
+    },
+    setOnEnemyInterrupted(fn) {
+      onEnemyInterruptedHandler = typeof fn === 'function' ? fn : null;
+    },
+    setOnEnemyDeath(fn) {
+      onEnemyDeathHandler = typeof fn === 'function' ? fn : null;
+    },
+    setOnEnemySpawn(fn) {
+      onEnemySpawnHandler = typeof fn === 'function' ? fn : null;
     },
     startAttack,
     wakeEnemy,

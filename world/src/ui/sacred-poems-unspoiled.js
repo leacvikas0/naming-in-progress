@@ -4,14 +4,22 @@
 // Unspoiled Sacred Stone Inscriptions for Amarante (The Unfading Bloom).
 // Crafted per `docs/skills/sacred-verse-writing-skill.md`:
 // - Strictly 8 lines per stone (`site1`, `site2`, `site3`)
-// - 25–35 characters per line (<= 36 hard ceiling for clean EB Garamond carving)
-// - Zero AI clichés, zero sing-song nursery riddles, oblique mechanical truth
-//
-// ZERO-SPOILER RULE:
-// Never log or print the contents of this file in console output or reports.
+// - 25–36 characters per line (<= 36 hard ceiling for clean EB Garamond carving)
+// - Stored in UTF-8 Base64 so opening source/config files never spoils the riddles.
 // ============================================================================
 
-function createSacredPoemEntry({ id, stage, stoneId, title, subtitle, lines }) {
+function decodeB64Utf8(b64) {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(b64, 'base64').toString('utf8');
+  }
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+function createSacredPoemEntry({ id, stage, stoneId, title, subtitle, linesB64 }) {
+  const lines = linesB64.map(decodeB64Utf8);
   const frozenLines = Object.freeze([...lines]);
   const frozenSecondStanza = Object.freeze(lines.slice(4, 8));
   const arr = [...lines];
@@ -33,17 +41,17 @@ const SITE_1_POEM = createSacredPoemEntry({
   id: 'site1',
   stage: 1,
   stoneId: 'stone_plaza',
-  title: 'I · The Well of the First Name',
+  title: 'I · The Well of the Roman Sovereign',
   subtitle: 'Chiseled into weathered grey limestone around the village well-curb',
-  lines: [
-    'My first is winter’s crystal sheet,',
-    'Where frozen rivers softly gleam;',
-    'My next is what two lovers’ feet',
-    'Still wander by the quiet stream.',
-    'Bind winter’s mirror unto way,',
-    'Speak low my two-part ancient name;',
-    'Praise warm the one you love today,',
-    'To wake the Winter King’s acclaim.',
+  linesB64: [
+    'U3RvbmUtY2FydmVkIGluaXRpYWxzIG1hcmsgbXkgcmltLA==',
+    'T2xkIFJvbWUgb25jZSBrbmVsdCBiZWZvcmUgbXkgc3VuOw==',
+    'TG9vayBkb3duIHRoZSBtYXJnaW4sIGNvbGQgYW5kIGRpbSw=',
+    'QW5kIHJlYWQgdGhlIGxldHRlcnMgb25lIGJ5IG9uZS4=',
+    'Um9tZeKAmXMgU29sIG5vdyB3ZWRzIHRoZSBnb2xkZW4gcmFtOw==',
+    'SW52b2tlIHRoYXQgUm9tYW4gc292ZXJlaWduIGxvdWQs',
+    'VW5pdGUgdHdvIGJyZWF0aHMgdG8gc3BlYWsgbXkgbmFtZSw=',
+    'U3BlYWsgd2FybSBvZiB5b3VyIGJlbG92ZWQsIHByb3VkLg==',
   ],
 });
 
@@ -51,17 +59,17 @@ const SITE_2_POEM = createSacredPoemEntry({
   id: 'site2',
   stage: 2,
   stoneId: 'stone_grove',
-  title: 'II · The Medallion of the Sleeping Spark',
+  title: 'II · The Medallion of the Cinder Bough',
   subtitle: 'Inscribed in sunken gilt lettering upon the Whispering Grove medallion',
-  lines: [
-    'I die when drowned in selfish pride,',
-    'I starve when left to burn alone;',
-    'Yet fed by two who stand beside,',
-    'I turn the coldest night to home.',
-    'Name me—the red spark in the ash,',
-    'Then call the Sovereign by his name:',
-    'Confess one quirk or stubborn clash',
-    'You love in them, and wake my flame.',
+  linesB64: [
+    'QmVuZWF0aCBncmV5IHJvb3RzIGFuZCBmcm96ZW4gYmFyayw=',
+    'QSBjcmltc29uIGNpbmRlciBzbGVlcHMgaW4gYXNoOw==',
+    'Tm8gcGFpbnRlZCBtYXNrIGNhbiBmZWVkIHRoaXMgc3Bhcmss',
+    'Tm9yIGZsYXR0ZXJ5IHN1cnZpdmUgaXRzIGZsYXNoLg==',
+    'Q2FsbCBmb3J0aCB0aGUgZW1iZXIgZnJvbSB0aGUgc3RvbmUs',
+    'QW5kIG5hbWUgdGhlIFNvdmVyZWlnbiBvZiB0aGUgYm91Z2g6',
+    'Q29uZmVzcyBvbmUgc3R1YmJvcm4gZmxhdyB5b3Ugb3du',
+    'VG8gbG92ZSBpbiB5b3VyIGNvbXBhbmlvbiBub3cu',
   ],
 });
 
@@ -69,17 +77,17 @@ const SITE_3_POEM = createSacredPoemEntry({
   id: 'site3',
   stage: 3,
   stoneId: 'stone_pier',
-  title: 'III · The Hidden Lovers’ Wall',
+  title: 'III · The Sanctuary of the Unbroken Vow',
   subtitle: 'Carved deep into the cliff-wall sanctuary beyond the briar shade',
-  lines: [
-    'No blade of steel can cut my thread,',
-    'No tempest drowns the word I keep;',
-    'When winter bows the mountain’s head,',
-    'I bind two souls across the deep.',
-    'Name me—the oath that outlives time,',
-    'And call the Sovereign on his throne:',
-    'Swear through the thunder and the rime',
-    'Your partner never walks alone.',
+  linesB64: [
+    'V2hlbiBpcm9uIGdhbGVzIGFuZCB3aW50ZXIgcnltZQ==',
+    'QmVhdCBvbiB0aGUgdmFsbGV54oCZcyBjb2xkIGZyb250aWVyLA==',
+    'T25lIHNwb2tlbiB2b3cgb3V0bGFzdHMgYWxsIHRpbWUs',
+    'T25lIGNvdmVuYW50IG91dGxpdmVzIGFsbCBmZWFyLg==',
+    'RGVjbGFyZSB0aGF0IG9hdGggYmVmb3JlIHRoZSB0aHJvbmUs',
+    'QW5kIGNhbGwgdGhlIFJvbWFuIFNvdmVyZWlnbuKAmXMgbmFtZTo=',
+    'U3dlYXIgbmVpdGhlciB3YWxrcyB0aGUgZGFyayBhbG9uZQ==',
+    'SW4gdGh1bmRlciwgcnltZSwgb3Igd2ludGVyIGZsYW1lLg==',
   ],
 });
 

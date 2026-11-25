@@ -148,13 +148,16 @@ export function flattenPaletteTexture(sourceTexture, options = {}) {
   }
 
   const img = sourceTexture.image;
-  const width = img.width || img.naturalWidth || 1024;
-  const height = img.height || img.naturalHeight || 1024;
-
   if (typeof document === 'undefined') {
     return sourceTexture;
   }
 
+  // KayKit 8x4 palette is solid/flat color zones; sampling & painting at 128x64 (16x16 per cell)
+  // gives bit-identical NearestFilter texels at < 0.5ms vs 162ms for 1024x1024 getImageData!
+  const cols = 8;
+  const rows = 4;
+  const width = 128;
+  const height = 64;
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -162,10 +165,8 @@ export function flattenPaletteTexture(sourceTexture, options = {}) {
   ctx.drawImage(img, 0, 0, width, height);
 
   const srcData = ctx.getImageData(0, 0, width, height).data;
-  const cols = 8;
-  const rows = 4;
-  const cellW = Math.floor(width / cols);
-  const cellH = Math.floor(height / rows);
+  const cellW = 16;
+  const cellH = 16;
 
   const cellSummary = {};
 
@@ -187,8 +188,8 @@ export function flattenPaletteTexture(sourceTexture, options = {}) {
         let bSum = 0;
         let count = 0;
 
-        for (let y = syStart; y < syEnd; y += 2) {
-          for (let x = sxStart; x < sxEnd; x += 2) {
+        for (let y = syStart; y < syEnd; y++) {
+          for (let x = sxStart; x < sxEnd; x++) {
             const idx = (y * width + x) * 4;
             rSum += srcData[idx + 0];
             gSum += srcData[idx + 1];
@@ -254,54 +255,56 @@ export function ensureSmoothOutlineNormals(geometry) {
   if (!posAttr || !normAttr) return geometry;
 
   const count = posAttr.count;
-  const buckets = new Map();
+  const pArr = posAttr.array;
+  const nArr = normAttr.array;
+  const headMap = new Map();
+  const next = new Int32Array(count).fill(-1);
+  const keys = new Float64Array(count);
 
   for (let i = 0; i < count; i++) {
-    const qx = Math.round(posAttr.getX(i) * 2000);
-    const qy = Math.round(posAttr.getY(i) * 2000);
-    const qz = Math.round(posAttr.getZ(i) * 2000);
-    const key = `${qx},${qy},${qz}`;
-    let list = buckets.get(key);
-    if (!list) {
-      list = [];
-      buckets.set(key, list);
-    }
-    list.push([normAttr.getX(i), normAttr.getY(i), normAttr.getZ(i)]);
+    const i3 = i * 3;
+    const qx = Math.round(pArr[i3] * 2000) + 65536;
+    const qy = Math.round(pArr[i3 + 1] * 2000) + 65536;
+    const qz = Math.round(pArr[i3 + 2] * 2000) + 65536;
+    const key = (qx * 131072 + qy) * 131072 + qz;
+    keys[i] = key;
+    const prevHead = headMap.get(key);
+    next[i] = prevHead === undefined ? -1 : prevHead;
+    headMap.set(key, i);
   }
 
   const smoothArray = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
-    const qx = Math.round(posAttr.getX(i) * 2000);
-    const qy = Math.round(posAttr.getY(i) * 2000);
-    const qz = Math.round(posAttr.getZ(i) * 2000);
-    const key = `${qx},${qy},${qz}`;
-    const list = buckets.get(key);
-    const nx = normAttr.getX(i);
-    const ny = normAttr.getY(i);
-    const nz = normAttr.getZ(i);
-
+    const i3 = i * 3;
+    const nx = nArr[i3];
+    const ny = nArr[i3 + 1];
+    const nz = nArr[i3 + 2];
     let sx = 0;
     let sy = 0;
     let sz = 0;
-    for (let j = 0; j < list.length; j++) {
-      const other = list[j];
-      const dot = nx * other[0] + ny * other[1] + nz * other[2];
-      // Weld hard edges (up to ~110 deg) without canceling opposite faces (-180 deg)
-      if (dot > -0.35) {
-        sx += other[0];
-        sy += other[1];
-        sz += other[2];
+    let j = headMap.get(keys[i]);
+    while (j !== undefined && j !== -1) {
+      const j3 = j * 3;
+      const ox = nArr[j3];
+      const oy = nArr[j3 + 1];
+      const oz = nArr[j3 + 2];
+      if (nx * ox + ny * oy + nz * oz > -0.35) {
+        sx += ox;
+        sy += oy;
+        sz += oz;
       }
+      j = next[j];
     }
     const len = Math.hypot(sx, sy, sz);
     if (len > 1e-4) {
-      smoothArray[i * 3 + 0] = sx / len;
-      smoothArray[i * 3 + 1] = sy / len;
-      smoothArray[i * 3 + 2] = sz / len;
+      const inv = 1.0 / len;
+      smoothArray[i3] = sx * inv;
+      smoothArray[i3 + 1] = sy * inv;
+      smoothArray[i3 + 2] = sz * inv;
     } else {
-      smoothArray[i * 3 + 0] = nx;
-      smoothArray[i * 3 + 1] = ny;
-      smoothArray[i * 3 + 2] = nz;
+      smoothArray[i3] = nx;
+      smoothArray[i3 + 1] = ny;
+      smoothArray[i3 + 2] = nz;
     }
   }
 
@@ -321,53 +324,56 @@ export function computeSmoothShadingNormals(geometry, cosThreshold = 0.46) {
   if (!posAttr || !normAttr) return geometry;
 
   const count = posAttr.count;
-  const buckets = new Map();
+  const pArr = posAttr.array;
+  const nArr = normAttr.array;
+  const headMap = new Map();
+  const next = new Int32Array(count).fill(-1);
+  const keys = new Float64Array(count);
 
   for (let i = 0; i < count; i++) {
-    const qx = Math.round(posAttr.getX(i) * 2000);
-    const qy = Math.round(posAttr.getY(i) * 2000);
-    const qz = Math.round(posAttr.getZ(i) * 2000);
-    const key = `${qx},${qy},${qz}`;
-    let list = buckets.get(key);
-    if (!list) {
-      list = [];
-      buckets.set(key, list);
-    }
-    list.push([normAttr.getX(i), normAttr.getY(i), normAttr.getZ(i)]);
+    const i3 = i * 3;
+    const qx = Math.round(pArr[i3] * 2000) + 65536;
+    const qy = Math.round(pArr[i3 + 1] * 2000) + 65536;
+    const qz = Math.round(pArr[i3 + 2] * 2000) + 65536;
+    const key = (qx * 131072 + qy) * 131072 + qz;
+    keys[i] = key;
+    const prevHead = headMap.get(key);
+    next[i] = prevHead === undefined ? -1 : prevHead;
+    headMap.set(key, i);
   }
 
   const shadedArray = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
-    const qx = Math.round(posAttr.getX(i) * 2000);
-    const qy = Math.round(posAttr.getY(i) * 2000);
-    const qz = Math.round(posAttr.getZ(i) * 2000);
-    const key = `${qx},${qy},${qz}`;
-    const list = buckets.get(key);
-    const nx = normAttr.getX(i);
-    const ny = normAttr.getY(i);
-    const nz = normAttr.getZ(i);
-
+    const i3 = i * 3;
+    const nx = nArr[i3];
+    const ny = nArr[i3 + 1];
+    const nz = nArr[i3 + 2];
     let sx = 0;
     let sy = 0;
     let sz = 0;
-    for (let j = 0; j < list.length; j++) {
-      const other = list[j];
-      const dot = nx * other[0] + ny * other[1] + nz * other[2];
-      if (dot >= cosThreshold) {
-        sx += other[0];
-        sy += other[1];
-        sz += other[2];
+    let j = headMap.get(keys[i]);
+    while (j !== undefined && j !== -1) {
+      const j3 = j * 3;
+      const ox = nArr[j3];
+      const oy = nArr[j3 + 1];
+      const oz = nArr[j3 + 2];
+      if (nx * ox + ny * oy + nz * oz >= cosThreshold) {
+        sx += ox;
+        sy += oy;
+        sz += oz;
       }
+      j = next[j];
     }
     const len = Math.hypot(sx, sy, sz);
     if (len > 1e-4) {
-      shadedArray[i * 3 + 0] = sx / len;
-      shadedArray[i * 3 + 1] = sy / len;
-      shadedArray[i * 3 + 2] = sz / len;
+      const inv = 1.0 / len;
+      shadedArray[i3] = sx * inv;
+      shadedArray[i3 + 1] = sy * inv;
+      shadedArray[i3 + 2] = sz * inv;
     } else {
-      shadedArray[i * 3 + 0] = nx;
-      shadedArray[i * 3 + 1] = ny;
-      shadedArray[i * 3 + 2] = nz;
+      shadedArray[i3] = nx;
+      shadedArray[i3 + 1] = ny;
+      shadedArray[i3 + 2] = nz;
     }
   }
 
@@ -1013,9 +1019,10 @@ export function prepareUnifiedCharacterSource(modelRoot, options = {}) {
 
   const skinnedParts = [];
   for (const sm of rawSkinnedMeshes) {
+    // Cache smooth normals on the shared template geometry BEFORE cloning so cloned pool rigs skip re-computation
+    ensureSmoothOutlineNormals(sm.geometry);
+    computeSmoothShadingNormals(sm.geometry, 0.45);
     const geom = sm.geometry.clone();
-    ensureSmoothOutlineNormals(geom);
-    computeSmoothShadingNormals(geom, 0.45);
     const isEyes = /Eyes/i.test(sm.name || '') || sm.material?.name === 'Glow';
     const isHead = /Head|Skull|Jaw/i.test(sm.name || '');
 
@@ -1037,9 +1044,9 @@ export function prepareUnifiedCharacterSource(modelRoot, options = {}) {
     if (!found) continue;
     const { bone, boneIdx } = found;
 
+    ensureSmoothOutlineNormals(rm.geometry);
+    computeSmoothShadingNormals(rm.geometry, 0.45);
     const geom = rm.geometry.clone();
-    ensureSmoothOutlineNormals(geom);
-    computeSmoothShadingNormals(geom, 0.45);
 
     const T_B_from_M = new THREE.Matrix4().copy(bone.matrixWorld).invert().multiply(rm.matrixWorld);
     const B_bind = new THREE.Matrix4().copy(skeleton.boneInverses[boneIdx]).invert();
@@ -1060,6 +1067,142 @@ export function prepareUnifiedCharacterSource(modelRoot, options = {}) {
     });
 
     if (rm.parent) rm.parent.remove(rm);
+  }
+
+  const sourceInfo = {
+    roleKey,
+    isAdventurer,
+    skeleton,
+    baseBindMatrix,
+    baseBindMatrixInverse,
+    boneIndexMap,
+    meshParent,
+    unifiedToonMaterial,
+    skinnedParts,
+    accessoryParts,
+    unifiedSkinMesh: null,
+    unifiedOutlineMesh: null,
+  };
+
+  modelRoot.userData.__unifiedSource = sourceInfo;
+  return sourceInfo;
+}
+
+/**
+ * Time-sliced async twin of `prepareUnifiedCharacterSource` that yields across
+ * sub-meshes via `maybeYield` so character build never stalls slow mobile/throttled threads.
+ */
+export async function prepareUnifiedCharacterSourceAsync(modelRoot, options = {}, maybeYield = null) {
+  if (!modelRoot) return null;
+  if (modelRoot.userData.__unifiedSource) return modelRoot.userData.__unifiedSource;
+  if (typeof maybeYield !== 'function') return prepareUnifiedCharacterSource(modelRoot, options);
+
+  modelRoot.updateMatrixWorld(true);
+
+  const roleKey = (options.role || 'knight').toLowerCase();
+  const isAdventurer = roleKey !== 'skeleton';
+
+  let primarySkinned = null;
+  const rawSkinnedMeshes = [];
+  const rawRigidMeshes = [];
+
+  modelRoot.traverse((obj) => {
+    if (!obj.isMesh || obj.userData?.isOutline || obj.userData?.isUnifiedMesh) return;
+    if (obj.isSkinnedMesh && obj.skeleton) {
+      if (!primarySkinned) primarySkinned = obj;
+      rawSkinnedMeshes.push(obj);
+    } else {
+      rawRigidMeshes.push(obj);
+    }
+  });
+
+  if (!primarySkinned || !primarySkinned.skeleton) {
+    return null;
+  }
+
+  const skeleton = primarySkinned.skeleton;
+  const baseBindMatrix = primarySkinned.bindMatrix.clone();
+  const baseBindMatrixInverse = baseBindMatrix.clone().invert();
+  const meshParent = primarySkinned.parent || modelRoot;
+
+  const boneIndexMap = new Map();
+  skeleton.bones.forEach((b, idx) => {
+    boneIndexMap.set(b, idx);
+  });
+
+  let unifiedToonMaterial = null;
+  for (const sm of rawSkinnedMeshes) {
+    const isEyes = /Eyes/i.test(sm.name || '') || sm.material?.name === 'Glow';
+    if (!isEyes && sm.material) {
+      const srcMat = Array.isArray(sm.material) ? sm.material[0] : sm.material;
+      unifiedToonMaterial = srcMat?.userData?.isToonUpgraded
+        ? srcMat
+        : createCharacterToonMaterial(srcMat, {
+            ...options,
+            role: roleKey,
+            isSheetCape: false,
+            isEyeGlow: false,
+          });
+      break;
+    }
+  }
+  await maybeYield();
+
+  const skinnedParts = [];
+  for (const sm of rawSkinnedMeshes) {
+    ensureSmoothOutlineNormals(sm.geometry);
+    await maybeYield();
+    computeSmoothShadingNormals(sm.geometry, 0.45);
+    await maybeYield();
+    const geom = sm.geometry.clone();
+    const isEyes = /Eyes/i.test(sm.name || '') || sm.material?.name === 'Glow';
+    const isHead = /Head|Skull|Jaw/i.test(sm.name || '');
+
+    skinnedParts.push({
+      name: sm.name || 'SkinnedPart',
+      geometry: geom,
+      isEyes,
+      isHead,
+      isSheetCape: false,
+      isWeapon: false,
+    });
+
+    if (sm.parent) sm.parent.remove(sm);
+    await maybeYield();
+  }
+
+  const accessoryParts = [];
+  for (const rm of rawRigidMeshes) {
+    const found = findAncestorBoneIndex(rm, boneIndexMap);
+    if (!found) continue;
+    const { bone, boneIdx } = found;
+
+    ensureSmoothOutlineNormals(rm.geometry);
+    await maybeYield();
+    computeSmoothShadingNormals(rm.geometry, 0.45);
+    await maybeYield();
+    const geom = rm.geometry.clone();
+
+    const T_B_from_M = new THREE.Matrix4().copy(bone.matrixWorld).invert().multiply(rm.matrixWorld);
+    const B_bind = new THREE.Matrix4().copy(skeleton.boneInverses[boneIdx]).invert();
+    const M_toBind = new THREE.Matrix4().copy(baseBindMatrixInverse).multiply(B_bind).multiply(T_B_from_M);
+
+    const isSheetCape = /_Cape$/i.test(rm.name || '') || /^Plane\./i.test(rm.geometry?.name || '');
+    const isHead = /Helmet|Hat|Hood|Head/i.test(rm.name || '') || (bone.name || '').toLowerCase() === 'head';
+
+    accessoryParts.push({
+      name: rm.name || 'AccessoryPart',
+      geometry: geom,
+      boneIdx,
+      M_toBind,
+      isEyes: false,
+      isHead,
+      isSheetCape,
+      isWeapon: false,
+    });
+
+    if (rm.parent) rm.parent.remove(rm);
+    await maybeYield();
   }
 
   const sourceInfo = {
@@ -1278,9 +1421,9 @@ export function rebuildUnifiedCharacterSkin(modelRoot, sockets = {}, options = {
       if (!found) return;
       const { bone, boneIdx } = found;
 
+      ensureSmoothOutlineNormals(obj.geometry);
+      computeSmoothShadingNormals(obj.geometry, 0.55);
       const geom = obj.geometry.clone();
-      ensureSmoothOutlineNormals(geom);
-      computeSmoothShadingNormals(geom, 0.55);
 
       const T_B_from_M = new THREE.Matrix4().copy(bone.matrixWorld).invert().multiply(obj.matrixWorld);
       const B_bind = new THREE.Matrix4().copy(skeleton.boneInverses[boneIdx]).invert();
@@ -1453,6 +1596,269 @@ export function rebuildUnifiedCharacterSkin(modelRoot, sockets = {}, options = {
   outGeom.computeBoundingSphere();
 
   // Remove previous unified meshes if rebuilding after a weapon swap
+  if (sourceInfo.unifiedSkinMesh && sourceInfo.unifiedSkinMesh.parent) {
+    sourceInfo.unifiedSkinMesh.parent.remove(sourceInfo.unifiedSkinMesh);
+  }
+  if (sourceInfo.unifiedOutlineMesh && sourceInfo.unifiedOutlineMesh.parent) {
+    sourceInfo.unifiedOutlineMesh.parent.remove(sourceInfo.unifiedOutlineMesh);
+  }
+
+  const skinMesh = new THREE.SkinnedMesh(mainGeom, unifiedToonMaterial);
+  skinMesh.name = `${roleKey}-unified-skin`;
+  skinMesh.castShadow = true;
+  skinMesh.receiveShadow = false;
+  skinMesh.frustumCulled = false;
+  skinMesh.userData.isUnifiedMesh = true;
+  skinMesh.bind(skeleton, baseBindMatrix);
+
+  const outlineMat = makeSkinnedOutlineMaterial({
+    thickness: options.outlineThickness ?? CHARACTER_OUTLINE_THICKNESS,
+    color: options.outlineColor ?? OUTLINE_INK_HEX,
+    suppressEyeUv: isAdventurer,
+    useVertexParams: true,
+  });
+
+  const outlineMesh = new THREE.SkinnedMesh(outGeom, outlineMat);
+  outlineMesh.name = `${roleKey}-unified-outline`;
+  outlineMesh.castShadow = false;
+  outlineMesh.receiveShadow = false;
+  outlineMesh.frustumCulled = false;
+  outlineMesh.userData.isOutline = true;
+  outlineMesh.userData.isUnifiedMesh = true;
+  outlineMesh.bind(skeleton, baseBindMatrix);
+
+  meshParent.add(skinMesh);
+  meshParent.add(outlineMesh);
+
+  sourceInfo.unifiedSkinMesh = skinMesh;
+  sourceInfo.unifiedOutlineMesh = outlineMesh;
+
+  return {
+    skinMesh,
+    outlineMesh,
+    upgradedMeshes: 1,
+    outlineMeshes: 1,
+  };
+}
+
+/**
+ * Time-sliced async twin of `rebuildUnifiedCharacterSkin` yielding across parts.
+ */
+export async function rebuildUnifiedCharacterSkinAsync(modelRoot, sockets = {}, options = {}, maybeYield = null) {
+  if (typeof maybeYield !== 'function') {
+    return rebuildUnifiedCharacterSkin(modelRoot, sockets, options);
+  }
+  const sourceInfo = await prepareUnifiedCharacterSourceAsync(modelRoot, options, maybeYield);
+  if (!sourceInfo) return null;
+
+  modelRoot.updateMatrixWorld(true);
+
+  const {
+    roleKey,
+    isAdventurer,
+    skeleton,
+    baseBindMatrix,
+    baseBindMatrixInverse,
+    boneIndexMap,
+    meshParent,
+    unifiedToonMaterial,
+    skinnedParts,
+    accessoryParts,
+  } = sourceInfo;
+
+  const weaponParts = [];
+  for (const slotKey of ['handSlot.r', 'handSlot.l']) {
+    const slotNode = sockets[slotKey];
+    if (!slotNode) continue;
+    slotNode.updateMatrixWorld(true);
+
+    const wObjs = [];
+    slotNode.traverse((obj) => {
+      if (!obj.isMesh || obj.userData?.isOutline || obj.userData?.isVfx) return;
+      obj.visible = false;
+      wObjs.push(obj);
+    });
+    for (const obj of wObjs) {
+      const found = findAncestorBoneIndex(obj, boneIndexMap);
+      if (!found) continue;
+      const { bone, boneIdx } = found;
+
+      ensureSmoothOutlineNormals(obj.geometry);
+      await maybeYield();
+      computeSmoothShadingNormals(obj.geometry, 0.55);
+      await maybeYield();
+      const geom = obj.geometry.clone();
+
+      const T_B_from_M = new THREE.Matrix4().copy(bone.matrixWorld).invert().multiply(obj.matrixWorld);
+      const B_bind = new THREE.Matrix4().copy(skeleton.boneInverses[boneIdx]).invert();
+      const M_toBind = new THREE.Matrix4().copy(baseBindMatrixInverse).multiply(B_bind).multiply(T_B_from_M);
+
+      weaponParts.push({
+        name: obj.name || slotKey,
+        geometry: geom,
+        boneIdx,
+        M_toBind,
+        isEyes: false,
+        isHead: false,
+        isSheetCape: false,
+        isWeapon: true,
+      });
+      await maybeYield();
+    }
+  }
+
+  const allParts = [...skinnedParts, ...accessoryParts, ...weaponParts];
+  const builtParts = [];
+  for (const p of allParts) {
+    builtParts.push(buildBindSpacePartBuffers(p, sourceInfo, options));
+    await maybeYield();
+  }
+
+  let mainVertTotal = 0;
+  let mainIndexTotal = 0;
+  let outlineVertTotal = 0;
+  let outlineIndexTotal = 0;
+
+  for (const bp of builtParts) {
+    if (bp.isSheetCape) {
+      mainVertTotal += bp.vCount * 2;
+      mainIndexTotal += bp.indices.length * 2;
+    } else {
+      mainVertTotal += bp.vCount;
+      mainIndexTotal += bp.indices.length;
+    }
+
+    if (!bp.isEyes) {
+      outlineVertTotal += bp.vCount;
+      if (bp.isSheetCape) {
+        outlineIndexTotal += bp.indices.length * 2;
+      } else {
+        outlineIndexTotal += bp.indices.length;
+      }
+    }
+  }
+
+  const mainPos = new Float32Array(mainVertTotal * 3);
+  const mainNorm = new Float32Array(mainVertTotal * 3);
+  const mainUv = new Float32Array(mainVertTotal * 2);
+  const mainSkinIdx = new Uint16Array(mainVertTotal * 4);
+  const mainSkinWgt = new Float32Array(mainVertTotal * 4);
+  const mainIndices = new Uint32Array(mainIndexTotal);
+
+  let mVOff = 0;
+  let mIOff = 0;
+
+  for (const bp of builtParts) {
+    const vc = bp.vCount;
+    mainPos.set(bp.positions, mVOff * 3);
+    mainNorm.set(bp.normals, mVOff * 3);
+    mainUv.set(bp.uvs, mVOff * 2);
+    mainSkinIdx.set(bp.skinIndices, mVOff * 4);
+    mainSkinWgt.set(bp.skinWeights, mVOff * 4);
+
+    for (let i = 0; i < bp.indices.length; i++) {
+      mainIndices[mIOff + i] = bp.indices[i] + mVOff;
+    }
+    mVOff += vc;
+    mIOff += bp.indices.length;
+
+    if (bp.isSheetCape) {
+      for (let i = 0; i < vc; i++) {
+        const nx = bp.normals[i * 3 + 0];
+        const ny = bp.normals[i * 3 + 1];
+        const nz = bp.normals[i * 3 + 2];
+        mainPos[(mVOff + i) * 3 + 0] = bp.positions[i * 3 + 0] - nx * 0.0015;
+        mainPos[(mVOff + i) * 3 + 1] = bp.positions[i * 3 + 1] - ny * 0.0015;
+        mainPos[(mVOff + i) * 3 + 2] = bp.positions[i * 3 + 2] - nz * 0.0015;
+
+        mainNorm[(mVOff + i) * 3 + 0] = -nx;
+        mainNorm[(mVOff + i) * 3 + 1] = -ny;
+        mainNorm[(mVOff + i) * 3 + 2] = -nz;
+      }
+      mainUv.set(bp.uvs, mVOff * 2);
+      mainSkinIdx.set(bp.skinIndices, mVOff * 4);
+      mainSkinWgt.set(bp.skinWeights, mVOff * 4);
+
+      for (let i = 0; i < bp.indices.length; i += 3) {
+        mainIndices[mIOff + i + 0] = bp.indices[i + 0] + mVOff;
+        mainIndices[mIOff + i + 1] = bp.indices[i + 2] + mVOff;
+        mainIndices[mIOff + i + 2] = bp.indices[i + 1] + mVOff;
+      }
+      mVOff += vc;
+      mIOff += bp.indices.length;
+    }
+    await maybeYield();
+  }
+
+  const mainGeom = new THREE.BufferGeometry();
+  mainGeom.setAttribute('position', new THREE.BufferAttribute(mainPos, 3));
+  mainGeom.setAttribute('normal', new THREE.BufferAttribute(mainNorm, 3));
+  mainGeom.setAttribute('uv', new THREE.BufferAttribute(mainUv, 2));
+  mainGeom.setAttribute('skinIndex', new THREE.BufferAttribute(mainSkinIdx, 4));
+  mainGeom.setAttribute('skinWeight', new THREE.BufferAttribute(mainSkinWgt, 4));
+  mainGeom.setIndex(new THREE.BufferAttribute(mainIndices, 1));
+  mainGeom.computeBoundingSphere();
+  await maybeYield();
+
+  const outPos = new Float32Array(outlineVertTotal * 3);
+  const outNorm = new Float32Array(outlineVertTotal * 3);
+  const outUv = new Float32Array(outlineVertTotal * 2);
+  const outSmoothNorm = new Float32Array(outlineVertTotal * 3);
+  const outParams = new Float32Array(outlineVertTotal * 3);
+  const outSkinIdx = new Uint16Array(outlineVertTotal * 4);
+  const outSkinWgt = new Float32Array(outlineVertTotal * 4);
+  const outIndicesTemp = new Uint32Array(outlineIndexTotal);
+
+  let oVOff = 0;
+  let oIOff = 0;
+
+  for (const bp of builtParts) {
+    if (bp.isEyes) continue;
+    const vc = bp.vCount;
+    outPos.set(bp.positions, oVOff * 3);
+    outNorm.set(bp.normals, oVOff * 3);
+    outUv.set(bp.uvs, oVOff * 2);
+    outSmoothNorm.set(bp.outlineNormals, oVOff * 3);
+    outParams.set(bp.outlineParams, oVOff * 3);
+    outSkinIdx.set(bp.skinIndices, oVOff * 4);
+    outSkinWgt.set(bp.skinWeights, oVOff * 4);
+
+    for (let i = 0; i < bp.indices.length; i += 3) {
+      const i0 = bp.indices[i + 0];
+      const i1 = bp.indices[i + 1];
+      const i2 = bp.indices[i + 2];
+      if (bp.suppressedVertexMask[i0] && bp.suppressedVertexMask[i1] && bp.suppressedVertexMask[i2]) {
+        continue;
+      }
+      outIndicesTemp[oIOff++] = i0 + oVOff;
+      outIndicesTemp[oIOff++] = i1 + oVOff;
+      outIndicesTemp[oIOff++] = i2 + oVOff;
+    }
+
+    if (bp.isSheetCape) {
+      for (let i = 0; i < bp.indices.length; i += 3) {
+        outIndicesTemp[oIOff++] = bp.indices[i + 0] + oVOff;
+        outIndicesTemp[oIOff++] = bp.indices[i + 2] + oVOff;
+        outIndicesTemp[oIOff++] = bp.indices[i + 1] + oVOff;
+      }
+    }
+
+    oVOff += vc;
+    await maybeYield();
+  }
+
+  const outIndices = outIndicesTemp.subarray(0, oIOff);
+  const outGeom = new THREE.BufferGeometry();
+  outGeom.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
+  outGeom.setAttribute('normal', new THREE.BufferAttribute(outNorm, 3));
+  outGeom.setAttribute('uv', new THREE.BufferAttribute(outUv, 2));
+  outGeom.setAttribute('aOutlineNormal', new THREE.BufferAttribute(outSmoothNorm, 3));
+  outGeom.setAttribute('aOutlineParams', new THREE.BufferAttribute(outParams, 3));
+  outGeom.setAttribute('skinIndex', new THREE.BufferAttribute(outSkinIdx, 4));
+  outGeom.setAttribute('skinWeight', new THREE.BufferAttribute(outSkinWgt, 4));
+  outGeom.setIndex(new THREE.BufferAttribute(outIndices, 1));
+  outGeom.computeBoundingSphere();
+
   if (sourceInfo.unifiedSkinMesh && sourceInfo.unifiedSkinMesh.parent) {
     sourceInfo.unifiedSkinMesh.parent.remove(sourceInfo.unifiedSkinMesh);
   }

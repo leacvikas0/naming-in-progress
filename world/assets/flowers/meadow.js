@@ -1,8 +1,16 @@
 import * as THREE from 'three';
-import { SPECIES_SPECS, createSpeciesGeometries } from './species.js';
+import {
+  SPECIES_SPECS,
+  createSpeciesGeometries,
+  createSpeciesGeometriesAsync,
+} from './species.js';
 import {
   getSharedBakedShadowAOTexture,
   getSharedMeadowCanvasTexture,
+  getSharedMeadowCanvasTextureAsync,
+  createTimeSlicer,
+  runSync,
+  runAsync,
 } from '../terrain/terrain-water.js';
 
 export const MEADOW_PROFILES = {
@@ -85,7 +93,7 @@ export function defaultSampleHeight(x, z) {
   return Math.sin(x * 0.075) * Math.cos(z * 0.065) * 0.55 + Math.sin((x - z) * 0.035) * 0.35;
 }
 
-export function createDefaultWorldMaskTexture(size = 256, worldExtent = 165) {
+function* createDefaultWorldMaskTextureGen(size = 256, worldExtent = 165) {
   const data = new Uint8Array(size * size * 4);
   for (let iz = 0; iz < size; iz++) {
     const z = ((iz / (size - 1)) * 2 - 1) * worldExtent;
@@ -100,6 +108,7 @@ export function createDefaultWorldMaskTexture(size = 256, worldExtent = 165) {
       data[idx + 2] = meadowAllow; // uWorldMask.b: >= 0.5 allows meadow, < 0.5 culls
       data[idx + 3] = 255;
     }
+    if ((iz & 15) === 15 && iz + 1 < size) yield;
   }
   const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
   tex.wrapS = THREE.ClampToEdgeWrapping;
@@ -111,7 +120,16 @@ export function createDefaultWorldMaskTexture(size = 256, worldExtent = 165) {
   return tex;
 }
 
-function createHeightDataTexture(sampleHeight, size = 256, worldExtent = 165) {
+export function createDefaultWorldMaskTexture(size = 256, worldExtent = 165) {
+  return runSync(createDefaultWorldMaskTextureGen(size, worldExtent));
+}
+
+export async function createDefaultWorldMaskTextureAsync(size = 256, worldExtent = 165, opts = {}) {
+  const slicerOpts = typeof opts === 'function' ? { yieldFrame: opts } : opts;
+  return runAsync(createDefaultWorldMaskTextureGen(size, worldExtent), createTimeSlicer(slicerOpts));
+}
+
+function* createHeightDataTextureGen(sampleHeight, size = 256, worldExtent = 165) {
   const data = new Uint8Array(size * size * 4);
   const minH = -12.0, maxH = 36.0, span = maxH - minH;
   for (let iz = 0; iz < size; iz++) {
@@ -126,6 +144,7 @@ function createHeightDataTexture(sampleHeight, size = 256, worldExtent = 165) {
       data[idx + 2] = 0;
       data[idx + 3] = 255;
     }
+    if ((iz & 3) === 3 && iz + 1 < size) yield;
   }
   const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
   tex.wrapS = THREE.ClampToEdgeWrapping;
@@ -616,26 +635,30 @@ export function createGouacheMaterial({
   });
 }
 
-export function createToroidalMeadow({
-  profile = 'desktop',
-  worldMaskTexture = null,
-  bakedShadowAOTexture = null,
-  meadowCanvasTexture = null,
-  sampleHeight = defaultSampleHeight,
-  worldExtent = 165,
-  geometries = null,
-  treeShadows = null,
-  treeCount = 0,
-} = {}) {
+function* createToroidalMeadowGen(
+  {
+    profile = 'desktop',
+    worldMaskTexture = null,
+    bakedShadowAOTexture = null,
+    meadowCanvasTexture = null,
+    sampleHeight = defaultSampleHeight,
+    worldExtent = 165,
+    geometries = null,
+    treeShadows = null,
+    treeCount = 0,
+  } = {},
+  prebuilt = null,
+) {
   const cfg =
     typeof profile === 'string'
       ? MEADOW_PROFILES[profile] || MEADOW_PROFILES.desktop
       : { ...MEADOW_PROFILES.desktop, ...profile };
-  const geos = geometries || createSpeciesGeometries({ profile: cfg.name });
-  const maskTex = worldMaskTexture || createDefaultWorldMaskTexture(256, worldExtent);
-  const shadowAOTex = bakedShadowAOTexture || getSharedBakedShadowAOTexture();
-  const canvasTex = meadowCanvasTexture || getSharedMeadowCanvasTexture();
-  const heightTexInfo = createHeightDataTexture(sampleHeight, 256, worldExtent);
+  const geos = prebuilt?.geos || geometries || createSpeciesGeometries({ profile: cfg.name });
+  const maskTex = prebuilt?.maskTex || worldMaskTexture || createDefaultWorldMaskTexture(256, worldExtent);
+  const shadowAOTex = prebuilt?.shadowAOTex || bakedShadowAOTexture || getSharedBakedShadowAOTexture();
+  const canvasTex = prebuilt?.canvasTex || meadowCanvasTexture || getSharedMeadowCanvasTexture();
+  const heightTexInfo = yield* createHeightDataTextureGen(sampleHeight, 256, worldExtent);
+  yield;
   const sharedUniforms = {
     uTime: { value: 0 },
     uPlayerPos: { value: new THREE.Vector3(0, 0, 0) },
@@ -672,20 +695,38 @@ export function createToroidalMeadow({
   const grassMesh = new THREE.InstancedMesh(grassGeo, grassMat, cfg.grassCount);
   grassMesh.name = 'meadow_grassTuft_toroidal';
   grassMesh.frustumCulled = false;
+  yield;
   const diam = cfg.grassRadius * 2;
   const profileHorizScale = cfg.name === 'tablet' ? 1.24 : 1.0;
+  const matArr = grassMesh.instanceMatrix.array;
   for (let i = 0; i < cfg.grassCount; i++) {
     const ox = (hash(i * 3.1 + 1.7) - 0.5) * diam;
     const oz = (hash(i * 5.3 + 2.9) - 0.5) * diam;
-    dummy.position.set(ox, 0, oz);
     const windAlignedYaw = 0.61 + (hash(i * 7.7) - 0.5) * 1.30;
-    dummy.rotation.set(0, windAlignedYaw, 0);
     const wave = 0.14 * Math.sin(ox * 0.24) * Math.cos(oz * 0.24);
     const baseS = 1.08 + hash(i * 11.3) * 0.38 + wave;
     const sxz = baseS * profileHorizScale;
-    dummy.scale.set(sxz, baseS * (0.98 + hash(i * 13.1) * 0.32), sxz);
-    dummy.updateMatrix();
-    grassMesh.setMatrixAt(i, dummy.matrix);
+    const sy = baseS * (0.98 + hash(i * 13.1) * 0.32);
+    const c = Math.cos(windAlignedYaw);
+    const s = Math.sin(windAlignedYaw);
+    const mOff = i * 16;
+    matArr[mOff] = c * sxz;
+    matArr[mOff + 1] = 0;
+    matArr[mOff + 2] = -s * sxz;
+    matArr[mOff + 3] = 0;
+    matArr[mOff + 4] = 0;
+    matArr[mOff + 5] = sy;
+    matArr[mOff + 6] = 0;
+    matArr[mOff + 7] = 0;
+    matArr[mOff + 8] = s * sxz;
+    matArr[mOff + 9] = 0;
+    matArr[mOff + 10] = c * sxz;
+    matArr[mOff + 11] = 0;
+    matArr[mOff + 12] = ox;
+    matArr[mOff + 13] = 0;
+    matArr[mOff + 14] = oz;
+    matArr[mOff + 15] = 1;
+    if (i > 0 && i % 750 === 0) yield;
   }
   grassMesh.instanceMatrix.needsUpdate = true;
   if (cfg.name === 'tablet') {
@@ -756,7 +797,8 @@ export function createToroidalMeadow({
 
   const isDefaultTestMask = Boolean(maskTex?.userData?.data);
 
-  flowerKeys.forEach((key, sIdx) => {
+  for (let sIdx = 0; sIdx < flowerKeys.length; sIdx++) {
+    const key = flowerKeys[sIdx];
     const targetCount = cfg.counts[key] || 150;
     const isToroidalFlower = key !== 'crimsonRose' && !isDemoOrCompact;
     const flowerToroidR = cfg.flowerToroidRadius || cfg.grassRadius || 58;
@@ -783,6 +825,7 @@ export function createToroidalMeadow({
     if (key === 'crimsonRose') {
       while (placed < targetCount && attempt < targetCount * 36) {
         attempt++;
+        if (attempt % 40 === 0) yield;
         const anchor = sacredAnchors[placed % sacredAnchors.length];
         const ang = attempt * 2.3999632 + (hash(attempt * 11.7 + 3.1) - 0.5) * 0.38;
         const r = anchor.rMin + Math.pow(hash(attempt * 19.3 + 7.3), 0.78) * (anchor.rMax - anchor.rMin);
@@ -832,6 +875,7 @@ export function createToroidalMeadow({
       const clusterCount = key === 'toonShrub' ? 28 : 42;
       while (placed < targetCount && attempt < targetCount * 16) {
         attempt++;
+        if (attempt % 150 === 0) yield;
         let ox, oz;
         if (attempt % 5 !== 0) {
           // 80% in lush natural meadow drifts across the toroidal tile
@@ -874,6 +918,7 @@ export function createToroidalMeadow({
 
       while (placed < targetCount && attempt < targetCount * 12) {
         attempt++;
+        if (attempt % 150 === 0) yield;
         let x, z;
         if (placed < targetCount * 0.34) {
           const aIdx = attempt % anchors.length;
@@ -914,7 +959,8 @@ export function createToroidalMeadow({
     flowerMeshes[key] = imesh;
     instanceCounts[key] = placed;
     group.add(imesh);
-  });
+    yield;
+  }
 
   // Critic-Verified `16m x 16m` Sector Gather for Non-Toroidal Flower Meshes
   const SECTOR_SIZE = 16.0;
@@ -1107,16 +1153,42 @@ export function createToroidalMeadow({
   };
 }
 
-export function createMeadowDriftDemo(scene, options = {}) {
-  const worldExtent = 42;
-  const maskTex = createDefaultWorldMaskTexture(256, worldExtent);
-  const meadow = createToroidalMeadow({
-    profile: options.profile || 'demo',
-    worldMaskTexture: maskTex,
-    sampleHeight: defaultSampleHeight,
-    worldExtent,
-  });
+export function createToroidalMeadow(opts = {}) {
+  return runSync(createToroidalMeadowGen(opts));
+}
 
+export async function createToroidalMeadowAsync(opts = {}) {
+  const slicer = createTimeSlicer(opts);
+  const profile = opts.profile ?? 'desktop';
+  const worldExtent = opts.worldExtent ?? 165;
+  const cfg =
+    typeof profile === 'string'
+      ? MEADOW_PROFILES[profile] || MEADOW_PROFILES.desktop
+      : { ...MEADOW_PROFILES.desktop, ...profile };
+  const geos =
+    opts.geometries ||
+    (await createSpeciesGeometriesAsync({
+      profile: cfg.name,
+      yieldFrame: slicer.yieldFrame,
+      sliceBudgetMs: slicer.sliceBudgetMs,
+    }));
+  await slicer.maybeYield();
+  const maskTex =
+    opts.worldMaskTexture ||
+    (await createDefaultWorldMaskTextureAsync(256, worldExtent, slicer));
+  await slicer.maybeYield();
+  const shadowAOTex = opts.bakedShadowAOTexture || getSharedBakedShadowAOTexture();
+  const canvasTex =
+    opts.meadowCanvasTexture ||
+    (await getSharedMeadowCanvasTextureAsync(512, slicer));
+  await slicer.maybeYield();
+  return runAsync(
+    createToroidalMeadowGen(opts, { geos, maskTex, shadowAOTex, canvasTex }),
+    slicer
+  );
+}
+
+function* finishMeadowDriftDemoGroundGen(scene, meadow, worldExtent = 42) {
   const groundGeo = new THREE.PlaneGeometry(worldExtent * 2, worldExtent * 2, 72, 72);
   groundGeo.rotateX(-Math.PI / 2);
   const pos = groundGeo.attributes.position;
@@ -1128,6 +1200,7 @@ export function createMeadowDriftDemo(scene, options = {}) {
     const roadDist = Math.abs(x - Math.sin(z * 0.09) * 3.4);
     const c = roadDist < 1.75 ? cPath : roadDist < 2.35 ? cEdge : cTurf;
     cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b;
+    if (i > 0 && i % 512 === 0) yield;
   }
   groundGeo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
   groundGeo.computeVertexNormals();
@@ -1147,4 +1220,33 @@ export function createMeadowDriftDemo(scene, options = {}) {
       meadow.update(playerPos, time);
     },
   };
+}
+
+export function createMeadowDriftDemo(scene, options = {}) {
+  const worldExtent = 42;
+  const maskTex = createDefaultWorldMaskTexture(256, worldExtent);
+  const meadow = createToroidalMeadow({
+    profile: options.profile || 'demo',
+    worldMaskTexture: maskTex,
+    sampleHeight: defaultSampleHeight,
+    worldExtent,
+  });
+  return runSync(finishMeadowDriftDemoGroundGen(scene, meadow, worldExtent));
+}
+
+export async function createMeadowDriftDemoAsync(scene, options = {}) {
+  const slicer = createTimeSlicer(options);
+  const worldExtent = 42;
+  const maskTex = await createDefaultWorldMaskTextureAsync(256, worldExtent, slicer);
+  await slicer.maybeYield();
+  const meadow = await createToroidalMeadowAsync({
+    profile: options.profile || 'demo',
+    worldMaskTexture: maskTex,
+    sampleHeight: defaultSampleHeight,
+    worldExtent,
+    yieldFrame: slicer.yieldFrame,
+    sliceBudgetMs: slicer.sliceBudgetMs,
+  });
+  await slicer.maybeYield();
+  return runAsync(finishMeadowDriftDemoGroundGen(scene, meadow, worldExtent), slicer);
 }

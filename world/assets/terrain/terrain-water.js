@@ -12,10 +12,150 @@ import {
   terrainNormalAt,
   streamCenterX,
   createWorldMaskTexture,
+  createWorldMaskTextureAsync,
   clamp,
   lerp,
   smoothstep,
 } from './geography.js';
+
+export function createTimeSlicer(opts = {}) {
+  if (opts && opts._isTimeSlicer) return opts;
+  const yieldFrame =
+    typeof opts.yieldFrame === 'function'
+      ? opts.yieldFrame
+      : () => new Promise((r) => setTimeout(r, 0));
+  const sliceBudgetMs = Number(opts.sliceBudgetMs) > 0 ? Number(opts.sliceBudgetMs) : 5.0;
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  let sliceStart = now();
+  return {
+    _isTimeSlicer: true,
+    sliceBudgetMs,
+    yieldFrame,
+    async maybeYield(force = false) {
+      if (force || now() - sliceStart >= sliceBudgetMs) {
+        await yieldFrame();
+        sliceStart = now();
+      }
+    },
+    reset() {
+      sliceStart = now();
+    },
+  };
+}
+
+export function runSync(gen) {
+  let step = gen.next();
+  while (!step.done) {
+    step = gen.next();
+  }
+  return step.value;
+}
+
+export async function runAsync(gen, slicer) {
+  let step = gen.next();
+  while (!step.done) {
+    await slicer.maybeYield();
+    step = gen.next();
+  }
+  return step.value;
+}
+
+export function* mergeGeometriesGen(geometries) {
+  if (!geometries || geometries.length === 0) return null;
+  if (geometries.length === 1) return mergeGeometries(geometries, false);
+
+  const g0 = geometries[0];
+  const isIndexed = g0.index !== null;
+  const attrNames = Object.keys(g0.attributes);
+  const morphKeys = Object.keys(g0.morphAttributes || {});
+  if (morphKeys.length > 0) {
+    return mergeGeometries(geometries, false);
+  }
+
+  let totalVerts = 0;
+  let totalIndices = 0;
+  const attrMeta = {};
+  for (const name of attrNames) {
+    const a = g0.attributes[name];
+    attrMeta[name] = {
+      TypedArray: a.array.constructor,
+      itemSize: a.itemSize,
+      normalized: a.normalized,
+      totalLen: 0,
+    };
+  }
+
+  for (let i = 0; i < geometries.length; i++) {
+    const g = geometries[i];
+    if ((g.index !== null) !== isIndexed) return mergeGeometries(geometries, false);
+    const pos = g.attributes.position;
+    if (!pos) return mergeGeometries(geometries, false);
+    totalVerts += pos.count;
+    if (isIndexed) totalIndices += g.index.count;
+    const gAttrKeys = Object.keys(g.attributes);
+    if (gAttrKeys.length !== attrNames.length) return mergeGeometries(geometries, false);
+    for (let k = 0; k < attrNames.length; k++) {
+      const name = attrNames[k];
+      const a = g.attributes[name];
+      const m = attrMeta[name];
+      if (!a || a.array.constructor !== m.TypedArray || a.itemSize !== m.itemSize) {
+        return mergeGeometries(geometries, false);
+      }
+      m.totalLen += a.count * m.itemSize;
+    }
+  }
+
+  const merged = new THREE.BufferGeometry();
+
+  if (isIndexed) {
+    const IdxArray = totalVerts <= 65535 ? Uint16Array : Uint32Array;
+    const outIdx = new IdxArray(totalIndices);
+    let idxCursor = 0;
+    let vertOffset = 0;
+    let sinceYield = 0;
+    for (let i = 0; i < geometries.length; i++) {
+      const g = geometries[i];
+      const srcIdx = g.index.array;
+      const cnt = g.index.count;
+      for (let j = 0; j < cnt; j++) {
+        outIdx[idxCursor++] = srcIdx[j] + vertOffset;
+      }
+      vertOffset += g.attributes.position.count;
+      sinceYield += cnt;
+      if (sinceYield >= 1500) {
+        sinceYield = 0;
+        yield;
+      }
+    }
+    merged.setIndex(new THREE.BufferAttribute(outIdx, 1));
+    yield;
+  }
+
+  for (const name of attrNames) {
+    const m = attrMeta[name];
+    const outArr = new m.TypedArray(m.totalLen);
+    let offset = 0;
+    let sinceYield = 0;
+    for (let i = 0; i < geometries.length; i++) {
+      const srcAttr = geometries[i].attributes[name];
+      const expected = srcAttr.count * m.itemSize;
+      const srcArr =
+        srcAttr.array.length === expected
+          ? srcAttr.array
+          : srcAttr.array.subarray(0, expected);
+      outArr.set(srcArr, offset);
+      offset += expected;
+      sinceYield += srcAttr.count;
+      if (sinceYield >= 1500 || (i & 7) === 7) {
+        sinceYield = 0;
+        yield;
+      }
+    }
+    merged.setAttribute(name, new THREE.BufferAttribute(outArr, m.itemSize, m.normalized));
+  }
+
+  return merged;
+}
 
 /**
  * Frustum-Culled Chunked Valley Terrain, 512x512 Gouache Splat Shader with
@@ -164,63 +304,42 @@ export const sharedBakedShadowAOTex = getSharedBakedShadowAOTexture();
 
 let _sharedMeadowCanvasTex = null;
 
-function cpuHash21(px, pz) {
-  let x = (px * 123.34) % 1;
-  let z = (pz * 456.21) % 1;
-  if (x < 0) x += 1;
-  if (z < 0) z += 1;
-  const d = x * (x + 45.32) + z * (z + 45.32);
-  x += d;
-  z += d;
-  const v = (x * z) % 1;
-  return v < 0 ? v + 1 : v;
+function cpuHash21Fast(ix, iz) {
+  let h = (Math.imul(ix | 0, 374761393) + Math.imul(iz | 0, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) * 2.3283064365386963e-10;
 }
 
-function cpuVnoise(px, pz) {
+function cpuVnoiseFast(px, pz) {
   const ix = Math.floor(px);
   const iz = Math.floor(pz);
   const fx = px - ix;
   const fz = pz - iz;
   const ux = fx * fx * (3.0 - 2.0 * fx);
   const uz = fz * fz * (3.0 - 2.0 * fz);
-  const a = cpuHash21(ix, iz);
-  const b = cpuHash21(ix + 1, iz);
-  const c = cpuHash21(ix, iz + 1);
-  const d = cpuHash21(ix + 1, iz + 1);
+  const a = cpuHash21Fast(ix, iz);
+  const b = cpuHash21Fast(ix + 1, iz);
+  const c = cpuHash21Fast(ix, iz + 1);
+  const d = cpuHash21Fast(ix + 1, iz + 1);
   return (a + (b - a) * ux) * (1.0 - uz) + (c + (d - c) * ux) * uz;
 }
 
-/**
- * Bakes the `2026-10-18_dense-31M` multi-scale painterly meadow ground canvas into a
- * shared 512x512 RGBA8 DataTexture (`uMeadowCanvasTex`, 1 MB VRAM) once at startup (~5ms CPU),
- * replacing 6 per-pixel `vnoise` evaluations on both Terrain and Meadow Grass shaders
- * with a single 0.002ms texture fetch!
- * RGB = Linear ground canvas color, A = cloudDapple (0..1).
- */
-export function getSharedMeadowCanvasTexture(size = 512) {
-  if (_sharedMeadowCanvasTex) return _sharedMeadowCanvasTex;
-
-  const data = new Uint8Array(size * size * 4);
-  const span = INNER_EXTENT * 2.0; // 340.0m
-  const cDark = new THREE.Color(PALETTE.grassDark);
-  const cMid = new THREE.Color(PALETTE.grassMid);
-  const cLight = new THREE.Color(PALETTE.grassLight);
-  const cSweep = new THREE.Color(PALETTE.grassSunSweep);
-
+function fillMeadowCanvasRows(data, size, izStart, izEnd, cDark, cMid, cLight, cSweep) {
+  const span = INNER_EXTENT * 2.0;
+  const invSize = 1.0 / size;
   const ss = (e0, e1, x) => {
     const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
     return t * t * (3 - 2 * t);
   };
-
-  for (let iz = 0; iz < size; iz++) {
-    const wz = ((iz + 0.5) / size - 0.5) * span;
+  for (let iz = izStart; iz <= izEnd; iz++) {
+    const wz = ((iz + 0.5) * invSize - 0.5) * span;
     for (let ix = 0; ix < size; ix++) {
-      const wx = ((ix + 0.5) / size - 0.5) * span;
+      const wx = ((ix + 0.5) * invSize - 0.5) * span;
 
-      const nBroad = cpuVnoise(wx * 0.022 + 1.7, wz * 0.022 + 3.1);
-      const nMed = cpuVnoise(wx * 0.055 - 2.3, wz * 0.055 + 1.9);
-      const nFine = cpuVnoise(wx * 0.42 + 5.1, wz * 0.42 - 3.8);
-      const cloudDapple = ss(0.32, 0.74, cpuVnoise(wx * 0.018 + 4.2, wz * 0.018 - 3.5));
+      const nBroad = cpuVnoiseFast(wx * 0.022 + 1.7, wz * 0.022 + 3.1);
+      const nMed = cpuVnoiseFast(wx * 0.055 - 2.3, wz * 0.055 + 1.9);
+      const nFine = cpuVnoiseFast(wx * 0.42 + 5.1, wz * 0.42 - 3.8);
+      const cloudDapple = ss(0.32, 0.74, cpuVnoiseFast(wx * 0.018 + 4.2, wz * 0.018 - 3.5));
       const meadowGrad = ss(0.16, 0.84, nBroad * 0.62 + nMed * 0.38);
 
       const t1 = ss(0.0, 0.52, meadowGrad);
@@ -239,11 +358,59 @@ export function getSharedMeadowCanvasTexture(size = 512) {
       b += (cSweep.b * 0.96 - b) * turfPatch;
 
       const idx = (iz * size + ix) * 4;
-      data[idx] = Math.min(255, Math.max(0, Math.round(r * 255)));
-      data[idx + 1] = Math.min(255, Math.max(0, Math.round(g * 255)));
-      data[idx + 2] = Math.min(255, Math.max(0, Math.round(b * 255)));
-      data[idx + 3] = Math.min(255, Math.max(0, Math.round(cloudDapple * 255)));
+      data[idx] = r <= 0 ? 0 : r >= 1 ? 255 : Math.round(r * 255);
+      data[idx + 1] = g <= 0 ? 0 : g >= 1 ? 255 : Math.round(g * 255);
+      data[idx + 2] = b <= 0 ? 0 : b >= 1 ? 255 : Math.round(b * 255);
+      data[idx + 3] = Math.round(cloudDapple * 255);
     }
+  }
+}
+
+export function getSharedMeadowCanvasTexture(size = 512) {
+  if (_sharedMeadowCanvasTex) return _sharedMeadowCanvasTex;
+
+  const data = new Uint8Array(size * size * 4);
+  const cDark = new THREE.Color(PALETTE.grassDark);
+  const cMid = new THREE.Color(PALETTE.grassMid);
+  const cLight = new THREE.Color(PALETTE.grassLight);
+  const cSweep = new THREE.Color(PALETTE.grassSunSweep);
+  fillMeadowCanvasRows(data, size, 0, size - 1, cDark, cMid, cLight, cSweep);
+
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  tex.flipY = false;
+  tex.colorSpace = THREE.NoColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  _sharedMeadowCanvasTex = tex;
+  return tex;
+}
+
+export async function getSharedMeadowCanvasTextureAsync(size = 512, yieldFnOrOpts = null) {
+  if (_sharedMeadowCanvasTex) return _sharedMeadowCanvasTex;
+
+  const data = new Uint8Array(size * size * 4);
+  const cDark = new THREE.Color(PALETTE.grassDark);
+  const cMid = new THREE.Color(PALETTE.grassMid);
+  const cLight = new THREE.Color(PALETTE.grassLight);
+  const cSweep = new THREE.Color(PALETTE.grassSunSweep);
+  const slicer =
+    yieldFnOrOpts && typeof yieldFnOrOpts === 'object'
+      ? createTimeSlicer(yieldFnOrOpts)
+      : null;
+  const yieldCb =
+    typeof yieldFnOrOpts === 'function'
+      ? yieldFnOrOpts
+      : slicer
+        ? () => slicer.maybeYield()
+        : null;
+  const STEP = 4;
+  for (let iz = 0; iz < size; iz += STEP) {
+    fillMeadowCanvasRows(data, size, iz, Math.min(size - 1, iz + STEP - 1), cDark, cMid, cLight, cSweep);
+    if (yieldCb) await yieldCb();
   }
 
   const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
@@ -434,7 +601,7 @@ function buildBakedOutlineGeo(nonIndexedGeo, thickness = 0.022) {
   return og;
 }
 
-export function batchVertexColorGroup(
+export function* batchVertexColorGroupGen(
   group,
   {
     gradientMap = makeToonGradient(),
@@ -453,8 +620,19 @@ export function batchVertexColorGroup(
   const emissiveGeos = [];
   const tmpColor = new THREE.Color();
 
-  group.traverse((child) => {
-    if (!child.isMesh || child.userData.dynamic || child.userData.isOutline) return;
+  // Iterative pre-order DFS matching group.traverse() exact order while allowing fine-grained yields
+  const stack = [group];
+  let vertsSinceYield = 0;
+  let meshesSinceYield = 0;
+
+  while (stack.length > 0) {
+    const child = stack.pop();
+    const ch = child.children;
+    for (let i = ch.length - 1; i >= 0; i--) {
+      stack.push(ch[i]);
+    }
+    if (!child.isMesh || child.userData.dynamic || child.userData.isOutline) continue;
+
     let g = child.geometry.clone();
     if (g.index) g = g.toNonIndexed();
 
@@ -474,7 +652,7 @@ export function batchVertexColorGroup(
     }
 
     const count = g.attributes.position.count;
-    if (count === 0) return;
+    if (count === 0) continue;
 
     const hex = child.userData.color ?? child.material?.color?.getHex?.() ?? 0xffffff;
     const isEmissiveGlow =
@@ -504,13 +682,23 @@ export function batchVertexColorGroup(
     } else {
       mergedGeos.push(g);
     }
-  });
+
+    vertsSinceYield += count;
+    meshesSinceYield += 1;
+    if (vertsSinceYield >= 350 || meshesSinceYield >= 3) {
+      vertsSinceYield = 0;
+      meshesSinceYield = 0;
+      yield;
+    }
+  }
 
   const outGroup = new THREE.Group();
   outGroup.name = `${group.name || 'group'}-batched`;
 
   if (mergedGeos.length > 0) {
-    const merged = mergeGeometries(mergedGeos, false);
+    yield;
+    const merged = yield* mergeGeometriesGen(mergedGeos);
+    yield;
     const toonMat = new THREE.MeshToonMaterial({
       vertexColors: true,
       gradientMap,
@@ -668,7 +856,8 @@ export function batchVertexColorGroup(
   }
 
   if (emissiveGeos.length > 0) {
-    const mergedEmissive = mergeGeometries(emissiveGeos, false);
+    yield;
+    const mergedEmissive = yield* mergeGeometriesGen(emissiveGeos);
     const emissiveMat = new THREE.MeshBasicMaterial({
       vertexColors: true,
       toneMapped: false,
@@ -681,6 +870,14 @@ export function batchVertexColorGroup(
   return outGroup;
 }
 
+export function batchVertexColorGroup(group, opts = {}) {
+  return runSync(batchVertexColorGroupGen(group, opts));
+}
+
+export async function batchVertexColorGroupAsync(group, opts = {}) {
+  return runAsync(batchVertexColorGroupGen(group, opts), createTimeSlicer(opts));
+}
+
 /**
  * Builds the Gouache Terrain ShaderMaterial driven by the fast 512x512 `uWorldMask` DataTexture
  * and the 1024x1024 4-channel raytraced `uBakedShadowAO` texture (`0.002ms` single texture lookup!),
@@ -688,7 +885,11 @@ export function batchVertexColorGroup(
  * raytraced 3D silhouettes of all pitched roofs, chimneys, multi-dome trees, boulders, walls, well,
  * and shrine archway, 360° ground-contact AO, and dynamic Hero/Enemy shadows (`uCharShadows`).
  */
-function createGouacheTerrainMaterial(worldMaskTex, bakedShadowAOTex = getSharedBakedShadowAOTexture()) {
+function createGouacheTerrainMaterial(
+  worldMaskTex,
+  bakedShadowAOTex = getSharedBakedShadowAOTexture(),
+  meadowCanvasTex = getSharedMeadowCanvasTexture()
+) {
   const { treeShadowVecs, treeCount } = buildTreeShadowUniformArray();
   const { posArr: bldgPos, rotArr: bldgRotH } = buildBuildingShadowUniforms();
   const charShadows = [];
@@ -699,7 +900,7 @@ function createGouacheTerrainMaterial(worldMaskTex, bakedShadowAOTex = getShared
     uniforms: {
       uWorldMask: { value: worldMaskTex },
       uBakedShadowAO: { value: bakedShadowAOTex },
-      uMeadowCanvasTex: { value: getSharedMeadowCanvasTexture() },
+      uMeadowCanvasTex: { value: meadowCanvasTex },
       uInnerSpan: { value: INNER_EXTENT * 2.0 }, // 340.0m (-170..+170)
       uSunDir: { value: SUN_DIR.clone() },
       uLightTint: { value: new THREE.Color(1, 1, 1) },
@@ -1127,13 +1328,16 @@ function createGouacheTerrainMaterial(worldMaskTex, bakedShadowAOTex = getShared
   });
 }
 
-function buildChunkWithOuterLip(chunkSize, chunkSegs, cx, cz) {
+function* buildChunkWithOuterLipGen(chunkSize, chunkSegs, cx, cz) {
   const baseGeo = new THREE.PlaneGeometry(chunkSize, chunkSize, chunkSegs, chunkSegs);
   baseGeo.rotateX(-Math.PI / 2);
   baseGeo.deleteAttribute('uv');
 
   const pos = baseGeo.attributes.position;
   const norm = baseGeo.attributes.normal;
+  const rowStride = chunkSegs + 1;
+  const yieldStride = rowStride; // 1 row (~27 vertices) per check
+  yield;
   for (let i = 0; i < pos.count; i++) {
     const lx = pos.getX(i);
     const lz = pos.getZ(i);
@@ -1143,9 +1347,11 @@ function buildChunkWithOuterLip(chunkSize, chunkSegs, cx, cz) {
     const [nx, ny, nz] = terrainNormalAt(wx, wz);
     pos.setY(i, wy);
     norm.setXYZ(i, nx, ny, nz);
+    if ((i + 1) % yieldStride === 0) yield;
   }
   pos.needsUpdate = true;
   norm.needsUpdate = true;
+  yield;
 
   const half = chunkSize * 0.5;
   const onWest = Math.abs((cx - half) - (-INNER_EXTENT)) < 0.1;
@@ -1197,18 +1403,18 @@ function buildChunkWithOuterLip(chunkSize, chunkSegs, cx, cz) {
     lipGeos.push(lg);
   };
 
-  if (onWest) addEdgeLip((t) => [-half, t]);
-  if (onEast) addEdgeLip((t) => [half, t]);
-  if (onNorth) addEdgeLip((t) => [t, -half]);
-  if (onSouth) addEdgeLip((t) => [t, half]);
+  if (onWest) { addEdgeLip((t) => [-half, t]); yield; }
+  if (onEast) { addEdgeLip((t) => [half, t]); yield; }
+  if (onNorth) { addEdgeLip((t) => [t, -half]); yield; }
+  if (onSouth) { addEdgeLip((t) => [t, half]); yield; }
 
-  const merged = mergeGeometries(lipGeos, false);
+  const merged = yield* mergeGeometriesGen(lipGeos);
   merged.computeBoundingBox();
   merged.computeBoundingSphere();
   return merged;
 }
 
-function buildChunkedTerrainAndSkirt(terrainMat) {
+function* buildChunkedTerrainAndSkirtGen(terrainMat) {
   const group = new THREE.Group();
   group.name = 'chunked-terrain';
 
@@ -1221,16 +1427,18 @@ function buildChunkedTerrainAndSkirt(terrainMat) {
     const cz = -INNER_EXTENT + (r + 0.5) * chunkSize;
     for (let c = 0; c < gridCount; c++) {
       const cx = -INNER_EXTENT + (c + 0.5) * chunkSize;
-      const geo = buildChunkWithOuterLip(chunkSize, chunkSegs, cx, cz);
+      const geo = yield* buildChunkWithOuterLipGen(chunkSize, chunkSegs, cx, cz);
       const nonIdx = geo.index ? geo.toNonIndexed() : geo;
       nonIdx.translate(cx, 0, cz);
       chunkGeos.push(nonIdx);
+      yield;
     }
   }
 
-  const mergedInnerGeo = mergeGeometries(chunkGeos, false);
+  const mergedInnerGeo = yield* mergeGeometriesGen(chunkGeos);
   mergedInnerGeo.computeBoundingBox();
   mergedInnerGeo.computeBoundingSphere();
+  yield;
 
   const innerMesh = new THREE.Mesh(mergedInnerGeo, terrainMat);
   innerMesh.name = 'inner-valley-terrain';
@@ -1282,6 +1490,7 @@ function buildChunkedTerrainAndSkirt(terrainMat) {
       normals[idx * 3 + 1] = ny;
       normals[idx * 3 + 2] = nz;
     }
+    if (iz % 2 === 1) yield;
   }
 
   for (let iz = 0; iz < skirtSegs; iz++) {
@@ -1301,6 +1510,7 @@ function buildChunkedTerrainAndSkirt(terrainMat) {
       indices.push(a, c, b, b, c, d);
     }
   }
+  yield;
 
   const skirtGeo = new THREE.BufferGeometry();
   skirtGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -1421,7 +1631,7 @@ function buildChiseledCliffBoulderGeo({ rx = 2.0, ry = 3.0, rz = 1.8, seed = 1, 
   return geo;
 }
 
-function addStratifiedRockMass(parent, { x, y, z, rx, ry, rz, rotY = 0, mossCap = true, seed = 1 }) {
+function* addStratifiedRockMassGen(parent, { x, y, z, rx, ry, rz, rotY = 0, mossCap = true, seed = 1 }) {
   const g = new THREE.Group();
   g.position.set(x, y, z);
   g.rotation.y = rotY;
@@ -1431,6 +1641,7 @@ function addStratifiedRockMass(parent, { x, y, z, rx, ry, rz, rotY = 0, mossCap 
   const mainMesh = new THREE.Mesh(mainGeo);
   mainMesh.userData.outline = false;
   g.add(mainMesh);
+  yield;
 
   // Interlocking lower toe boulder so cliff buttresses meet the shore/stream naturally
   const toeGeo = buildChiseledCliffBoulderGeo({
@@ -1454,7 +1665,7 @@ function addStratifiedRockMass(parent, { x, y, z, rx, ry, rz, rotY = 0, mossCap 
  * whose base skirt conforms 100% to `terrainHeightAt(wx, wz)` at every vertex
  * (eliminating any floating mountain edges above sloped terrain).
  */
-function buildSculptedMountainMassif({
+function* buildSculptedMountainMassifGen({
   width = 110,
   height = 42,
   depth = 74,
@@ -1540,6 +1751,7 @@ function buildSculptedMountainMassif({
       tmpC.lerp(cMistBase, 1.0 - smoothstep(0.04, 0.32, hFrac));
       colors.push(tmpC.r, tmpC.g, tmpC.b);
     }
+    if (iz % 4 === 3) yield;
   }
 
   const stride = segX + 1;
@@ -1564,7 +1776,7 @@ function buildSculptedMountainMassif({
  * Builds the Merged Distant Sculpted Mountain Ridge Ring + Clouds + Sculpted Hydro Cliffs.
  * Total cost: 1 draw call.
  */
-function buildSkyAndAlpineHorizonAndHydroStructures(gradientMap, opts = {}) {
+function* buildSkyAndAlpineHorizonAndHydroStructuresGen(gradientMap, opts = {}) {
   const root = new THREE.Group();
   root.name = 'sky-and-alpine-horizon';
 
@@ -1596,7 +1808,7 @@ function buildSkyAndAlpineHorizonAndHydroStructures(gradientMap, opts = {}) {
       const w = isOlive ? 124 + ((i * 13) % 26) : 152 + ((i * 17) % 36);
       const d = 88 + ((i * 7) % 24);
 
-      const massifGeo = buildSculptedMountainMassif({
+      const massifGeo = yield* buildSculptedMountainMassifGen({
         width: w,
         height: h,
         depth: d,
@@ -1610,6 +1822,7 @@ function buildSkyAndAlpineHorizonAndHydroStructures(gradientMap, opts = {}) {
       peak.userData.flatShading = false;
       peak.position.set(px, 0.0, pz);
       peak.rotation.y = rotY;
+      yield;
     }
   }
 
@@ -1631,6 +1844,7 @@ function buildSkyAndAlpineHorizonAndHydroStructures(gradientMap, opts = {}) {
         puff.position.set(cx + (j - 1) * 8.5, cy + (j % 2) * 2.0, cz);
         puff.scale.set(1.4, 0.65, 0.85);
       }
+      if (i % 2 === 1) yield;
     }
   }
 
@@ -1654,7 +1868,8 @@ function buildSkyAndAlpineHorizonAndHydroStructures(gradientMap, opts = {}) {
     { x: streamCenterX(-36.0) + 2.8, y: 5.1, z: -36.0, rx: 1.4, ry: 1.1, rz: 1.2, rotY: 0.25, mossCap: true },
   ];
   for (const rm of rockMasses) {
-    addStratifiedRockMass(envRaw, rm);
+    yield* addStratifiedRockMassGen(envRaw, rm);
+    yield;
   }
 
   // Grounded carved stone millrace retaining wall guiding waterfall plunge-pool current past the waterwheel
@@ -1671,16 +1886,16 @@ function buildSkyAndAlpineHorizonAndHydroStructures(gradientMap, opts = {}) {
   );
   lowWeirStone.position.set(wheelChannelX, -0.45, -0.4);
   envRaw.add(raceGroup);
+  yield;
 
-  root.add(
-    batchVertexColorGroup(envRaw, {
-      gradientMap,
-      flatShading: true,
-      outlineThickness: 0.014,
-      castShadow: true,
-      receiveShadow: true,
-    })
-  );
+  const batchedEnv = yield* batchVertexColorGroupGen(envRaw, {
+    gradientMap,
+    flatShading: true,
+    outlineThickness: 0.014,
+    castShadow: true,
+    receiveShadow: true,
+  });
+  root.add(batchedEnv);
 
   return root;
 }
@@ -1779,7 +1994,7 @@ function buildWaterfallCascadeGeometry() {
   return geo.toNonIndexed();
 }
 
-function buildAnimatedWaterSurfaces() {
+function* buildAnimatedWaterSurfacesGen() {
   const group = new THREE.Group();
   group.name = 'water-surfaces';
 
@@ -1843,14 +2058,16 @@ function buildAnimatedWaterSurfaces() {
   wheelWakeGeo.scale(1.05, 1, 2.55);
   wheelWakeGeo.translate(-millB.w * 0.5 - 0.72, 0.018, 0.25);
   addWaterGeo(wheelWakeGeo, millMat, 1);
+  yield;
 
   // 5. Curved NW Headwaters Stream surface
   addWaterGeo(buildCurvedStreamGeometry(), null, 0);
 
   // 6. Sculpted Multi-Tier Waterfall Cascade Curtain
   addWaterGeo(buildWaterfallCascadeGeometry(), null, 2);
+  yield;
 
-  const mergedWaterGeo = mergeGeometries(waterParts, false);
+  const mergedWaterGeo = yield* mergeGeometriesGen(waterParts);
   const waterMat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -2050,22 +2267,30 @@ function buildAnimatedWaterSurfaces() {
   };
 }
 
-export function buildTerrainAndWater(renderer, opts = {}) {
+function* buildTerrainAndWaterGen(renderer, opts = {}, resolvedTextures = {}) {
   const root = new THREE.Group();
   root.name = 'terrain-and-water';
 
   const gradientMap = makeToonGradient();
-  const worldMaskTex = opts.worldMaskTex || createWorldMaskTexture(512);
-  const bakedShadowAOTex = opts.bakedShadowAOTex || getSharedBakedShadowAOTexture();
-  const terrainMat = createGouacheTerrainMaterial(worldMaskTex, bakedShadowAOTex);
+  const worldMaskTex = resolvedTextures.worldMaskTex || opts.worldMaskTex || createWorldMaskTexture(512);
+  const bakedShadowAOTex =
+    resolvedTextures.bakedShadowAOTex || opts.bakedShadowAOTex || getSharedBakedShadowAOTexture();
+  const meadowCanvasTex =
+    resolvedTextures.meadowCanvasTex || opts.meadowCanvasTex || getSharedMeadowCanvasTexture();
+  yield;
 
-  const { group: terrainGroup, chunks, skirtMesh } = buildChunkedTerrainAndSkirt(terrainMat);
+  const terrainMat = createGouacheTerrainMaterial(worldMaskTex, bakedShadowAOTex, meadowCanvasTex);
+  yield;
+
+  const { group: terrainGroup, chunks, skirtMesh } = yield* buildChunkedTerrainAndSkirtGen(terrainMat);
   root.add(terrainGroup);
+  yield;
 
-  const horizonAndHydro = buildSkyAndAlpineHorizonAndHydroStructures(gradientMap, opts);
+  const horizonAndHydro = yield* buildSkyAndAlpineHorizonAndHydroStructuresGen(gradientMap, opts);
   root.add(horizonAndHydro);
+  yield;
 
-  const waterSys = buildAnimatedWaterSurfaces();
+  const waterSys = yield* buildAnimatedWaterSurfacesGen();
   root.add(waterSys.group);
 
   return {
@@ -2083,4 +2308,32 @@ export function buildTerrainAndWater(renderer, opts = {}) {
       waterSys.update(dt, elapsed);
     },
   };
+}
+
+export function buildTerrainAndWater(renderer, opts = {}) {
+  return runSync(buildTerrainAndWaterGen(renderer, opts));
+}
+
+export async function buildTerrainAndWaterAsync(renderer, opts = {}) {
+  const slicer = createTimeSlicer(opts);
+  const worldMaskTex =
+    opts.worldMaskTex ||
+    (await createWorldMaskTextureAsync(512, slicer.yieldFrame, {
+      sliceBudgetMs: slicer.sliceBudgetMs,
+    }));
+  await slicer.maybeYield();
+  const bakedShadowAOTex = opts.bakedShadowAOTex || getSharedBakedShadowAOTexture();
+  const meadowCanvasTex =
+    opts.meadowCanvasTex ||
+    (await getSharedMeadowCanvasTextureAsync(512, slicer));
+  await slicer.maybeYield();
+
+  return runAsync(
+    buildTerrainAndWaterGen(renderer, opts, {
+      worldMaskTex,
+      bakedShadowAOTex,
+      meadowCanvasTex,
+    }),
+    slicer
+  );
 }
