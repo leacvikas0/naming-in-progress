@@ -2022,6 +2022,19 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY, GLTFLoad
   };
 
   const loadJobs = [];
+  const glbProgressBySite = { stone_plaza: 0, stone_grove: 0, stone_pier: 0 };
+  const reportGlbDownloadProgress = () => {
+    if (typeof window === 'undefined' || typeof window.__setBootProgress !== 'function') return;
+    const avg =
+      (glbProgressBySite.stone_plaza +
+        glbProgressBySite.stone_grove +
+        glbProgressBySite.stone_pier) /
+      3;
+    const baseFloor = window.__BOOT_PROGRESS_FLOOR__ || 0.50;
+    if (baseFloor >= 0.48 && baseFloor < 0.90) {
+      window.__setBootProgress(Math.max(baseFloor, 0.50 + avg * 0.38), 0.91);
+    }
+  };
 
   const spoilerPoems = getSpoilerSafeStonePoems();
   for (const st of INSCRIPTION_STONES) {
@@ -2451,15 +2464,36 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY, GLTFLoad
       updateMonumentLodForCamera(camera);
     };
 
+    const loadWithProgress = (targetUrl) =>
+      new Promise((resolve, reject) => {
+        gltfLoader.load(
+          targetUrl,
+          (gltf) => {
+            glbProgressBySite[st.id] = 1.0;
+            reportGlbDownloadProgress();
+            resolve(gltf);
+          },
+          (ev) => {
+            if (ev && ev.lengthComputable && ev.total > 0) {
+              glbProgressBySite[st.id] = Math.min(0.98, ev.loaded / ev.total);
+            } else if (ev && ev.loaded > 0) {
+              glbProgressBySite[st.id] = Math.min(0.92, ev.loaded / (1.8 * 1024 * 1024));
+            }
+            reportGlbDownloadProgress();
+          },
+          (err) => reject(err)
+        );
+      });
+
     const job = (async () => {
       try {
-        const gltf = await gltfLoader.loadAsync(url);
+        const gltf = await loadWithProgress(url);
         if (slicer) await slicer.maybeYield();
         await attachScene(gltf);
       } catch {
         if (url !== fallbackUrl) {
           try {
-            const gltf2 = await gltfLoader.loadAsync(fallbackUrl);
+            const gltf2 = await loadWithProgress(fallbackUrl);
             if (slicer) await slicer.maybeYield();
             await attachScene(gltf2);
           } catch {
@@ -2788,6 +2822,10 @@ async function prewarmAllVfxAndSceneShadersAsync() {
       if (restoreCull) m.frustumCulled = true;
       if (restoreCount) m.count = 0;
       for (let v = 0; v < toggledVis.length; v++) toggledVis[v].visible = false;
+    }
+    if (typeof window !== 'undefined' && typeof window.__setBootProgress === 'function') {
+      const meshFrac = (i + 1) / Math.max(1, allMeshes.length);
+      window.__setBootProgress(0.91 + meshFrac * 0.06, 0.99);
     }
     await bootSlicer.maybeYield();
   }
@@ -6296,6 +6334,7 @@ async function bootWorldAsync() {
   renderer.toneMapping = THREE.NoToneMapping;
   renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = false;
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.20, 0.28);
   await bootSlicer.yieldNow();
 
   // 1. Time-of-Day Sky (Stylized Sun, Moon, Stars & Cumulus Clouds)
@@ -6308,6 +6347,7 @@ async function bootWorldAsync() {
     sliceBudgetMs: bootSlicer.sliceBudgetMs,
   });
   scene.add(sky.group);
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.26, 0.36);
   await bootSlicer.yieldNow();
 
   // 2. Terrain, Water, Landmarks & Botanical Trees
@@ -6327,6 +6367,7 @@ async function bootWorldAsync() {
       landmarkEmissiveMats.push(obj.material);
     }
   });
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.35, 0.44);
   await bootSlicer.yieldNow();
 
   // 3. Tudor Village Houses Kit (5 Detailed Buildings + Colliders)
@@ -6357,12 +6398,14 @@ async function bootWorldAsync() {
 
   // 3B. Lossless geometry indexing + profile mesh/LOD binding
   await syncStaticSceneProfileAsync(activeProfile, bootSlicer);
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.43, 0.50);
   await bootSlicer.yieldNow();
 
   // 4. Toroidal Gouache Meadow & Wildflower Drifts
   flowersMod = await import('../assets/flowers/index.js');
   await bootSlicer.yieldNow();
   await buildMeadowForProfileAsync(activeProfile, bootSlicer);
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.49, 0.88);
   await bootSlicer.yieldNow();
 
   // 5. Kick off Monument Sacred Stone GLB downloads + 3D Calligraphy Plaque draws
@@ -6388,6 +6431,7 @@ async function bootWorldAsync() {
     enabled: true,
     aaSamples: PROFILES[activeProfile].aaSamples,
   });
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.54, 0.90);
   await bootSlicer.yieldNow();
 
   // 7. Co-Op Heroes (Knight + Mage), Weapons, VFX & Campaign Loop
@@ -6449,6 +6493,7 @@ async function bootWorldAsync() {
     sliceBudgetMs: bootSlicer.sliceBudgetMs,
   });
   player = coopSystem.player;
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.86, 0.92);
   await bootSlicer.yieldNow();
 
   // 8. Wire Damage Numbers, Commune Client, Sculpted HUD, Touch HUD & Mali Emulator
@@ -6486,6 +6531,7 @@ async function bootWorldAsync() {
 
   // 9. Wait for Sacred Stone monument GLBs before prewarming & Frame 0 render
   await stoneDecals.readyPromise;
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.91, 0.98);
   await bootSlicer.yieldNow();
 
   applyTimeOfDay('day');
@@ -6536,6 +6582,7 @@ async function bootWorldAsync() {
   refreshTelemetryReadout(f0Draws);
 
   if (typeof window !== 'undefined') {
+    window.__setBootProgress?.(1.0, 1.0);
     window.__WORLD_VISUAL_READY__ = true;
   }
   await bootSlicer.yieldNow();
@@ -6606,6 +6653,7 @@ async function bootWorldAsync() {
 
 async function startMainBootAsync() {
   bootSlicer.reset();
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.16, 0.25);
   const gpuWarmupPromise = prewarmGpuProcessOffMainThread();
   if (typeof window !== 'undefined') {
     window.__GPU_WARMUP_PROMISE__ = gpuWarmupPromise;
@@ -6625,6 +6673,7 @@ async function startMainBootAsync() {
   await bootSlicer.yieldNow();
 
   mountOpeningAppFlowEarly();
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.16, 0.24);
   await bootSlicer.yieldNow();
 
   await gpuWarmupPromise;

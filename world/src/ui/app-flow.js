@@ -1048,11 +1048,12 @@ const APP_FLOW_CSS = `
   }
 
   .af-celestial-lockup-wrap {
+    --af-lockup-w: min(113.96vh, 136vw);
     position: absolute;
-    left: calc(50% - 56.39vh);
+    left: calc(50% - var(--af-lockup-w) * 0.49482);
     top: 0.80vh;
-    width: 113.96vh;
-    height: 40.88vh;
+    width: var(--af-lockup-w);
+    height: calc(var(--af-lockup-w) * 0.358722);
     pointer-events: none;
     user-select: none;
     -webkit-user-select: none;
@@ -2302,11 +2303,15 @@ export function createAppFlow({
     </section>
   `;
 
-  if (bootSplash) {
-    bootSplash.remove();
-  }
   const mountTarget = container || document.getElementById('hud') || document.body;
   mountTarget.appendChild(root);
+
+  function removeBootSplashOnceReady() {
+    const splashEl = bootSplash || (typeof document !== 'undefined' ? document.getElementById('haru-boot-splash') : null);
+    if (splashEl && splashEl.parentNode) {
+      splashEl.remove();
+    }
+  }
 
   // Cache DOM references for Plain-Black Paintbrush Reveal, Fixed Sun-Clock & Glassy Pills
   const flowRootAliasEl = root.querySelector('#app-flow-root');
@@ -2677,7 +2682,7 @@ export function createAppFlow({
     const fillDelayNorm = 280 / TOTAL_INTRO_DURATION_MS;
     const fillDurNorm = 520 / TOTAL_INTRO_DURATION_MS;
 
-    const wordmarkSettled = t >= 0.56 && lastWordmarkPhase === opt;
+    const wordmarkSettled = t >= 0.58 && lastWordmarkPhase === opt;
     if (!wordmarkSettled) {
       for (let i = 0; i < numG; i++) {
         const gEl = svgGlyphEls[i];
@@ -2747,9 +2752,9 @@ export function createAppFlow({
         }
       }
 
-      // 2. Step 2: 'Amarante' glides smoothly upward from the center of the pitch-black screen (0.42..0.56)
+      // 2. Step 2: 'Amarante' glides smoothly upward ONLY after all 8 letters finish writing (0.45..0.58)
       if (svgWordmarkMoverEl) {
-        const pGlide = easeInOutCubic((t - 0.42) / 0.14);
+        const pGlide = easeInOutCubic((t - 0.45) / 0.13);
         const tx = (1 - pGlide) * -24;
         const ty = (1 - pGlide) * 191;
         const sc = 1.0 + (1 - pGlide) * 0.08;
@@ -2758,15 +2763,15 @@ export function createAppFlow({
           `translate(${tx.toFixed(2)}, ${ty.toFixed(2)}) scale(${sc.toFixed(4)})`
         );
       }
-      lastWordmarkPhase = t >= 0.56 ? opt : -1;
+      lastWordmarkPhase = t >= 0.58 ? opt : -1;
     }
 
-    // 3. Step 3: Surrounding Fixed Sun-Clock, Golden Swash & Sakura Flowers bloom smoothly (0.42..0.54)
-    //    so zero SVG DOM attribute thrash happens during the GPU dissolve window (0.55..0.98).
-    const bloomKey = t < 0.42 ? 'pre' : t >= 0.54 ? 'done' : t.toFixed(3);
+    // 3. Step 3: Surrounding Fixed Sun-Clock, Golden Swash & Sakura Flowers bloom smoothly (0.46..0.58)
+    //    ONLY after 'Amarante' has finished writing and world loading is complete.
+    const bloomKey = t < 0.46 ? 'pre' : t >= 0.58 ? 'done' : t.toFixed(3);
     if (bloomKey !== lastBloomStateKey) {
       lastBloomStateKey = bloomKey;
-      const bt = t >= 0.54 ? 1.0 : (t - 0.42) / 0.12;
+      const bt = t >= 0.58 ? 1.0 : Math.max(0, (t - 0.46) / 0.12);
       const pRingOuter = easeOutCubic(bt / 0.65);
       const pRingInner = easeOutCubic((bt - 0.08) / 0.65);
       if (svgRingOuterEl) {
@@ -2918,6 +2923,7 @@ export function createAppFlow({
 
   function resolvePixelVeil() {
     stopMosaicLoop();
+    removeBootSplashOnceReady();
     state.lastDitherProgress = 1;
     lastRenderedVeilT = 1;
     lastRenderedVeilOpt = state.onboardingOption || 1;
@@ -3015,53 +3021,62 @@ export function createAppFlow({
 
     const nowPerf =
       typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const rawStartTime =
-      typeof startTimeOverride === 'number' && Number.isFinite(startTimeOverride)
-        ? Math.min(nowPerf, startTimeOverride)
-        : nowPerf;
-    const durationMs = TOTAL_INTRO_DURATION_MS;
-    let effectiveStartTime = rawStartTime;
-    let worldHoldAccumMs = 0;
     let monoNow = nowPerf;
 
-    const initialWorldReady =
-      typeof window === 'undefined' || window.__WORLD_VISUAL_READY__ !== false;
-    let initT = Math.min(1, Math.max(0, (nowPerf - effectiveStartTime) / durationMs));
-    // Never skip past the calligraphic write phase if module import started late
-    if (typeof startTimeOverride === 'number' && initT > 0.30) {
-      initT = 0.30;
-      effectiveStartTime = nowPerf - initT * durationMs;
+    const WRITE_END_T = 0.45;
+    let currentT =
+      typeof window !== 'undefined' &&
+      typeof window.__BOOT_VEIL_T__ === 'number' &&
+      Number.isFinite(window.__BOOT_VEIL_T__)
+        ? Math.min(WRITE_END_T, Math.max(0, window.__BOOT_VEIL_T__))
+        : 0;
+
+    if (typeof window !== 'undefined' && startTimeOverride === null) {
+      currentT = 0;
+      window.__BOOT_VEIL_T__ = 0;
     }
-    if (!initialWorldReady && initT > 0.56) {
-      worldHoldAccumMs += (initT - 0.56) * durationMs;
-      initT = 0.56;
-    }
-    let maxSeenT = initT;
-    renderDitherVeilAtProgress(initT);
+
+    renderDitherVeilAtProgress(currentT);
+    removeBootSplashOnceReady();
+
+    const advanceT = (dtSec) => {
+      if (typeof window !== 'undefined' && typeof window.__advanceBootWriteT === 'function') {
+        currentT = window.__advanceBootWriteT(dtSec);
+        return currentT;
+      }
+      const dt = Math.min(0.035, Math.max(0.001, dtSec));
+      const worldReady =
+        typeof window === 'undefined' || window.__WORLD_VISUAL_READY__ !== false;
+      if (!worldReady) {
+        const prog =
+          typeof window !== 'undefined' && typeof window.__getEffectiveBootProgress === 'function'
+            ? window.__getEffectiveBootProgress()
+            : 0.5;
+        const targetT = Math.min(0.435, prog * WRITE_END_T);
+        const gap = Math.max(0, targetT - currentT);
+        const maxWriteRate = WRITE_END_T / 2.15;
+        const rate = Math.min(maxWriteRate, gap * 2.35 + (currentT < targetT ? 0.007 : 0));
+        currentT = Math.min(targetT, currentT + rate * dt);
+      } else if (currentT < WRITE_END_T) {
+        currentT = Math.min(WRITE_END_T, currentT + (WRITE_END_T / 1.85) * dt);
+      } else {
+        currentT = Math.min(1.0, currentT + ((1.0 - WRITE_END_T) / 1.85) * dt);
+      }
+      if (typeof window !== 'undefined') {
+        window.__BOOT_VEIL_T__ = currentT;
+      }
+      return currentT;
+    };
 
     const stepMosaic = (rawNow) => {
-      const worldReadyForDissolve =
-        typeof window === 'undefined' || window.__WORLD_VISUAL_READY__ !== false;
       const now =
         typeof rawNow === 'number' && Number.isFinite(rawNow)
           ? Math.max(monoNow, rawNow)
-          : monoNow;
-      const dtMs = Math.max(0, now - monoNow);
+          : monoNow + 16;
+      const dtSec = Math.min(0.035, Math.max(0.001, (now - monoNow) / 1000));
       monoNow = now;
 
-      const rawT = (now - effectiveStartTime - worldHoldAccumMs) / durationMs;
-      if (!worldReadyForDissolve && rawT > 0.56) {
-        worldHoldAccumMs += dtMs;
-      }
-
-      let t = Math.min(
-        1,
-        Math.max(maxSeenT, (now - effectiveStartTime - worldHoldAccumMs) / durationMs)
-      );
-      if (!worldReadyForDissolve && t > 0.56) {
-        t = 0.56;
-      }
-      maxSeenT = t;
+      const t = advanceT(dtSec);
       renderDitherVeilAtProgress(t);
 
       if (t < 1) {

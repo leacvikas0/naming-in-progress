@@ -156,11 +156,12 @@
     }
 
     #haru-boot-splash .hb-lockup-wrap {
+      --af-lockup-w: min(113.96vh, 136vw);
       position: fixed;
-      left: calc(50% - 56.39vh);
+      left: calc(50% - var(--af-lockup-w) * 0.49482);
       top: 0.80vh;
-      width: 113.96vh;
-      height: 40.88vh;
+      width: var(--af-lockup-w);
+      height: calc(var(--af-lockup-w) * 0.358722);
       pointer-events: none;
       user-select: none;
     }
@@ -172,56 +173,17 @@
       overflow: visible;
     }
 
-    @keyframes hbContourDraw {
-      0% {
-        opacity: 0.14;
-        stroke-dashoffset: 103.5;
-      }
-      8% {
-        opacity: 1;
-        stroke-dashoffset: 100;
-      }
-      72% {
-        opacity: 0.88;
-      }
-      100% {
-        opacity: 0;
-        stroke-dashoffset: 0;
-      }
-    }
-
-    @keyframes hbFillIn {
-      0% {
-        opacity: 0;
-      }
-      100% {
-        opacity: 1;
-      }
-    }
-
-    @keyframes hbWordmarkGlide {
-      0% {
-        transform: translate(-24px, 191px) scale(1.08);
-      }
-      100% {
-        transform: translate(0px, 0px) scale(1);
-      }
-    }
-
     #haru-boot-splash .hb-wordmark-mover {
       transform: translate(-24px, 191px) scale(1.08);
       will-change: transform;
-      animation: hbWordmarkGlide 780ms cubic-bezier(0.45, 0, 0.55, 1) 2450ms both;
     }
 
     #haru-boot-splash .af-glyph-contour {
       will-change: stroke-dashoffset, opacity;
-      animation: hbContourDraw 820ms cubic-bezier(0.22, 1, 0.36, 1) var(--hb-cd, 0ms) both;
     }
 
     #haru-boot-splash .af-glyph-fill {
       will-change: opacity;
-      animation: hbFillIn 520ms ease-in-out var(--hb-fd, 280ms) both;
     }
   </style>
 </head>
@@ -284,15 +246,152 @@
   <script>
     window.__BOOT_STROKE_T0__ = performance.now();
     window.__WORLD_VISUAL_READY__ = false;
+    window.__BOOT_PROGRESS_FLOOR__ = 0.03;
+    window.__BOOT_PROGRESS_CEIL__ = 0.20;
+    window.__BOOT_STAGE_T0__ = performance.now();
+    window.__BOOT_RES_BASE__ =
+      typeof performance !== 'undefined' && typeof performance.getEntriesByType === 'function'
+        ? performance.getEntriesByType('resource').length
+        : 0;
+    window.__BOOT_VEIL_T__ = 0.0;
+
+    window.__setBootProgress = function (floor, ceil) {
+      var curEff =
+        typeof window.__getEffectiveBootProgress === 'function'
+          ? window.__getEffectiveBootProgress()
+          : window.__BOOT_PROGRESS_FLOOR__ || 0;
+      var f = Math.min(
+        1,
+        Math.max(window.__BOOT_PROGRESS_FLOOR__ || 0, curEff, Number(floor) || 0)
+      );
+      var c = Math.min(1, Math.max(f, Number(ceil !== undefined ? ceil : f) || f));
+      if (f > (window.__BOOT_PROGRESS_FLOOR__ || 0)) {
+        window.__BOOT_STAGE_T0__ = performance.now();
+        window.__BOOT_RES_BASE__ =
+          typeof performance !== 'undefined' && typeof performance.getEntriesByType === 'function'
+            ? performance.getEntriesByType('resource').length
+            : 0;
+      }
+      window.__BOOT_PROGRESS_FLOOR__ = f;
+      window.__BOOT_PROGRESS_CEIL__ = Math.max(window.__BOOT_PROGRESS_CEIL__ || 0, c);
+      if (Number(floor) >= 1) {
+        window.__BOOT_PROGRESS_FLOOR__ = 1;
+        window.__BOOT_PROGRESS_CEIL__ = 1;
+      }
+    };
+
+    window.__getEffectiveBootProgress = function () {
+      if (window.__WORLD_VISUAL_READY__) return 1.0;
+      var floor = window.__BOOT_PROGRESS_FLOOR__ || 0.03;
+      var ceil = Math.max(floor, window.__BOOT_PROGRESS_CEIL__ || floor);
+      var span = Math.max(0, ceil - floor);
+      if (span <= 1e-4) return Math.min(0.95, floor);
+      var elapsed = Math.max(0, performance.now() - (window.__BOOT_STAGE_T0__ || 0));
+      var timeCreep = 1 - Math.exp(-elapsed / 3200);
+      var resCount =
+        typeof performance !== 'undefined' && typeof performance.getEntriesByType === 'function'
+          ? Math.max(0, performance.getEntriesByType('resource').length - (window.__BOOT_RES_BASE__ || 0))
+          : 0;
+      var resCreep = 1 - Math.exp(-resCount / 6);
+      var blended = Math.min(0.92, timeCreep * 0.55 + resCreep * 0.45);
+      return Math.min(0.95, floor + span * blended);
+    };
+
+    // Single monotonic progress-driven integrator for `t` in [0..1]:
+    // - Phase 1 (`t` in [0.00..0.45]): Writing 'Amarante' on pitch-black screen at a speed
+    //   proportional to actual download & world-boot progress (`__getEffectiveBootProgress()`).
+    // - Phase 2 (`t` in [0.45..1.00], ONLY after `t >= 0.45` AND `__WORLD_VISUAL_READY__ === true`):
+    //   Smoothly glides 'Amarante' up (0.45..0.58), blooms Sun-Clock & Sakura (0.46..0.58),
+    //   dissolves the black veil (0.58..0.96), and reveals 'Begin Journey' (0.90..1.00).
+    window.__advanceBootWriteT = function (rawDtSec) {
+      var dt = Math.min(0.035, Math.max(0.001, Number(rawDtSec) || 0.016));
+      var curT = window.__BOOT_VEIL_T__ || 0;
+      var WRITE_END_T = 0.45;
+      var worldReady = Boolean(window.__WORLD_VISUAL_READY__);
+
+      if (!worldReady) {
+        var prog = window.__getEffectiveBootProgress();
+        var targetT = Math.min(0.435, prog * WRITE_END_T);
+        var gap = Math.max(0, targetT - curT);
+        var maxWriteRate = WRITE_END_T / 2.15;
+        var rate = Math.min(maxWriteRate, gap * 2.35 + (curT < targetT ? 0.007 : 0));
+        curT = Math.max(curT, Math.min(targetT, curT + rate * dt));
+      } else if (curT < WRITE_END_T) {
+        // World is ready: finish writing the remaining letters of 'Amarante' smoothly (never snap!)
+        var finishWriteRate = WRITE_END_T / 1.85;
+        curT = Math.min(WRITE_END_T, curT + finishWriteRate * dt);
+      } else {
+        // 'Amarante' is 100% written AND world is 100% ready: play glide + bloom + dissolve + Go!
+        var revealRate = (1.0 - WRITE_END_T) / 1.85;
+        curT = Math.min(1.0, curT + revealRate * dt);
+      }
+
+      window.__BOOT_VEIL_T__ = curT;
+      return curT;
+    };
+
     (function () {
       var q = location.search || '';
       var hasFlow = q.includes('flow=1') || q.includes('opening=1') || q.includes('step=');
       var skipBootSplash = !hasFlow && (q.includes('shot=') || q.includes('nolobby=1'));
       window.__SKIP_BOOT_SPLASH__ = skipBootSplash;
+      var splash = document.getElementById('haru-boot-splash');
       if (skipBootSplash) {
-        var s = document.getElementById('haru-boot-splash');
-        if (s) s.remove();
+        if (splash) splash.remove();
+        return;
       }
+      if (!splash) return;
+
+      var contours = splash.querySelectorAll('.af-glyph-contour');
+      var fills = splash.querySelectorAll('.af-glyph-fill');
+      var TOTAL_MS = 5600;
+      var contourDurNorm = 820 / TOTAL_MS;
+      var fillDelayNorm = 280 / TOTAL_MS;
+      var fillDurNorm = 520 / TOTAL_MS;
+
+      function easeOutCubic(x) {
+        var u = x < 0 ? 0 : x > 1 ? 1 : x;
+        return 1 - Math.pow(1 - u, 3);
+      }
+      function easeInOutCubic(x) {
+        var u = x < 0 ? 0 : x > 1 ? 1 : x;
+        return u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+      }
+
+      function renderSplashAtT(t) {
+        for (var i = 0; i < contours.length; i++) {
+          var startG = (i * 240) / TOTAL_MS;
+          var pContour = easeOutCubic((t - startG) / contourDurNorm);
+          var pFill = easeInOutCubic((t - (startG + fillDelayNorm)) / fillDurNorm);
+          var cEl = contours[i];
+          var fEl = fills[i];
+          if (cEl) {
+            if (pContour <= 0.001) {
+              cEl.setAttribute('opacity', '0');
+              cEl.setAttribute('stroke-dashoffset', '105');
+            } else {
+              var cOp = pFill >= 0.99 ? 0 : 1 - pFill * 0.65;
+              cEl.setAttribute('opacity', cOp.toFixed(3));
+              cEl.setAttribute('stroke-dashoffset', ((1 - pContour) * 100).toFixed(2));
+            }
+          }
+          if (fEl) {
+            fEl.setAttribute('opacity', pFill.toFixed(3));
+          }
+        }
+      }
+
+      var lastNow = performance.now();
+      renderSplashAtT(0);
+      function tickSplash(now) {
+        if (!document.getElementById('haru-boot-splash')) return;
+        var dtSec = (now - lastNow) / 1000;
+        lastNow = now;
+        var t = window.__advanceBootWriteT(dtSec);
+        renderSplashAtT(t);
+        requestAnimationFrame(tickSplash);
+      }
+      requestAnimationFrame(tickSplash);
     })();
   </script>
 
@@ -568,6 +667,7 @@
       requestAnimationFrame(() => {
         setTimeout(async () => {
           window.__PRELOADED_THREE__ = await import('three');
+          window.__setBootProgress?.(0.11, 0.24);
           setTimeout(() => {
             import('/world/src/main.js');
           }, 0);
