@@ -2773,20 +2773,29 @@ async function prewarmAllVfxAndSceneShadersAsync() {
       } catch {
         // ignore decode error
       }
-      await bootSlicer.yieldNow();
+      await bootSlicer.maybeYield();
     }
     try {
       renderer.initTexture(tx);
     } catch {
       // ignore
     }
-    await bootSlicer.yieldNow();
+    await bootSlicer.maybeYield();
   }
 
-  // 2. Compile every visible AND hidden/pooled mesh incrementally against composer renderTarget1
+  // 2. Compile one representative mesh per unique material against composer renderTarget1
   const allMeshes = [];
+  const seenMatKeys = new Set();
   scene.traverse((obj) => {
-    if (obj.isMesh) allMeshes.push(obj);
+    if (!obj.isMesh || !obj.material) return;
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    const key = `${obj.isSkinnedMesh ? 'S' : obj.isInstancedMesh ? 'I' : 'M'}:${mats
+      .map((mt) => mt?.uuid || '')
+      .join(',')}`;
+    if (!seenMatKeys.has(key)) {
+      seenMatKeys.add(key);
+      allMeshes.push(obj);
+    }
   });
 
   for (let i = 0; i < allMeshes.length; i++) {
@@ -3180,7 +3189,7 @@ function initCommuneClientSystem(createCommuneClientFn) {
             ? 'Judging...'
             : isSpeaking
               ? 'The Sovereign Speaks...'
-              : 'Tap [R]';
+              : 'Tap [V]';
       }
       if (isSpeaking && communeSnapshot.judgment) {
         coopSystem?.setCommuneSuspense?.(true);
@@ -3208,8 +3217,12 @@ function initCommuneClientSystem(createCommuneClientFn) {
       }
       sculptedHud?.setCommuneState({
         listening: isListening,
+        judging: isJudging,
+        speaking: isSpeaking,
         elapsedSeconds: communeSnapshot.elapsed,
         maxSeconds: communeSnapshot.maxDuration,
+        micRms: communeSnapshot.micRms ?? 0,
+        micBands: communeSnapshot.micBands || null,
       });
     },
     onVerdict: (judgment) => {
@@ -3281,8 +3294,14 @@ async function startCommuneHold() {
     return finishCommuneHold();
   }
 
-  if (curState !== 'idle') return;
-  if (coopSystem.campaignLoop?.verdictSequence?.active) return;
+  if (curState !== 'idle') {
+    sculptedHud?.setCommuneState({ listening: curState === 'listening' });
+    return;
+  }
+  if (coopSystem.campaignLoop?.verdictSequence?.active) {
+    sculptedHud?.setCommuneState({ listening: false });
+    return;
+  }
 
   if (camState.mode === 'vista') {
     camState.mode = 'player';
@@ -3291,6 +3310,7 @@ async function startCommuneHold() {
 
   const chanRes = coopSystem.startCommuneChannel(speakerRole, { camera });
   if (chanRes && chanRes.allowed === false) {
+    sculptedHud?.setCommuneState({ listening: false });
     return chanRes;
   }
 
@@ -3302,6 +3322,45 @@ async function startCommuneHold() {
     });
   }
   return communeClient.startCommune({
+    speakerRole,
+    deviceId: selectedMicDeviceId || undefined,
+    speakerPos: { x: player.x, y: player.y, z: player.z },
+  });
+}
+
+async function toggleCommuneTap() {
+  const curState = communeClient.getState().state;
+  const speakerRole = coopSystem.player.activeHeroId || 'Knight';
+
+  if (curState === 'listening') {
+    const res = await communeClient.tapCommune({ speakerRole });
+    if (communeClient.getState().state === 'judging') {
+      coopSystem.setCommuneSuspense(true);
+    }
+    return res;
+  }
+
+  if (curState !== 'idle') {
+    sculptedHud?.setCommuneState({ listening: curState === 'listening' });
+    return { ok: false, state: curState };
+  }
+  if (coopSystem.campaignLoop?.verdictSequence?.active) {
+    sculptedHud?.setCommuneState({ listening: false });
+    return { ok: false, reason: 'verdict_sequence_active' };
+  }
+
+  if (camState.mode === 'vista') {
+    camState.mode = 'player';
+    updateViewButtons();
+  }
+
+  const chanRes = coopSystem.startCommuneChannel(speakerRole, { camera });
+  if (chanRes && chanRes.allowed === false) {
+    sculptedHud?.setCommuneState({ listening: false });
+    return chanRes;
+  }
+
+  return communeClient.tapCommune({
     speakerRole,
     deviceId: selectedMicDeviceId || undefined,
     speakerPos: { x: player.x, y: player.y, z: player.z },
@@ -3615,12 +3674,8 @@ function initSculptedHudSystem(createSculptedHudFn) {
         sculptedHud.setElement(res.element);
       }
     },
-    onCommuneToggle: (shouldListen) => {
-      if (shouldListen) {
-        startCommuneHold();
-      } else {
-        finishCommuneHold();
-      }
+    onCommuneToggle: () => {
+      toggleCommuneTap();
     },
     onReadStone: () => {
       openAltarSteleModal();
@@ -5159,6 +5214,7 @@ window.addEventListener('keydown', (e) => {
       e.key === 'Escape' ||
       kExit === 'g' ||
       kExit === 'f' ||
+      kExit === 'c' ||
       kExit === 'e' ||
       kExit === ' ' ||
       kExit === 'w' ||
@@ -5219,7 +5275,7 @@ window.addEventListener('keydown', (e) => {
       loopStage >= 3
   );
 
-  if (!wasPressed && k === 'r') {
+  if (!wasPressed && k === 'v') {
     if (!communeReady) return;
     activeGameplayShotSpec = null;
     startCommuneHold();
@@ -5279,7 +5335,7 @@ window.addEventListener('keydown', (e) => {
   else if (devKeys && k === '6') setView('shrineLookback');
   else if (devKeys && k === '7') setView('aerial');
   else if (devKeys && k === '8') setView('topdown');
-  else if (!wasPressed && k === 'e') {
+  else if (!wasPressed && k === 'c') {
     if (!eSkillReady) return;
     activeGameplayShotSpec = null;
     if (camState.mode === 'vista') camState.mode = 'player';
@@ -5381,7 +5437,7 @@ window.addEventListener('keyup', (e) => {
     }
   }
   if (isUiOverlayBlockingInput()) return;
-  if (k === 'r') {
+  if (k === 'v') {
     finishCommuneHold();
   } else if (
     k === 'f' &&
@@ -5389,7 +5445,7 @@ window.addEventListener('keyup', (e) => {
   ) {
     coopSystem.triggerAction('release_heavy');
   } else if (
-    k === 'e' &&
+    k === 'c' &&
     coopSystem.player.activeHeroId === 'Mage' &&
     coopSystem.actionAim?.aimState?.active
   ) {

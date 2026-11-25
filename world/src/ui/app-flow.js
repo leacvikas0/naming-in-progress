@@ -3044,7 +3044,7 @@ export function createAppFlow({
         currentT = window.__advanceBootWriteT(dtSec);
         return currentT;
       }
-      const dt = Math.min(0.035, Math.max(0.001, dtSec));
+      const dt = Math.min(0.04, Math.max(0.001, dtSec));
       const worldReady =
         typeof window === 'undefined' || window.__WORLD_VISUAL_READY__ !== false;
       if (!worldReady) {
@@ -3052,15 +3052,16 @@ export function createAppFlow({
           typeof window !== 'undefined' && typeof window.__getEffectiveBootProgress === 'function'
             ? window.__getEffectiveBootProgress()
             : 0.5;
-        const targetT = Math.min(0.435, prog * WRITE_END_T);
+        const targetT = Math.min(0.44, prog * WRITE_END_T);
         const gap = Math.max(0, targetT - currentT);
-        const maxWriteRate = WRITE_END_T / 2.15;
-        const rate = Math.min(maxWriteRate, gap * 2.35 + (currentT < targetT ? 0.007 : 0));
-        currentT = Math.min(targetT, currentT + rate * dt);
+        const step = gap * Math.min(1, dt * 11.5) + (currentT < targetT ? 0.012 * dt : 0);
+        currentT = Math.max(currentT, Math.min(targetT, currentT + step));
       } else if (currentT < WRITE_END_T) {
-        currentT = Math.min(WRITE_END_T, currentT + (WRITE_END_T / 1.85) * dt);
+        const rem = WRITE_END_T - currentT;
+        const finishRate = Math.max(WRITE_END_T / 0.38, rem * 14.0);
+        currentT = Math.min(WRITE_END_T, currentT + finishRate * dt);
       } else {
-        currentT = Math.min(1.0, currentT + ((1.0 - WRITE_END_T) / 1.85) * dt);
+        currentT = Math.min(1.0, currentT + ((1.0 - WRITE_END_T) / 0.85) * dt);
       }
       if (typeof window !== 'undefined') {
         window.__BOOT_VEIL_T__ = currentT;

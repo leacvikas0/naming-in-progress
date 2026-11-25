@@ -525,6 +525,7 @@ const SCULPTED_HUD_CSS = `
   }
 
   #sculpted-room-badge {
+    display: none !important;
     position: absolute;
     top: max(20px, env(safe-area-inset-top, 0px));
     right: calc(max(18px, env(safe-area-inset-right, 0px)) + 56px);
@@ -535,7 +536,6 @@ const SCULPTED_HUD_CSS = `
     border: 1.5px solid var(--hud-ring-border);
     box-shadow: 0 4px 14px var(--hud-shadow);
     color: #ffffff;
-    display: inline-flex;
     align-items: center;
     gap: 7px;
     font-family: var(--hud-font-sans);
@@ -1362,21 +1362,16 @@ const SCULPTED_HUD_CSS = `
     display: inline-flex;
     align-items: center;
     gap: 2.5px;
-    height: 14px;
+    height: 18px;
   }
 
   .sh-wave-bar {
     width: 2.5px;
-    height: 8px;
+    height: 3px;
     border-radius: 999px;
     background: #ffffff;
+    transition: height 45ms linear;
   }
-
-  .sh-wave-bar:nth-child(1) { height: 6px; }
-  .sh-wave-bar:nth-child(2) { height: 12px; }
-  .sh-wave-bar:nth-child(3) { height: 15px; }
-  .sh-wave-bar:nth-child(4) { height: 11px; }
-  .sh-wave-bar:nth-child(5) { height: 6px; }
 
   .sh-listening-timer {
     font-family: var(--hud-font-sans);
@@ -1702,6 +1697,8 @@ export function createSculptedHud({
       partnerListening: false,
       elapsedSeconds: 0,
       maxSeconds: 30,
+      micRms: 0,
+      micBands: [0, 0, 0, 0, 0],
     },
     communeChannelActive: false,
     verdictSequenceActive: false,
@@ -1842,20 +1839,20 @@ export function createSculptedHud({
         <span class="sh-keycap-badge">Tab</span>
       </button>
 
-      <!-- [E] Elemental Skill Ring (Colored Vertical Fill Up & Down) -->
+      <!-- [C] Elemental Skill Ring (Colored Vertical Fill Up & Down) -->
       <button
         type="button"
         class="sh-open-ring sh-power-slot"
         id="sculpted-slot-e"
         data-power-slot="E"
         data-element="ice"
-        aria-label="Elemental Skill E"
-        title="Elemental Skill (E)"
+        aria-label="Elemental Skill C"
+        title="Elemental Skill (C)"
       >
         <span class="sh-ring-clip"><span class="sh-vertical-fill" id="sh-fill-e"></span></span>
         <span id="sculpted-slot-e-icon">${SVG_ICE_CRYSTAL_GLYPH}</span>
         <span class="sh-slot-cd-badge" id="sculpted-slot-e-cd"></span>
-        <span class="sh-keycap-badge">E</span>
+        <span class="sh-keycap-badge">C</span>
       </button>
 
       <!-- [Q] Elemental Burst Ultimate Ring (Colored Vertical Fill Up & Down) -->
@@ -1874,14 +1871,14 @@ export function createSculptedHud({
       </button>
     </div>
 
-    <!-- 6. RIGHT HAND GADGET SLOT: Commune [R] Ring (Colored Vertical Fill) -->
+    <!-- 6. RIGHT HAND GADGET SLOT: Commune [V] Ring (Colored Vertical Fill) -->
     <div id="sculpted-commune-wrap">
       <button
         type="button"
         class="sh-open-ring"
         id="sculpted-commune-btn"
-        aria-label="Commune with the God of Love (R)"
-        title="Tap or hold R to Commune"
+        aria-label="Commune with the God of Love (V)"
+        title="Tap or hold V to Commune"
       >
         <span class="sh-ring-clip"><span class="sh-vertical-fill" id="sh-fill-r"></span></span>
         <span id="sculpted-partner-commune-tag">Partner is communing</span>
@@ -1898,7 +1895,7 @@ export function createSculptedHud({
           </span>
           <span class="sh-listening-timer" id="sculpted-commune-timer">00:24</span>
         </span>
-        <span class="sh-keycap-badge">R</span>
+        <span class="sh-keycap-badge">V</span>
       </button>
     </div>
 
@@ -2066,6 +2063,7 @@ export function createSculptedHud({
   const communeBtn = root.querySelector('#sculpted-commune-btn');
   const communeTimerEl = root.querySelector('#sculpted-commune-timer');
   const fillR = root.querySelector('#sh-fill-r');
+  const waveBarEls = Array.from(root.querySelectorAll('#sculpted-commune-btn .sh-wave-bar'));
 
   const attackBtn = root.querySelector('#sculpted-attack-btn');
   const attackIconSlot = root.querySelector('#sculpted-attack-icon-slot');
@@ -2266,6 +2264,30 @@ export function createSculptedHud({
         : 100;
       fillR.style.height = `${rPct.toFixed(1)}%`;
     }
+    if (waveBarEls.length > 0) {
+      const rms = Number(state.commune.micRms) || 0;
+      const isReceivingSound = Boolean(state.commune.listening && rms >= 0.005);
+      const fallbackMultipliers = [0.55, 0.85, 1.0, 0.80, 0.50];
+      const bands = Array.isArray(state.commune.micBands) ? state.commune.micBands : [];
+      const scaledRms = Math.min(1, rms * 7.5);
+      for (let i = 0; i < waveBarEls.length; i++) {
+        const barEl = waveBarEls[i];
+        if (!barEl) continue;
+        if (!isReceivingSound) {
+          barEl.style.height = '3px';
+        } else {
+          const bandVal = Number(bands[i]);
+          const fallbackVal = scaledRms * (fallbackMultipliers[i] ?? 0.5);
+          const norm = clamp(
+            Number.isFinite(bandVal) && bandVal > 0 ? Math.max(bandVal, fallbackVal * 0.65) : fallbackVal,
+            0,
+            1
+          );
+          const h = 3 + norm * 15;
+          barEl.style.height = `${h.toFixed(1)}px`;
+        }
+      }
+    }
 
     if (slotE) {
       slotE.classList.toggle('is-unlocked', anyElementUnlocked);
@@ -2464,6 +2486,9 @@ export function createSculptedHud({
       state.communeChannelActive = patch.listening;
       if (patch.listening) {
         state.communeDiscovered = true;
+      } else {
+        if (patch.micRms === undefined) state.commune.micRms = 0;
+        if (patch.micBands === undefined) state.commune.micBands = [0, 0, 0, 0, 0];
       }
     }
     if (typeof patch.communeChannelActive === 'boolean') {
@@ -2486,6 +2511,20 @@ export function createSculptedHud({
     }
     if (typeof patch.maxSeconds === 'number' && patch.maxSeconds > 0) {
       state.commune.maxSeconds = patch.maxSeconds;
+    }
+    if (typeof patch.micRms === 'number' && Number.isFinite(patch.micRms)) {
+      state.commune.micRms = clamp(patch.micRms, 0, 1);
+    }
+    if (Array.isArray(patch.micBands)) {
+      state.commune.micBands = [0, 1, 2, 3, 4].map((i) => {
+        const v = Number(patch.micBands[i]);
+        return Number.isFinite(v) ? clamp(v, 0, 1) : 0;
+      });
+      if (patch.micRms === undefined) {
+        const avgBand =
+          state.commune.micBands.reduce((acc, v) => acc + v, 0) / state.commune.micBands.length;
+        state.commune.micRms = clamp(avgBand, 0, 1);
+      }
     }
     syncEnvironmentPolarity();
     renderProgressionAndSlots();
@@ -3375,7 +3414,7 @@ export function createSculptedHud({
     });
   }
 
-  // Commune [R] Ring (toggles listening start / stop-and-send)
+  // Commune [V] Ring (toggles listening start / stop-and-send)
   if (communeBtn) {
     communeBtn.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
@@ -3385,13 +3424,8 @@ export function createSculptedHud({
       e.stopPropagation();
       const anyEl = state.iceUnlocked || state.fireUnlocked || state.unlockedStage >= 1;
       if (!state.communeDiscovered && !anyEl && !state.ultimateUnlocked) return;
-      const nextListening = !state.commune.listening;
-      setCommuneState({
-        listening: nextListening,
-        elapsedSeconds: nextListening ? 0 : state.commune.elapsedSeconds,
-      });
       if (typeof onCommuneToggle === 'function') {
-        onCommuneToggle(nextListening);
+        onCommuneToggle(!state.commune.listening);
       }
     });
   }

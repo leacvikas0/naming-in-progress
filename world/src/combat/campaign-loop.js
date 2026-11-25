@@ -852,19 +852,6 @@ export function createCampaignLoop({
       };
     }
 
-    if (inCombat && !(anyDowned || anyLowHp)) {
-      return {
-        allowed: false,
-        reason: 'combat_hp_too_high',
-        distance: dist,
-        maxDist: COMMUNE_MAX_DISTANCE,
-        inCombat,
-        anyDowned,
-        bothDowned,
-        anyLowHp,
-      };
-    }
-
     return {
       allowed: true,
       reason: null,
@@ -1299,7 +1286,7 @@ export function createCampaignLoop({
           rem > 0 &&
           !targetHeroState.actionState &&
           !targetHeroState.shieldBlocking &&
-          !targetHeroState.praying
+          (!targetHeroState.praying || communeMode !== 'divine_miracle')
         ) {
           targetHeroState.actionState = 'hit_A';
           targetHeroState.actionTimer = 0.22;
@@ -1361,6 +1348,12 @@ export function createCampaignLoop({
         ? judgment.hpDeltaPct
         : null;
     const anyDownedNow = Boolean(combatHeroes.Knight.downed || combatHeroes.Mage.downed);
+    const kHpRatioNow = combatHeroes.Knight.hp / Math.max(1, combatHeroes.Knight.maxHp);
+    const mHpRatioNow = combatHeroes.Mage.hp / Math.max(1, combatHeroes.Mage.maxHp);
+    const anyLowHpNow =
+      anyDownedNow ||
+      kHpRatioNow <= COMMUNE_COMBAT_HP_THRESHOLD ||
+      mHpRatioNow <= COMMUNE_COMBAT_HP_THRESHOLD;
 
     const explicitPrayerMode = judgment?.prayerMode
       ? String(judgment.prayerMode).toLowerCase()
@@ -1392,6 +1385,7 @@ export function createCampaignLoop({
       } else if (
         !anyDownedNow &&
         (verdict === 'grace' ||
+          (!anyLowHpNow && verdict !== 'miracle') ||
           (verdict === 'heal' &&
             ((rawHpDelta !== null && rawHpDelta > 0 && rawHpDelta <= 35) ||
               (rawHpDeltaPct !== null && rawHpDeltaPct > 0 && rawHpDeltaPct <= 0.35))))

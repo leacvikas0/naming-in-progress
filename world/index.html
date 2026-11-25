@@ -298,31 +298,33 @@
     };
 
     // Single monotonic progress-driven integrator for `t` in [0..1]:
-    // - Phase 1 (`t` in [0.00..0.45]): Writing 'Amarante' on pitch-black screen at a speed
-    //   proportional to actual download & world-boot progress (`__getEffectiveBootProgress()`).
-    // - Phase 2 (`t` in [0.45..1.00], ONLY after `t >= 0.45` AND `__WORLD_VISUAL_READY__ === true`):
-    //   Smoothly glides 'Amarante' up (0.45..0.58), blooms Sun-Clock & Sakura (0.46..0.58),
+    // - Phase 1 (`t` in [0.00..0.45]): Writing 'Amarante' on pitch-black screen dynamically tracking
+    //   actual download & world-boot progress (`__getEffectiveBootProgress()`). Fast when cached/reloaded,
+    //   slower when waiting on network download.
+    // - Phase 2 (`t` in [0.45..1.00], after `t >= 0.45` AND `__WORLD_VISUAL_READY__ === true`):
+    //   Crisply glides 'Amarante' up (0.45..0.58), blooms Sun-Clock & Sakura (0.46..0.58),
     //   dissolves the black veil (0.58..0.96), and reveals 'Begin Journey' (0.90..1.00).
     window.__advanceBootWriteT = function (rawDtSec) {
-      var dt = Math.min(0.035, Math.max(0.001, Number(rawDtSec) || 0.016));
+      var dt = Math.min(0.04, Math.max(0.001, Number(rawDtSec) || 0.016));
       var curT = window.__BOOT_VEIL_T__ || 0;
       var WRITE_END_T = 0.45;
       var worldReady = Boolean(window.__WORLD_VISUAL_READY__);
 
       if (!worldReady) {
         var prog = window.__getEffectiveBootProgress();
-        var targetT = Math.min(0.435, prog * WRITE_END_T);
+        var targetT = Math.min(0.44, prog * WRITE_END_T);
         var gap = Math.max(0, targetT - curT);
-        var maxWriteRate = WRITE_END_T / 2.15;
-        var rate = Math.min(maxWriteRate, gap * 2.35 + (curT < targetT ? 0.007 : 0));
-        curT = Math.max(curT, Math.min(targetT, curT + rate * dt));
+        // Directly proportional to download gap: fast when prog jumps on reload, slow when network crawls
+        var step = gap * Math.min(1, dt * 11.5) + (curT < targetT ? 0.012 * dt : 0);
+        curT = Math.max(curT, Math.min(targetT, curT + step));
       } else if (curT < WRITE_END_T) {
-        // World is ready: finish writing the remaining letters of 'Amarante' smoothly (never snap!)
-        var finishWriteRate = WRITE_END_T / 1.85;
-        curT = Math.min(WRITE_END_T, curT + finishWriteRate * dt);
+        // World is ready: finish writing any remaining letters of 'Amarante' crisply (~0.35s max)
+        var rem = WRITE_END_T - curT;
+        var finishRate = Math.max(WRITE_END_T / 0.38, rem * 14.0);
+        curT = Math.min(WRITE_END_T, curT + finishRate * dt);
       } else {
-        // 'Amarante' is 100% written AND world is 100% ready: play glide + bloom + dissolve + Go!
-        var revealRate = (1.0 - WRITE_END_T) / 1.85;
+        // 'Amarante' is written AND world is ready: crisp 0.85s glide + bloom + dissolve + Go!
+        var revealRate = (1.0 - WRITE_END_T) / 0.85;
         curT = Math.min(1.0, curT + revealRate * dt);
       }
 

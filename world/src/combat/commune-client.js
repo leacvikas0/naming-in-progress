@@ -762,6 +762,11 @@ export function createCommuneClient({
   let micSourceNode = null;
   let micAnalyserNode = null;
   let micRmsBuffer = null;
+  let micFreqBuffer = null;
+  let latestMicRms = 0;
+  let latestMicBands = [0, 0, 0, 0, 0];
+  let pressReleasedWhileStarting = false;
+  let isStartingCommune = false;
 
   let onStateChangeHandler = onStateChange;
   let onVerdictHandler = onVerdict;
@@ -782,6 +787,8 @@ export function createCommuneClient({
       remainingFraction: clamp(1.0 - elapsed / MAX_COMMUNE_SECONDS, 0, 1),
       partnerCommuning,
       partnerSpeakerRole,
+      micRms: latestMicRms,
+      micBands: [...latestMicBands],
       timerVisuals: roseRingTimer.getVisualState(),
       ...extra,
     });
@@ -805,6 +812,9 @@ export function createCommuneClient({
       micAnalyserNode = null;
     }
     micRmsBuffer = null;
+    micFreqBuffer = null;
+    latestMicRms = 0;
+    latestMicBands = [0, 0, 0, 0, 0];
   }
 
   function attachMicAnalyser(stream) {
@@ -835,45 +845,113 @@ export function createCommuneClient({
       const source = micAudioCtx.createMediaStreamSource(stream);
       const analyser = micAudioCtx.createAnalyser();
       analyser.fftSize = analyser.fftSize || 256;
+      analyser.smoothingTimeConstant = 0.55;
       source.connect(analyser);
       micSourceNode = source;
       micAnalyserNode = analyser;
       micRmsBuffer = new Float32Array(analyser.fftSize || 256);
+      micFreqBuffer = new Uint8Array(analyser.frequencyBinCount || 128);
     } catch {
       disconnectMicAnalyser();
     }
   }
 
-  function sampleLiveMicRms() {
+  function sampleLiveMicBands() {
     if (!micAnalyserNode || !activeStream) return null;
     try {
+      const fftSize = micAnalyserNode.fftSize || 256;
+      if (!micRmsBuffer || micRmsBuffer.length !== fftSize) {
+        micRmsBuffer = new Float32Array(fftSize);
+      }
+
+      let hasTimeData = false;
       if (typeof micAnalyserNode.getFloatTimeDomainData === 'function') {
-        if (!micRmsBuffer || micRmsBuffer.length !== (micAnalyserNode.fftSize || 256)) {
-          micRmsBuffer = new Float32Array(micAnalyserNode.fftSize || 256);
-        }
         micAnalyserNode.getFloatTimeDomainData(micRmsBuffer);
-        let sumSq = 0;
-        for (let i = 0; i < micRmsBuffer.length; i++) {
-          const s = Number(micRmsBuffer[i]) || 0;
-          sumSq += s * s;
-        }
-        return Math.sqrt(sumSq / Math.max(1, micRmsBuffer.length));
-      }
-      if (typeof micAnalyserNode.getByteTimeDomainData === 'function') {
-        const len = micAnalyserNode.fftSize || 256;
-        const byteBuf = new Uint8Array(len);
+        hasTimeData = true;
+      } else if (typeof micAnalyserNode.getByteTimeDomainData === 'function') {
+        const byteBuf = new Uint8Array(fftSize);
         micAnalyserNode.getByteTimeDomainData(byteBuf);
-        let sumSq = 0;
-        for (let i = 0; i < len; i++) {
-          const s = (byteBuf[i] - 128) / 128;
-          sumSq += s * s;
+        for (let i = 0; i < fftSize; i++) {
+          micRmsBuffer[i] = (byteBuf[i] - 128) / 128;
         }
-        return Math.sqrt(sumSq / Math.max(1, len));
+        hasTimeData = true;
       }
+      if (!hasTimeData) return null;
+
+      let sumSq = 0;
+      const segSize = Math.max(1, Math.floor(micRmsBuffer.length / 5));
+      const segRms = [0, 0, 0, 0, 0];
+      for (let b = 0; b < 5; b++) {
+        const start = b * segSize;
+        const end = b === 4 ? micRmsBuffer.length : Math.min(micRmsBuffer.length, start + segSize);
+        let segSum = 0;
+        let count = 0;
+        for (let i = start; i < end; i++) {
+          const s = Number(micRmsBuffer[i]) || 0;
+          const sq = s * s;
+          sumSq += sq;
+          segSum += sq;
+          count++;
+        }
+        segRms[b] = Math.sqrt(segSum / Math.max(1, count));
+      }
+
+      const rms = Math.sqrt(sumSq / Math.max(1, micRmsBuffer.length));
+
+      const freqBands = [0, 0, 0, 0, 0];
+      if (typeof micAnalyserNode.getByteFrequencyData === 'function') {
+        const binCount = micAnalyserNode.frequencyBinCount || 128;
+        if (!micFreqBuffer || micFreqBuffer.length !== binCount) {
+          micFreqBuffer = new Uint8Array(binCount);
+        }
+        micAnalyserNode.getByteFrequencyData(micFreqBuffer);
+        const ranges = [
+          [1, 3],
+          [3, 7],
+          [7, 14],
+          [14, 24],
+          [24, Math.min(binCount, 42)],
+        ];
+        for (let b = 0; b < 5; b++) {
+          const [lo, hi] = ranges[b];
+          let sum = 0;
+          let cnt = 0;
+          for (let i = lo; i < hi && i < binCount; i++) {
+            sum += micFreqBuffer[i] / 255;
+            cnt++;
+          }
+          freqBands[b] = cnt > 0 ? sum / cnt : 0;
+        }
+      }
+
+      if (rms < 0.005) {
+        latestMicRms = rms;
+        latestMicBands = [0, 0, 0, 0, 0];
+        return { rms, bands: latestMicBands };
+      }
+
+      const ARCH_WEIGHTS = [0.68, 0.90, 1.0, 0.88, 0.65];
+      const nextBands = [0, 0, 0, 0, 0];
+      for (let b = 0; b < 5; b++) {
+        const timeLevel = clamp((segRms[b] - 0.004) * 8.5 * ARCH_WEIGHTS[b], 0, 1);
+        const freqLevel = clamp((freqBands[b] - 0.04) * 1.45, 0, 1);
+        const rawLevel = clamp(Math.max(timeLevel, freqLevel * 0.85 + timeLevel * 0.35), 0.06, 1);
+        nextBands[b] = Number(
+          clamp(latestMicBands[b] * 0.25 + rawLevel * 0.75, 0, 1).toFixed(3)
+        );
+      }
+
+      latestMicRms = rms;
+      latestMicBands = nextBands;
+      return { rms, bands: latestMicBands };
     } catch {
       return null;
     }
-    return null;
+  }
+
+  function sampleLiveMicRms() {
+    const res = sampleLiveMicBands();
+    return res ? res.rms : null;
   }
 
   /**
@@ -1109,17 +1187,23 @@ export function createCommuneClient({
           recorder.onstop = finish;
         }
         try {
+          recorder.requestData?.();
+        } catch {
+          // ignore requestData error
+        }
+        try {
           recorder.stop();
         } catch {
           finish();
         }
-        setTimeout(finish, 50);
+        setTimeout(finish, 300);
       });
     }
 
     // IMMEDIATELY release all microphone tracks BEFORE any network I/O!
     stopAllMicTracksImmediately();
 
+    const hasRecordedAudio = recordedChunks.length > 0;
     const hasExplicitTranscript =
       options.transcriptHint !== undefined ||
       (typeof pendingTranscriptHint === 'string' && pendingTranscriptHint.length > 0);
@@ -1134,17 +1218,17 @@ export function createCommuneClient({
     }
 
     // Accidental Empty Tap Safe-Cancel Rule (< 2 words = Zero Smite):
-    // 1. Explicit transcriptHint has < 2 words (or explicit wordCount < 2), OR
+    // 1. Explicit transcriptHint has < 2 words (when no real mic audio chunks were recorded) or explicit wordCount < 2, OR
     // 2. No transcriptHint / audioBase64 override passed and !hasSpokenWords && recordedChunks.length === 0
     const hintWords = countSpokenWords(transcriptHint);
     const tooFewWordsExplicit =
-      (hasExplicitTranscript && hintWords < MIN_SAFE_WORD_COUNT) ||
+      (!hasRecordedAudio && hasExplicitTranscript && hintWords < MIN_SAFE_WORD_COUNT) ||
       (explicitWordCount !== null && explicitWordCount < MIN_SAFE_WORD_COUNT);
     const emptySilentCapture =
+      !hasRecordedAudio &&
       !hasExplicitTranscript &&
       !audioBase64Override &&
-      !hasSpokenWords &&
-      recordedChunks.length === 0;
+      !hasSpokenWords;
 
     if (!forceVerdict && (tooFewWordsExplicit || emptySilentCapture)) {
       return cancelCommune({
@@ -1291,22 +1375,34 @@ export function createCommuneClient({
   /**
    * Smart Hybrid Input Start (`beginPress`):
    * - If `state === 'idle'`, starts listening in `hold_check` mode with `pressHeld = true`.
-   * - If already `state === 'listening'` in `hands_free` mode (second tap), immediately
-   *   calls `stopAndSendOrCancel(options)`.
+   * - If `endPress` was called while `startCommune` was awaiting `getUserMedia`, transitions
+   *   cleanly into `inputMode = 'hands_free'; pressHeld = false;`.
+   * - If already `state === 'listening'`, immediately calls `stopAndSendOrCancel(options)`.
    */
   async function beginPress(options = {}) {
     if (state === 'idle') {
-      const res = await startCommune({
-        ...options,
-        inputMode: 'hold_check',
-        pressHeld: true,
-      });
-      inputMode = 'hold_check';
-      pressHeld = true;
-      voicedSeconds = 0;
-      silenceAfterSpeechSeconds = 0;
-      hasSpokenWords = false;
-      return res;
+      pressReleasedWhileStarting = false;
+      isStartingCommune = true;
+      try {
+        const res = await startCommune({
+          ...options,
+          inputMode: 'hold_check',
+          pressHeld: true,
+        });
+        if (state === 'listening') {
+          if (pressReleasedWhileStarting) {
+            inputMode = 'hands_free';
+            pressHeld = false;
+            emitState({ inputMode, pressHeld });
+          } else {
+            inputMode = 'hold_check';
+            pressHeld = true;
+          }
+        }
+        return res;
+      } finally {
+        isStartingCommune = false;
+      }
     }
     if (state === 'listening') {
       if (inputMode === 'hands_free' || !pressHeld) {
@@ -1324,7 +1420,10 @@ export function createCommuneClient({
    *   until a second tap or `2.2s` of silence after speaking.
    */
   async function endPress(options = {}) {
-    if (state !== 'listening' || !pressHeld) {
+    if (isStartingCommune) {
+      pressReleasedWhileStarting = true;
+    }
+    if (state !== 'listening' || (!pressHeld && !isStartingCommune)) {
       return { ok: false, state };
     }
     pressHeld = false;
@@ -1332,7 +1431,7 @@ export function createCommuneClient({
       return stopAndSendOrCancel(options);
     }
     inputMode = 'hands_free';
-    emitState({ inputMode });
+    emitState({ inputMode, pressHeld });
     return {
       ok: true,
       state,
@@ -1363,6 +1462,21 @@ export function createCommuneClient({
 
     const cleanRms = Math.max(0, Number(rms) || 0);
     const step = Math.max(0, Number(dt) || 0);
+    latestMicRms = cleanRms;
+    if (!micAnalyserNode) {
+      if (cleanRms < 0.005) {
+        latestMicBands = [0, 0, 0, 0, 0];
+      } else {
+        const norm = clamp((cleanRms - 0.004) * 8.5, 0.06, 1);
+        latestMicBands = [
+          Number((norm * 0.65).toFixed(3)),
+          Number((norm * 0.88).toFixed(3)),
+          Number(norm.toFixed(3)),
+          Number((norm * 0.84).toFixed(3)),
+          Number((norm * 0.60).toFixed(3)),
+        ];
+      }
+    }
 
     if (cleanRms >= 0.025) {
       voicedSeconds += step;
@@ -1399,13 +1513,16 @@ export function createCommuneClient({
    */
   async function tapCommune(options = {}) {
     if (state === 'idle') {
+      pressReleasedWhileStarting = true;
       const res = await startCommune({
         ...options,
         inputMode: 'hands_free',
         pressHeld: false,
       });
-      inputMode = 'hands_free';
-      pressHeld = false;
+      if (state === 'listening') {
+        inputMode = 'hands_free';
+        pressHeld = false;
+      }
       return res;
     }
     if (state === 'listening') {
@@ -1425,10 +1542,16 @@ export function createCommuneClient({
     elapsed = Math.min(MAX_COMMUNE_SECONDS, elapsed + step);
     const visuals = roseRingTimer.setElapsed(elapsed, currentSpeakerPos);
 
-    // Wire live WebAudio AnalyserNode RMS sampling whenever activeStream has live audio tracks
-    const liveRms = sampleLiveMicRms();
-    if (liveRms !== null) {
-      reportVoiceActivity({ rms: liveRms, dt: step });
+    // Wire live WebAudio AnalyserNode RMS + 5-band sampling whenever activeStream has live audio tracks
+    const liveSample = sampleLiveMicBands();
+    if (liveSample !== null) {
+      reportVoiceActivity({ rms: liveSample.rms, dt: step });
+    }
+    if (state === 'listening') {
+      emitState({
+        micRms: liveSample ? liveSample.rms : latestMicRms,
+        micBands: liveSample ? liveSample.bands : latestMicBands,
+      });
     }
 
     if (state === 'listening' && elapsed >= MAX_COMMUNE_SECONDS) {
@@ -1464,6 +1587,8 @@ export function createCommuneClient({
       remainingFraction: clamp(1.0 - elapsed / MAX_COMMUNE_SECONDS, 0, 1),
       partnerCommuning,
       partnerSpeakerRole,
+      micRms: latestMicRms,
+      micBands: [...latestMicBands],
       micTracksStoppedCount,
       hasActiveMicTracks: hasActiveMicTracks(),
       timerVisuals: roseRingTimer.getVisualState(),
