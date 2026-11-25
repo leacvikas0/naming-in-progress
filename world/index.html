@@ -247,7 +247,7 @@
     window.__BOOT_STROKE_T0__ = performance.now();
     window.__WORLD_VISUAL_READY__ = false;
     window.__BOOT_PROGRESS_FLOOR__ = 0.03;
-    window.__BOOT_PROGRESS_CEIL__ = 0.20;
+    window.__BOOT_PROGRESS_CEIL__ = 0.52;
     window.__BOOT_STAGE_T0__ = performance.now();
     window.__BOOT_RES_BASE__ =
       typeof performance !== 'undefined' && typeof performance.getEntriesByType === 'function'
@@ -256,28 +256,27 @@
     window.__BOOT_VEIL_T__ = 0.0;
 
     window.__setBootProgress = function (floor, ceil) {
+      var numFloor = Math.min(1, Math.max(0, Number(floor) || 0));
+      var numCeil = Math.min(1, Math.max(numFloor, Number(ceil !== undefined ? ceil : numFloor) || numFloor));
       var curEff =
         typeof window.__getEffectiveBootProgress === 'function'
           ? window.__getEffectiveBootProgress()
           : window.__BOOT_PROGRESS_FLOOR__ || 0;
-      var f = Math.min(
-        1,
-        Math.max(window.__BOOT_PROGRESS_FLOOR__ || 0, curEff, Number(floor) || 0)
-      );
-      var c = Math.min(1, Math.max(f, Number(ceil !== undefined ? ceil : f) || f));
-      if (f > (window.__BOOT_PROGRESS_FLOOR__ || 0)) {
+      var prevFloor = window.__BOOT_PROGRESS_FLOOR__ || 0;
+      if (numFloor >= 1) {
+        window.__BOOT_PROGRESS_FLOOR__ = 1;
+        window.__BOOT_PROGRESS_CEIL__ = 1;
+        return;
+      }
+      if (numFloor > Math.max(prevFloor, curEff)) {
         window.__BOOT_STAGE_T0__ = performance.now();
         window.__BOOT_RES_BASE__ =
           typeof performance !== 'undefined' && typeof performance.getEntriesByType === 'function'
             ? performance.getEntriesByType('resource').length
             : 0;
+        window.__BOOT_PROGRESS_FLOOR__ = numFloor;
       }
-      window.__BOOT_PROGRESS_FLOOR__ = f;
-      window.__BOOT_PROGRESS_CEIL__ = Math.max(window.__BOOT_PROGRESS_CEIL__ || 0, c);
-      if (Number(floor) >= 1) {
-        window.__BOOT_PROGRESS_FLOOR__ = 1;
-        window.__BOOT_PROGRESS_CEIL__ = 1;
-      }
+      window.__BOOT_PROGRESS_CEIL__ = Math.max(window.__BOOT_PROGRESS_CEIL__ || 0, numCeil);
     };
 
     window.__getEffectiveBootProgress = function () {
@@ -285,52 +284,45 @@
       var floor = window.__BOOT_PROGRESS_FLOOR__ || 0.03;
       var ceil = Math.max(floor, window.__BOOT_PROGRESS_CEIL__ || floor);
       var span = Math.max(0, ceil - floor);
-      if (span <= 1e-4) return Math.min(0.95, floor);
+      if (span <= 1e-4) return Math.min(0.94, floor);
       var elapsed = Math.max(0, performance.now() - (window.__BOOT_STAGE_T0__ || 0));
-      var timeCreep = 1 - Math.exp(-elapsed / 3200);
+      var timeCreep = 1 - Math.exp(-elapsed / 4200);
       var resCount =
         typeof performance !== 'undefined' && typeof performance.getEntriesByType === 'function'
           ? Math.max(0, performance.getEntriesByType('resource').length - (window.__BOOT_RES_BASE__ || 0))
           : 0;
-      var resCreep = 1 - Math.exp(-resCount / 6);
+      var resCreep = Math.min(1, resCount / 28);
       var blended = Math.min(0.92, timeCreep * 0.55 + resCreep * 0.45);
-      return Math.min(0.95, floor + span * blended);
+      return Math.min(0.94, floor + span * blended);
     };
 
     // Single monotonic progress-driven integrator for `t` in [0..1]:
-    // - Beat 1 (`t` in [0.00..0.45]): Writing 'Amarante' at center of solid pitch-black screen (#050507)
-    //   while 100% of the 3D game loads up front (`__getEffectiveBootProgress()`). Paced at a smooth
-    //   calligraphic brush rate so it never races to 95% in 1s and freezes.
-    // - Beat 2 (`t` in [0.45..0.58], strictly AFTER `t >= 0.45` AND `__WORLD_VISUAL_READY__ === true`):
-    //   Still on solid pitch-black screen, 'Amarante' glides smoothly upward into its sky lockup
-    //   and the Celestial Sun-Clock & Sakura branches bloom around it.
-    // - Beat 3 (`t` in [0.58..0.94]): WebGL organic cloud/noise dissolve parts the black veil to
-    //   reveal the already-loaded 60 FPS 3D valley while soft title ambience fades in.
-    // - Beat 4 (`t` in [0.90..1.00]): Glassy 'Begin Journey' pill rises (#app-flow-enter-btn.is-ready).
+    // - Baseline animation rate is `BASE_RATE = 1.0 / 5.6` (the original 5.6s choreography).
+    // - Beat 1 (`t` in [0.000..0.446], ~2.50s baseline): Writing 'Amarante' at center of solid
+    //   pitch-black screen (#050507). On fast/cached loads it runs at BASE_RATE (never fast-forwarded),
+    //   and on slow loads (`!__WORLD_VISUAL_READY__`) it dynamically slows to track `__getEffectiveBootProgress()`.
+    // - Beats 2-5 (`t` in [0.446..1.000], ~3.10s baseline, strictly AFTER `t >= 0.446` AND `__WORLD_VISUAL_READY__`):
+    //   Plays at exact BASE_RATE: Glide Up (0.446..0.575) + Sun-Clock & Sakura Bloom on pitch-black
+    //   (0.446..0.568) -> WebGL Cloud/Noise Dissolve (0.580..0.940) -> 'Begin Journey' pill (0.900..1.000).
     window.__advanceBootWriteT = function (rawDtSec) {
       var dt = Math.min(0.04, Math.max(0.001, Number(rawDtSec) || 0.016));
       var curT = window.__BOOT_VEIL_T__ || 0;
-      var WRITE_END_T = 0.45;
+      var WRITE_END_T = 0.446;
+      var BASE_RATE = 1.0 / 5.6;
       var worldReady = Boolean(window.__WORLD_VISUAL_READY__);
 
       if (!worldReady) {
         var prog = window.__getEffectiveBootProgress();
-        var targetT = Math.min(0.435, prog * WRITE_END_T);
+        var targetT = Math.min(0.438, prog * WRITE_END_T);
         var gap = Math.max(0, targetT - curT);
-        var desiredRate = gap * 8.0 + (curT < targetT ? 0.05 : 0);
-        var maxPreReadyRate = WRITE_END_T / 0.95;
-        var step = Math.min(gap, Math.min(maxPreReadyRate, desiredRate) * dt);
-        curT = Math.max(curT, Math.min(targetT, curT + step));
+        var rate = Math.min(BASE_RATE, gap * 2.4 + (curT < targetT ? 0.005 : 0));
+        curT = Math.max(curT, Math.min(targetT, curT + rate * dt));
       } else if (curT < WRITE_END_T) {
-        // Entire 3D world is loaded up front: crisply finish writing remaining letters of 'Amarante'
-        var rem = WRITE_END_T - curT;
-        var finishRate = Math.max(WRITE_END_T / 0.28, rem * 12.0);
-        curT = Math.min(WRITE_END_T, curT + finishRate * dt);
+        // World is ready: finish writing 'Amarante' at the natural baseline calligraphic rate (never fast-forward!)
+        curT = Math.min(WRITE_END_T, curT + BASE_RATE * dt);
       } else {
-        // 'Amarante' is 100% written AND world is 100% ready:
-        // Beat 2 Glide Up & Bloom (0.45..0.58) -> Beat 3 Cloud Dissolve (0.58..0.94) -> Beat 4 Begin Journey (0.90..1.00)
-        var revealRate = (1.0 - WRITE_END_T) / 0.65;
-        curT = Math.min(1.0, curT + revealRate * dt);
+        // 'Amarante' is written AND world is ready: play Glide Up + Bloom + Dissolve + Go at exact baseline rate!
+        curT = Math.min(1.0, curT + BASE_RATE * dt);
       }
 
       window.__BOOT_VEIL_T__ = curT;
@@ -455,7 +447,7 @@
       <div class="top-col-center">
         <div id="act-objective-pill" class="hud-pill">
           <span class="act-tag" id="act-stage-tag">Sacred Stones (0/3)</span>
-          <span id="act-objective-text">Village Well Stronghold — Clear Guardians, Read [G] &amp; Commune [R]</span>
+          <span id="act-objective-text">Village Well Stronghold — Clear Guardians, Read [G] &amp; Commune [V]</span>
         </div>
 
         <div id="boss-hud-bar">
@@ -547,11 +539,11 @@
           </span>
         </button>
 
-        <button type="button" id="commune-r-btn" title="Hold R · Commune with the Ancient God of Love">
+        <button type="button" id="commune-r-btn" title="Tap or Hold V · Commune with the Ancient God of Love">
           <img class="commune-crest-img" src="/world/assets/ui/commune-medallion.png" alt="" />
           <span class="spell-meta">
             <span class="spell-name">Commune</span>
-            <span class="spell-sub" id="commune-sub-lbl">Hold [R]</span>
+            <span class="spell-sub" id="commune-sub-lbl">Tap or Hold [V]</span>
           </span>
         </button>
       </div>
@@ -560,9 +552,10 @@
         <span class="keybind-item"><kbd class="kbd">WASD</kbd> Move</span>
         <span class="keybind-item"><kbd class="kbd">LMB / Hold</kbd> Strike / Heavy</span>
         <span class="keybind-item"><kbd class="kbd">RMB / Shift</kbd> Evade</span>
-        <span class="keybind-item"><kbd class="kbd">E</kbd> Guard</span>
+        <span class="keybind-item"><kbd class="kbd">C</kbd> Skill</span>
+        <span class="keybind-item"><kbd class="kbd">F</kbd> Guard</span>
         <span class="keybind-item"><kbd class="kbd">1–4</kbd> Spells</span>
-        <span class="keybind-item"><kbd class="kbd">Hold R</kbd> Commune</span>
+        <span class="keybind-item"><kbd class="kbd">Tap or Hold V</kbd> Commune</span>
         <span class="keybind-item"><kbd class="kbd">G</kbd> Stele</span>
         <span class="keybind-item"><kbd class="kbd">Tab</kbd> Swap</span>
       </div>
@@ -594,7 +587,7 @@
         </div>
 
         <div class="lobby-section">
-          <span class="lobby-section-label">Sanctuary Voice Microphone (Hold [R] to Commune)</span>
+          <span class="lobby-section-label">Sanctuary Voice Microphone (Tap or Hold [V] to Commune)</span>
           <div class="lobby-mic-row">
             <select id="lobby-mic-select" aria-label="Microphone Input">
               <option value="">Default System Microphone</option>
@@ -615,7 +608,7 @@
         <div id="altar-stele-poem">
           <p>Inscribing ancient verse from the sanctuary stone...</p>
         </div>
-        <p class="stele-hint-sub">Stand within 5m of your beloved and Hold [R] or the Commune Medallion to speak the true name aloud.</p>
+        <p class="stele-hint-sub">Stand within 5m of your beloved and Tap or Hold [V] or the Commune Medallion to speak the true name aloud.</p>
         <button type="button" id="altar-stele-close-btn">Close Tablet [G / Esc]</button>
       </div>
     </div>

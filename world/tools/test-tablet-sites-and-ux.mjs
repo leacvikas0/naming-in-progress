@@ -829,7 +829,7 @@ async function runSuite() {
     );
 
     // -----------------------------------------------------------------------
-    // 5. Co-Op Room Code Visible In-Game & Inside Pause Modal
+    // 5. Co-Op Room Badge Intentionally Hidden In-Game & Room Card Inside Pause Modal
     // -----------------------------------------------------------------------
     await page.evaluate(() => {
       const w = window.__WORLD__;
@@ -856,28 +856,39 @@ async function runSuite() {
     await page.screenshot({ path: path.join(OUT_DIR, 'tablet-pause-modal.png') });
     const roomPauseVis = await page.evaluate(() => {
       const modal = document.getElementById('sculpted-pause-modal');
-      const cardText = modal?.textContent || '';
-      const copyBtn = modal?.querySelector('#sculpted-pause-copy-room-btn, [data-copy-room]');
+      const card = modal?.querySelector('#sculpted-pause-room-card');
+      const cardSt = card ? getComputedStyle(card) : null;
+      const cardRect = card?.getBoundingClientRect?.() || { width: 0, height: 0 };
+      const cardText = card?.textContent || '';
+      const copyBtn = card?.querySelector('#sculpted-pause-copy-room-btn, [data-copy-room]');
+      const copyRect = copyBtn?.getBoundingClientRect?.() || { width: 0, height: 0 };
       return {
         modalOpen: modal?.classList.contains('is-open') || false,
+        cardFound: Boolean(card),
+        cardDisplay: cardSt?.display || null,
+        cardWidth: Math.round(cardRect.width),
+        cardHeight: Math.round(cardRect.height),
         hasPhraseOrCode:
           /rain on warm limestone/i.test(cardText) || /RAIN-ON-WARM-LIMESTONE/.test(cardText),
         hasCopyBtn: Boolean(copyBtn),
+        copyBtnVisible: Boolean(copyBtn && getComputedStyle(copyBtn).display !== 'none' && copyRect.width > 40),
       };
     });
     await page.click('#sculpted-pause-resume-btn');
     await page.waitForTimeout(100);
 
     const pass5 =
-      roomHudVis.found &&
-      roomHudVis.display !== 'none' &&
-      roomHudVis.width > 40 &&
-      roomHudVis.height > 18 &&
-      (/rain on warm limestone/i.test(roomHudVis.text) || /RAIN-ON-WARM-LIMESTONE/.test(roomHudVis.text)) &&
+      (!roomHudVis.found || (roomHudVis.display === 'none' && roomHudVis.width === 0 && roomHudVis.height === 0)) &&
+      roomPauseVis.modalOpen &&
+      roomPauseVis.cardFound &&
+      roomPauseVis.cardDisplay !== 'none' &&
+      roomPauseVis.cardWidth > 100 &&
+      roomPauseVis.cardHeight > 40 &&
       roomPauseVis.hasPhraseOrCode &&
-      roomPauseVis.hasCopyBtn;
+      roomPauseVis.hasCopyBtn &&
+      roomPauseVis.copyBtnVisible;
     recordCheck(
-      '5 Co-Op Room Code/Phrase visible in-game AND inside Pause modal with copy button',
+      '5 Co-Op Room Badge hidden on in-game HUD AND #sculpted-pause-room-card revealed cleanly inside Pause modal',
       pass5,
       JSON.stringify({ roomHudVis, roomPauseVis })
     );

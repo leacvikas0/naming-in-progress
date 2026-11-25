@@ -36,9 +36,42 @@ import {
 export const PREVIOUS_GEMINI_MODEL = 'gemini-4-hydrogen';
 export const GEMINI_MODEL = 'gemini-3.5-flash-lite';
 export const GEMINI_HEDGE_TIMEOUT_MS = 2600;
-export const GEMINI_HARD_TIMEOUT_MS = 10000;
+export const GEMINI_HARD_TIMEOUT_MS = 8500;
 
 let geminiKeyCursor = 0;
+
+function extractFirstBalancedJsonObject(text) {
+  const str = String(text || '');
+  const start = str.indexOf('{');
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < str.length; i++) {
+    const ch = str[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === '{') {
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        return str.slice(start, i + 1);
+      }
+    }
+  }
+  return null;
+}
 
 export function extractGeminiApiKeys(env = {}) {
   const keySet = new Set();
@@ -107,7 +140,19 @@ export async function callSingleGeminiKey(
       throw new Error('Empty response from Gemini');
     }
 
-    return JSON.parse(rawText);
+    try {
+      return JSON.parse(rawText);
+    } catch (parseErr) {
+      const extracted = extractFirstBalancedJsonObject(rawText);
+      if (extracted) {
+        try {
+          return JSON.parse(extracted);
+        } catch {
+          // fall through to throw original parse error
+        }
+      }
+      throw parseErr;
+    }
   } finally {
     clearTimeout(timer);
   }
@@ -127,7 +172,7 @@ export async function callGeminiWithRotation(
     throw new Error('No Gemini API keys configured');
   }
 
-  const maxAttempts = Math.max(1, keys.length);
+  const maxAttempts = Math.max(1, Math.min(2, keys.length));
   let lastError = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -548,16 +593,20 @@ function scrubSecretNameFromQuote(quote, spokeTrueName, secretName, customSecret
  * nudges (`'penalty'`), retries (`'retry'`), playful pats (`'pat'`), and Mode A routine field heals (`'field_heal'`).
  */
 export function applyRareSpeechRule(verdictOrMode, clipId, forceSpeak = null) {
-  const rareSpokenSet = new Set([
+  const spokenSet = new Set([
     'awakening',
     'divine_miracle',
     'miracle',
     'rose_gommage',
     'rude_smite',
     'smite',
+    'field_heal',
+    'blessing',
+    'pat',
+    'penalty',
   ]);
   const shouldSpeakAloud =
-    typeof forceSpeak === 'boolean' ? forceSpeak : rareSpokenSet.has(verdictOrMode);
+    typeof forceSpeak === 'boolean' ? forceSpeak : spokenSet.has(verdictOrMode);
   const resolvedClipId = clipId || 'heal_gentle';
   const audioUrl = shouldSpeakAloud
     ? CLIP_AUDIO_PATHS[resolvedClipId] || CLIP_AUDIO_PATHS.heal_gentle
@@ -597,6 +646,7 @@ export function buildGentleAudioRetryVerdict({
   partnerRole = 'Mage',
   progressionState = {},
   spamCount = 0,
+  debugReason = null,
 } = {}) {
   const normSpeakerRole = speakerRole === 'Mage' ? 'Mage' : 'Knight';
   const normPartnerRole =
@@ -638,6 +688,7 @@ export function buildGentleAudioRetryVerdict({
     partner_sword_mult: 1.0,
     incrementSpam: false,
     spamCount: Number(spamCount || 0),
+    ...(debugReason ? { debugReason: String(debugReason).slice(0, 160) } : {}),
     ...speech,
     subtitle: quote,
     divine_quote: quote,
@@ -842,7 +893,7 @@ export function evaluatePrayerDeterministic({
     FAKE_EMERGENCY_PATTERNS.some((rx) => rx.test(cleanTranscript)) &&
     isSafeAndHealthy(gameState)
   ) {
-    const speech = applyRareSpeechRule('pat', 'bless_amused', false);
+    const speech = applyRareSpeechRule('pat', 'bless_amused', true);
     const quote =
       'Dying, little mortals? The meadow is calm and your hearts beat whole—save your tragic sighs for when the dark truly closes in.';
     return {
@@ -980,7 +1031,7 @@ export function evaluatePrayerDeterministic({
     }
 
     // Scenario 1: At Stage 0 (`!stone1Solved`) without the True Name -> Close Guess / Wrong Name Nudge
-    const speech = applyRareSpeechRule('penalty', 'smite_nameless', false);
+    const speech = applyRareSpeechRule('penalty', 'smite_nameless', true);
     const quote =
       nearestStoneSiteId === 'site2_platform' || nearestStoneSiteId === 'site3_wall'
         ? 'Your words carry warmth, yet you do not know the Sovereign who listens. Return to the stone well at the center of the village where my name is carved in water and stone.'
@@ -1247,7 +1298,7 @@ export function evaluatePrayerDeterministic({
   // Never docks HP even if standing near an unawakened stone during a fight!
   if ((inCombat || eitherInjured) && (spokeTrueName || hasAffection || wordCount >= 4)) {
     const clipId = isFunnyOrCheesy ? 'bless_amused' : 'bless_sweet';
-    const speech = applyRareSpeechRule('field_heal', clipId, false);
+    const speech = applyRareSpeechRule('field_heal', clipId, true);
     const hpGain = isFunnyOrCheesy ? 65 : 60;
     const quote = isFunnyOrCheesy
       ? 'Shameless and foolishly sweet even amidst the clash of bone—let warm gold mend your wounds.'
@@ -1287,7 +1338,7 @@ export function evaluatePrayerDeterministic({
 
   // Scenario 1: Healthy & Out of Combat at an Unawakened Stone with the Wrong Clue -> Poetic Hint Nudge
   if (atAnyUnawakenedStone || (!spokeTrueName && !hasAffection)) {
-    const speech = applyRareSpeechRule('penalty', 'smite_nameless', false);
+    const speech = applyRareSpeechRule('penalty', 'smite_nameless', true);
     const quote = atUnawakenedStone2
       ? 'You stand upon the Whispering Grove medallion, yet your vow misses its carved truth: look beneath the violet boughs where embers sleep, and name the honest spark you cherish.'
       : atUnawakenedStone3
@@ -1328,7 +1379,7 @@ export function evaluatePrayerDeterministic({
 
   // Default Out-of-Combat Affectionate Field Blessing (Scenario 4)
   const clipId = isFunnyOrCheesy ? 'bless_amused' : 'bless_sweet';
-  const speech = applyRareSpeechRule('field_heal', clipId, false);
+  const speech = applyRareSpeechRule('field_heal', clipId, true);
   const hpGain = isFunnyOrCheesy ? 65 : 60;
   const quote = isFunnyOrCheesy
     ? 'Audacious and shamelessly fond—the petals of my valley warm your shoulders as you walk.'
@@ -1481,7 +1532,14 @@ export async function evaluatePrayerWithGemini({
     });
   }
 
+  let retryDebugReason = null;
+
   try {
+    const cleanMimeType =
+      String(mimeType || 'audio/webm')
+        .split(';')[0]
+        .trim()
+        .toLowerCase() || 'audio/webm';
     const prog = normalizeProgressionFlags(progressionState);
     const nearestStoneSiteId = resolveNearestStoneId(gameState, progressionState);
     const contextSummary = [
@@ -1500,7 +1558,7 @@ export async function evaluatePrayerWithGemini({
         {
           role: 'user',
           parts: [
-            { inlineData: { mimeType, data: cleanB64 } },
+            { inlineData: { mimeType: cleanMimeType, data: cleanB64 } },
             { text: contextSummary },
           ],
         },
@@ -1522,6 +1580,22 @@ export async function evaluatePrayerWithGemini({
       Object.keys(rawModelJson).length > 0
     ) {
       let modelTranscript = String(rawModelJson.heard_transcript || '').trim();
+      const rawHeardWords = modelTranscript
+        .replace(/\[[^\]]*\]|\([^)]*\)/g, ' ')
+        .replace(/[^a-zA-Z0-9\s']/g, ' ')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean).length;
+
+      if (!explicitHint && cleanB64 && rawHeardWords < 2) {
+        return buildGentleAudioRetryVerdict({
+          speakerRole,
+          partnerRole,
+          progressionState,
+          spamCount,
+        });
+      }
+
       if (
         rawModelJson.spoke_true_name &&
         !containsTrueName(modelTranscript, secretConfig)
@@ -1563,9 +1637,17 @@ export async function evaluatePrayerWithGemini({
         subtitle: mergedQuote,
       };
     }
-  } catch {
+  } catch (err) {
     // On any Gemini error or timeout with non-empty raw mic audio (`transcriptHint === ''`),
     // return a gentle retry with 0 HP loss and unchanged spamCount—never false-smiting!
+    const rawMsg = String(err?.message || err || 'unknown_error');
+    console.error('[commune-judge] Gemini audio eval failed:', rawMsg);
+    retryDebugReason = scrubSecretNameFromQuote(
+      rawMsg,
+      true,
+      secretConfig.secretName,
+      secretConfig.customSecretName
+    ).slice(0, 160);
   }
 
   return buildGentleAudioRetryVerdict({
@@ -1573,6 +1655,7 @@ export async function evaluatePrayerWithGemini({
     partnerRole,
     progressionState,
     spamCount,
+    debugReason: retryDebugReason,
   });
 }
 

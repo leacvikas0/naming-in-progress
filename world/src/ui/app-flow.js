@@ -2618,10 +2618,10 @@ export function createAppFlow({
       return;
     }
     const gl = dissolveGl;
-    // Keep #af-pixel-veil locked to solid CSS pitch-black (#050507) throughout Beat 1 (writing Amarante, 0..0.45)
-    // and Beat 2 (Amarante gliding up + Sun-Clock & Sakura blooming, 0.45..0.56) so the background 3D canvas
-    // can NEVER leak or flicker before Beat 3 (the 0.58..0.94 cloud dissolve).
-    if (t <= 0.56) {
+    // Keep #af-pixel-veil locked to solid CSS pitch-black (#050507) throughout Beat 1 (writing Amarante, 0.000..0.446),
+    // Beat 2 (Amarante gliding up, 0.446..0.575), and Beat 3 (Sun-Clock & Sakura blooming, 0.446..0.568) so the
+    // background 3D canvas can NEVER leak or flicker before Beat 4 (the 0.580..0.940 cloud dissolve).
+    if (t <= 0.575) {
       if (pixelVeil && pixelVeil.style.background !== 'rgb(5, 5, 7)' && pixelVeil.style.background !== '#050507') {
         pixelVeil.style.background = '#050507';
       }
@@ -2637,6 +2637,7 @@ export function createAppFlow({
     }
     if (pixelVeil && pixelVeil.style.background !== 'transparent') {
       pixelVeil.style.background = 'transparent';
+      dissolveOpaqueDrawn = false;
     }
     if (t <= 0.58) {
       if (dissolveOpaqueDrawn) return;
@@ -2681,25 +2682,28 @@ export function createAppFlow({
   let lastTitleLoadingActive = null;
 
   /**
-   * Conducts the 4-Step Pitch-Black -> Brush-Written Amarante -> Glide Up -> Surrounding Flowers -> Smooth GPU Noise Dissolve:
-   * - Step 1 (0.007..0.425): 100% Pitch-Black Screen; 8 calligraphic strokes write 'Amarante' (~2.25s unhurried)
-   * - Step 2 (0.420..0.560): Still on Pitch-Black Screen, 'Amarante' glides smoothly upward into its final sky position
-   * - Step 3 (0.480..0.780): Surrounding Fixed Sun-Clock (at 08:10), Golden Swash & Sakura Flowers bloom around 'Amarante'
-   * - Step 4 (0.580..0.940): Smooth WebGL 2D organic noise dissolve clears the pitch-black screen to reveal the live 3D valley,
-   *                          followed by the Glassy Hairline 'Begin Journey' pill rising at 0.90..1.00
+   * Conducts the 5-Beat Pitch-Black -> Brush-Written Amarante -> Glide Up & Bloom -> Smooth GPU Noise Dissolve -> Go Pill:
+   * - Beat 1 (0.000..0.446, ~2.50s baseline): Solid pitch-black (#050507); calligraphic strokes write 'Amarante'
+   *   (tracks download/boot progress on slow loads; runs at BASE_RATE = 1/5.6 on fast/cached loads)
+   * - Beat 2 (0.446..0.575, ~0.72s baseline): Strictly after t >= 0.446 and __WORLD_VISUAL_READY__, 'Amarante'
+   *   glides gracefully upward into its sky lockup
+   * - Beat 3 (0.446..0.568, ~0.68s baseline): Still on pitch-black alongside the glide, the Fixed Sun-Clock (08:10),
+   *   Golden Swash & Sakura branches bloom cleanly and complete BEFORE the dissolve starts (zero SVG thrash during dissolve)
+   * - Beat 4 (0.580..0.940, ~2.02s baseline): Smooth WebGL 2D organic noise dissolve parts the black veil to reveal the 3D valley
+   * - Beat 5 (0.900..1.000, ~0.56s baseline): Glassy Hairline 'Begin Journey' pill rises smoothly into view
    */
   function updateSunClockAndParchmentAtProgress(t) {
     syncFixedClockHandsToGameTime();
     renderBlackNoiseDissolveCanvas(t);
 
-    // 1. Step 1: 3 Professional Vector Reveal Options for 'Amarante' on Pitch-Black Screen (Zero Yellow Dot)
+    // 1. Beat 1: 3 Professional Vector Reveal Options for 'Amarante' on Pitch-Black Screen (Zero Yellow Dot)
     const opt = state.onboardingOption || 1;
     const numG = svgGlyphEls.length || 8;
     const contourDurNorm = 820 / TOTAL_INTRO_DURATION_MS;
     const fillDelayNorm = 280 / TOTAL_INTRO_DURATION_MS;
     const fillDurNorm = 520 / TOTAL_INTRO_DURATION_MS;
 
-    const wordmarkSettled = t >= 0.58 && lastWordmarkPhase === opt;
+    const wordmarkSettled = t >= 0.575 && lastWordmarkPhase === opt;
     if (!wordmarkSettled) {
       for (let i = 0; i < numG; i++) {
         const gEl = svgGlyphEls[i];
@@ -2769,9 +2773,9 @@ export function createAppFlow({
         }
       }
 
-      // 2. Step 2: 'Amarante' glides smoothly upward ONLY after all 8 letters finish writing (0.45..0.58)
+      // 2. Beat 2: 'Amarante' glides gracefully upward into its sky lockup ONLY after writing & load finish (0.446..0.575)
       if (svgWordmarkMoverEl) {
-        const pGlide = easeInOutCubic((t - 0.45) / 0.13);
+        const pGlide = easeInOutCubic((t - 0.446) / 0.129);
         const tx = (1 - pGlide) * -24;
         const ty = (1 - pGlide) * 191;
         const sc = 1.0 + (1 - pGlide) * 0.08;
@@ -2780,15 +2784,15 @@ export function createAppFlow({
           `translate(${tx.toFixed(2)}, ${ty.toFixed(2)}) scale(${sc.toFixed(4)})`
         );
       }
-      lastWordmarkPhase = t >= 0.58 ? opt : -1;
+      lastWordmarkPhase = t >= 0.575 ? opt : -1;
     }
 
-    // 3. Step 3: Surrounding Fixed Sun-Clock, Golden Swash & Sakura Flowers bloom smoothly (0.46..0.58)
-    //    ONLY after 'Amarante' has finished writing and world loading is complete.
-    const bloomKey = t < 0.46 ? 'pre' : t >= 0.58 ? 'done' : t.toFixed(3);
+    // 3. Beat 3: Surrounding Fixed Sun-Clock, Golden Swash & Sakura Flowers bloom cleanly on pitch-black
+    //    alongside the upward glide (0.446..0.568), completing BEFORE Beat 4 cloud dissolve starts at 0.580.
+    const bloomKey = t < 0.446 ? 'pre' : t >= 0.568 ? 'done' : t.toFixed(3);
     if (bloomKey !== lastBloomStateKey) {
       lastBloomStateKey = bloomKey;
-      const bt = t >= 0.58 ? 1.0 : Math.max(0, (t - 0.46) / 0.12);
+      const bt = t >= 0.568 ? 1.0 : Math.max(0, (t - 0.446) / 0.122);
       const pRingOuter = easeOutCubic(bt / 0.65);
       const pRingInner = easeOutCubic((bt - 0.08) / 0.65);
       if (svgRingOuterEl) {
@@ -2853,7 +2857,7 @@ export function createAppFlow({
       }
 
       for (let i = 0; i < svgBlossomEls.length; i++) {
-        const startT = 0.18 + i * 0.032;
+        const startT = 0.18 + i * 0.022;
         const pb = easeOutBackSoft((bt - startT) / 0.44);
         const pbOp = easeOutCubic((bt - startT) / 0.34);
         const baseScale = Number(svgBlossomEls[i].dataset.baseScale || 1);
@@ -3040,7 +3044,8 @@ export function createAppFlow({
       typeof performance !== 'undefined' ? performance.now() : Date.now();
     let monoNow = nowPerf;
 
-    const WRITE_END_T = 0.45;
+    const WRITE_END_T = 0.446;
+    const BASE_RATE = 1.0 / 5.6;
     let currentT =
       typeof window !== 'undefined' &&
       typeof window.__BOOT_VEIL_T__ === 'number' &&
@@ -3069,18 +3074,14 @@ export function createAppFlow({
           typeof window !== 'undefined' && typeof window.__getEffectiveBootProgress === 'function'
             ? window.__getEffectiveBootProgress()
             : 0.5;
-        const targetT = Math.min(0.435, prog * WRITE_END_T);
+        const targetT = Math.min(0.438, prog * WRITE_END_T);
         const gap = Math.max(0, targetT - currentT);
-        const desiredRate = gap * 8.0 + (currentT < targetT ? 0.05 : 0);
-        const maxPreReadyRate = WRITE_END_T / 0.95;
-        const step = Math.min(gap, Math.min(maxPreReadyRate, desiredRate) * dt);
-        currentT = Math.max(currentT, Math.min(targetT, currentT + step));
+        const rate = Math.min(BASE_RATE, gap * 2.4 + (currentT < targetT ? 0.005 : 0));
+        currentT = Math.max(currentT, Math.min(targetT, currentT + rate * dt));
       } else if (currentT < WRITE_END_T) {
-        const rem = WRITE_END_T - currentT;
-        const finishRate = Math.max(WRITE_END_T / 0.28, rem * 12.0);
-        currentT = Math.min(WRITE_END_T, currentT + finishRate * dt);
+        currentT = Math.min(WRITE_END_T, currentT + BASE_RATE * dt);
       } else {
-        currentT = Math.min(1.0, currentT + ((1.0 - WRITE_END_T) / 0.65) * dt);
+        currentT = Math.min(1.0, currentT + BASE_RATE * dt);
       }
       if (typeof window !== 'undefined') {
         window.__BOOT_VEIL_T__ = currentT;
@@ -3770,7 +3771,13 @@ export function createAppFlow({
     typeof autoSkip === 'boolean' ? autoSkip : shouldAutoSkipOpeningFlow();
 
   if (stepFromUrl && Object.values(FLOW_STEPS).includes(stepFromUrl)) {
-    setStep(stepFromUrl);
+    const bootT0 =
+      stepFromUrl === FLOW_STEPS.TITLE &&
+      typeof window !== 'undefined' &&
+      typeof window.__BOOT_STROKE_T0__ === 'number'
+        ? window.__BOOT_STROKE_T0__
+        : null;
+    setStep(stepFromUrl, { startTimeOverride: bootT0 });
   } else if (skip) {
     setStep(FLOW_STEPS.IN_GAME, { silent: true });
   } else {

@@ -1653,8 +1653,8 @@ export async function createCoopPlayerSystem({
               : 'ATTUNED ELEMENT · GLACIAL TIDE',
           subtitle:
             payload.element === 'fire'
-              ? 'Press [E] to Ignite Fire Sword (Bonus Strike + Persistent Burn DoT)'
-              : 'Press [E] to Ignite Ice Sword (Slows Enemy Speed, Attack & Damage)',
+              ? 'Press [C] to Ignite Fire Sword (Bonus Strike + Persistent Burn DoT)'
+              : 'Press [C] to Ignite Ice Sword (Slows Enemy Speed, Attack & Damage)',
           kind: 'act',
         });
       } else {
@@ -1663,12 +1663,12 @@ export async function createCoopPlayerSystem({
         onBanner?.({
           title:
             payload.spellId === 'cinder_fall'
-              ? 'SPELLBOOK [E] · CINDER FALL METEOR'
-              : 'SPELLBOOK [E] · FROST LANCE GLACIER',
+              ? 'SPELLBOOK [C] · CINDER FALL METEOR'
+              : 'SPELLBOOK [C] · FROST LANCE GLACIER',
           subtitle:
             payload.spellId === 'cinder_fall'
-              ? 'Hold [E] to Aim Meteor Distance (3..16m) · Release [E] to Cast (8.5s CD)'
-              : 'Hold [E] to Aim Glacier Line (14.5m) · Release [E] to Cast (8.5s CD)',
+              ? 'Hold [C] to Aim Meteor Distance (3..16m) · Release [C] to Cast (8.5s CD)'
+              : 'Hold [C] to Aim Glacier Line (14.5m) · Release [C] to Cast (8.5s CD)',
           kind: 'act',
         });
       }
@@ -2494,9 +2494,45 @@ export async function createCoopPlayerSystem({
     }
   }
 
+  function resetPrayingHeroToIdle(hSt, wasPraying = false) {
+    if (!hSt) return;
+    const isPrayAction =
+      hSt.actionState === 'cast_spell' ||
+      hSt.actionState === 'pray_channel' ||
+      hSt.actionState === 'pray';
+    if (wasPraying || isPrayAction) {
+      if (hSt.actionState !== 'hit_b' && hSt.actionState !== 'death') {
+        hSt.actionState = null;
+        hSt.actionTimer = 0;
+        hSt.lungeRemaining = 0;
+      }
+    }
+    if (
+      !campaignLoop.combatHeroes[hSt.id]?.downed &&
+      !hSt.actionState &&
+      hSt.actionState !== 'hit_b' &&
+      hSt.actionState !== 'death'
+    ) {
+      const curClip = hSt.char?.anim?.currentKey;
+      if (
+        wasPraying ||
+        isPrayAction ||
+        curClip === 'cast_spell' ||
+        curClip === 'pray_channel' ||
+        curClip === 'pray'
+      ) {
+        hSt.locomotionState = null;
+        playHeroLocomotionClip(hSt, 'idle');
+      }
+    }
+  }
+
   function cancelCommuneChannel({ broadcast = true } = {}) {
+    const wasKnightPraying = Boolean(heroStates.Knight.praying);
+    const wasMagePraying = Boolean(heroStates.Mage.praying);
     communeChannel.active = false;
     communeChannel.localInitiated = false;
+    vfxKit.artoriousVfx?.setSuspense?.(false);
     if (vfxKit.artoriousVfx?.stopChannel) {
       vfxKit.artoriousVfx.stopChannel();
     } else {
@@ -2522,8 +2558,11 @@ export async function createCoopPlayerSystem({
       dissolveBaseY: 0,
       monochromeOverride: 0,
     });
+    resetPrayingHeroToIdle(heroStates.Knight, wasKnightPraying || true);
+    resetPrayingHeroToIdle(heroStates.Mage, wasMagePraying || true);
     applyTransform(heroStates.Knight);
     applyTransform(heroStates.Mage);
+    onHudStateChanged?.(campaignLoop.getStateSnapshot(heroStates));
     if (broadcast) {
       coopClient.sendCommuneState({
         state: 'cancel',
@@ -2535,21 +2574,39 @@ export async function createCoopPlayerSystem({
   function applyCommuneVerdict(judgment = {}, speakerRole = activeHeroId) {
     ensureCombatUnfrozen();
     lastAppliedVerdictAt = Date.now();
+    const wasKnightPraying = Boolean(heroStates.Knight.praying);
+    const wasMagePraying = Boolean(heroStates.Mage.praying);
     communeChannel.active = false;
     communeChannel.localInitiated = false;
+    vfxKit.artoriousVfx?.setSuspense?.(false);
     heroStates.Knight.praying = false;
     heroStates.Mage.praying = false;
 
     const res = campaignLoop.applyCommuneVerdict(judgment, speakerRole, heroStates);
+    const nonCutsceneMode =
+      !res?.sequenceActive ||
+      ['retry', 'penalty', 'pat', 'field_heal', 'awakening'].includes(res?.prayerMode);
+    if (nonCutsceneMode && !res?.sequenceActive) {
+      if (vfxKit.artoriousVfx?.stopChannel) {
+        vfxKit.artoriousVfx.stopChannel();
+      } else {
+        vfxKit.artoriousVfx?.clear?.();
+      }
+      resetPrayingHeroToIdle(heroStates.Knight, wasKnightPraying);
+      resetPrayingHeroToIdle(heroStates.Mage, wasMagePraying);
+    }
+
     applyTransform(heroStates.Knight);
     applyTransform(heroStates.Mage);
 
     const verdict = String(judgment?.verdict || 'smite').toLowerCase();
-    triggerCameraImpulse({
-      intensity: verdict === 'miracle' ? 0.32 : verdict === 'smite' ? 0.28 : 0.18,
-      fovKick: verdict === 'miracle' ? 2.8 : verdict === 'smite' ? 2.2 : 1.4,
-      kind: 'cataclysm',
-    });
+    if (res?.prayerMode !== 'retry') {
+      triggerCameraImpulse({
+        intensity: verdict === 'miracle' ? 0.32 : verdict === 'smite' ? 0.28 : 0.18,
+        fovKick: verdict === 'miracle' ? 2.8 : verdict === 'smite' ? 2.2 : 1.4,
+        kind: 'cataclysm',
+      });
+    }
 
     return res;
   }

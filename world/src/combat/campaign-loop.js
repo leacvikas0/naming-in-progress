@@ -1136,9 +1136,6 @@ export function createCampaignLoop({
     addResonance(reward.resonanceGain);
     setKnightBreathing('solar', KNIGHT_POWER_SWORD_DURATION);
 
-    if (combatSfx?.playShieldChime) {
-      combatSfx.playShieldChime();
-    }
     emitBanner(
       'SANCTUARY BRAZIER KINDLED',
       'Full Heal · +35 Golden Ward Shield · Empowered Breathing (+25% DMG)',
@@ -1365,7 +1362,13 @@ export function createCampaignLoop({
       verdict === 'rose_gommage';
 
     let resolvedPrayerMode = explicitPrayerMode;
-    if (!resolvedPrayerMode) {
+    if (
+      resolvedPrayerMode === 'retry' ||
+      verdict === 'retry_nudge' ||
+      String(judgment?.legacyVerdict || '').toLowerCase() === 'retry_nudge'
+    ) {
+      resolvedPrayerMode = 'retry';
+    } else if (!resolvedPrayerMode) {
       if (isSmiteVerdict) {
         resolvedPrayerMode = 'smite';
       } else if (
@@ -1394,6 +1397,30 @@ export function createCampaignLoop({
       } else {
         resolvedPrayerMode = 'divine_miracle';
       }
+    }
+
+    // 0. RETRY (`prayerMode === 'retry'` — empty/scattered/failed audio eval: 0 HP loss, 0 CD, no cutscene)
+    if (resolvedPrayerMode === 'retry') {
+      if (speakerEntity) speakerEntity.praying = false;
+      if (partnerEntity) partnerEntity.praying = false;
+      emitBanner(
+        'THE WIND SCATTERED YOUR VOICE',
+        judgment?.divine_quote ||
+          judgment?.subtitle ||
+          'The valley wind scattered your voice. Draw a breath and speak once more.',
+        'blessing'
+      );
+      onHudStateChanged?.(getStateSnapshot(heroStates));
+      return {
+        verdict: 'retry',
+        prayerMode: 'retry',
+        sequenceActive: false,
+        hpDelta: 0,
+        speakerRole: speakerKey,
+        partnerRole: partnerKey,
+        speakerHp: speakerHero.hp,
+        partnerHp: partnerHero.hp,
+      };
     }
 
     // 1. SMITE (`smite`, `rude_smite`, `rose_gommage`)
@@ -1566,6 +1593,10 @@ export function createCampaignLoop({
     // 3. AWAKENING (Stone Riddle Solved / Stage Unlocked)
     if (resolvedPrayerMode === 'awakening') {
       stoneGuessCd = 3.0;
+      const prevKHp = combatHeroes.Knight.downed ? 0 : combatHeroes.Knight.hp;
+      const prevMHp = combatHeroes.Mage.downed ? 0 : combatHeroes.Mage.hp;
+      let kGain = 0;
+      let mGain = 0;
       if (rawHpDeltaPct !== null && rawHpDeltaPct < 0) {
         const dock = Math.max(1, Math.round(speakerHero.maxHp * Math.abs(rawHpDeltaPct)));
         const floorHp = Math.max(1, Math.round(speakerHero.maxHp * 0.15));
@@ -1585,6 +1616,8 @@ export function createCampaignLoop({
             h.hp = clamp(h.hp + Math.round(h.maxHp * healPct), 1, h.maxHp);
           }
         }
+        kGain = Math.max(0, combatHeroes.Knight.hp - prevKHp);
+        mGain = Math.max(0, combatHeroes.Mage.hp - prevMHp);
       }
       if (speakerEntity) speakerEntity.praying = false;
       if (partnerEntity) partnerEntity.praying = false;
@@ -1597,11 +1630,7 @@ export function createCampaignLoop({
       }
 
       vfxKit?.artoriousVfx?.triggerHeal?.(speakerPos, partnerPos);
-      if (combatSfx?.playVerdict) {
-        combatSfx.playVerdict('awakening');
-      } else {
-        combatSfx?.playShieldChime?.();
-      }
+      combatSfx?.playVerdict?.('awakening');
       addResonance(35);
       emitBanner(
         judgment?.stoneSolvedId
@@ -1621,6 +1650,8 @@ export function createCampaignLoop({
           !vfxKit && judgment?.stoneSolvedId === 'stone_grove'
             ? false
             : awakeningEclipseTimer > 0,
+        knightGain: kGain,
+        mageGain: mGain,
         speakerRole: speakerKey,
         partnerRole: partnerKey,
         knightHp: combatHeroes.Knight.hp,
@@ -1669,11 +1700,7 @@ export function createCampaignLoop({
       if (speakerEntity) speakerEntity.praying = false;
       if (partnerEntity) partnerEntity.praying = false;
       vfxKit?.artoriousVfx?.triggerHeal?.(speakerPos, partnerPos);
-      if (combatSfx?.playVerdict) {
-        combatSfx.playVerdict('heal');
-      } else {
-        combatSfx?.playShieldChime?.();
-      }
+      combatSfx?.playVerdict?.('heal');
       addResonance(isPat ? 2 : 12);
       const speakerGain = speakerKey === 'Knight' ? kGain : mGain;
       emitBanner(
@@ -1756,11 +1783,9 @@ export function createCampaignLoop({
     }
 
     setKnightBreathing('eclipse', DIVINE_BLESSING_DURATION, { passive: true });
-    if (combatSfx?.playVerdict) {
-      combatSfx.playVerdict('miracle');
-    } else {
-      combatSfx?.playShieldChime?.();
-    }
+    combatSfx?.playVerdict?.('miracle');
+    const miracleKnightGain = Math.max(0, combatHeroes.Knight.maxHp - verdictSequence.startKnightHp);
+    const miracleMageGain = Math.max(0, combatHeroes.Mage.maxHp - verdictSequence.startMageHp);
     emitBanner(
       verdictSequence.knightWasDowned || verdictSequence.mageWasDowned
         ? 'DIVINE RESURRECTION · COURT OF DARK FLOWERS'
@@ -1776,6 +1801,8 @@ export function createCampaignLoop({
       prayerMode: 'divine_miracle',
       sequenceActive: true,
       duration: 4.8,
+      knightGain: miracleKnightGain,
+      mageGain: miracleMageGain,
       speakerRole: speakerKey,
       partnerRole: partnerKey,
       partnerHp: partnerHero.hp,
@@ -3783,7 +3810,6 @@ export function createCampaignLoop({
             strongholdSpawnedEnemies.clear();
           }
 
-          combatSfx?.playShieldChime?.();
           emitBanner(
             'THE VALLEY FALLS SILENT',
             'You regroup at the sanctuary stone. The battle begins anew when you return.',
@@ -3821,7 +3847,6 @@ export function createCampaignLoop({
             downedSt.actionState = null;
             downedSt.actionTimer = 0;
             downedSt.char?.play?.('revive', { loop: false, fade: 0.1, force: true });
-            combatSfx?.playShieldChime?.();
             emitBanner(`${id.toUpperCase()} RISES AGAIN`, 'Carried back by love alone.', 'blessing');
             partnerRevivedCallback?.({
               revivedRole: id,
@@ -3958,7 +3983,7 @@ export function createCampaignLoop({
               } else if (sh && shKey !== 'apex_finale') {
                 emitBanner(
                   `${sh.name.toUpperCase()} SANCTIFIED`,
-                  'Guardian Forces Vanquished — Inspect the Sacred Stone [G] and Speak [R]',
+                  'Guardian Forces Vanquished — Inspect the Sacred Stone [G] and Speak [V]',
                   'blessing'
                 );
               }

@@ -1509,7 +1509,7 @@ function updateCombatHud(snapshot) {
     } else {
       actStageTag.textContent = 'Sacred Stones (0/3)';
       actObjectiveText.textContent =
-        'Village Well Stronghold — Clear Guardians, Read [G] & Commune [R]';
+        'Village Well Stronghold — Clear Guardians, Read [G] & Commune [V]';
     }
   }
 
@@ -3182,6 +3182,9 @@ function initCommuneClientSystem(createCommuneClientFn) {
               ? 'The Sovereign Speaks...'
               : 'Tap [V]';
       }
+      if (isJudging) {
+        coopSystem?.setCommuneSuspense?.(true);
+      }
       if (isSpeaking && communeSnapshot.judgment) {
         coopSystem?.setCommuneSuspense?.(true);
         if (communeSnapshot.preClimax) {
@@ -3220,7 +3223,27 @@ function initCommuneClientSystem(createCommuneClientFn) {
       const speakerRole = coopSystem.player.activeHeroId || 'Knight';
       const updatedProg = coopSystem.coopClient.progression.applyVerdictProgression(judgment);
       sculptedHud?.setProgressionState(updatedProg);
-      coopSystem.applyCommuneVerdict(judgment, speakerRole);
+      const res = coopSystem.applyCommuneVerdict(judgment, speakerRole);
+      const kGain = Number(res?.knightGain || 0);
+      const mGain = Number(res?.mageGain || 0);
+      const isNegativeDelta =
+        Number(judgment?.hpDeltaPct) < 0 ||
+        Number(judgment?.hpDelta) < 0 ||
+        Number(res?.hpDelta) < 0;
+      const isHealVerdict =
+        !isNegativeDelta &&
+        (kGain > 0 ||
+          mGain > 0 ||
+          res?.prayerMode === 'awakening' ||
+          res?.prayerMode === 'divine_miracle');
+      if (isHealVerdict) {
+        const pulseRole =
+          kGain > 0 && mGain > 0 ? 'both' : kGain > 0 ? 'Knight' : mGain > 0 ? 'Mage' : 'both';
+        sculptedHud?.triggerHealPulse?.({
+          role: pulseRole,
+          amount: Math.max(kGain, mGain, Number(judgment?.hpDelta || 0)),
+        });
+      }
     },
     onCancel: () => {
       coopSystem.cancelCommuneChannel();
@@ -3301,22 +3324,27 @@ async function startCommuneHold() {
 
   const chanRes = coopSystem.startCommuneChannel(speakerRole, { camera });
   if (chanRes && chanRes.allowed === false) {
-    sculptedHud?.setCommuneState({ listening: false });
+    sculptedHud?.setCommuneState({ listening: false, judging: false, speaking: false });
     return chanRes;
   }
 
-  if (typeof communeClient.beginPress === 'function') {
-    return communeClient.beginPress({
-      speakerRole,
-      deviceId: selectedMicDeviceId || undefined,
-      speakerPos: { x: player.x, y: player.y, z: player.z },
-    });
+  const startRes =
+    typeof communeClient.beginPress === 'function'
+      ? await communeClient.beginPress({
+          speakerRole,
+          deviceId: selectedMicDeviceId || undefined,
+          speakerPos: { x: player.x, y: player.y, z: player.z },
+        })
+      : await communeClient.startCommune({
+          speakerRole,
+          deviceId: selectedMicDeviceId || undefined,
+          speakerPos: { x: player.x, y: player.y, z: player.z },
+        });
+  if (startRes && startRes.ok === false && communeClient.getState().state === 'idle') {
+    coopSystem.cancelCommuneChannel({ broadcast: false });
+    sculptedHud?.setCommuneState({ listening: false, judging: false, speaking: false });
   }
-  return communeClient.startCommune({
-    speakerRole,
-    deviceId: selectedMicDeviceId || undefined,
-    speakerPos: { x: player.x, y: player.y, z: player.z },
-  });
+  return startRes;
 }
 
 async function toggleCommuneTap() {
@@ -3347,15 +3375,20 @@ async function toggleCommuneTap() {
 
   const chanRes = coopSystem.startCommuneChannel(speakerRole, { camera });
   if (chanRes && chanRes.allowed === false) {
-    sculptedHud?.setCommuneState({ listening: false });
+    sculptedHud?.setCommuneState({ listening: false, judging: false, speaking: false });
     return chanRes;
   }
 
-  return communeClient.tapCommune({
+  const tapRes = await communeClient.tapCommune({
     speakerRole,
     deviceId: selectedMicDeviceId || undefined,
     speakerPos: { x: player.x, y: player.y, z: player.z },
   });
+  if (tapRes && tapRes.ok === false && communeClient.getState().state === 'idle') {
+    coopSystem.cancelCommuneChannel({ broadcast: false });
+    sculptedHud?.setCommuneState({ listening: false, judging: false, speaking: false });
+  }
+  return tapRes;
 }
 
 async function finishCommuneHold() {
@@ -5224,6 +5257,24 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
+  if (e.key === 'Escape' && communeClient?.getState?.()?.state === 'listening') {
+    e.preventDefault();
+    communeClient.cancelCommune({ reason: 'escape_cancel' });
+    return;
+  }
+
+  const cStateSnap = communeClient?.getState?.();
+  if (
+    cStateSnap?.state === 'idle' &&
+    !cStateSnap.partnerCommuning &&
+    (coopSystem?.communeChannel?.localInitiated ||
+      !coopSystem?.coopClient?.getState?.()?.peerConnected) &&
+    (coopSystem?.campaignLoop?.communeChannelActive || coopSystem?.communeChannel?.active) &&
+    !coopSystem?.campaignLoop?.verdictSequence?.active
+  ) {
+    coopSystem.cancelCommuneChannel({ broadcast: false });
+  }
+
   if (isUiOverlayBlockingInput()) {
     return;
   }
@@ -5559,6 +5610,10 @@ window.addEventListener('blur', () => {
   if (lmbHoldTimer) {
     clearTimeout(lmbHoldTimer);
     lmbHoldTimer = null;
+  }
+  const cSnap = communeClient?.getState?.();
+  if (cSnap?.state === 'listening' && cSnap?.pressHeld) {
+    communeClient.endPress({ speakerRole: coopSystem?.player?.activeHeroId || 'Knight' });
   }
   if (!coopSystem) return;
   if (coopSystem?.heroStates?.Knight?.shieldBlocking) {
@@ -6157,6 +6212,18 @@ function animate() {
 
   communeClient?.update(dt, { x: player.x, y: player.y, z: player.z });
 
+  const animCommuneSnap = communeClient?.getState?.();
+  if (
+    animCommuneSnap?.state === 'idle' &&
+    !animCommuneSnap.partnerCommuning &&
+    (coopSystem?.communeChannel?.localInitiated ||
+      !coopSystem?.coopClient?.getState?.()?.peerConnected) &&
+    (coopSystem?.campaignLoop?.communeChannelActive || coopSystem?.communeChannel?.active) &&
+    !coopSystem?.campaignLoop?.verdictSequence?.active
+  ) {
+    coopSystem.cancelCommuneChannel({ broadcast: false });
+  }
+
   if (camState.mode === 'player') {
     if (isUiOverlayBlockingInput() && keys.size > 0) {
       keys.clear();
@@ -6575,6 +6642,18 @@ async function bootWorldAsync() {
       }
       const updatedProg = coopSystem.coopClient.progression.applyVerdictProgression(judgment);
       sculptedHud?.setProgressionState(updatedProg);
+      const pMode = String(judgment?.prayerMode || '').toLowerCase();
+      const negRemote =
+        Number(judgment?.hpDeltaPct) < 0 || Number(judgment?.hpDelta) < 0;
+      if (
+        !negRemote &&
+        (pMode === 'field_heal' || pMode === 'divine_miracle' || pMode === 'awakening')
+      ) {
+        sculptedHud?.triggerHealPulse?.({
+          role: 'both',
+          amount: Number(judgment?.hpDelta || 0),
+        });
+      }
     },
     yieldFrame: bootSlicer.yieldFrame,
     sliceBudgetMs: bootSlicer.sliceBudgetMs,

@@ -429,6 +429,24 @@ const SCULPTED_HUD_CSS = `
     height: 9px;
   }
 
+  .sh-hp-heal-preview {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(250, 204, 21, 0.56) 0%, rgba(254, 249, 195, 0.96) 100%);
+    opacity: 0;
+    transition: width 140ms ease-out, opacity 320ms ease-out;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .sh-life-row.is-healed-pulse .sh-hp-heal-preview {
+    opacity: 1;
+  }
+
   .sh-hp-fill {
     position: relative;
     height: 100%;
@@ -436,6 +454,11 @@ const SCULPTED_HUD_CSS = `
     border-radius: 999px;
     background: #84cc16;
     transition: width 150ms ease-out;
+    z-index: 2;
+  }
+
+  .sh-life-row.is-healed-pulse .sh-hp-fill {
+    transition: width 760ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .sh-hp-fill::after {
@@ -1350,6 +1373,39 @@ const SCULPTED_HUD_CSS = `
     box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.75), 0 4px 16px rgba(244, 63, 94, 0.45);
   }
 
+  @keyframes shCommuneJudgingPulse {
+    0%, 100% {
+      border-color: rgba(253, 224, 71, 0.86);
+      box-shadow:
+        inset 0 0 0 2.5px rgba(254, 240, 138, 0.34),
+        0 0 0 2px rgba(250, 204, 21, 0.45),
+        0 0 18px rgba(244, 63, 94, 0.45),
+        0 0 28px rgba(251, 191, 36, 0.42);
+      transform: scale(1);
+    }
+    50% {
+      border-color: #fda4af;
+      box-shadow:
+        inset 0 0 0 2.5px rgba(253, 224, 71, 0.56),
+        0 0 0 4px rgba(251, 191, 36, 0.72),
+        0 0 26px rgba(244, 63, 94, 0.64),
+        0 0 38px rgba(251, 191, 36, 0.65);
+      transform: scale(1.045);
+    }
+  }
+
+  #sculpted-commune-wrap.is-judging #sculpted-commune-btn {
+    animation: shCommuneJudgingPulse 1.35s ease-in-out infinite;
+  }
+
+  #sculpted-commune-wrap.is-speaking #sculpted-commune-btn {
+    border-color: #fde047;
+    box-shadow:
+      inset 0 0 0 2.5px rgba(254, 249, 195, 0.45),
+      0 0 0 3px rgba(250, 204, 21, 0.82),
+      0 0 24px rgba(250, 204, 21, 0.78);
+  }
+
   #sculpted-commune-wrap.is-listening .sh-commune-idle-content {
     display: none;
   }
@@ -1630,6 +1686,108 @@ const SCULPTED_HUD_CSS = `
   .sh-life-row.is-damaged-shake .sh-hp-channel {
     box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.95), 0 0 14px rgba(225, 29, 72, 0.65);
   }
+
+  /* ----------------------------------------------------------------------- */
+  /* 8. Tasteful Top-Left Health Rising Animation (Bar Sheen + Emblem Breath) */
+  /* ----------------------------------------------------------------------- */
+  .sh-hp-channel::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      108deg,
+      rgba(254, 249, 195, 0) 20%,
+      rgba(254, 249, 195, 0.68) 48%,
+      rgba(255, 255, 255, 0.92) 52%,
+      rgba(253, 224, 71, 0.48) 58%,
+      rgba(253, 224, 71, 0) 82%
+    );
+    transform: translate3d(-120%, 0, 0);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 4;
+  }
+
+  @keyframes shHealLightSweep {
+    0% {
+      opacity: 0;
+      transform: translate3d(-120%, 0, 0);
+    }
+    18% {
+      opacity: 0.95;
+    }
+    76% {
+      opacity: 0.85;
+    }
+    100% {
+      opacity: 0;
+      transform: translate3d(125%, 0, 0);
+    }
+  }
+
+  @keyframes shHealChannelGlow {
+    0% {
+      border-color: rgba(255, 255, 255, 0.78);
+    }
+    30% {
+      border-color: rgba(254, 240, 138, 0.96);
+      box-shadow: 0 0 10px rgba(250, 204, 21, 0.42), 0 2px 6px rgba(15, 23, 42, 0.25);
+    }
+    100% {
+      border-color: rgba(255, 255, 255, 0.78);
+    }
+  }
+
+  @keyframes shHealNumberGlow {
+    0%, 100% {
+      color: rgba(255, 255, 255, 0.92);
+      text-shadow: 0 1px 3px rgba(15, 23, 42, 0.75);
+    }
+    28% {
+      color: #fef9c3;
+      text-shadow: 0 0 8px rgba(250, 204, 21, 0.65), 0 1px 3px rgba(15, 23, 42, 0.72);
+    }
+  }
+
+  @keyframes shHealRingBreath {
+    0% {
+      box-shadow: 0 0 0 0px rgba(254, 240, 138, 0.78), 0 3px 10px rgba(15, 23, 42, 0.25);
+      transform: scale(1);
+    }
+    35% {
+      transform: scale(1.045);
+    }
+    100% {
+      box-shadow: 0 0 0 12px rgba(254, 240, 138, 0), 0 3px 10px rgba(15, 23, 42, 0.25);
+      transform: scale(1);
+    }
+  }
+
+  .sh-life-row.is-healed-pulse .sh-hp-num-inline {
+    animation: shHealNumberGlow 820ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .sh-life-row.is-healed-pulse .sh-hp-channel {
+    animation: shHealChannelGlow 820ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .sh-life-row.is-healed-pulse .sh-hp-channel::after {
+    animation: shHealLightSweep 820ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .sh-life-row.is-healed-pulse .sh-emblem-ring {
+    animation: shHealRingBreath 740ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #sculpted-commune-wrap.is-judging #sculpted-commune-btn,
+    .sh-life-row.is-healed-pulse .sh-hp-num-inline,
+    .sh-life-row.is-healed-pulse .sh-hp-channel,
+    .sh-life-row.is-healed-pulse .sh-hp-channel::after,
+    .sh-life-row.is-healed-pulse .sh-emblem-ring {
+      animation: none;
+    }
+  }
 `;
 
 /**
@@ -1694,6 +1852,8 @@ export function createSculptedHud({
     },
     commune: {
       listening: false,
+      judging: false,
+      speaking: false,
       partnerListening: false,
       elapsedSeconds: 0,
       maxSeconds: 30,
@@ -1734,6 +1894,7 @@ export function createSculptedHud({
           </div>
           <div class="sh-hp-bar-wrap">
             <div class="sh-hp-channel">
+              <div class="sh-hp-heal-preview" id="sh-hp-heal-primary"></div>
               <div class="sh-hp-fill" id="sh-hp-fill-primary"></div>
               <div class="sh-shield-fill" id="sh-shield-fill-primary"></div>
             </div>
@@ -1753,6 +1914,7 @@ export function createSculptedHud({
             </div>
             <div class="sh-hp-bar-wrap">
               <div class="sh-hp-channel">
+                <div class="sh-hp-heal-preview" id="sh-hp-heal-partner"></div>
                 <div class="sh-hp-fill" id="sh-hp-fill-partner"></div>
                 <div class="sh-shield-fill" id="sh-shield-fill-partner"></div>
               </div>
@@ -2031,8 +2193,10 @@ export function createSculptedHud({
   const partnerNameEl = root.querySelector('#sh-name-partner');
   const primaryHpNumEl = root.querySelector('#sh-hp-num-primary');
   const partnerHpNumEl = root.querySelector('#sh-hp-num-partner');
+  const primaryHpHealPreview = root.querySelector('#sh-hp-heal-primary');
   const primaryHpFill = root.querySelector('#sh-hp-fill-primary');
   const primaryShieldFill = root.querySelector('#sh-shield-fill-primary');
+  const partnerHpHealPreview = root.querySelector('#sh-hp-heal-partner');
   const partnerHpFill = root.querySelector('#sh-hp-fill-partner');
   const partnerShieldFill = root.querySelector('#sh-shield-fill-partner');
 
@@ -2124,6 +2288,50 @@ export function createSculptedHud({
   /* Render Synchronizers (Including Genshin Vertical Fill Up & Down)        */
   /* ----------------------------------------------------------------------- */
 
+  const displayedHpBySlot = { primary: null, partner: null };
+  const hpTweenRafBySlot = { primary: null, partner: null };
+  const lastRoleHp = { Knight: null, Mage: null };
+
+  function renderHpNumberFormatted(el, hpVal, maxHpInt, shInt, showShield) {
+    if (!el) return;
+    const hpInt = Math.max(0, Math.round(hpVal));
+    el.textContent = showShield && shInt > 0 ? `${hpInt}+${shInt}/${maxHpInt}` : `${hpInt}/${maxHpInt}`;
+  }
+
+  function animateHpCounter(slot, el, fromHp, toHp, maxHpInt, shInt, showShield) {
+    if (!el) return;
+    if (hpTweenRafBySlot[slot] !== null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(hpTweenRafBySlot[slot]);
+      hpTweenRafBySlot[slot] = null;
+    }
+    if (
+      typeof requestAnimationFrame !== 'function' ||
+      typeof performance === 'undefined' ||
+      toHp <= fromHp
+    ) {
+      displayedHpBySlot[slot] = toHp;
+      renderHpNumberFormatted(el, toHp, maxHpInt, shInt, showShield);
+      return;
+    }
+    const startT = performance.now();
+    const durMs = 580;
+    const step = (now) => {
+      const p = clamp((now - startT) / durMs, 0, 1);
+      const eased = 1 - Math.pow(1 - p, 3);
+      const cur = fromHp + (toHp - fromHp) * eased;
+      displayedHpBySlot[slot] = cur;
+      renderHpNumberFormatted(el, cur, maxHpInt, shInt, showShield);
+      if (p < 1) {
+        hpTweenRafBySlot[slot] = requestAnimationFrame(step);
+      } else {
+        hpTweenRafBySlot[slot] = null;
+        displayedHpBySlot[slot] = toHp;
+        renderHpNumberFormatted(el, toHp, maxHpInt, shInt, showShield);
+      }
+    };
+    hpTweenRafBySlot[slot] = requestAnimationFrame(step);
+  }
+
   function renderRoleAndPartyBars() {
     const isKnightLeader = state.activeRole !== 'Mage';
     const primaryRole = isKnightLeader ? 'Knight' : 'Mage';
@@ -2165,6 +2373,9 @@ export function createSculptedHud({
 
     const pPct = clamp((pStat.hp / Math.max(1, pStat.maxHp)) * 100, 0, 100);
     const pShieldPct = clamp((pStat.shield / Math.max(1, pStat.maxHp)) * 100, 0, 100);
+    if (primaryHpHealPreview) {
+      primaryHpHealPreview.style.width = `${pPct.toFixed(1)}%`;
+    }
     if (primaryHpFill) {
       primaryHpFill.style.width = `${pPct.toFixed(1)}%`;
       primaryHpFill.classList.toggle('is-low', pPct < 32);
@@ -2176,11 +2387,24 @@ export function createSculptedHud({
       const hpInt = Math.max(0, Math.round(pStat.hp));
       const maxHpInt = Math.max(1, Math.round(pStat.maxHp));
       const shInt = Math.max(0, Math.round(pStat.shield || 0));
-      primaryHpNumEl.textContent = shInt > 0 ? `${hpInt}+${shInt}/${maxHpInt}` : `${hpInt}/${maxHpInt}`;
+      const prevDisp = displayedHpBySlot.primary;
+      if (
+        prevDisp !== null &&
+        hpInt > prevDisp + 1 &&
+        primaryRowEl?.classList.contains('is-healed-pulse')
+      ) {
+        animateHpCounter('primary', primaryHpNumEl, prevDisp, hpInt, maxHpInt, shInt, true);
+      } else if (hpTweenRafBySlot.primary === null) {
+        displayedHpBySlot.primary = hpInt;
+        renderHpNumberFormatted(primaryHpNumEl, hpInt, maxHpInt, shInt, true);
+      }
     }
 
     const sPct = clamp((sStat.hp / Math.max(1, sStat.maxHp)) * 100, 0, 100);
     const sShieldPct = clamp((sStat.shield / Math.max(1, sStat.maxHp)) * 100, 0, 100);
+    if (partnerHpHealPreview) {
+      partnerHpHealPreview.style.width = `${sPct.toFixed(1)}%`;
+    }
     if (partnerHpFill) {
       partnerHpFill.style.width = `${sPct.toFixed(1)}%`;
       partnerHpFill.classList.toggle('is-low', sPct < 32);
@@ -2191,7 +2415,17 @@ export function createSculptedHud({
     if (partnerHpNumEl) {
       const sHpInt = Math.max(0, Math.round(sStat.hp));
       const sMaxHpInt = Math.max(1, Math.round(sStat.maxHp));
-      partnerHpNumEl.textContent = `${sHpInt}/${sMaxHpInt}`;
+      const prevPartnerDisp = displayedHpBySlot.partner;
+      if (
+        prevPartnerDisp !== null &&
+        sHpInt > prevPartnerDisp + 1 &&
+        partnerRowEl?.classList.contains('is-healed-pulse')
+      ) {
+        animateHpCounter('partner', partnerHpNumEl, prevPartnerDisp, sHpInt, sMaxHpInt, 0, false);
+      } else if (hpTweenRafBySlot.partner === null) {
+        displayedHpBySlot.partner = sHpInt;
+        renderHpNumberFormatted(partnerHpNumEl, sHpInt, sMaxHpInt, 0, false);
+      }
     }
 
     // Attack Ring Glyph: Flat White Broadsword for Knight, Arcane Staff for Mage
@@ -2214,6 +2448,8 @@ export function createSculptedHud({
       state.communeChannelActive ||
         state.verdictSequenceActive ||
         state.commune.listening ||
+        state.commune.judging ||
+        state.commune.speaking ||
         state.commune.partnerListening
     );
     root.classList.toggle('is-communing', isCommuningNow);
@@ -2246,6 +2482,8 @@ export function createSculptedHud({
         Boolean(state.communeDiscovered || anyElementUnlocked || ultUnlocked)
       );
       communeWrap.classList.toggle('is-listening', Boolean(state.commune.listening));
+      communeWrap.classList.toggle('is-judging', Boolean(state.commune.judging));
+      communeWrap.classList.toggle('is-speaking', Boolean(state.commune.speaking));
     }
     if (communeBtn) {
       communeBtn.classList.toggle(
@@ -2483,13 +2721,27 @@ export function createSculptedHud({
   function setCommuneState(patch = {}) {
     if (typeof patch.listening === 'boolean') {
       state.commune.listening = patch.listening;
-      state.communeChannelActive = patch.listening;
       if (patch.listening) {
         state.communeDiscovered = true;
       } else {
         if (patch.micRms === undefined) state.commune.micRms = 0;
         if (patch.micBands === undefined) state.commune.micBands = [0, 0, 0, 0, 0];
       }
+    }
+    if (typeof patch.judging === 'boolean') {
+      state.commune.judging = patch.judging;
+    }
+    if (typeof patch.speaking === 'boolean') {
+      state.commune.speaking = patch.speaking;
+    }
+    if (
+      typeof patch.listening === 'boolean' ||
+      typeof patch.judging === 'boolean' ||
+      typeof patch.speaking === 'boolean'
+    ) {
+      state.communeChannelActive = Boolean(
+        state.commune.listening || state.commune.judging || state.commune.speaking
+      );
     }
     if (typeof patch.communeChannelActive === 'boolean') {
       state.communeChannelActive = patch.communeChannelActive;
@@ -3634,18 +3886,6 @@ export function createSculptedHud({
     });
   });
 
-  root
-    .querySelectorAll(
-      '#sculpted-room-badge, #sculpted-pause-btn, #sculpted-fullscreen-btn, #sculpted-slot-e, #sculpted-slot-q, #sculpted-slot-tab, #sculpted-commune-btn, .sh-choice-pill, .sh-modal-close-btn'
-    )
-    .forEach((el) => {
-      el.addEventListener('pointerenter', (e) => {
-        if (e.pointerType === 'mouse' && typeof onUiSfx === 'function') {
-          onUiSfx('hover');
-        }
-      });
-    });
-
   pauseModal?.addEventListener('click', (e) => {
     if (e.target === pauseModal) {
       closePauseModal();
@@ -3890,6 +4130,26 @@ export function createSculptedHud({
         state.cooldowns.eBuffRemaining = cooldowns.eBuffRemaining;
       }
     }
+    const prevKnightHp = lastRoleHp.Knight;
+    const prevMageHp = lastRoleHp.Mage;
+    const nextKnightHp = state.stats.Knight?.hp ?? null;
+    const nextMageHp = state.stats.Mage?.hp ?? null;
+    lastRoleHp.Knight = nextKnightHp;
+    lastRoleHp.Mage = nextMageHp;
+
+    const knightHealed = prevKnightHp !== null && nextKnightHp !== null && nextKnightHp > prevKnightHp + 2;
+    const mageHealed = prevMageHp !== null && nextMageHp !== null && nextMageHp > prevMageHp + 2;
+    if (knightHealed || mageHealed) {
+      const role = knightHealed && mageHealed ? 'both' : knightHealed ? 'Knight' : 'Mage';
+      triggerHealPulse({
+        role,
+        amount: Math.max(
+          knightHealed ? nextKnightHp - prevKnightHp : 0,
+          mageHealed ? nextMageHp - prevMageHp : 0
+        ),
+      });
+    }
+
     renderRoleAndPartyBars();
     renderProgressionAndSlots();
   }
@@ -3902,6 +4162,42 @@ export function createSculptedHud({
   let vignetteTimer = null;
   let primaryShakeTimer = null;
   let partnerShakeTimer = null;
+  let primaryHealTimer = null;
+  let partnerHealTimer = null;
+
+  function triggerHealPulse({ role = 'both', amount = 0 } = {}) {
+    const norm = String(role || 'both').toLowerCase();
+    const targetPrimary =
+      norm === 'both' ||
+      (norm === 'knight' && state.activeRole === 'Knight') ||
+      (norm === 'mage' && state.activeRole === 'Mage');
+    const targetPartner =
+      norm === 'both' ||
+      (norm === 'knight' && state.activeRole !== 'Knight') ||
+      (norm === 'mage' && state.activeRole !== 'Mage');
+
+    if (targetPrimary && primaryRowEl) {
+      primaryRowEl.classList.remove('is-healed-pulse');
+      void primaryRowEl.offsetWidth;
+      primaryRowEl.classList.add('is-healed-pulse');
+      if (primaryHealTimer) clearTimeout(primaryHealTimer);
+      primaryHealTimer = setTimeout(() => {
+        primaryRowEl.classList.remove('is-healed-pulse');
+        primaryHealTimer = null;
+      }, 920);
+    }
+    if (targetPartner && partnerRowEl) {
+      partnerRowEl.classList.remove('is-healed-pulse');
+      void partnerRowEl.offsetWidth;
+      partnerRowEl.classList.add('is-healed-pulse');
+      if (partnerHealTimer) clearTimeout(partnerHealTimer);
+      partnerHealTimer = setTimeout(() => {
+        partnerRowEl.classList.remove('is-healed-pulse');
+        partnerHealTimer = null;
+      }, 920);
+    }
+    return { pulsed: Boolean(targetPrimary || targetPartner), amount: Number(amount) || 0 };
+  }
 
   function triggerDamagePulse({ role = 'Knight', damage = 15, blocked = false } = {}) {
     const isPrimaryHit = role === state.activeRole;
@@ -3985,6 +4281,7 @@ export function createSculptedHud({
     updatePartyStatus,
     updateHudState,
     triggerDamagePulse,
+    triggerHealPulse,
     resetJoystick,
     isModalOpen: () => Boolean(pauseModal?.classList.contains('is-open')),
     setVisible(visible = true) {
@@ -4012,6 +4309,14 @@ export function createSculptedHud({
       if (vignetteTimer) clearTimeout(vignetteTimer);
       if (primaryShakeTimer) clearTimeout(primaryShakeTimer);
       if (partnerShakeTimer) clearTimeout(partnerShakeTimer);
+      if (primaryHealTimer) clearTimeout(primaryHealTimer);
+      if (partnerHealTimer) clearTimeout(partnerHealTimer);
+      if (hpTweenRafBySlot.primary !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(hpTweenRafBySlot.primary);
+      }
+      if (hpTweenRafBySlot.partner !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(hpTweenRafBySlot.partner);
+      }
       if (attackHoldTimer) clearTimeout(attackHoldTimer);
       if (typeof document !== 'undefined' && document.body) {
         document.body.classList.remove('sculpted-hud-mounted');

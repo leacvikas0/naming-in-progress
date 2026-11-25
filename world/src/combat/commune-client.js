@@ -27,8 +27,9 @@ import * as THREE from 'three';
 
 export const MAX_COMMUNE_SECONDS = 30.0;
 export const HOLD_SEND_THRESHOLD_SECONDS = 1.5;
-export const SILENCE_AUTO_SEND_SECONDS = 2.2;
-export const MIN_VOICED_SECONDS = 0.35;
+export const SILENCE_AUTO_SEND_SECONDS = 2.0;
+export const MIN_VOICED_SECONDS = 0.25;
+export const SPEECH_RMS_THRESHOLD = 0.007;
 export const MIN_SAFE_WORD_COUNT = 2;
 export const CRIMSON_ROSE_RING_COUNT = 24;
 export const CRIMSON_ROSE_PETAL_COUNT = 48;
@@ -688,21 +689,29 @@ export function playWideSurroundDivineVoice(verdictOrAudioUrl, options = {}) {
   }
 }
 
-function blobToBase64(blob) {
-  return new Promise((resolve) => {
-    if (!blob || blob.size === 0 || typeof FileReader === 'undefined') {
-      resolve('');
-      return;
+async function blobToBase64(blob) {
+  if (!blob || blob.size === 0) return '';
+  if (typeof FileReader !== 'undefined') {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const res = typeof reader.result === 'string' ? reader.result : '';
+        const commaIdx = res.indexOf(',');
+        resolve(commaIdx >= 0 ? res.slice(commaIdx + 1) : res);
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(blob);
+    });
+  }
+  if (typeof blob.arrayBuffer === 'function' && typeof Buffer !== 'undefined') {
+    try {
+      const ab = await blob.arrayBuffer();
+      return Buffer.from(ab).toString('base64');
+    } catch {
+      return '';
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const res = typeof reader.result === 'string' ? reader.result : '';
-      const commaIdx = res.indexOf(',');
-      resolve(commaIdx >= 0 ? res.slice(commaIdx + 1) : res);
-    };
-    reader.onerror = () => resolve('');
-    reader.readAsDataURL(blob);
-  });
+  }
+  return '';
 }
 
 /**
@@ -735,13 +744,16 @@ export function createCommuneClient({
     maxSeconds: MAX_COMMUNE_SECONDS,
   });
 
-  let state = 'idle'; // 'idle' | 'listening' | 'judging'
+  let state = 'idle'; // 'idle' | 'listening' | 'judging' | 'speaking'
   let inputMode = 'hold_check'; // 'hold_check' | 'hands_free'
   let pressHeld = false;
   let voicedSeconds = 0;
   let silenceAfterSpeechSeconds = 0;
   let hasSpokenWords = false;
   let explicitWordCount = null;
+  let peakMicRms = 0;
+  let hadLiveMicAnalyser = false;
+  let hadRmsTelemetry = false;
   let lastOptions = {};
 
   let elapsed = 0;
@@ -788,6 +800,8 @@ export function createCommuneClient({
       partnerCommuning,
       partnerSpeakerRole,
       micRms: latestMicRms,
+      peakMicRms,
+      hadLiveMicAnalyser: hadLiveMicAnalyser || hadRmsTelemetry,
       micBands: [...latestMicBands],
       timerVisuals: roseRingTimer.getVisualState(),
       ...extra,
@@ -849,6 +863,7 @@ export function createCommuneClient({
       source.connect(analyser);
       micSourceNode = source;
       micAnalyserNode = analyser;
+      hadLiveMicAnalyser = true;
       micRmsBuffer = new Float32Array(analyser.fftSize || 256);
       micFreqBuffer = new Uint8Array(analyser.frequencyBinCount || 128);
     } catch {
@@ -1004,8 +1019,12 @@ export function createCommuneClient({
     silenceAfterSpeechSeconds = 0;
     hasSpokenWords = false;
     explicitWordCount = typeof options.wordCount === 'number' ? options.wordCount : null;
+    peakMicRms = 0;
+    hadLiveMicAnalyser = false;
+    hadRmsTelemetry = false;
     elapsed = 0;
     recordedChunks = [];
+    recordedMimeType = 'audio/webm';
     pendingTranscriptHint = options.transcriptHint ?? '';
     pendingAudioBase64 = options.audioBase64 ?? '';
 
@@ -1067,7 +1086,29 @@ export function createCommuneClient({
         attachMicAnalyser(stream);
 
         if (MediaRecorderClass) {
-          const recorder = new MediaRecorderClass(stream);
+          const candidateMimes = [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/mp4',
+            'audio/ogg;codecs=opus',
+          ];
+          let chosenMime = '';
+          if (typeof MediaRecorderClass.isTypeSupported === 'function') {
+            for (const candidate of candidateMimes) {
+              try {
+                if (MediaRecorderClass.isTypeSupported(candidate)) {
+                  chosenMime = candidate;
+                  break;
+                }
+              } catch {
+                // ignore unsupported probe
+              }
+            }
+          }
+          const recorder = chosenMime
+            ? new MediaRecorderClass(stream, { mimeType: chosenMime })
+            : new MediaRecorderClass(stream);
+          recordedMimeType = recorder.mimeType || chosenMime || 'audio/webm';
           activeRecorder = recorder;
           if (typeof recorder.addEventListener === 'function') {
             recorder.addEventListener('dataavailable', (ev) => {
@@ -1084,8 +1125,21 @@ export function createCommuneClient({
           }
           recorder.start(120);
         }
-      } catch {
+      } catch (err) {
         stopAllMicTracksImmediately();
+        if (state === 'listening' && sessionSeq === mySeq) {
+          return cancelCommune({
+            reason: 'mic_unavailable',
+            speakerRole,
+            error: String(err?.message || err),
+          });
+        }
+        return {
+          ok: false,
+          started: false,
+          reason: 'mic_unavailable',
+          error: String(err?.message || err),
+        };
       }
     }
 
@@ -1121,6 +1175,9 @@ export function createCommuneClient({
     silenceAfterSpeechSeconds = 0;
     hasSpokenWords = false;
     explicitWordCount = null;
+    peakMicRms = 0;
+    hadLiveMicAnalyser = false;
+    hadRmsTelemetry = false;
     roseRingTimer.stop();
     state = 'idle';
     elapsed = 0;
@@ -1176,15 +1233,25 @@ export function createCommuneClient({
     if (recorder && recorder.state !== 'inactive') {
       await new Promise((resolve) => {
         let done = false;
+        let safetyTimer = null;
         const finish = () => {
           if (done) return;
           done = true;
-          resolve();
+          if (safetyTimer !== null) {
+            clearTimeout(safetyTimer);
+            safetyTimer = null;
+          }
+          setTimeout(resolve, 15);
         };
+        safetyTimer = setTimeout(finish, 650);
         if (typeof recorder.addEventListener === 'function') {
           recorder.addEventListener('stop', finish, { once: true });
         } else {
-          recorder.onstop = finish;
+          const prevOnStop = recorder.onstop;
+          recorder.onstop = (...args) => {
+            prevOnStop?.(...args);
+            finish();
+          };
         }
         try {
           recorder.requestData?.();
@@ -1196,7 +1263,6 @@ export function createCommuneClient({
         } catch {
           finish();
         }
-        setTimeout(finish, 300);
       });
     }
 
@@ -1217,18 +1283,24 @@ export function createCommuneClient({
       explicitWordCount = options.wordCount;
     }
 
-    // Accidental Empty Tap Safe-Cancel Rule (< 2 words = Zero Smite):
+    // Accidental Empty / Silent Tap Safe-Cancel Rule (Zero Smite & Zero /api/commune call):
     // 1. Explicit transcriptHint has < 2 words (when no real mic audio chunks were recorded) or explicit wordCount < 2, OR
-    // 2. No transcriptHint / audioBase64 override passed and !hasSpokenWords && recordedChunks.length === 0
+    // 2. No transcriptHint / audioBase64 override passed and EITHER recordedChunks.length === 0 OR
+    //    (live mic Analyser/RMS ran during session && !hasSpokenWords && peakMicRms < 0.007 && voicedSeconds < 0.15)
     const hintWords = countSpokenWords(transcriptHint);
     const tooFewWordsExplicit =
       (!hasRecordedAudio && hasExplicitTranscript && hintWords < MIN_SAFE_WORD_COUNT) ||
       (explicitWordCount !== null && explicitWordCount < MIN_SAFE_WORD_COUNT);
+    const hadMicRmsMonitoring = hadLiveMicAnalyser || hadRmsTelemetry;
+    const silentLiveMicCapture =
+      hadMicRmsMonitoring &&
+      !hasSpokenWords &&
+      peakMicRms < SPEECH_RMS_THRESHOLD &&
+      voicedSeconds < 0.15;
     const emptySilentCapture =
-      !hasRecordedAudio &&
       !hasExplicitTranscript &&
       !audioBase64Override &&
-      !hasSpokenWords;
+      (!hasRecordedAudio || silentLiveMicCapture);
 
     if (!forceVerdict && (tooFewWordsExplicit || emptySilentCapture)) {
       return cancelCommune({
@@ -1238,6 +1310,7 @@ export function createCommuneClient({
       });
     }
 
+    const sendSeq = sessionSeq;
     state = 'judging';
     pressHeld = false;
     roseRingTimer.stop();
@@ -1257,12 +1330,18 @@ export function createCommuneClient({
     pendingTranscriptHint = '';
     pendingAudioBase64 = '';
 
+    const cleanMimeType =
+      String(recordedMimeType || 'audio/webm')
+        .split(';')[0]
+        .trim()
+        .toLowerCase() || 'audio/webm';
+
     const payload = {
       room,
       speakerRole,
       partnerRole,
       audioBase64,
-      mimeType: recordedMimeType,
+      mimeType: cleanMimeType,
       transcriptHint,
       gameState: options.gameState || lastOptions?.gameState || ctxState.gameState || {},
       progressionState:
@@ -1277,6 +1356,9 @@ export function createCommuneClient({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
+        if (res && res.ok === false) {
+          throw new Error(`Commune HTTP ${res.status || 'error'}`);
+        }
         verdictPacket = await res.json();
       } else {
         verdictPacket = {
@@ -1288,6 +1370,10 @@ export function createCommuneClient({
         };
       }
 
+      if (sessionSeq !== sendSeq || state === 'idle') {
+        return { ok: false, sent: false, cancelledDuringJudge: true };
+      }
+
       const judgment = verdictPacket?.judgment || verdictPacket;
       const responseTranscript =
         typeof judgment?.transcript === 'string'
@@ -1295,11 +1381,16 @@ export function createCommuneClient({
           : typeof verdictPacket?.transcript === 'string'
             ? verdictPacket.transcript
             : null;
+      const isRetryVerdict =
+        String(judgment?.prayerMode || '').toLowerCase() === 'retry' ||
+        String(judgment?.verdict || '').toLowerCase() === 'retry_nudge' ||
+        String(judgment?.legacyVerdict || '').toLowerCase() === 'retry_nudge';
       const isServerSafeCancel =
-        Boolean(verdictPacket?.safeCancel || judgment?.safeCancel) ||
-        (typeof responseTranscript === 'string' &&
-          countSpokenWords(responseTranscript) < MIN_SAFE_WORD_COUNT &&
-          !forceVerdict);
+        !isRetryVerdict &&
+        (Boolean(verdictPacket?.safeCancel || judgment?.safeCancel) ||
+          (typeof responseTranscript === 'string' &&
+            countSpokenWords(responseTranscript) < MIN_SAFE_WORD_COUNT &&
+            !forceVerdict));
 
       if (isServerSafeCancel) {
         return cancelCommune({
@@ -1318,11 +1409,25 @@ export function createCommuneClient({
         },
       });
 
-      if (voicePlayback?.played && !voicePlayback?.simulatedHeadless && voicePlayback?.finished) {
+      const verdictMode = String(judgment?.prayerMode || judgment?.verdict || '').toLowerCase();
+      const isDramaticCutsceneVoice =
+        verdictMode === 'awakening' ||
+        verdictMode === 'divine_miracle' ||
+        verdictMode === 'miracle' ||
+        verdictMode === 'smite' ||
+        verdictMode === 'rose_gommage' ||
+        verdictMode === 'rude_smite';
+
+      if (
+        isDramaticCutsceneVoice &&
+        voicePlayback?.played &&
+        !voicePlayback?.simulatedHeadless &&
+        voicePlayback?.finished
+      ) {
         state = 'speaking';
         emitState({ judgment, voicePlayback, speaking: true });
         await voicePlayback.finished;
-        if (state !== 'speaking') {
+        if (state !== 'speaking' || sessionSeq !== sendSeq) {
           return {
             ok: false,
             sent: false,
@@ -1337,6 +1442,9 @@ export function createCommuneClient({
       elapsed = 0;
       inputMode = 'hold_check';
       pressHeld = false;
+      peakMicRms = 0;
+      hadLiveMicAnalyser = false;
+      hadRmsTelemetry = false;
       coopClient?.sendCommuneState?.({
         state: 'idle',
         speakerRole,
@@ -1351,19 +1459,38 @@ export function createCommuneClient({
         voicePlayback,
       };
     } catch (err) {
+      if (sessionSeq !== sendSeq) {
+        return { ok: false, sent: false, cancelledDuringJudge: true };
+      }
+      stopAllMicTracksImmediately();
+      roseRingTimer.stop();
       state = 'idle';
       elapsed = 0;
       inputMode = 'hold_check';
       pressHeld = false;
+      peakMicRms = 0;
+      hadLiveMicAnalyser = false;
+      hadRmsTelemetry = false;
+      const errMsg = String(err?.message || err);
       coopClient?.sendCommuneState?.({
-        state: 'idle',
+        state: 'cancel',
+        reason: 'network_error',
         speakerRole,
       });
-      emitState({ error: String(err?.message || err) });
+      const cancelPayload = {
+        cancelled: true,
+        reason: 'network_error',
+        speakerRole,
+        error: errMsg,
+      };
+      emitState(cancelPayload);
+      onCancelHandler?.(cancelPayload);
       return {
         ok: false,
         sent: false,
-        error: String(err?.message || err),
+        cancelled: true,
+        reason: 'network_error',
+        error: errMsg,
       };
     }
   }
@@ -1377,7 +1504,7 @@ export function createCommuneClient({
    * - If `state === 'idle'`, starts listening in `hold_check` mode with `pressHeld = true`.
    * - If `endPress` was called while `startCommune` was awaiting `getUserMedia`, transitions
    *   cleanly into `inputMode = 'hands_free'; pressHeld = false;`.
-   * - If already `state === 'listening'`, immediately calls `stopAndSendOrCancel(options)`.
+   * - If already `state === 'listening'`, ALWAYS calls `stopAndSendOrCancel(options)`.
    */
   async function beginPress(options = {}) {
     if (state === 'idle') {
@@ -1405,10 +1532,8 @@ export function createCommuneClient({
       }
     }
     if (state === 'listening') {
-      if (inputMode === 'hands_free' || !pressHeld) {
-        return stopAndSendOrCancel(options);
-      }
-      return { ok: true, state, inputMode, pressHeld };
+      pressHeld = false;
+      return stopAndSendOrCancel(options);
     }
     return { ok: false, state, error: 'commune_judging_in_progress' };
   }
@@ -1417,7 +1542,7 @@ export function createCommuneClient({
    * Smart Hybrid Input Release (`endPress`):
    * - If held `>= 1.5s` (`HOLD_SEND_THRESHOLD_SECONDS`), immediately calls `stopAndSendOrCancel(options)`.
    * - If tapped `< 1.5s`, switches `inputMode = 'hands_free'` and stays in `'listening'` mode
-   *   until a second tap or `2.2s` of silence after speaking.
+   *   until a second tap or `2.0s` of silence after speaking.
    */
   async function endPress(options = {}) {
     if (isStartingCommune) {
@@ -1442,14 +1567,15 @@ export function createCommuneClient({
 
   /**
    * Updates Voice Activity Detection (`voicedSeconds`, `silenceAfterSpeechSeconds`, `hasSpokenWords`).
-   * In `hands_free` mode, auto-triggers `stopAndSendOrCancel()` after `2.2s` of post-speech silence.
+   * In `hands_free` mode, auto-triggers `stopAndSendOrCancel()` after `2.0s` of post-speech silence.
    */
-  function reportVoiceActivity({
-    rms = 0,
-    dt = 0,
-    wordCount = null,
-    transcriptHint = null,
-  } = {}) {
+  function reportVoiceActivity(activity = {}) {
+    const {
+      rms = 0,
+      dt = 0,
+      wordCount = null,
+      transcriptHint = null,
+    } = activity || {};
     if (typeof transcriptHint === 'string') {
       pendingTranscriptHint = transcriptHint;
     }
@@ -1459,10 +1585,14 @@ export function createCommuneClient({
         hasSpokenWords = true;
       }
     }
+    if (activity && Object.prototype.hasOwnProperty.call(activity, 'rms') && typeof activity.rms === 'number') {
+      hadRmsTelemetry = true;
+    }
 
     const cleanRms = Math.max(0, Number(rms) || 0);
     const step = Math.max(0, Number(dt) || 0);
     latestMicRms = cleanRms;
+    peakMicRms = Math.max(peakMicRms, cleanRms);
     if (!micAnalyserNode) {
       if (cleanRms < 0.005) {
         latestMicBands = [0, 0, 0, 0, 0];
@@ -1478,7 +1608,7 @@ export function createCommuneClient({
       }
     }
 
-    if (cleanRms >= 0.025) {
+    if (cleanRms >= SPEECH_RMS_THRESHOLD) {
       voicedSeconds += step;
       silenceAfterSpeechSeconds = 0;
       if (voicedSeconds >= MIN_VOICED_SECONDS) {
@@ -1504,6 +1634,7 @@ export function createCommuneClient({
       spokenDurationSeconds: voicedSeconds,
       silenceAfterSpeechSeconds,
       hasSpokenWords,
+      peakMicRms,
     };
   }
 
@@ -1588,6 +1719,8 @@ export function createCommuneClient({
       partnerCommuning,
       partnerSpeakerRole,
       micRms: latestMicRms,
+      peakMicRms,
+      hadLiveMicAnalyser: hadLiveMicAnalyser || hadRmsTelemetry,
       micBands: [...latestMicBands],
       micTracksStoppedCount,
       hasActiveMicTracks: hasActiveMicTracks(),
