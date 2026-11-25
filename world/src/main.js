@@ -181,7 +181,7 @@ const camera = new THREE.PerspectiveCamera(
 const isFastBoot =
   typeof window !== 'undefined' &&
   (Boolean(window.__vt) || Boolean(window.__SKIP_BOOT_SPLASH__));
-const BOOT_SLICE_BUDGET_MS = isFastBoot ? 14.0 : 7.5;
+const BOOT_SLICE_BUDGET_MS = isFastBoot ? 14.0 : 11.5;
 
 if (typeof window !== 'undefined' && window.__WORLD_VISUAL_READY__ === undefined) {
   window.__WORLD_VISUAL_READY__ = false;
@@ -2031,8 +2031,8 @@ function createSacredStoneCalligraphyDecals(targetScene, sampleGroundY, GLTFLoad
         glbProgressBySite.stone_pier) /
       3;
     const baseFloor = window.__BOOT_PROGRESS_FLOOR__ || 0.50;
-    if (baseFloor >= 0.48 && baseFloor < 0.90) {
-      window.__setBootProgress(Math.max(baseFloor, 0.50 + avg * 0.38), 0.91);
+    if (baseFloor >= 0.48 && baseFloor < 0.64) {
+      window.__setBootProgress(Math.max(baseFloor, 0.52 + avg * 0.08), 0.68);
     }
   };
 
@@ -2737,12 +2737,12 @@ async function prewarmAllVfxAndSceneShadersAsync() {
   const aoTex = terrainKit?.bakedShadowAOTex;
   if (aoTex && aoTex.userData && !aoTex.userData.loaded && typeof document !== 'undefined') {
     const aoWaitStart = Date.now();
-    while (!aoTex.userData.loaded && Date.now() - aoWaitStart < 450) {
+    while (!aoTex.userData.loaded && Date.now() - aoWaitStart < 120) {
       await bootSlicer.yieldNow();
     }
   }
 
-  // 1. Decode any HTMLImageElement textures off the main thread, then upload each unique texture one per slice
+  // 1. Decode any HTMLImageElement textures off the main thread, then upload each unique texture within slice budget
   const uniqueTextures = new Set();
   const collectTex = (val) => {
     if (val && val.isTexture) uniqueTextures.add(val);
@@ -2783,7 +2783,7 @@ async function prewarmAllVfxAndSceneShadersAsync() {
     await bootSlicer.maybeYield();
   }
 
-  // 2. Compile one representative mesh per unique material against composer renderTarget1
+  // 2. Compile one representative mesh per unique material in ONE parallel batch against composer renderTarget1
   const allMeshes = [];
   const seenMatKeys = new Set();
   scene.traverse((obj) => {
@@ -2798,51 +2798,61 @@ async function prewarmAllVfxAndSceneShadersAsync() {
     }
   });
 
+  const toggledVisSet = new Set();
+  const restoredCounts = [];
+  const restoredCulls = [];
+
   for (let i = 0; i < allMeshes.length; i++) {
     const m = allMeshes[i];
-    const toggledVis = [];
     let cur = m;
     while (cur && cur !== scene) {
       if (!cur.visible) {
-        toggledVis.push(cur);
+        toggledVisSet.add(cur);
         cur.visible = true;
       }
       cur = cur.parent;
     }
-    const restoreCount = m.isInstancedMesh && m.count === 0 && (m.instanceMatrix?.count ?? 1) > 0;
-    if (restoreCount) m.count = 1;
-    const restoreCull = Boolean(m.frustumCulled);
-    if (restoreCull) m.frustumCulled = false;
+    if (m.isInstancedMesh && m.count === 0 && (m.instanceMatrix?.count ?? 1) > 0) {
+      restoredCounts.push(m);
+      m.count = 1;
+    }
+    if (m.frustumCulled) {
+      restoredCulls.push(m);
+      m.frustumCulled = false;
+    }
+  }
 
-    const prevTarget = renderer.getRenderTarget();
-    try {
-      if (post?.composer?.renderTarget1) {
-        renderer.setRenderTarget(post.composer.renderTarget1);
-      }
-      if (typeof renderer.compileAsync === 'function') {
-        await renderer.compileAsync(m, camera, scene);
-      } else {
-        renderer.compile(m, camera, scene);
-      }
-    } catch {
-      // ignore prewarm compile errors on restricted contexts
-    } finally {
-      renderer.setRenderTarget(prevTarget);
-      if (restoreCull) m.frustumCulled = true;
-      if (restoreCount) m.count = 0;
-      for (let v = 0; v < toggledVis.length; v++) toggledVis[v].visible = false;
+  const prevTarget = renderer.getRenderTarget();
+  try {
+    if (post?.composer?.renderTarget1) {
+      renderer.setRenderTarget(post.composer.renderTarget1);
     }
     if (typeof window !== 'undefined' && typeof window.__setBootProgress === 'function') {
-      const meshFrac = (i + 1) / Math.max(1, allMeshes.length);
-      window.__setBootProgress(0.91 + meshFrac * 0.06, 0.99);
+      window.__setBootProgress(0.93, 0.98);
     }
-    await bootSlicer.maybeYield();
+    if (typeof renderer.compileAsync === 'function') {
+      await renderer.compileAsync(scene, camera);
+    } else {
+      renderer.compile(scene, camera);
+    }
+  } catch {
+    // ignore prewarm compile errors on restricted contexts
+  } finally {
+    renderer.setRenderTarget(prevTarget);
+    for (let i = 0; i < restoredCulls.length; i++) restoredCulls[i].frustumCulled = true;
+    for (let i = 0; i < restoredCounts.length; i++) restoredCounts[i].count = 0;
+    for (const node of toggledVisSet) node.visible = false;
   }
+
+  if (typeof window !== 'undefined' && typeof window.__setBootProgress === 'function') {
+    window.__setBootProgress(0.97, 0.99);
+  }
+  await bootSlicer.maybeYield();
 
   // 3. Compile post-processing final ToneGrade quad against default framebuffer
   const gradeQuadMesh = post?.gradePass?.fsQuad?._mesh;
   if (gradeQuadMesh) {
-    const prevTarget = renderer.getRenderTarget();
+    const prevTarget2 = renderer.getRenderTarget();
     try {
       if (post?.gradePass?.uniforms?.tDepth) {
         const depthTex = post.composer?.readBuffer?.depthTexture || null;
@@ -2852,30 +2862,11 @@ async function prewarmAllVfxAndSceneShadersAsync() {
         }
       }
       renderer.setRenderTarget(null);
-      if (typeof renderer.compileAsync === 'function') {
-        await renderer.compileAsync(gradeQuadMesh, camera);
-      } else {
-        renderer.compile(gradeQuadMesh, camera);
-      }
+      renderer.compile(gradeQuadMesh, camera);
     } catch {
       // ignore
     } finally {
-      renderer.setRenderTarget(prevTarget);
-    }
-    await bootSlicer.maybeYield();
-  }
-
-  // 4. Warm WebGLProgram uniform/attribute reflection + link checks incrementally (1 program per slice)
-  //    so the very first post.render() does not pay all 30+ gl.getProgramInfoLog flushes synchronously!
-  const compiledPrograms = renderer.info?.programs || [];
-  for (let p = 0; p < compiledPrograms.length; p++) {
-    const prog = compiledPrograms[p];
-    if (!prog) continue;
-    try {
-      prog.getUniforms?.();
-      prog.getAttributes?.();
-    } catch {
-      // ignore
+      renderer.setRenderTarget(prevTarget2);
     }
     await bootSlicer.maybeYield();
   }
@@ -6103,20 +6094,42 @@ function updateSacredStoneGaze(dt) {
   }
 }
 
+let bootAudioGated = false;
+
+function releaseBootAudioGateIfReady() {
+  if (!bootAudioGated) return;
+  bootAudioGated = false;
+  coopSystem?.combatSfx?.setMasterVolume?.(0.68);
+  const step = appFlow?.getStep?.();
+  if (step === FLOW_STEPS.FLOWER_LOBBY) {
+    coopSystem?.combatSfx?.setAmbienceState?.('lobby');
+  } else if (step === FLOW_STEPS.IN_GAME) {
+    coopSystem?.combatSfx?.setAmbienceState?.('valley');
+  } else {
+    coopSystem?.combatSfx?.setAmbienceState?.('title');
+  }
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const rawDt = clock.getDelta();
   const veilEl =
     typeof document !== 'undefined' ? document.getElementById('af-pixel-veil') : null;
-  if (
-    veilEl &&
-    !veilEl.classList.contains('is-resolved') &&
+  const veilT = typeof window !== 'undefined' ? (window.__BOOT_VEIL_T__ ?? 1) : 1;
+  const inOpeningVeil =
+    Boolean(veilEl && !veilEl.classList.contains('is-resolved')) &&
     (!appFlow || appFlow.getStep?.() === FLOW_STEPS.TITLE) &&
     !activeGameplayShotSpec &&
     typeof window.__FIXED_DT__ !== 'number' &&
-    !window.__SKIP_BOOT_SPLASH__
-  ) {
+    !window.__SKIP_BOOT_SPLASH__;
+
+  // While Beat 1 (writing Amarante, 0..0.45) and Beat 2 (glide up + Sun-Clock bloom, 0.45..0.56)
+  // are still on solid pitch-black (#050507), keep background 3D rendering & game audio 100% silent.
+  if (inOpeningVeil && veilT < 0.56) {
     return;
+  }
+  if (bootAudioGated && (!inOpeningVeil || veilT >= 0.58)) {
+    releaseBootAudioGateIfReady();
   }
   const timeScale =
     typeof window.__TIME_SCALE__ === 'number' && window.__TIME_SCALE__ > 0
@@ -6348,10 +6361,28 @@ function prewarmGpuProcessOffMainThread() {
 
 async function bootWorldAsync() {
   bootSlicer.reset();
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
+
+  // Kick off module imports in parallel so browser fetches/revalidates module graph concurrently
+  // while the main thread builds each stage within the 60 FPS frame slice budget.
+  const geoModPromise = import('../assets/terrain/geography.js');
+  const verdictSkyModPromise = import('./verdict-sky-choreo.js');
+  const combatBalModPromise = import('./combat/combat-balance.js');
+  const gltfModPromise = import('three/addons/loaders/GLTFLoader.js');
+  const skyModPromise = import('./sky-tod.js');
+  const terrainModPromise = import('../assets/terrain/index.js');
+  const housesModPromise = import('../assets/houses/index.js');
+  const flowersModPromise = import('../assets/flowers/index.js');
+  const postModPromise = import('./post.js');
+  const pcModPromise = import('./player-controller.js');
+  const dmgModPromise = import('./ui/damage-numbers.js');
+  const communeModPromise = import('./combat/commune-client.js');
+  const sculptedHudModPromise = import('./ui/sculpted-hud.js');
+  const touchHudModPromise = import('./touch-hud.js');
+  const maliModPromise = import('./perf/mali-g68-emulator.js').catch(() => null);
 
   // 0A. Lazy-load Geography, Verdict Sky & Combat Balance data slices without synchronous module-eval spikes
-  const geoMod = await import('../assets/terrain/geography.js');
+  const geoMod = await geoModPromise;
   PLAY_BOUNDARY_RADIUS = geoMod.PLAY_BOUNDARY_RADIUS;
   INNER_EXTENT = geoMod.INNER_EXTENT;
   ZONES = geoMod.ZONES;
@@ -6360,9 +6391,20 @@ async function bootWorldAsync() {
   walkableHeightAt = geoMod.walkableHeightAt;
   terrainHeightAt = geoMod.terrainHeightAt;
   sampleWorld = geoMod.sampleWorld;
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
 
-  const verdictSkyMod = await import('./verdict-sky-choreo.js');
+  // Start Sacred Stone GLB downloads early in parallel with procedural geometry construction
+  const gltfMod = await gltfModPromise;
+  await bootSlicer.maybeYield();
+  stoneDecals = createSacredStoneCalligraphyDecals(
+    scene,
+    terrainHeightAt,
+    gltfMod.GLTFLoader,
+    bootSlicer
+  );
+  await bootSlicer.maybeYield();
+
+  const verdictSkyMod = await verdictSkyModPromise;
   evalVerdictSky = verdictSkyMod.evalVerdictSky;
   evalChannelSky = verdictSkyMod.evalChannelSky;
   evalChannelReleaseSky = verdictSkyMod.evalChannelReleaseSky;
@@ -6371,11 +6413,11 @@ async function bootWorldAsync() {
   idleVerdictSky = verdictSkyMod.idleVerdictSky;
   VERDICT_SKY_TAILS = verdictSkyMod.VERDICT_SKY_TAILS;
   verdictSkyClock.out = idleVerdictSky();
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
 
-  const combatBalMod = await import('./combat/combat-balance.js');
+  const combatBalMod = await combatBalModPromise;
   SPELL_BY_SLOT = combatBalMod.SPELL_BY_SLOT;
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
 
   // 0B. WebGLRenderer (deferred out of static module evaluation so #haru-boot-splash animates uninterrupted)
   renderer = new THREE.WebGLRenderer({
@@ -6390,12 +6432,12 @@ async function bootWorldAsync() {
   renderer.toneMapping = THREE.NoToneMapping;
   renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = false;
-  if (typeof window !== 'undefined') window.__setBootProgress?.(0.20, 0.28);
-  await bootSlicer.yieldNow();
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.14, 0.22);
+  await bootSlicer.maybeYield();
 
   // 1. Time-of-Day Sky (Stylized Sun, Moon, Stars & Cumulus Clouds)
-  const skyMod = await import('./sky-tod.js');
-  await bootSlicer.yieldNow();
+  const skyMod = await skyModPromise;
+  await bootSlicer.maybeYield();
   sky = await skyMod.createTimeOfDaySkyAsync({
     quality: 'high',
     camera,
@@ -6403,14 +6445,14 @@ async function bootWorldAsync() {
     sliceBudgetMs: bootSlicer.sliceBudgetMs,
   });
   scene.add(sky.group);
-  if (typeof window !== 'undefined') window.__setBootProgress?.(0.26, 0.36);
-  await bootSlicer.yieldNow();
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.22, 0.34);
+  await bootSlicer.maybeYield();
 
   // 2. Terrain, Water, Landmarks & Botanical Trees
-  const terrainMod = await import('../assets/terrain/index.js');
-  await bootSlicer.yieldNow();
+  const terrainMod = await terrainModPromise;
+  await bootSlicer.maybeYield();
   treeShadowData = terrainMod.buildTreeShadowUniformArray();
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
   terrainKit = await terrainMod.createTerrainAndLandmarksAsync(renderer, {
     includeBuildings: false,
     includeHorizonClouds: false,
@@ -6423,12 +6465,12 @@ async function bootWorldAsync() {
       landmarkEmissiveMats.push(obj.material);
     }
   });
-  if (typeof window !== 'undefined') window.__setBootProgress?.(0.35, 0.44);
-  await bootSlicer.yieldNow();
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.34, 0.46);
+  await bootSlicer.maybeYield();
 
   // 3. Tudor Village Houses Kit (5 Detailed Buildings + Colliders)
-  const housesMod = await import('../assets/houses/index.js');
-  await bootSlicer.yieldNow();
+  const housesMod = await housesModPromise;
+  await bootSlicer.maybeYield();
   setHouseCutoutPlayerPos = housesMod.setHouseCutoutPlayerPos || (() => {});
   housesKit =
     typeof housesMod.createHousesKitAsync === 'function'
@@ -6437,7 +6479,7 @@ async function bootWorldAsync() {
           sliceBudgetMs: bootSlicer.sliceBudgetMs,
         })
       : housesMod.createHousesKit(renderer);
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
   village = await housesKit.buildAllVillageBuildingsAsync(BUILDINGS, {
     yieldFrame: bootSlicer.yieldFrame,
     sliceBudgetMs: bootSlicer.sliceBudgetMs,
@@ -6450,34 +6492,23 @@ async function bootWorldAsync() {
       hz: c.hz ?? c.halfD,
     });
   }
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
 
   // 3B. Lossless geometry indexing + profile mesh/LOD binding
   await syncStaticSceneProfileAsync(activeProfile, bootSlicer);
-  if (typeof window !== 'undefined') window.__setBootProgress?.(0.43, 0.50);
-  await bootSlicer.yieldNow();
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.45, 0.52);
+  await bootSlicer.maybeYield();
 
   // 4. Toroidal Gouache Meadow & Wildflower Drifts
-  flowersMod = await import('../assets/flowers/index.js');
-  await bootSlicer.yieldNow();
+  flowersMod = await flowersModPromise;
+  await bootSlicer.maybeYield();
   await buildMeadowForProfileAsync(activeProfile, bootSlicer);
-  if (typeof window !== 'undefined') window.__setBootProgress?.(0.49, 0.88);
-  await bootSlicer.yieldNow();
-
-  // 5. Kick off Monument Sacred Stone GLB downloads + 3D Calligraphy Plaque draws
-  const gltfMod = await import('three/addons/loaders/GLTFLoader.js');
-  await bootSlicer.yieldNow();
-  stoneDecals = createSacredStoneCalligraphyDecals(
-    scene,
-    terrainHeightAt,
-    gltfMod.GLTFLoader,
-    bootSlicer
-  );
-  await bootSlicer.yieldNow();
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.52, 0.62);
+  await bootSlicer.maybeYield();
 
   // 6. HDR Post-Processing Composer
-  const postMod = await import('./post.js');
-  await bootSlicer.yieldNow();
+  const postMod = await postModPromise;
+  await bootSlicer.maybeYield();
   post = postMod.createWorldPost({
     renderer,
     scene,
@@ -6487,12 +6518,12 @@ async function bootWorldAsync() {
     enabled: true,
     aaSamples: PROFILES[activeProfile].aaSamples,
   });
-  if (typeof window !== 'undefined') window.__setBootProgress?.(0.54, 0.90);
-  await bootSlicer.yieldNow();
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.58, 0.78);
+  await bootSlicer.maybeYield();
 
   // 7. Co-Op Heroes (Knight + Mage), Weapons, VFX & Campaign Loop
-  const pcMod = await import('./player-controller.js');
-  await bootSlicer.yieldNow();
+  const pcMod = await pcModPromise;
+  await bootSlicer.maybeYield();
   STAGE5_GAMEPLAY_SHOTS = pcMod.STAGE5_GAMEPLAY_SHOTS;
   coopSystem = await pcMod.createCoopPlayerSystem({
     scene,
@@ -6549,46 +6580,58 @@ async function bootWorldAsync() {
     sliceBudgetMs: bootSlicer.sliceBudgetMs,
   });
   player = coopSystem.player;
-  if (typeof window !== 'undefined') window.__setBootProgress?.(0.86, 0.92);
-  await bootSlicer.yieldNow();
+  // Gate background game audio while the opening black veil is still writing 'Amarante'
+  if (
+    typeof window !== 'undefined' &&
+    !window.__SKIP_BOOT_SPLASH__ &&
+    (!appFlow || appFlow.getStep?.() === FLOW_STEPS.TITLE) &&
+    (window.__BOOT_VEIL_T__ ?? 0) < 0.58
+  ) {
+    bootAudioGated = true;
+    coopSystem?.combatSfx?.setMasterVolume?.(0);
+    coopSystem?.combatSfx?.setAmbienceState?.('title');
+  }
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.80, 0.88);
+  await bootSlicer.maybeYield();
 
   // 8. Wire Damage Numbers, Commune Client, Sculpted HUD, Touch HUD & Mali Emulator
-  const dmgMod = await import('./ui/damage-numbers.js');
-  await bootSlicer.yieldNow();
+  const dmgMod = await dmgModPromise;
+  await bootSlicer.maybeYield();
   initDamageNumbersSystem(dmgMod);
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
 
-  const communeMod = await import('./combat/commune-client.js');
-  await bootSlicer.yieldNow();
+  const communeMod = await communeModPromise;
+  await bootSlicer.maybeYield();
   playWideSurroundDivineVoice = communeMod.playWideSurroundDivineVoice || (() => null);
   initCommuneClientSystem(communeMod.createCommuneClient);
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
 
-  const sculptedHudMod = await import('./ui/sculpted-hud.js');
-  await bootSlicer.yieldNow();
+  const sculptedHudMod = await sculptedHudModPromise;
+  await bootSlicer.maybeYield();
   initSculptedHudSystem(sculptedHudMod.createSculptedHud);
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
 
-  const touchHudMod = await import('./touch-hud.js');
-  await bootSlicer.yieldNow();
+  const touchHudMod = await touchHudModPromise;
+  await bootSlicer.maybeYield();
   initTouchHudAndButtons(touchHudMod.createTouchHud);
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
 
   try {
-    const maliMod = await import('./perf/mali-g68-emulator.js');
-    evaluateMaliG68Frame = maliMod.evaluateMaliG68Frame || maliMod.default || null;
+    const maliMod = await maliModPromise;
+    evaluateMaliG68Frame = maliMod?.evaluateMaliG68Frame || maliMod?.default || null;
   } catch {
     evaluateMaliG68Frame = null;
   }
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
 
   initStoneInspectionUi();
-  await bootSlicer.yieldNow();
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.86, 0.92);
+  await bootSlicer.maybeYield();
 
   // 9. Wait for Sacred Stone monument GLBs before prewarming & Frame 0 render
   await stoneDecals.readyPromise;
-  if (typeof window !== 'undefined') window.__setBootProgress?.(0.91, 0.98);
-  await bootSlicer.yieldNow();
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.91, 0.96);
+  await bootSlicer.maybeYield();
 
   applyTimeOfDay('day');
   if (appFlow && appFlow.getStep() !== FLOW_STEPS.IN_GAME) {
@@ -6597,17 +6640,17 @@ async function bootWorldAsync() {
     setView('plaza', { skipRender: true });
   }
   syncProfileButtons();
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
 
-  // 10. Prewarm textures + visible & pooled shader programs incrementally
+  // 10. Prewarm textures + visible & pooled shader programs in parallel batch
   await prewarmAllVfxAndSceneShadersAsync();
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
 
   // Render initial Frame 0 cleanly before marking visual ready for veil dissolve
   syncPrayerEclipseAndMonochrome(0);
   updateCamera();
   syncCharacterGroundShadows();
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
 
   terrainKit.update(
     0.016,
@@ -6620,11 +6663,9 @@ async function bootWorldAsync() {
     activeProfile
   );
   village.update(0.016);
-  await bootSlicer.yieldNow();
-
   updateMeadowFocus(windElapsed);
   sky.update(windElapsed);
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
 
   renderer.info.autoReset = false;
   renderer.info.reset();
@@ -6641,7 +6682,6 @@ async function bootWorldAsync() {
     window.__setBootProgress?.(1.0, 1.0);
     window.__WORLD_VISUAL_READY__ = true;
   }
-  await bootSlicer.yieldNow();
 
   clock.start();
   requestAnimationFrame(animate);
@@ -6709,28 +6749,28 @@ async function bootWorldAsync() {
 
 async function startMainBootAsync() {
   bootSlicer.reset();
-  if (typeof window !== 'undefined') window.__setBootProgress?.(0.16, 0.25);
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.08, 0.16);
   const gpuWarmupPromise = prewarmGpuProcessOffMainThread();
   if (typeof window !== 'undefined') {
     window.__GPU_WARMUP_PROMISE__ = gpuWarmupPromise;
   }
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
 
   if (!UNSPOILED_SACRED_POEM_BY_STONE_ID) {
     const poemsMod = await import('./ui/sacred-poems-unspoiled.js');
     UNSPOILED_SACRED_POEM_BY_STONE_ID = poemsMod.UNSPOILED_SACRED_POEM_BY_STONE_ID;
-    await bootSlicer.yieldNow();
+    await bootSlicer.maybeYield();
   }
 
   const appFlowMod = await import('./ui/app-flow.js');
   createAppFlow = appFlowMod.createAppFlow;
   FLOW_STEPS = appFlowMod.FLOW_STEPS;
   getOpeningCameraPose = appFlowMod.getOpeningCameraPose;
-  await bootSlicer.yieldNow();
+  await bootSlicer.maybeYield();
 
   mountOpeningAppFlowEarly();
-  if (typeof window !== 'undefined') window.__setBootProgress?.(0.16, 0.24);
-  await bootSlicer.yieldNow();
+  if (typeof window !== 'undefined') window.__setBootProgress?.(0.11, 0.20);
+  await bootSlicer.maybeYield();
 
   await gpuWarmupPromise;
   await bootWorldAsync();

@@ -298,12 +298,15 @@
     };
 
     // Single monotonic progress-driven integrator for `t` in [0..1]:
-    // - Phase 1 (`t` in [0.00..0.45]): Writing 'Amarante' on pitch-black screen dynamically tracking
-    //   actual download & world-boot progress (`__getEffectiveBootProgress()`). Fast when cached/reloaded,
-    //   slower when waiting on network download.
-    // - Phase 2 (`t` in [0.45..1.00], after `t >= 0.45` AND `__WORLD_VISUAL_READY__ === true`):
-    //   Crisply glides 'Amarante' up (0.45..0.58), blooms Sun-Clock & Sakura (0.46..0.58),
-    //   dissolves the black veil (0.58..0.96), and reveals 'Begin Journey' (0.90..1.00).
+    // - Beat 1 (`t` in [0.00..0.45]): Writing 'Amarante' at center of solid pitch-black screen (#050507)
+    //   while 100% of the 3D game loads up front (`__getEffectiveBootProgress()`). Paced at a smooth
+    //   calligraphic brush rate so it never races to 95% in 1s and freezes.
+    // - Beat 2 (`t` in [0.45..0.58], strictly AFTER `t >= 0.45` AND `__WORLD_VISUAL_READY__ === true`):
+    //   Still on solid pitch-black screen, 'Amarante' glides smoothly upward into its sky lockup
+    //   and the Celestial Sun-Clock & Sakura branches bloom around it.
+    // - Beat 3 (`t` in [0.58..0.94]): WebGL organic cloud/noise dissolve parts the black veil to
+    //   reveal the already-loaded 60 FPS 3D valley while soft title ambience fades in.
+    // - Beat 4 (`t` in [0.90..1.00]): Glassy 'Begin Journey' pill rises (#app-flow-enter-btn.is-ready).
     window.__advanceBootWriteT = function (rawDtSec) {
       var dt = Math.min(0.04, Math.max(0.001, Number(rawDtSec) || 0.016));
       var curT = window.__BOOT_VEIL_T__ || 0;
@@ -312,19 +315,21 @@
 
       if (!worldReady) {
         var prog = window.__getEffectiveBootProgress();
-        var targetT = Math.min(0.44, prog * WRITE_END_T);
+        var targetT = Math.min(0.435, prog * WRITE_END_T);
         var gap = Math.max(0, targetT - curT);
-        // Directly proportional to download gap: fast when prog jumps on reload, slow when network crawls
-        var step = gap * Math.min(1, dt * 11.5) + (curT < targetT ? 0.012 * dt : 0);
+        var desiredRate = gap * 8.0 + (curT < targetT ? 0.05 : 0);
+        var maxPreReadyRate = WRITE_END_T / 0.95;
+        var step = Math.min(gap, Math.min(maxPreReadyRate, desiredRate) * dt);
         curT = Math.max(curT, Math.min(targetT, curT + step));
       } else if (curT < WRITE_END_T) {
-        // World is ready: finish writing any remaining letters of 'Amarante' crisply (~0.35s max)
+        // Entire 3D world is loaded up front: crisply finish writing remaining letters of 'Amarante'
         var rem = WRITE_END_T - curT;
-        var finishRate = Math.max(WRITE_END_T / 0.38, rem * 14.0);
+        var finishRate = Math.max(WRITE_END_T / 0.28, rem * 12.0);
         curT = Math.min(WRITE_END_T, curT + finishRate * dt);
       } else {
-        // 'Amarante' is written AND world is ready: crisp 0.85s glide + bloom + dissolve + Go!
-        var revealRate = (1.0 - WRITE_END_T) / 0.85;
+        // 'Amarante' is 100% written AND world is 100% ready:
+        // Beat 2 Glide Up & Bloom (0.45..0.58) -> Beat 3 Cloud Dissolve (0.58..0.94) -> Beat 4 Begin Journey (0.90..1.00)
+        var revealRate = (1.0 - WRITE_END_T) / 0.65;
         curT = Math.min(1.0, curT + revealRate * dt);
       }
 

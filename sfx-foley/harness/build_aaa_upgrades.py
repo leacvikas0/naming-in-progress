@@ -168,59 +168,15 @@ def build_subtle_footsteps_and_dodges() -> None:
 # ---------------------------------------------------------------------------
 
 def build_acoustic_ui_and_sacred() -> None:
+    from build_soft_ui_sfx import build_soft_tactile_ui_sfx
+
     ui_dir = GAME_SFX_DIR / "ui"
     sac_dir = GAME_SFX_DIR / "sacred"
     ui_dir.mkdir(parents=True, exist_ok=True)
     sac_dir.mkdir(parents=True, exist_ok=True)
 
-    # ui_hover: whisper-soft parchment brush (0.065s)
-    c_hov = extract_slice("foley_parchment_stroke_01.wav", start_s=0.22, dur_s=0.065, semitones=1.0, fade_in_s=0.004, fade_out_s=0.025, hpf_hz=260.0, lpf_hz=4800.0)
-    export_mp3_and_wav(normalize_stereo(c_hov, target_rms_db=-24.0, peak_limit_db=-7.0), [ui_dir / "ui_hover.mp3"])
-
-    # ui_click: warm tactile wood/stone micro-tap + soft linen touch (0.085s, clearly audible & non-synth!)
-    c_clk = np.zeros((int(0.085 * SR), 2), dtype=np.float64)
-    wood_tap = extract_slice("foley_wood_staff_clatter_01.wav", start_s=0.005, dur_s=0.075, semitones=3.0, fade_in_s=0.002, fade_out_s=0.035, hpf_hz=220.0, lpf_hz=4600.0)
-    linen = extract_slice("foley_parchment_stroke_01.wav", start_s=2.02, dur_s=0.075, semitones=0.0, fade_in_s=0.003, fade_out_s=0.030, hpf_hz=300.0, lpf_hz=5200.0)
-    mix_layer(c_clk, wood_tap, 0.0, 0.90)
-    mix_layer(c_clk, linen, 0.003, 0.55)
-    export_mp3_and_wav(master_and_normalize(c_clk, hpf_hz=200.0, warm_body_hz=320.0, warm_body_db=2.0, box_scoop_db=-6.0, lpf_hz=5000.0, target_rms_db=-17.5, peak_limit_db=-2.2), [ui_dir / "ui_click.mp3"])
-
-    # ui_hero_swap: soft cloak/parchment sweep + gentle warm bronze harmonic touch (0.28s, zero marimba bwaa!)
-    c_swap = np.zeros((int(0.28 * SR), 2), dtype=np.float64)
-    swish = extract_slice("foley_parchment_stroke_01.wav", start_s=2.05, dur_s=0.25, semitones=-1.0, fade_in_s=0.008, fade_out_s=0.07, hpf_hz=180.0, lpf_hz=4800.0)
-    bowl_tap = extract_slice("instr_tibetan_bowl_strike_02.wav", start_s=0.01, dur_s=0.26, semitones=2.0, fade_in_s=0.004, fade_out_s=0.09, hpf_hz=220.0, lpf_hz=3600.0)
-    mix_layer(c_swap, swish, 0.0, 0.85)
-    mix_layer(c_swap, bowl_tap, 0.012, 0.55)
-    export_mp3_and_wav(master_and_normalize(c_swap, hpf_hz=160.0, lpf_hz=4800.0, target_rms_db=-18.2, peak_limit_db=-2.8), [ui_dir / "ui_hero_swap.mp3"])
-
-    # ui_element_tab_ice: real frost crystal chink + airy frost breath (0.26s)
-    c_tice = np.zeros((int(0.26 * SR), 2), dtype=np.float64)
-    mix_layer(c_tice, extract_slice("ice_cracking_snap_02.wav", start_s=0.04, dur_s=0.22, semitones=2.0, fade_in_s=0.003, fade_out_s=0.06, hpf_hz=240.0, lpf_hz=6800.0), 0.0, 0.88)
-    mix_layer(c_tice, extract_slice("instr_tibetan_bowl_strike_02.wav", start_s=0.01, dur_s=0.24, semitones=7.0, fade_in_s=0.004, fade_out_s=0.08, hpf_hz=320.0, lpf_hz=5400.0), 0.008, 0.55)
-    export_mp3_and_wav(master_and_normalize(c_tice, hpf_hz=200.0, lpf_hz=6800.0, target_rms_db=-17.8, peak_limit_db=-2.4), [ui_dir / "ui_element_tab_ice.mp3"])
-
-    # ui_element_tab_fire: real hearth flame whoosh puff + warm bronze touch (0.26s)
-    c_tfire = np.zeros((int(0.26 * SR), 2), dtype=np.float64)
-    mix_layer(c_tfire, extract_slice("fire_flamethrower_whoosh_02.wav", start_s=0.03, dur_s=0.24, semitones=1.0, fade_in_s=0.005, fade_out_s=0.07, hpf_hz=140.0, lpf_hz=5200.0), 0.0, 0.90)
-    mix_layer(c_tfire, extract_slice("instr_tibetan_bowl_strike_02.wav", start_s=0.01, dur_s=0.24, semitones=0.0, fade_in_s=0.004, fade_out_s=0.08, hpf_hz=180.0, lpf_hz=3800.0), 0.008, 0.58)
-    export_mp3_and_wav(master_and_normalize(c_tfire, hpf_hz=140.0, lpf_hz=5400.0, target_rms_db=-17.8, peak_limit_db=-2.4), [ui_dir / "ui_element_tab_fire.mp3"])
-
-    # ui_locked_thud: muted wooden double tap (0.16s)
-    c_lock = np.zeros((int(0.16 * SR), 2), dtype=np.float64)
-    mix_layer(c_lock, extract_slice("foley_wood_planks_02.wav", start_s=0.05, dur_s=0.08, semitones=-2.0, fade_in_s=0.002, fade_out_s=0.03, hpf_hz=140.0, lpf_hz=2400.0), 0.0, 0.85)
-    mix_layer(c_lock, extract_slice("foley_wood_planks_02.wav", start_s=0.05, dur_s=0.09, semitones=-5.0, fade_in_s=0.002, fade_out_s=0.04, hpf_hz=120.0, lpf_hz=2200.0), 0.055, 0.78)
-    export_mp3_and_wav(master_and_normalize(c_lock, hpf_hz=120.0, lpf_hz=2600.0, target_rms_db=-18.5, peak_limit_db=-3.0), [ui_dir / "ui_locked_thud.mp3"])
-
-    # ui_modal_open & ui_modal_close: real parchment scroll unfurl/fold + soft warm singing-bowl breath (zero MIDI triad!)
-    c_mopen = np.zeros((int(0.38 * SR), 2), dtype=np.float64)
-    mix_layer(c_mopen, extract_slice("foley_parchment_stroke_01.wav", start_s=2.02, dur_s=0.35, semitones=0.0, fade_in_s=0.008, fade_out_s=0.09, hpf_hz=160.0, lpf_hz=5200.0), 0.0, 0.92)
-    mix_layer(c_mopen, extract_slice("instr_tibetan_bowl_strike_02.wav", start_s=0.01, dur_s=0.36, semitones=0.0, fade_in_s=0.008, fade_out_s=0.12, hpf_hz=180.0, lpf_hz=3200.0), 0.015, 0.48)
-    export_mp3_and_wav(master_and_normalize(c_mopen, hpf_hz=150.0, lpf_hz=5200.0, target_rms_db=-18.5, peak_limit_db=-3.0), [ui_dir / "ui_modal_open.mp3"])
-
-    c_mclose = np.zeros((int(0.28 * SR), 2), dtype=np.float64)
-    mix_layer(c_mclose, extract_slice("foley_parchment_stroke_01.wav", start_s=4.15, dur_s=0.25, semitones=-2.0, fade_in_s=0.006, fade_out_s=0.08, hpf_hz=150.0, lpf_hz=4400.0), 0.0, 0.90)
-    mix_layer(c_mclose, extract_slice("instr_tibetan_bowl_strike_02.wav", start_s=0.01, dur_s=0.26, semitones=-5.0, fade_in_s=0.006, fade_out_s=0.09, hpf_hz=150.0, lpf_hz=2800.0), 0.010, 0.42)
-    export_mp3_and_wav(master_and_normalize(c_mclose, hpf_hz=140.0, lpf_hz=4400.0, target_rms_db=-19.0, peak_limit_db=-3.2), [ui_dir / "ui_modal_close.mp3"])
+    # Build all 10 soft tactile UI SFX (zero Tibetan bowl / zero metallic ring!)
+    build_soft_tactile_ui_sfx()
 
     # stone_inspect: ancient travertine stone rub + deep resonant sanctuary bowl (1.15s)
     c_stone = np.zeros((int(1.15 * SR), 2), dtype=np.float64)
@@ -241,7 +197,7 @@ def build_acoustic_ui_and_sacred() -> None:
     mix_layer(c_vheal, extract_slice("instr_tibetan_bowl_strike_02.wav", start_s=0.01, dur_s=1.55, semitones=7.0, fade_in_s=0.008, fade_out_s=0.38, hpf_hz=180.0, lpf_hz=6000.0, pan_offset=0.28), 0.14, 0.78)
     mix_layer(c_vheal, extract_slice("instr_tibetan_bowl_01.wav", start_s=1.2, dur_s=1.50, semitones=12.0, fade_in_s=0.08, fade_out_s=0.40, hpf_hz=260.0, lpf_hz=6400.0), 0.22, 0.58)
     mix_layer(c_vheal, extract_slice("ambience_summer_wind_meadow_01.wav", start_s=3.0, dur_s=1.60, semitones=2.0, fade_in_s=0.04, fade_out_s=0.40, hpf_hz=180.0, lpf_hz=5200.0), 0.02, 0.45)
-    export_mp3_and_wav(master_and_normalize(c_vheal, hpf_hz=90.0, lpf_hz=6200.0, target_rms_db=-15.4, peak_limit_db=-1.1), [sac_dir / "heal_verdict.mp3", ui_dir / "ui_level_up.mp3"])
+    export_mp3_and_wav(master_and_normalize(c_vheal, hpf_hz=90.0, lpf_hz=6200.0, target_rms_db=-15.4, peak_limit_db=-1.1), [sac_dir / "heal_verdict.mp3"])
 
     # verdict_miracle: grand cathedral bronze-bell & harmonic bloom + deep sub foundation (2.45s)
     c_vmir = np.zeros((int(2.45 * SR), 2), dtype=np.float64)
@@ -250,7 +206,7 @@ def build_acoustic_ui_and_sacred() -> None:
     mix_layer(c_vmir, extract_slice("instr_tibetan_bowl_strike_02.wav", start_s=0.01, dur_s=2.25, semitones=2.0, fade_in_s=0.008, fade_out_s=0.52, hpf_hz=130.0, lpf_hz=5400.0, pan_offset=0.38), 0.12, 0.86)
     mix_layer(c_vmir, extract_slice("instr_tibetan_bowl_strike_02.wav", start_s=0.01, dur_s=2.10, semitones=7.0, fade_in_s=0.010, fade_out_s=0.50, hpf_hz=180.0, lpf_hz=6400.0), 0.26, 0.78)
     mix_layer(c_vmir, extract_slice("instr_tibetan_bowl_01.wav", start_s=1.0, dur_s=2.20, semitones=14.0, fade_in_s=0.10, fade_out_s=0.55, hpf_hz=280.0, lpf_hz=6800.0), 0.20, 0.65)
-    export_mp3_and_wav(master_and_normalize(c_vmir, hpf_hz=40.0, warm_body_hz=140.0, warm_body_db=3.6, lpf_hz=6800.0, target_rms_db=-14.4, peak_limit_db=-0.9), [sac_dir / "miracle_verdict.mp3", ui_dir / "ui_victory_fanfare.mp3"])
+    export_mp3_and_wav(master_and_normalize(c_vmir, hpf_hz=40.0, warm_body_hz=140.0, warm_body_db=3.6, lpf_hz=6800.0, target_rms_db=-14.4, peak_limit_db=-0.9), [sac_dir / "miracle_verdict.mp3"])
 
     # verdict_smite: heavy thunder-bolt wrath + dark bronze toll + 2.2s rose-petal dissolve shimmer tail!
     c_vsmite = np.zeros((int(2.35 * SR), 2), dtype=np.float64)

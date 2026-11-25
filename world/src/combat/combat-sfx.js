@@ -434,9 +434,16 @@ const PRIORITY_CRITICAL_CUES = new Set([
   'death_foley_mage',
   'death_foley_skeleton_pile',
   'death_foley_skeleton_shatter',
+  'ui_hover',
   'ui_click',
   'ui_tab_ice',
   'ui_tab_fire',
+  'ui_hero_swap',
+  'ui_locked',
+  'ui_modal_open',
+  'ui_modal_close',
+  'ui_level_up',
+  'ui_victory',
   'stone_inspect',
   'commune_start',
   'verdict_heal',
@@ -2097,11 +2104,23 @@ export function createCombatSfx({ muted = false, masterVolume = 0.68 } = {}) {
   }
 
   function playLevelUp() {
-    playCue('ui_level_up', { gain: 0.86, pitchJitter: 0.01, minIntervalMs: 250 });
+    playCue('ui_level_up', {
+      gain: 0.58,
+      pitchJitter: 0.015,
+      minIntervalMs: 250,
+      family: 'ui',
+      reverbSend: 0.0,
+    });
   }
 
   function playVictoryFanfare() {
-    playCue('ui_victory', { gain: 0.92, pitchJitter: 0.01, minIntervalMs: 400 });
+    playCue('ui_victory', {
+      gain: 0.62,
+      pitchJitter: 0.015,
+      minIntervalMs: 400,
+      family: 'ui',
+      reverbSend: 0.0,
+    });
   }
 
   function playUi(kind = 'click') {
@@ -2129,14 +2148,14 @@ export function createCombatSfx({ muted = false, masterVolume = 0.68 } = {}) {
     const cueKey = map[kind] || 'ui_click';
     const gain =
       kind === 'hover'
-        ? 0.36
+        ? 0.30
         : kind === 'click'
-          ? 0.78
+          ? 0.58
           : kind === 'hero_swap' || kind === 'swap'
-            ? 0.56
+            ? 0.50
             : kind === 'modal_open' || kind === 'pause_open' || kind === 'modal_close' || kind === 'pause_close'
-              ? 0.62
-              : 0.72;
+              ? 0.52
+              : 0.55;
     playCue(cueKey, {
       gain,
       pitchJitter: kind === 'hover' || kind === 'click' ? 0.025 : 0.01,

@@ -908,7 +908,7 @@ const APP_FLOW_CSS = `
     inset: 0;
     z-index: 0;
     pointer-events: none;
-    background: transparent;
+    background: #050507;
     opacity: 1;
     will-change: opacity;
     transition: opacity 380ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -2617,10 +2617,27 @@ export function createAppFlow({
       }
       return;
     }
+    const gl = dissolveGl;
+    // Keep #af-pixel-veil locked to solid CSS pitch-black (#050507) throughout Beat 1 (writing Amarante, 0..0.45)
+    // and Beat 2 (Amarante gliding up + Sun-Clock & Sakura blooming, 0.45..0.56) so the background 3D canvas
+    // can NEVER leak or flicker before Beat 3 (the 0.58..0.94 cloud dissolve).
+    if (t <= 0.56) {
+      if (pixelVeil && pixelVeil.style.background !== 'rgb(5, 5, 7)' && pixelVeil.style.background !== '#050507') {
+        pixelVeil.style.background = '#050507';
+      }
+      if (!dissolveOpaqueDrawn) {
+        gl.useProgram(dissolveProg);
+        gl.uniform1f(dissolveSweepLoc, -1.0);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        dissolveOpaqueDrawn = true;
+        dissolveClearedDrawn = false;
+        lastDissolveSweep = -1.0;
+      }
+      return;
+    }
     if (pixelVeil && pixelVeil.style.background !== 'transparent') {
       pixelVeil.style.background = 'transparent';
     }
-    const gl = dissolveGl;
     if (t <= 0.58) {
       if (dissolveOpaqueDrawn) return;
       gl.useProgram(dissolveProg);
@@ -3052,16 +3069,18 @@ export function createAppFlow({
           typeof window !== 'undefined' && typeof window.__getEffectiveBootProgress === 'function'
             ? window.__getEffectiveBootProgress()
             : 0.5;
-        const targetT = Math.min(0.44, prog * WRITE_END_T);
+        const targetT = Math.min(0.435, prog * WRITE_END_T);
         const gap = Math.max(0, targetT - currentT);
-        const step = gap * Math.min(1, dt * 11.5) + (currentT < targetT ? 0.012 * dt : 0);
+        const desiredRate = gap * 8.0 + (currentT < targetT ? 0.05 : 0);
+        const maxPreReadyRate = WRITE_END_T / 0.95;
+        const step = Math.min(gap, Math.min(maxPreReadyRate, desiredRate) * dt);
         currentT = Math.max(currentT, Math.min(targetT, currentT + step));
       } else if (currentT < WRITE_END_T) {
         const rem = WRITE_END_T - currentT;
-        const finishRate = Math.max(WRITE_END_T / 0.38, rem * 14.0);
+        const finishRate = Math.max(WRITE_END_T / 0.28, rem * 12.0);
         currentT = Math.min(WRITE_END_T, currentT + finishRate * dt);
       } else {
-        currentT = Math.min(1.0, currentT + ((1.0 - WRITE_END_T) / 0.85) * dt);
+        currentT = Math.min(1.0, currentT + ((1.0 - WRITE_END_T) / 0.65) * dt);
       }
       if (typeof window !== 'undefined') {
         window.__BOOT_VEIL_T__ = currentT;
